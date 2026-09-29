@@ -248,7 +248,74 @@ int main() {
 
 ---
 
-## 8. 仓库布局（规划）
+## 8. 仓库布局
+
+### 8.1 实际状态（第九轮实测，行数与文件数为脚本统计）
+
+此前这一节只有一张"规划"树，把 `examples/`、`tools/gen_options.py`、`media/renderers/`
+这些**还不存在**的东西画得像已经存在，读者无法判断真实进度。现改为实测树 +
+规划树并列，实测树里 ⬜ 表示规划中但不存在。
+
+```
+ijkpp/
+├── LICENSE                  ✅ BSD-3-Clause + 4 节第三方/衍生说明（第九轮补）
+├── .clang-format            ✅   .gitignore ✅（第九轮补 __pycache__/ *.pyc）
+├── .clang-tidy              ⬜ STYLE.md §8 有完整配置内容，文件本身不存在
+├── .editorconfig            ⬜
+├── STYLE.md · VERSION(0.1.0) · CMakeLists.txt · CMakePresets.json ✅
+├── .github/workflows/ci.yml ✅ quick + full 矩阵；ffmpeg-matrix 与 e2e-linux 仍是 if:false
+├── cmake/                   ✅ 7 个：IjkppOptions · IjkppCompilerFlags · IjkppThirdParty
+│                               FindFFmpeg · IjkppCheckInvariants · BuildConfig.h.in · Version.h.in
+│                            ⬜ FindLinuxMediaDeps(M12) · IjkppInstall(M8) · ijkpp.map(R18)
+├── base/                    ✅ 44 文件 / 3,763 行
+│   ├── functional/ memory/ time/ synchronization/ task/ threading/ types/ test/
+│   └── ⬜ containers/ files/ strings/ trace_event/ · feature_list.h
+│         threading/message_pump_epoll.cc（R2 的 L2 降级：现为 TaskQueue 驱动）
+├── media/
+│   ├── base/                ✅ 54 文件 / 5,301 行
+│   │     其中 7 个是第九轮冻结的 DRAFT 接口头（17 行注释级缺口清单，未进构建）：
+│   │     pipeline_status · media_resource · renderer_client · renderer ·
+│   │     renderer_factory · pipeline · pipeline_controller
+│   ├── filters/             ✅ 12 文件 / 3,031 行（ffmpeg_* · decoder_stream ·
+│   │                            decoder_selector · ffmpeg_glue）
+│   │   └── legacy/          ✅ 6 文件 / 1,716 行 —— LGPL-2.1 隔离区（第九轮建）：
+│   │                            video_frame_compositor · av_sync_controller · clock
+│   │                            + LICENSE.LGPL-2.1(501 行) + README.md（准入规则）
+│   ├── renderers/           ⬜ M7
+│   └── audio/               ⬜ M7
+├── player/
+│   ├── public/              ✅ 12 个 SDK 头 / 997 行（M8 契约冻结）
+│   └── *.cc                 ⚠️ 7 文件 / 909 行，全是 skeleton：player.cc 的 10 个方法
+│                               返回 kNotImplemented；option_registry 只覆盖 8/60+ 个 key
+│                            ⬜ player_impl · state_machine · event_hub · seek_controller
+│                               buffer_controller · diagnostics · public/c/
+├── platform/
+│   ├── ffmpeg/              ✅ 9 文件 / 730 行（全项目唯一链接 FFmpeg 的 target）
+│   └── null/ sdl2/ linux/   ⬜ M10 / M11 / M12 —— 后两个开关目前在
+│                               platform/CMakeLists.txt 里是有意的 FATAL_ERROR
+├── tests/                   ✅ unit/ 23 文件 / 5,940 行 · 322 用例 · testdata/ 5 个样本
+│                               （含 1 个 DRAFT 测试文件，10 用例，未计入 322）
+│                            ⬜ contract/ integration/ golden/ e2e/ stress/ fuzz/
+│                               bench/ support/
+├── tools/                   ✅ check_invariants.py(374，14 条规则/174 文件)
+│                               extract_constants.py(547) + ported_constants.py(222)
+│                               inspect/ → ijkpp-inspect（probe · decode · sync）
+│                               setup_ffmpeg.sh（FindFFmpeg.cmake 引用，非死代码）
+│                            ⬜ gen_options.py · golden_record.py · golden_diff.py
+│                               verify_e2e.py · ijkplayer-recorder/ · build_linux.sh
+│                               inspect 的 doctor/play/dump/golden 子命令
+├── examples/                ⬜ 12 个示例全部未建（M8/M11/M12）
+├── third_party/             ⬜ 按设计保持为空（不 vendor）
+└── docs/                    ✅ 11 篇（01–10 + PROGRESS，约 41.7 万字符）
+                             ⬜ BUILDING · API · COOKBOOK · MIGRATION · TROUBLESHOOTING
+                                EXTENDING · PERFORMANCE · CHANGELOG（M13 发版 blocker）
+```
+
+合计：**174 个 `.h`/`.cc`**（其中 8 个 DRAFT）、C++ **22,975 行**（实现 17,203 / 测试 5,772）、
+`tools/*.py` **1,143 行**。逐项进度以 [docs/PROGRESS.md](docs/PROGRESS.md) 的
+"未完成（按里程碑）"与"工具与门禁现状"两张表为准。
+
+### 8.2 规划（目标布局，docs/02 §2 的完整版）
 
 ```
 ijkpp/
@@ -262,7 +329,7 @@ ijkpp/
 │   ├── check.h logging.h observer_list.h feature_list.h sequence_checker.h
 ├── media/
 │   ├── base/         接口与核心类型（~30 文件）
-│   ├── filters/      具体实现（~18 文件，含 ffmpeg_* 与 video_frame_compositor）
+│   ├── filters/      具体实现（~18 文件，含 ffmpeg_* 与 legacy/ 的三个移植件）
 │   ├── renderers/    default_renderer_factory
 │   └── audio/        audio_manager · audio_output_device · null/
 ├── player/
@@ -273,11 +340,16 @@ ijkpp/
 │   └── (android/ ios/ 预留)
 ├── examples/         play_sdl2 · play_native · play_embed · headless · ijkpp_inspect
 ├── tests/            unit/ contract/ integration/ golden/ stress/ fuzz/ bench/ testdata/
-├── tools/            check_invariants.py · gen_options.py · extract_constants.py
-│                     golden_record.py · golden_diff.py · build_linux.sh
+├── tools/            check_invariants.py · extract_constants.py · gen_options.py
+│                     golden_record.py · golden_diff.py · verify_e2e.py · build_linux.sh
 ├── third_party/      （空或仅 vendored 单头）
-└── docs/             01–10（本套设计文档）
+└── docs/             01–10（本套设计文档）+ BUILDING/API/COOKBOOK/MIGRATION/...
 ```
+
+> **路径变更通知（第九轮）**：`video_frame_compositor.{h,cc}`、`av_sync_controller.{h,cc}`、
+> `clock.{h,cc}` 已从 `media/filters/` 移入 **`media/filters/legacy/`**（LGPL-2.1 隔离，
+> 见该目录的 README.md）。docs/01–08 是 v2.0 已评审的设计文档，**其中的旧路径刻意保留不改**
+> ——事后改路径会让"当时决定了什么"失真。当前布局以本节与 PROGRESS 为准。
 
 ---
 

@@ -800,9 +800,10 @@ set(IJKPP_MEDIA_SOURCES
     media/base/pipeline_status.cc
     media/base/wall_clock_time.cc
     media/base/seekable_buffer.cc
-    media/filters/video_frame_compositor.cc     # ★
-    media/filters/video_frame_queue.cc
-    media/filters/av_sync_controller.cc
+    media/filters/legacy/video_frame_compositor.cc   # ★ LGPL 隔离区（第九轮移入）
+    media/base/video_frame_queue.cc
+    media/filters/legacy/av_sync_controller.cc
+    media/filters/legacy/clock.cc
     media/filters/decoder_selector.cc
     media/filters/display_geometry.cc
     media/filters/stream_selector.cc

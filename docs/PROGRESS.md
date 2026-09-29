@@ -458,6 +458,89 @@ STYLE.md 与 `.clang-format` 都规定 80 列，但 `base/memory/scoped_refptr.h
 可跑，手工重排模板声明有可能改变含义，而"看起来更整齐"不值得冒这个险。
 记在这里，等 `check-format` job 建起来时由工具一次性处理。
 
+### (3d) 文档一致性收口 + “过期文件”审计 — ✅ 完成
+
+用户要求“更新文档、删除过期文件”。先做审计再动手，因为删除不可逆。
+
+#### 审计：仓库里**没有**可删的死文件
+
+| 检查 | 方法 | 结果 |
+|---|---|---|
+| CMakeLists 引用了不存在的源文件 | 解析全部 7 个 CMakeLists 的 `add_library`/`add_executable` 源列表 | **0 处** |
+| CMakePresets 引用了未声明的选项 | 提取 20 个 cacheVariable，与 `cmake/IjkppOptions.cmake` 的声明集比对 | **0 处**（`IJKPP_ENABLE_ANDROID`、`IJKPP_FFMPEG_ROOT` 等全部有声明） |
+| 无人引用的孤儿文件 | `tools/setup_ffmpeg.sh` 是唯一候选 | **不是死代码**：`cmake/FindFFmpeg.cmake` 在 3 处引用它（三级查找的第 3 级、错误提示、`IJKPP_FFMPEG_ROOT` 的来源），且 `linux-ffmpeg711` preset 依赖它 |
+| 构建产物 / 临时文件 | `git status` + 全仓扫描 | 干净；`__pycache__` 已在第九轮加进 `.gitignore` |
+
+**结论：本轮不删任何文件**，并把审计方法记录在此，便于以后同样“先证后删”。
+唯一被清掉的是**过期内容**（不是过期文件），见下。
+
+#### 头号过期内容：README §8 把不存在的东西画成已存在
+
+原 §8 标题是“仓库布局（**规划**）”，但树里 `examples/`（12 个示例）、
+`tools/gen_options.py`、`golden_record.py`、`media/renderers/`、`media/audio/`、
+`platform/null|sdl2|linux/`、`tests/contract|golden|fuzz|...`、`third_party/`、
+`.clang-tidy`、`.editorconfig`、`cmake/FindLinuxMediaDeps|IjkppInstall|ijkpp.map`
+**全部不存在**，而树里没有任何标记区分“已有”和“规划”。这与 README 别处声称的进度
+（“M0–M6 ✅”）叠在一起，读者会以为示例和后端已经有了。
+
+改为 **§8.1 实测树 + §8.2 规划树并列**：实测树用 ✅/⚠️/⬜ 三态标注，每个目录带
+**脚本统计的真实文件数与行数**（不是估的），并把两处“有内容但没接线”的状态写明
+（`player/*.cc` 是 skeleton、`platform` 的两个开关是故意的 `FATAL_ERROR`）。
+规划树保留原样，只在末尾加**路径变更通知**指向 `legacy/`。
+
+#### 其余文档更新
+
+| 文件 | 改了什么 | 为什么算“过期”而不是“历史记录” |
+|---|---|---|
+| `STYLE.md` 开头 | 加工具落地状态：`.clang-format` ✅ / `check_invariants.py` ✅ / **`.clang-tidy` ❌ 文件不存在** / **`cpplint` ❌ 未接入** / **`check-format` job ❌ 未接入**；并注明 `check_invariants.py` **没有列宽规则**，所以 80 列这条目前也无门禁 | 原文写“工具：…`.clang-tidy`、`cpplint`…”和“违反任一强制项 → CI fail，**不允许豁免**”，但这两样都不存在，**把规范说成了既有门禁** |
+| `STYLE.md` §8 | 在 `.clang-tidy` 配置块前加“以下是应有内容，文件尚未创建；落盘时照抄，并需在 CI 加 `check-cpplint` 与 `check-format`” | 同上 |
+| `STYLE.md` §3 禁止/替代表 | 新增一行：三个所有权动词 `MakeRefCounted`(创造) / `WrapRefCounted`(共享) / `AdoptRef`(接管)，并注明选错是**生命周期 bug 不是风格问题** | 第九轮新增了 `WrapRefCounted` 并修了 `AdoptRef`，风格文档必须跟上，否则下一个人还会写错 |
+| `STYLE.md` §10 Chromium 对照表 | `scoped_refptr.h` 行补注三个动词的位置；新增 `ptr_util.h` 行说明“只有 `WrapUnique`，ref-counted 的三个动词刻意不在此处” | 同上 |
+| `docs/06` §7.2 | CMakeLists 片段的三个移植件改为 `media/filters/legacy/` 路径 | §7.2 是**构建体系文档**，必须与真实 `media/CMakeLists.txt` 一致；这不是历史记录 |
+| `docs/05` 表 1 + `docs/06` §7.2 | `media/filters/video_frame_queue.{h,cc}` → `media/base/video_frame_queue.{h,cc}`（共 3 处） | **既有的文档笔误**，与第九轮的移动无关：该文件从首次提交起就在 `media/base/` |
+| `README` §8 末尾 | 路径变更通知：三个移植件已移入 `legacy/`，**docs/01–08 里的旧路径刻意保留不改** | 给读者一个权威指针，同时把“为什么不去批量改设计文档”讲清楚 |
+
+#### 刻意**不**改的（并给出判据）
+
+`docs/01`–`docs/08` 里另有 **约 77 处**指向尚不存在文件的引用
+（`player/player_impl.cc`、`media/filters/renderer_impl.cc`、`platform/linux/gl/*`、
+`tests/support/synthetic_demuxer.cc`、`tools/verify_e2e.py` …）。
+这些**不是过期内容，而是规划内容**——设计文档描述目标状态是它的本职。
+
+判据是一条：**“这个引用在写下当时是真的吗？”**
+
+- 引用**曾经存在、被本轮移动**的文件（`media/filters/video_frame_compositor.cc`）
+  → 当时是真的，现在不是了 → **属于历史记录，不改**，改为在 README/PROGRESS 给出权威映射。
+- 引用**从未存在、计划将来建**的文件（`player/player_impl.cc`）
+  → 当时就是规划 → **不改**。
+- 引用**当前构建配置**的文档（`docs/06` §7.2 的 CMakeLists 片段）
+  → 必须与代码同步 → **改**。
+- 把**规范说成既有门禁**的（STYLE.md 的 `.clang-tidy` / `cpplint`）
+  → **改**，否则读者会据此以为有自动检查而不去人工核对。
+
+#### 旧路径 → 新路径（唯一权威映射）
+
+| 旧（docs/01–08 里的写法） | 新（当前实际） |
+|---|---|
+| `media/filters/video_frame_compositor.{h,cc}` | `media/filters/legacy/video_frame_compositor.{h,cc}` |
+| `media/filters/av_sync_controller.{h,cc}` | `media/filters/legacy/av_sync_controller.{h,cc}` |
+| `media/filters/clock.{h,cc}` | `media/filters/legacy/clock.{h,cc}` |
+| `media/filters/video_frame_queue.{h,cc}` | `media/base/video_frame_queue.{h,cc}`（**从来如此**，docs/05 笔误已修） |
+| 卫士 `IJKPP_MEDIA_FILTERS_{VIDEO_FRAME_COMPOSITOR,AV_SYNC_CONTROLLER,CLOCK}_H_` | 中间加 `_LEGACY` 段 |
+
+#### 关于“提交”：本环境无法 push
+
+`git remote -v` 显示 `origin https://github.com/samychen/ijkpp.git`，
+但**沙箱里没有凭据**（`.git/config`、`.git-credentials`、`.netrc` 都在快照排除清单里，
+且网络出口不通：用 `urllib` 取 gnu.org 直接 `Network is unreachable`）。
+所以本轮全部工作**已 commit 到本地分支 `fill-gaps`，未 push**。
+合并与推送需要在有凭据的机器上执行：
+
+```bash
+git checkout main && git merge --ff-only fill-gaps && git push origin main
+# 或者走 PR：git push origin fill-gaps
+```
+
 ### (4) R2 降级债的显式登记 — ✅ 本轮补记
 
 `docs/08` §5.1 给 R2（自研 `base/` 工期超支，P4×I4=**16**，高危）准备了 L0–L3

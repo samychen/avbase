@@ -4,6 +4,15 @@
 > 叠加：Chromium 工程约定（`base/` 命名、`DCHECK`、sequence 模型、注释风格）
 > 工具：`.clang-format`（唯一格式真相源）、`.clang-tidy`、`cpplint`、`tools/check_invariants.py`
 > 违反任一"强制"项 → CI fail，不允许豁免。
+>
+> ⚠️ **工具落地状态（第九轮核对）**：`.clang-format` ✅ 存在 ·
+> `tools/check_invariants.py` ✅ 存在（14 条规则 / 174 文件，已进 CI）·
+> **`.clang-tidy` ❌ 文件不存在**（§8 是它的内容，尚未落盘）·
+> **`cpplint` ❌ 未接入**（CI 里没有 `check-cpplint` job）·
+> **`check-format` job ❌ 未接入**。因此下文标注 clang-tidy / cpplint 的规则
+> **目前只靠人工评审执行**；`check_invariants.py` 覆盖的那 14 条才是真正有门禁的。
+> 另：`check_invariants.py` **没有列宽规则**，所以 80 列这条目前也无门禁
+> （`base/memory/scoped_refptr.h` 在首次提交里就有 6 行超 80 列）。
 
 ---
 
@@ -22,6 +31,7 @@
 | 裸 `T*` 表示所有权 | 禁止 | 所有权只用 `unique_ptr` / `scoped_refptr`；非拥有用 `raw_ptr<T>` 或 `T&` |
 | `using namespace` 在头文件 | 禁止 | check_invariants C14 |
 | `std::shared_ptr` | **不推荐**，用 `scoped_refptr` + `base::RefCountedThreadSafe` | 与 Chromium 一致；`scoped_refptr` 无 `weak_ptr` 开销，控制块更小 |
+| 共享所有权的三个动词 | `base::MakeRefCounted<T>(...)` **创造** · `base::WrapRefCounted(p)` **共享** · `base::AdoptRef(p)` **接管** | 三者都在 `base/memory/scoped_refptr.h` 底部（不在 `ptr_util.h`：adopt 需要 `scoped_refptr` 的 tag ctor）。选错一个是生命周期 bug 而不是风格问题——`AdoptRef` 曾长期被写成 AddRef，第九轮修掉 |
 | 全局可变状态 | 禁止（`base::FeatureList` 与单例 logger 除外，且只读初始化） | ijkplayer 的 `g_ijkmp_*` 教训 |
 | `std::function` | 公开 API 可用；内部一律用 `base::OnceCallback` / `RepeatingCallback` | 后者 move-only、零分配路径可测 |
 
@@ -217,6 +227,10 @@ class VideoRendererImpl : public Renderer {
 
 ## 8. `.clang-tidy` 配置
 
+> **状态：以下是 `.clang-tidy` 应有的内容，文件本身尚未创建**（第九轮核对）。
+> 落盘时直接照抄这一段即可；同时需要在 CI 里加 `check-cpplint` 与
+> `check-format` 两个 job（docs/07 §13 的门禁清单里有这两项）。
+
 ```yaml
 Checks: >
   -*,
@@ -296,7 +310,8 @@ Test: media/filters/video_frame_compositor_unittest.cc (SeekAfterSerialChange)
 | `base/expected_macros.h` | 同名 | `RETURN_IF_ERROR` / `ASSIGN_OR_RETURN` |
 | `base/functional/callback.h` | 同名 | 仅实现 `OnceCallback` / `RepeatingCallback` 子集 |
 | `base/functional/bind.h` | 同名 | `BindOnce` / `BindRepeating`，支持 lambda + 绑定参数 + weak ptr |
-| `base/memory/scoped_refptr.h` | 同名 | 完整实现 |
+| `base/memory/scoped_refptr.h` | 同名 | 完整实现；`MakeRefCounted`/`WrapRefCounted`/`AdoptRef` 都在此文件底部 |
+| `base/memory/ptr_util.h` | 同名 | 仅 `WrapUnique`；ref-counted 的三个动词刻意不在此处 |
 | `base/memory/weak_ptr.h` | 同名 | 完整实现（sequence-bound） |
 | `base/time/time.h` | 同名 | `Time` / `TimeTicks` / `TimeDelta` 完整实现 |
 | `base/task/sequenced_task_runner.h` | 同名 | 完整实现 |
