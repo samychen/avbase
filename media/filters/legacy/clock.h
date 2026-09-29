@@ -1,6 +1,33 @@
+// Copyright (c) 2013-2026 Zhang Rui <bbcallen@gmail.com>
+// Copyright (c) 2013-2026 Bilibili
+// Copyright (c) 2003-2013 Fabrice Bellard (ffplay.c)
 // Copyright 2026 The ijkpp Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+//
+// This file is part of ijkpp.
+//
+// ijkpp is free software; you can redistribute it and/or modify it under the
+// terms of the GNU Lesser General Public License as published by the Free
+// Software Foundation; either version 2.1 of the License, or (at your option)
+// any later version.
+//
+// ijkpp is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+// details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with this program; if not, write to the Free Software Foundation,
+// Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+//
+// ---------------------------------------------------------------------------
+// LICENSE: LGPL-2.1-or-later. Full text: media/filters/legacy/LICENSE.LGPL-2.1
+//
+// WHY THIS FILE IS LGPL AND NOT BSD-3 (decision D10, risk R8, docs/08 §4/§5):
+// this is a port of ffplay's `struct Clock` (get_clock / set_clock /
+// set_clock_at), i.e. a derivative work of ijkplayer (LGPL-2.1). The seqlock
+// read path is original to ijkpp (behaviour difference Δ14) but it implements
+// the same quantity, so the file stays under the ported licence. See
+// media/filters/legacy/README.md for the boundary rules.
 //
 // Port of ffplay's `struct Clock` (get_clock / set_clock / set_clock_at) from
 // ff_ffplay.c (LGPL-2.1), with the data race fixed.
@@ -13,8 +40,8 @@
 // load, no mutex, no allocation) with a well-defined result: readers retry
 // while a write is in flight. This is behaviour difference Δ14.
 
-#ifndef IJKPP_MEDIA_FILTERS_CLOCK_H_
-#define IJKPP_MEDIA_FILTERS_CLOCK_H_
+#ifndef IJKPP_MEDIA_FILTERS_LEGACY_CLOCK_H_
+#define IJKPP_MEDIA_FILTERS_LEGACY_CLOCK_H_
 
 #include <stdint.h>
 
@@ -92,4 +119,4 @@ class IJKPP_MEDIA_EXPORT Clock {
 
 }  // namespace ijkpp::media
 
-#endif  // IJKPP_MEDIA_FILTERS_CLOCK_H_
+#endif  // IJKPP_MEDIA_FILTERS_LEGACY_CLOCK_H_

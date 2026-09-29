@@ -27,7 +27,7 @@
 #include "media/base/decoder_buffer.h"
 #include "media/base/decoder_status.h"
 #include "media/base/media_log.h"
-#include "media/filters/av_sync_controller.h"
+#include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/ffmpeg_audio_decoder.h"
 #include "tools/inspect/inspect_common.h"
 

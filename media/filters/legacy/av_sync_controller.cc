@@ -1,8 +1,35 @@
+// Copyright (c) 2013-2026 Zhang Rui <bbcallen@gmail.com>
+// Copyright (c) 2013-2026 Bilibili
+// Copyright (c) 2003-2013 Fabrice Bellard (ffplay.c)
 // Copyright 2026 The ijkpp Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+//
+// This file is part of ijkpp.
+//
+// ijkpp is free software; you can redistribute it and/or modify it under the
+// terms of the GNU Lesser General Public License as published by the Free
+// Software Foundation; either version 2.1 of the License, or (at your option)
+// any later version.
+//
+// ijkpp is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+// details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with this program; if not, write to the Free Software Foundation,
+// Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+//
+// ---------------------------------------------------------------------------
+// LICENSE: LGPL-2.1-or-later. Full text: media/filters/legacy/LICENSE.LGPL-2.1
+//
+// WHY THIS FILE IS LGPL AND NOT BSD-3 (decision D10, risk R8, docs/08 §4/§5):
+// ResolveMasterType(), GetMasterClock(), ComputeAudioSampleAdjustment() and
+// AlignAudioDurationToVideo() are line-by-line ports of ijkplayer's
+// get_master_sync_type(), get_master_clock(), synchronize_audio() and
+// synchronize_audio_to_video(), which makes this a derivative work
+// (LGPL-2.1). The rest of ijkpp is BSD-3-Clause; see media/filters/legacy/README.md.
 
-#include "media/filters/av_sync_controller.h"
+#include "media/filters/legacy/av_sync_controller.h"
 
 #include <algorithm>
 #include <cmath>

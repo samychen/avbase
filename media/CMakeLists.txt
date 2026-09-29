@@ -22,11 +22,13 @@ add_library(ijkpp_media
     base/video_frame.cc
     base/video_frame_queue.cc
     base/waiting.cc
-    filters/av_sync_controller.cc
-    filters/clock.cc
     filters/decoder_selector.cc
     filters/decoder_stream.cc
-    filters/video_frame_compositor.cc)
+    # LGPL-2.1 quarantine: line-by-line ports of ff_ffplay.c algorithms.
+    # See media/filters/legacy/README.md and root LICENSE section 1.
+    filters/legacy/av_sync_controller.cc
+    filters/legacy/clock.cc
+    filters/legacy/video_frame_compositor.cc)
 
 # FFmpeg-backed demuxer. Compiled into ijkpp_platform_ffmpeg, never into
 # ijkpp_media, so that the core target carries no FFmpeg dependency (G2).

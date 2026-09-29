@@ -8,7 +8,7 @@
 // If those constants change upstream, tools/extract_constants.py must be re-run
 // and these expectations revisited — do not "fix" the test to match a guess.
 
-#include "media/filters/av_sync_controller.h"
+#include "media/filters/legacy/av_sync_controller.h"
 
 #include <atomic>
 #include <thread>

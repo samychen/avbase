@@ -1,6 +1,35 @@
+// Copyright (c) 2013-2026 Zhang Rui <bbcallen@gmail.com>
+// Copyright (c) 2013-2026 Bilibili
+// Copyright (c) 2003-2013 Fabrice Bellard (ffplay.c)
 // Copyright 2026 The ijkpp Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+//
+// This file is part of ijkpp.
+//
+// ijkpp is free software; you can redistribute it and/or modify it under the
+// terms of the GNU Lesser General Public License as published by the Free
+// Software Foundation; either version 2.1 of the License, or (at your option)
+// any later version.
+//
+// ijkpp is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+// details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with this program; if not, write to the Free Software Foundation,
+// Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+//
+// ---------------------------------------------------------------------------
+// LICENSE: LGPL-2.1-or-later. Full text: media/filters/legacy/LICENSE.LGPL-2.1
+//
+// WHY THIS FILE IS LGPL AND NOT BSD-3 (decision D10, risk R8, docs/08 §4/§5):
+// its scheduling algorithm is a line-by-line port of ffplay's video_refresh()
+// and compute_target_delay(), which makes it a derivative work of ijkplayer
+// (LGPL-2.1). Everything else in ijkpp is BSD-3-Clause (see the root LICENSE);
+// ported files are quarantined in media/filters/legacy/ so the boundary is
+// auditable by directory listing rather than by reading every header.
+// Do not move non-ported code in here, and do not move these files out without
+// a legal review.
 //
 // Structure mirrors Chromium's `media::VideoFrameCompositor`
 // (BSD-3-Clause, now at third_party/blink/renderer/platform/media/).
@@ -11,8 +40,8 @@
 // Thresholds are intentionally identical. Do not "improve" them without
 // golden-test evidence; see docs/01 §6 and docs/07 §7.
 
-#ifndef IJKPP_MEDIA_FILTERS_VIDEO_FRAME_COMPOSITOR_H_
-#define IJKPP_MEDIA_FILTERS_VIDEO_FRAME_COMPOSITOR_H_
+#ifndef IJKPP_MEDIA_FILTERS_LEGACY_VIDEO_FRAME_COMPOSITOR_H_
+#define IJKPP_MEDIA_FILTERS_LEGACY_VIDEO_FRAME_COMPOSITOR_H_
 
 #include <stdint.h>
 
@@ -290,4 +319,4 @@ IJKPP_MEDIA_EXPORT const char* GetDropReasonName(
 
 }  // namespace ijkpp::media
 
-#endif  // IJKPP_MEDIA_FILTERS_VIDEO_FRAME_COMPOSITOR_H_
+#endif  // IJKPP_MEDIA_FILTERS_LEGACY_VIDEO_FRAME_COMPOSITOR_H_

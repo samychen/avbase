@@ -11,7 +11,7 @@
 // static pure function of an immutable snapshot, so every branch below is a
 // deterministic assertion that runs in microseconds.
 
-#include "media/filters/video_frame_compositor.h"
+#include "media/filters/legacy/video_frame_compositor.h"
 
 #include <memory>
 

@@ -1,0 +1,103 @@
+ijkpp — ijkplayer's core player, rewritten in C++20.
+
+Copyright (c) 2026, The ijkpp Authors. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of the copyright holder nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+---------------------------------------------------------------------------
+
+The 3-clause BSD license above covers ijkpp as a whole, EXCEPT for the files
+listed below.
+
+Third-party and derivative components
+=====================================
+
+1. media/filters/legacy/ — GNU Lesser General Public License v2.1 or later
+   -----------------------------------------------------------------------
+   The files in this directory are line-by-line ports of algorithms from
+   ijkplayer's ff_ffplay.c, and are therefore derivative works of it:
+
+     legacy/video_frame_compositor.{h,cc}   port of video_refresh() and
+                                            compute_target_delay()
+     legacy/av_sync_controller.{h,cc}       port of get_master_sync_type(),
+                                            get_master_clock(),
+                                            synchronize_audio() and
+                                            synchronize_audio_to_video()
+     legacy/clock.{h,cc}                    port of struct Clock
+                                            (get_clock/set_clock/set_clock_at)
+
+   Copyright (c) 2013-2026 Zhang Rui <bbcallen@gmail.com>
+   Copyright (c) 2013-2026 Bilibili
+   Copyright (c) 2003-2013 Fabrice Bellard (ffplay.c)
+   Copyright (c) 2026 The ijkpp Authors (C++20 rewrite, structure and tests)
+
+   Licensed under the GNU Lesser General Public License version 2.1 or later.
+   The full license text is in media/filters/legacy/LICENSE.LGPL-2.1.
+
+   This is decision D10 / risk R8 in docs/08 §4 and §5. The quarantine into a
+   single directory is deliberate: a downstream integrator can establish the
+   license boundary of the whole project by listing one directory instead of
+   reading every file header. Consequences for integrators:
+
+     * Linking against libijkpp.so gives you the LGPL's relinking rights over
+       these objects; replacing them requires rebuilding the shared library.
+     * A static-link build must be accompanied by the object files or the
+       complete corresponding source code, per LGPL-2.1 §6.
+     * Do not add non-ported code to media/filters/legacy/, and do not move
+       these files out of it, without a legal review.
+
+2. base/ — mirrored API surface from Chromium's base/ (BSD-3-Clause)
+   ------------------------------------------------------------------
+   Files under base/ re-implement, with the same names and the same semantics,
+   a minimal subset of Chromium's base/ library (Copyright (c) the Chromium
+   Authors, BSD-3-Clause). Each such file names its Chromium counterpart in a
+   header comment. The implementation is original to ijkpp; no Chromium source
+   is vendored. The BSD-3-Clause license above is chosen for compatibility.
+
+3. platform/ffmpeg/ and media/filters/ffmpeg_*.{h,cc} — FFmpeg adaptation
+   ----------------------------------------------------------------------
+   These files are original ijkpp code (BSD-3-Clause) but they are the only
+   place in the project that includes libav*/libsw* headers and the only CMake
+   target that links FFmpeg (decision D11). FFmpeg itself is not redistributed
+   here; ijkpp builds against the system FFmpeg (LGPL-2.1+ or GPL-2+,
+   depending on how your distribution configured it). Your resulting binary's
+   license is therefore also bounded by the FFmpeg build you link against.
+
+4. Tests and tools
+   ----------------
+   tests/testdata/*.mp4 and *.m4a are synthetic media generated with FFmpeg's
+   lavfi sources (sine, testsrc2); they carry no third-party copyright.
+   GoogleTest is detected via find_package and is not vendored.
+
+---------------------------------------------------------------------------
+
+NOTE FOR MAINTAINERS: the "Copyright (c) 2026, The ijkpp Authors" line above
+is a placeholder until the contributor list or a legal entity is settled
+(open question Q1 in docs/08 §7). docs/08 §5 R8 records that a legal review is
+still outstanding; if the project must ship as pure BSD-3-Clause, the ported
+algorithms in media/filters/legacy/ have to be re-derived independently, which
+docs/08 estimates at +2 weeks.

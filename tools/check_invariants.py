@@ -33,9 +33,10 @@ LINE_LIMIT_ALLOWLIST = {
               "job; splitting ours by line count would scatter one contiguous "
               "AVFormatContext lifecycle across files, which is how "
               "use-after-free bugs get introduced."),
-    "media/filters/video_frame_compositor.cc": (
+    "media/filters/legacy/video_frame_compositor.cc": (
         700, "Port of ffplay video_refresh(); splitting it would obscure the "
-             "provenance comments that map each branch to the original."),
+             "provenance comments that map each branch to the original. "
+             "LGPL-2.1 quarantine, see media/filters/legacy/README.md."),
     "player/option_registry.cc": (
         700, "Generated table at M1; hand-written until then."),
 }
