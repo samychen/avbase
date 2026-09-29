@@ -1,0 +1,173 @@
+// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+//
+// Mirrors Chromium's `media/base/pipeline.h` (BSD-3-Clause). Removed: the
+// MediaResource-based Start() overload set that Chromium accumulated for MSE,
+// the CDM/key-system plumbing, text-track client routing into blink, and
+// SetLatencyHint's optional wrapper (ijkpp always has a value or zero).
+//
+// STATUS: DRAFT — NOT YET IN THE BUILD (milestone M8, docs/08 §2).
+// Interface frozen so M7 and M8 can be written in parallel. Excluded from
+// every CMake target on purpose; see media/base/pipeline_status.h for the
+// DRAFT convention this project uses.
+//
+// Gaps to close before this file joins the build:
+//   1. media/filters/pipeline_impl.cc (M8) is the only implementation. It owns
+//      the media sequence, the Demuxer, the Renderer and the demux thread's
+//      shutdown, in the fixed destruction order at docs/03 §10.1 -- that order
+//      is the primary defence against risk R5 (stop/destructor deadlock, the
+//      defect listed as #11 in docs/01 §2).
+//   2. Statistics duplicates PipelineStatistics (renderer_client.h). Chromium
+//      has the same duplication and lives with it; if M8 finds them drifting,
+//      collapse them into one struct rather than adding a conversion layer.
+//   3. Seek() reports completion through a closure, while Player::SeekTo()
+//      (frozen at M8) reports through Result<int64_t> plus a SeekCB and adds
+//      SeekMode::kAccurate. SeekController (player/, M9) owns accurate-seek
+//      framing and retries; this interface deliberately stays keyframe-only so
+//      that the media layer has no notion of "drop frames until the target".
+//   4. Add/Remove{Video,Audio,Text}Stream are declared for track switching
+//      (Player::SelectTrack). Until M8 wires them, an implementation should
+//      return without effect and LOG(WARNING) -- not DCHECK, because the SDK
+//      facade may legitimately call them before the pipeline is ready.
+
+#ifndef IJKPP_MEDIA_BASE_PIPELINE_H_
+#define IJKPP_MEDIA_BASE_PIPELINE_H_
+
+#include <memory>
+
+#include "base/functional/callback.h"
+#include "base/memory/scoped_refptr.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/time/time.h"
+#include "media/base/demuxer.h"
+#include "media/base/media_error.h"
+#include "media/base/renderer.h"
+#include "media/base/renderer_client.h"
+#include "media/base/renderer_factory.h"
+#include "media/base/waiting.h"
+#include "media/media_export.h"
+
+namespace ijkpp::media {
+
+// Owns and drives one playback: demuxer in, renderer in the middle, sinks out.
+//
+// WHAT IT REPLACES. ijkplayer has no equivalent object. The closest thing is
+// ff_ffplay.c's read_thread() plus the VideoState it mutates: control flow,
+// buffering policy, clock ownership and teardown are all interleaved in one
+// function, which is why stop() can hang (docs/01 defect #11). Pipeline is the
+// seam that separates "what the media graph does" from "what the SDK promises".
+//
+// THREADING. Everything runs on |media_task_runner|, the "media" sequence in
+// docs/04 §1. The exceptions are the four const getters below, which are
+// documented individually as thread-safe because Player answers them from the
+// caller's thread. Stop() is non-blocking by contract (Δ1): it returns once the
+// stop has been *requested*, and Player::StopSync(timeout) is what waits, with
+// config.shutdown_timeout bounding the wait and detach-plus-LOG(ERROR) as the
+// escape hatch (Δ15: leak a thread rather than hang the caller).
+class IJKPP_MEDIA_EXPORT Pipeline {
+ public:
+  // Upward channel to the owner. Same threading rules as RendererClient; the
+  // two are separate interfaces because the pipeline reports pipeline-level
+  // facts (duration, statistics) while the renderer reports rendering-level
+  // ones, and PipelineImpl implements RendererClient by forwarding.
+  class Client {
+   public:
+    Client(const Client&) = delete;
+    Client& operator=(const Client&) = delete;
+
+    virtual void OnError(MediaError error) = 0;
+    virtual void OnEnded() = 0;
+    virtual void OnDurationChange(base::TimeDelta duration) = 0;
+    virtual void OnBufferingStateChange(BufferingState state,
+                                        base::TimeDelta memory_usage) = 0;
+    virtual void OnWaiting(WaitingReason reason) = 0;
+    virtual void OnStatisticsUpdate(const PipelineStatistics& stats) = 0;
+    virtual void OnVideoConfigChange(const VideoDecoderConfig& config) = 0;
+
+   protected:
+    Client() = default;
+    virtual ~Client() = default;
+  };
+
+  // Snapshot of pipeline-level counters, for Player::GetPlaybackStats().
+  struct Statistics {
+    base::TimeDelta buffered_time;
+    base::TimeDelta duration;
+    int64_t total_bytes_read{0};
+    uint64_t video_frames_presented{0};
+    uint64_t video_frames_dropped{0};
+    uint64_t audio_glitches{0};
+    double avg_av_diff_ms{0.0};
+    uint64_t seek_count{0};
+  };
+
+  Pipeline(const Pipeline&) = delete;
+  Pipeline& operator=(const Pipeline&) = delete;
+  virtual ~Pipeline();
+
+  // Builds the graph and starts the media sequence. Takes ownership of
+  // |demuxer|. |renderer_factory| and |client| are borrowed and must outlive
+  // the pipeline. Completion is reported through Client::OnError or by the
+  // first Client::OnDurationChange/OnBufferingStateChange -- there is no
+  // status callback here because PipelineController owns the kStarting ->
+  // kReady transition and needs to observe it either way.
+  virtual void Start(
+      std::unique_ptr<Demuxer> demuxer,
+      RendererFactory* renderer_factory,
+      RendererType renderer_type,
+      base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
+      Client* client) = 0;
+
+  // Non-blocking (Δ1). Interrupts in-flight blocking I/O through the demuxer's
+  // interrupt_callback (docs/04 §2.1) and requests teardown of every sequence.
+  // After it returns, no new callbacks will be *started*; ones already running
+  // finish, which is why Player::StopSync() exists.
+  virtual void Stop() = 0;
+
+  virtual bool IsRunning() const = 0;
+
+  virtual void SetVolume(float volume) = 0;              // 0.0 .. 1.0
+  virtual void SetPlaybackRate(double rate) = 0;         // 0.25 .. 4.0
+  // Live latency target; zero means "not live".
+  virtual void SetLatencyHint(base::TimeDelta hint) = 0;
+  virtual void SetPreservesPitch(bool preserves_pitch) = 0;
+
+  // ---- Thread-safe getters ------------------------------------------------
+  // Safe from any thread because they read through AvSyncController's seqlock
+  // (Δ14) and through atomics, never through a mutex the media sequence holds.
+  // A getter that blocked on the media sequence would be able to hang the
+  // caller's UI thread, which is the failure mode this class exists to remove.
+  virtual base::TimeDelta GetMediaTime() = 0;
+  virtual base::TimeDelta GetBufferedTime() const = 0;
+  virtual base::TimeDelta GetDuration() const = 0;
+  virtual Statistics GetStatistics() const = 0;
+
+  // Keyframe seek, clamped to [0, duration]. |seeked_cb| runs on the media
+  // sequence once the demuxer and every renderer have flushed to the new
+  // serial. Accurate seek is layered above this by player/seek_controller.
+  virtual void Seek(base::TimeDelta time, base::OnceClosure seeked_cb) = 0;
+
+  virtual bool CanSeekForward() const = 0;
+  virtual bool CanSeekBackward() const = 0;
+
+  // Currently selected stream indices; -1 when that track type is absent or
+  // disabled. Feeds MediaInfo and Player::SelectTrack().
+  virtual int GetAudioStreamId() const = 0;
+  virtual int GetVideoStreamId() const = 0;
+  virtual int GetTextStreamId() const = 0;
+
+  virtual void AddVideoStream(int id) = 0;
+  virtual void RemoveVideoStream(int id) = 0;
+  virtual void AddAudioStream(int id) = 0;
+  virtual void RemoveAudioStream(int id) = 0;
+  virtual void AddTextStream(int id) = 0;
+  virtual void RemoveTextStream(int id) = 0;
+
+ protected:
+  Pipeline();
+};
+
+}  // namespace ijkpp::media
+
+#endif  // IJKPP_MEDIA_BASE_PIPELINE_H_
