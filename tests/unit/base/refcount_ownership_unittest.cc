@@ -44,29 +44,34 @@ class Probe : public RefCounted<Probe> {
   bool* destroyed_ = nullptr;
 };
 
-// The same shape, but thread-safe ref counting and a protected constructor --
-// i.e. the shape media::DataSource has, which is the one M9's RetryDataSource
-// and M18's CacheDataSource will be wrapped in.
+// The same shape, but thread-safe ref counting and a private constructor --
+// i.e. the shape media::MediaLog has (public ctor, private dtor) inverted, and
+// the constraint media::DataSource imposes. Only a derived type with a public
+// constructor can be instantiated, which is why MakeRefCounted<DataSource>()
+// does not compile while MakeRefCounted<MemoryDataSource>() does.
+//
+// Note the destructor is NOT declared `override`. RefCountedThreadSafe's
+// destructor is deliberately non-virtual -- Release() does
+// `delete static_cast<const T*>(this)` with T the complete derived type, so no
+// dispatch is needed -- and base/memory/ref_counted.h spells out the rule:
+// a class with no other virtual members declares `~Foo();`, and writing
+// `~Foo() override;` is a compile error ("does not override"). media::DataSource
+// gets `virtual ~DataSource();` only because it DOES have virtual members.
 class DerivedOnly : public RefCountedThreadSafe<DerivedOnly> {
  public:
   int ref_count() const { return RefCountedThreadSafeBase::ref_count(); }
 
  private:
   friend class RefCountedThreadSafe<DerivedOnly>;
+  friend class Concrete;
   DerivedOnly() = default;
   ~DerivedOnly() = default;
-
-  // Only a derived type with a public constructor can be instantiated, which
-  // is exactly the constraint media::DataSource imposes and the reason
-  // MakeRefCounted<DataSource>() does not compile while
-  // MakeRefCounted<MemoryDataSource>() does.
-  friend class Concrete;
 };
 
 class Concrete final : public DerivedOnly {
  public:
   Concrete() = default;
-  ~Concrete() override = default;
+  ~Concrete() = default;   // Not `override`: the base destructor is not virtual.
 };
 
 TEST(WrapRefCountedTest, AddsExactlyOneReference) {

@@ -429,6 +429,26 @@ constexpr scoped_refptr<T> WrapRefCounted(const scoped_refptr<T>& p);  // 免写
 只依赖 `ijkpp::base` + GTest），但**不得计入 287/322 的用例总数**，
 直到真实构建跑绿。文件头写明了"第一次 `ctest --preset no-ffmpeg` 跑绿后删掉这段横幅"。
 
+#### 人工复核这份测试时抓到我自己写的一个编译错误
+
+第一版写了 `~Concrete() override = default;`。**这是编译错误**：
+`RefCountedThreadSafe` 的析构**刻意非虚**（`Release()` 做的是
+`delete static_cast<const T*>(this)`，T 是完整的派生类型，不需要虚派发），
+所以没有可 override 的东西。`base/memory/ref_counted.h` 里把这条规则写得很明确：
+
+> * if the class has no other virtual members, declare `~Foo();` — writing
+>   `~Foo() override;` is a compile error ("does not override");
+> * if the class DOES have virtual members (e.g. `media::AudioRendererSink`),
+>   declare `virtual ~Foo() = default;` yourself …
+
+已改为 `~Concrete() = default;` 并加注释说明为什么不写 `override`；
+同时把测试里那条规则复述一遍，免得下一个人再踩。
+`media::DataSource` 之所以是 `virtual ~DataSource();`，正是因为它**有**其他虚成员。
+
+**这件事本身就是本轮方法论的证据**：没有编译器时，DRAFT 代码的错误只能靠
+"对着文档逐条核对约定"来抓。它抓到了这一个，但**不能保证只有这一个**——
+`refcount_ownership_unittest.cc` 与 7 个接口头仍然必须真实编译过才算数。
+
 #### 顺带发现：`check_invariants.py` 没有列宽规则
 
 STYLE.md 与 `.clang-format` 都规定 80 列，但 `base/memory/scoped_refptr.h`
