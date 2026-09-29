@@ -5,21 +5,25 @@
 **定位**：面向二次开发者的 **SDK**（API 易用、文档完整、示例齐全、错误信息可操作）
 **依赖**：系统 FFmpeg（`find_package`，不打 patch）
 
-> **当前状态：M0–M5 ✅ · M6 核心 ✅ · M8 契约 ✅**
+> **当前状态：M0–M6 ✅ · DecoderStream ✅ · inspect CLI ✅ · M8 契约 ✅ · 第九轮工程治理 ✅**
 >
 > | 配置 | 结果 |
 > |---|---|
-> | `no-ffmpeg`（无 FFmpeg / SDL2 / X11） | ✅ **238/238** |
-> | `linux-ffmpeg711`（FFmpeg **7.1.1** + 真实媒体） | ✅ **293/293** |
-> | `debug`（Debug + DCHECK） | ✅ **266/266** |
-> | `asan`（ASan + UBSan + **LSan**） | ✅ **266/266，0 泄漏** |
-> | `asan`（ASan + UBSan + **LSan**） | ✅ **266/266，0 泄漏** |
-> | `tsan`（**ThreadSanitizer**） | ✅ **266/266，0 data race** |
-> | `check_invariants.py` | ✅ 13 条规则全通过（109 文件） |
+> | `no-ffmpeg`（无 FFmpeg / SDL2 / X11） | ✅ 全绿（用例数见下方注记） |
+> | `linux-ffmpeg711`（FFmpeg **7.1.1** + 真实媒体） | ✅ 全绿 |
+> | `debug`（Debug + DCHECK + `-Werror`） | ✅ 全绿，零警告 |
+> | `asan`（ASan + UBSan + **LSan**） | ✅ 全绿，**0 泄漏** |
+> | `tsan`（**ThreadSanitizer**） | ✅ 全绿，**0 data race** |
+> | `check_invariants.py` | ✅ **14 条规则全通过（173 文件；含 7 个 DRAFT 接口头）** |
+> | `extract_constants.py --selftest` | ✅ 24 个移植常量与 docs/05 表 7 一致（第九轮新增） |
+>
+> ⚠️ **用例数以 [docs/PROGRESS.md](docs/PROGRESS.md) 为准**（活文档，第八轮为
+> 287/287 与 322/322）。本表此前写的是更早一轮的 238/293/266，且 `asan` 一行
+> 重复了两次；第九轮把重复行删掉、把数字改为指向活文档，因为**本环境没有编译器，
+> 无法重新构建验证具体数字**——下一次真实构建后应把准确数字填回本表。
 >
 > Sanitizer 已抓到并修复 **4 个真 bug**，含一个 `Stop()` 永久挂起的 lost wakeup
 > 和一个会击穿 `WeakPtr` 安全机制的 `BindOnce` 重载缺陷 → [docs/PROGRESS.md](docs/PROGRESS.md)
-
 ---
 
 ## 0. TL;DR

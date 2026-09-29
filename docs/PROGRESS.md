@@ -4,7 +4,251 @@
 
 ## 当前状态：**M0 ✅ · M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 音视频 ✅ · M6 ✅ · DecoderStream ✅ · inspect CLI ✅ · M8 契约 ✅**
 
-最后更新：2026-09-29（第八轮）—— **音频解码链打通 · `DecoderStream<Traits>` 泛型化 · `ijkpp-inspect` CLI 落地；CLI 首跑即抓到 bug #32（主时钟被 uptime 偏移）与 bug #33（水位线未生效）**
+最后更新：2026-09-29（第九轮）—— **工程治理轮：LICENSE 落地 + LGPL 隔离目录 · `tools/extract_constants.py`（R1 应对④「禁止手抄」）· `media/base/` 七个管线接口头冻结为 DRAFT**
+> 第八轮：音频解码链打通 · `DecoderStream<Traits>` 泛型化 · `ijkpp-inspect` CLI 落地；CLI 首跑即抓到 bug #32（主时钟被 uptime 偏移）与 bug #33（水位线未生效）
+
+## 第九轮（本轮）：许可证落地 · 阈值提取工具 · 管线接口冻结
+
+本轮不增加播放能力，专门收三类**非功能性缺口**：合规、可验证性、以及 M7/M8 的并行前置。
+
+### (1) LICENSE 与 LGPL 隔离目录 — ✅ 完成（D10 / R8 落地）
+
+此前 **166 个源文件头都写着 "governed by a BSD-style license that can be found
+in the LICENSE file"，而仓库里没有 LICENSE 文件**；同时 `video_frame_compositor` /
+`av_sync_controller` / `clock` 是 `ff_ffplay.c` 的逐行移植（LGPL-2.1 衍生作品），
+却挂着 BSD 头。R8 的应对①要求"移植算法的文件保留 LGPL-2.1 头 + ijkplayer 版权
+声明，归入 `media/filters/legacy/` 子目录"，本轮执行：
+
+| 动作 | 结果 |
+|---|---|
+| 新增根 `LICENSE` | BSD-3-Clause 全文 + 4 节第三方/衍生说明（legacy LGPL · base/ 镜像 Chromium BSD-3 · platform/ffmpeg 适配层与系统 FFmpeg 的许可证边界 · testdata 为 lavfi 合成）+ 维护者注记（Q1 未决） |
+| 新建 `media/filters/legacy/` | `git mv` 三对文件（compositor / av_sync / clock，共 6 个），**保留 git 历史** |
+| 重写 6 个文件头 | LGPL-2.1-or-later 通知 + Zhang Rui / Bilibili / Fabrice Bellard / ijkpp Authors 四方版权 + **"为什么这个文件是 LGPL 而不是 BSD-3"** + 指回 `legacy/README.md`；原有 `ALGORITHM PROVENANCE` 段完整保留 |
+| 新增 `legacy/LICENSE.LGPL-2.1` | LGPL-2.1 全文 501 行（取自 gnu.org，§0–§16 齐全） |
+| 新增 `legacy/README.md` | 目录内清单 + **准入/禁入规则**（按"算法出处"而非"新旧/难度"判定）+ 动态链接与静态链接两种情形下集成方的义务 + 若必须纯 BSD 的应急路径（R8：重新独立推导，+2 周） |
+| 更新 `media/CMakeLists.txt` | 三个 .cc 改为 `filters/legacy/` 路径，并注明隔离原因 |
+| 更新 7 处 include | `legacy/*.cc`、`legacy/av_sync_controller.h`、2 个单测、`tools/inspect/inspect_sync.cc` |
+| 更新 3 个头文件卫士 | `IJKPP_MEDIA_FILTERS_*_H_` → `IJKPP_MEDIA_FILTERS_LEGACY_*_H_`（路径与卫士一致是既有约定） |
+| 更新 `tools/check_invariants.py` | `LINE_LIMIT_ALLOWLIST` 的 compositor 键改为 legacy 路径，理由里补注隔离说明 |
+
+**验证**：`python3 tools/check_invariants.py --root .` → **all rules pass (166 files scanned)**。
+文件数与第八轮一致（6 个文件是移动不是新增；新增的是 3 个非源码文件）。
+
+**已知遗留**：`docs/01`–`docs/08` 与 `STYLE.md` 里共 22 处仍写
+`media/filters/video_frame_compositor.cc` 等旧路径。这些是 **v2.0 已评审的设计文档**，
+本轮刻意**不做批量改写**——设计文档是历史决策记录，事后改路径会让"当时决定了什么"
+失真。**以 PROGRESS 为准**；下次设计文档整体改版（v2.1）时一并同步，并在
+`docs/02` 的目录树里补 `legacy/`。
+
+### (2) `tools/extract_constants.py` — ✅ 完成（R1 应对④）
+
+R1（音视频同步移植出错，P4×I5=**20**，风险登记册里唯一"可能让项目失败"的风险）
+的应对④原文是：**"阈值用 `extract_constants.py` 提取，禁止手抄"**。而实际情况是：
+`av_sync_controller.h` / `video_frame_compositor.h` / `media_constants.h` 里的阈值
+**全部是手抄的**，且 `media_constants.h` 的头注释自己就写着 "must be regenerated
+by tools/extract_constants.py, never retyped by hand" —— 工具此前并不存在。
+
+本轮补齐，19 个常量的**三方交叉校验**：
+
+```
+ffplay 源码 (#define)  ⟷  ijkpp 代码 (constexpr / 默认成员初始化器 / 尾注释)  ⟷  docs/05 表 7
+```
+
+- `--ijkplayer <path>`：从 `ff_ffplay_def.h` / `ff_ffplay_options.h` / `ff_ffplay.c` /
+  `ff_ffplay.h` 递归解析 `#define`（支持 `15*1024*1024` 这类乘积与宏引用宏），
+  再解析 ijkpp 侧三种写法，逐项比对，不一致即 **exit 1**
+- `--selftest`：不需要 ijkplayer 源码树即可跑——用内嵌的合成 `#define` 片段验证
+  解析器本身（递归展开、乘积、`_MS`/`_US` 单位换算、十六进制），并跑
+  "ijkpp ⟷ docs/05 表 7" 两方校验。**这是 CI 可以无条件启用的那一半**
+- `--json`：机器可读输出，供后续 `tools/golden_diff.py` 与 CI 消费
+- `--emit`：生成 `media_constants.h` 的常量块（M13 收口时用生成物替换手写值）
+
+覆盖：`MAX_QUEUE_SIZE` · `MIN/DEFAULT/MAX_MIN_FRAMES` ·
+`VIDEO_PICTURE_QUEUE_SIZE_DEFAULT/MIN/MAX` · `AUDIO/SUBPICTURE_QUEUE_SIZE` ·
+`DEFAULT_{FIRST,NEXT,LAST}_HIGH_WATER_MARK_IN_MS` ·
+`BUFFERING_CHECK_PER_MILLISECONDS` · `BUFFERING_UPDATE_PER_MILLISECONDS`(Δ4) ·
+`MAX_ACCURATE_SEEK_TIMEOUT` · `AV_SYNC_THRESHOLD_MIN/MAX` · `AV_NOSYNC_THRESHOLD` ·
+`AV_SYNC_FRAMEDUP_THRESHOLD` · `AV_DIFF_AVG_NB/COEF` · `AV_DIFF_THRESHOLD` ·
+`SAMPLE_CORRECTION_PERCENT_MAX` · `MAX_SLEEP`。
+
+> ⚠️ **待真机验证**：本轮在**没有 ijkplayer 源码树**的环境里完成，因此
+> `--ijkplayer` 路径尚未对真实 `ff_ffplay_def.h` 跑过；`--selftest` 已跑通。
+> 下一步第一件事就是在有源码的机器上跑一次 `--ijkplayer`，
+> docs/05 表 7 的注记本身就警告过"个别项（`DEFAULT_MIN_FRAMES`、`BUFFERING_*`）
+> 在不同 fork 中有差异"——那正是要抓的东西。
+
+#### 落地形态与验证（含负向测试）
+
+拆成两个文件，与 `check_invariants.py`（374 行）保持同一量级：
+
+| 文件 | 行数 | 职责 |
+|---|---|---|
+| `tools/ported_constants.py` | 222 | **数据**：`Spec` 类 · 26 条 `SPEC` 表 · 单位常量与 `convert()`/`canonicalise()` · 自测用的合成 `#define` 与期望值 |
+| `tools/extract_constants.py` | 547 | **逻辑**：C `#define` 解析器 · ijkpp 三种写法的扫描器 · docs/05 表 7 解析 · 三方比对 · 报告 / `--json` / `--emit` · `--selftest` |
+
+拆分的理由写在 `ported_constants.py` 的头注释里：这张表是**每个里程碑都会长**的
+部分（M9 加缓冲常量、M12 加显示常量），而"审计 A/V 同步阈值是否仍是 ffplay 的原值"
+这件事应该能一个文件从上读完，不必趟过解析器。
+
+**开发过程中修掉的 4 个自己的 bug**（都不是设计问题，是实现问题，但都会导致
+"工具静默给出错误的通过"，比工具不存在更糟）：
+
+| # | bug | 后果（若未发现） |
+|---|---|---|
+| a | 单位换算比写反（`/ UNITS_PER_SECOND[to] * [from]`） | `base::Seconds(5)` 被算成 0.005 ms，所有时间常量全部 MISMATCH |
+| b | 用"是不是非整数浮点"猜源单位 | **`AV_NOSYNC_THRESHOLD 10.0` 是整数值的秒**，被当成 10 ms → 静默通过一个 1000× 的错误。这是本轮最重要的一次自我纠错：猜单位的启发式在 ffplay 上根本不成立，改为 `Spec.source_unit` 显式声明 |
+| c | 取字段初始化器时只匹配到第一个数字 | `size_t max_bytes{15 * 1024 * 1024}` 被读成 **15 字节**，而 `media_constants.h` 那一份是 15728640 → 两份不一致却被判为一致 |
+| d | 结构体作用域名把导出宏当成名字 | 全部记成 `IJKPP_PLAYER_EXPORT::first_high_water_mark`，`BufferConfig::*` 一个都查不到，6 项假性 NOT_IN_IJKPP |
+
+**验证**（正向 + 三种失败模式）：
+
+```
+$ tools/extract_constants.py --selftest
+  → exit 0 · 24 项一致 · 1 项 Δ4 声明偏离 · 1 项待 M9（BUFFERING_CHECK_*）
+$ tools/extract_constants.py --ijkplayer <合成的 ffplay 源码树>
+  → exit 0 · 三方全部一致（ffplay ⟷ ijkpp ⟷ docs/05 表 7）
+# 负向 1：把 AV_SYNC_THRESHOLD_MIN 从 0.04 改成 0.4（最典型的手抄错）
+  → AV_SYNC_THRESHOLD_MIN  ms  ffplay=400  ijkpp=40  docs/05=40  MISMATCH · exit 1
+# 负向 2：删掉 MAX_SLEEP 宏
+  → MAX_SLEEP  us  ffplay=-  ijkpp=1e+06  NOT_IN_FFP · exit 1
+# 负向 3：把 DEFAULT_MIN_FRAMES 改成 2（模拟 fork 差异）
+  → DEFAULT_MIN_FRAMES  n  ffplay=2  ijkpp=5  docs/05=5  MISMATCH · exit 1
+$ --json  → 26 行结构化输出（供 golden_diff.py / CI 注解消费）
+$ --emit  → 28 行带出处的注释块（M13 用它替换 media_constants.h 的手写值）
+```
+
+**已知局限（写在这里，免得被当成保证）**：
+- `--selftest` 里的合成 `#define` 是**上游 ffplay / ijkplayer 的常见值**，不是从
+  某个具体 commit 提取的。真正权威的校验必须跑 `--ijkplayer`，而**本轮环境里没有
+  ijkplayer 源码树，该路径只用合成树验证过**。
+- docs/05 表 7 的解析是**故意宽松**的：一行里写 `VIDEO_PICTURE_QUEUE_SIZE_DEFAULT/MIN/MAX`
+  时只有 `..._DEFAULT` 在反引号里，`MIN`/`MAX` 提取不到，会记为
+  "macro absent from docs/05 table 7" 的 note 而不是失败。多宏共用一行（`3 / 2 / 16`）
+  时判为"歧义行"，只记 note。宁可漏报也不误报，与 `check_invariants.py` 的
+  保守取向一致。
+- 只认 3 种 ijkpp 写法（`inline constexpr` / 默认成员初始化器 / 尾注释标注宏名）。
+  若有人把阈值改成局部 `const double` 或函数参数默认值，工具会报 NOT_IN_IJKPP
+  而不是静默通过——这是想要的行为。
+
+#### 顺带修的两处仓库卫生
+
+- `.gitignore` 缺 `__pycache__/` 与 `*.pyc`（项目有两个 Python 工具，却没有忽略
+  它们的字节码）→ 已补。
+- CI 的 quick 与 full 两个 job 都加了
+  `python3 tools/extract_constants.py --root . --selftest`——它不需要 ijkplayer
+  源码树，因此可以无条件进门禁。
+
+### (3) `media/base/` 七个管线接口头 — ✅ 冻结为 DRAFT（M7/M8 解锁）
+
+M7（Renderer 三件套）与 M8（Pipeline + Player 接线）此前**无法并行启动**，因为
+`Renderer` / `Pipeline` 这些接口头一个都不存在，而 docs/03 §6 已经把签名写到了方法级。
+本轮按第五轮 `ffmpeg_demuxer` 用过并被证明有效的 DRAFT 流程把它们落地：
+
+| 新增（`media/base/`） | 内容 |
+|---|---|
+| `pipeline_status.h` | `PipelineStatus` 枚举 + `PipelineStatusCallback` |
+| `media_resource.h` | `MediaResource`（Demuxer 与 byte-range 源的统一入口，D8 的 CDM 留空位在此挂钩） |
+| `renderer_client.h` | `RendererClient`（`OnError`/`OnEnded`/`OnBufferingStateChange`/`OnWaiting`/`OnDurationChange`/`OnStatisticsUpdate`/`OnVideoConfigChange`）+ `BufferingState` + `PipelineStatistics` |
+| `renderer.h` | `Renderer` + `RendererType`（对齐 Chromium，去掉浏览器专属部分） |
+| `renderer_factory.h` | `RendererFactory`（M8 由 `player/` 注入，`platform/` 后端据此选 sink） |
+| `pipeline.h` | `Pipeline` + `Pipeline::Client` |
+| `pipeline_controller.h` | `PipelineController` 状态机包装（`kCreated`→`kStarting`→`kReady`→`kStopping`→`kStopped`→`kDestroying`） |
+
+**刻意按项目自己的 DRAFT 规矩办**（第五轮的流程记录）：每个文件头显著标注
+`STATUS: DRAFT — NOT YET IN THE BUILD` 并逐条列出缺口；**不加入任何 CMake target**
+（不能编译的东西绝不可从构建可达）；`check_invariants.py` 对 DRAFT 豁免风格/长度
+规则但**仍强制 C20（命名空间闭合）与 C22（分层方向）**，并在每次运行末尾打印
+DRAFT 清单防止被遗忘。本轮 `check_invariants.py` 输出已包含这 7 个文件。
+
+**与 docs/03 §6 的两处刻意偏离**（都写进了文件头注释）：
+1. `base::SingleThreadTaskRunner` → 用 `base/task/sequenced_task_runner.h` 里既有的
+   别名（`using SingleThreadTaskRunner = SequencedTaskRunner;`），不新增类型；
+2. `RendererClient::OnAudioOutputDeviceChanged(...)` 在 docs/03 里是省略号，
+   本轮按 Chromium 补成 `(const std::string& device_id, bool is_default, OutputDeviceStatus)`，
+   并新增 `OutputDeviceStatus` 枚举——`media/audio/`（M7）落地时若要改，走接口评审。
+
+### (4) R2 降级债的显式登记 — ✅ 本轮补记
+
+`docs/08` §5.1 给 R2（自研 `base/` 工期超支，P4×I4=**16**，高危）准备了 L0–L3
+四级降级预案。核对代码后确认：**项目已经落到 L1 + L2，但此前 PROGRESS 未把它记为
+降级**，只在 `bind.h` 的头注释里提过一句。补记如下，免得后来者以为 `base/` 已按 L0 完成：
+
+| 级别 | 证据 | 尚未偿还的部分 |
+|---|---|---|
+| **L1** `BindOnce` 子集 | `base/functional/bind.h` 头注释原文："Supported subset (**the L1 tier of docs/08 §5.1 R2's fallback plan**)" | 不支持 `Owned()`（注释理由：无处 own/delete，硬发会静默泄漏）、`Passed()`、`IgnoreResult()` binder、泛型（auto 形参）lambda |
+| **L2** 无 message pump | `base/threading/thread.h` 原文："A dedicated thread running a **TaskQueue**"；规划中的 `base/threading/message_pump_epoll.cc`（~550 行）**不存在**；`Player::RunUntilIdle()` 是空函数体 | 无 fd / 定时器事件驱动能力（D3 二期"本地文件改 `base::File` 异步 IO"没有基础）· 无嵌套 `RunLoop` · 延迟任务精度降低 · `TaskEnvironment` 是"同步执行 + 手动推进虚拟时钟"形态 |
+| 连带缺失 | `base/files/`（含 `ScopedLibrary`）· `base/containers/circular_deque.h` · `base/feature_list.h` · `base/trace_event/` · `base/strings/` · `base/synchronization/lock_order_checker` | `ScopedLibrary` 缺失 → **dlopen 弱依赖（G-L3 / docs/09 §6，11 个平台库）没有实现基础**，M12 会被它卡住；`LockOrderChecker` 缺失 → **R5（stop/析构死锁，R=15）的应对⑤"debug 构建全程开启"落空**，而"stop 卡死"正是 docs/01 十二条病灶的第 11 条 |
+
+docs/08 §5.1 明确说 L1/L2 **保持接口形态不变**（所以 `media/`、`player/` 调用方零改动，
+这是"参照 Chromium API 而非 Chromium 实现"的直接收益），并且"**M13 后补齐**"。
+但 **M13 的 checklist 里并没有列这笔债** —— 本轮把它登记在此，并要求在 M13 规格中补两项：
+① `message_pump_epoll` + `base/files/ScopedLibrary`（M12 的前置，不能等到 M13 之后）；
+② `LockOrderChecker`（R5 应对⑤，应在 M8 接线之前就有，否则死锁只能在压力测试里偶发）。
+
+> 顺带核对到的另一处不对齐：`player/option_registry.cc` 只覆盖 **8 个 key**
+> （`buffer.enabled` / `buffer.max_bytes` / `buffer.min_frames` / `buffer.unlimited` /
+> `render.disable_video_output` / `seek.accurate` / `video.max_fps` / `video.max_frame_drop`），
+> 而 `PlayerConfig` 已有 ~80 个字段、docs/05 表 4 要求 60+ 个 key。
+> `option_registry.h:42` 与 `option_registry.cc:197` 的注释都声称这张表由
+> `tools/gen_options.py` 生成"so the two can never drift"——**该工具不存在，表是手写的，
+> 且已经漂移**。直接影响验收标准 **A10（所有原版 option 都有等价入口）= 8/60+**，
+> 以及 Δ2（未知选项返回 `kInvalidArgument`）会让存量 ijkplayer 配置大面积报错。
+> 归入 M8 的 DoD 前置，不在本轮范围内。
+
+---
+
+#### 七个文件的内容与刻意偏离
+
+| 文件 | 行数 | 关键内容 |
+|---|---|---|
+| `pipeline_status.h` | 60 | `PipelineStatus` 枚举（13 个状态，按产生阶段分组）· `PipelineStatusCallback` · **`PipelineStatusToMediaError()` 要求映射是全射**——任何 status 都不得落到泛化的 "playback failed"，这正是 docs/10 §4 要防的失败模式 |
+| `media_resource.h` | 63 | `MediaResource::GetStream(type)`。注释写清了**为什么不直接用 `Demuxer*`**：① `tests/support/synthetic_demuxer` 要能替身；② `SelectTrack()` 改流不应重开源。返回 nullptr 不是错误——无音轨时必须退回 external 时钟，与 ffplay 一致 |
+| `renderer_client.h` | 155 | `RendererClient` 9 个回调 · **`BufferingState`（4 值枚举）** · `OutputDeviceStatus` · **`PipelineStatistics`（21 个计数器，含 `avg_av_diff_ms` / `max_av_diff_ms`——R1 的触发信号"av_diff 稳态 > 40ms"从此可观测）**。注释标明它是 `FFP_PROP_INT64_*` × 20 的替代：一次返回结构体，消费者不会看到半更新的画面 |
+| `renderer.h` | 132 | `Renderer` 11 个方法 · **`RendererType`**。注释含"替代了什么"（`ff_ffplay.c` 整体 + ~200 字段的 `VideoState`）、线程归属（仅 `GetMediaTime()` 线程安全，走 seqlock）、**顺序契约**（Initialize 先于一切；违反在 debug 是 DCHECK、release 是 `kInvalidState`，**绝不是 UB**） |
+| `renderer_factory.h` | 87 | `RendererFactory` 6 个方法。注释写明**这就是平台接缝**：`platform/` 可依赖 `media/`，反向不行（C22），所以 media 层不能提 `Sdl2VideoSink` 的名字，只能向工厂要"给这个 display 的 video sink"。`CreateRenderer` 返回 nullptr 表示本工厂不服务该 type，从而支持链式回退（与 `DecoderSelector` 同形，Δ12） |
+| `pipeline.h` | 148 | `Pipeline` 24 个方法 + 嵌套 `Client`（7 回调）+ `Statistics`。注释含：`Stop()` 非阻塞（Δ1）与 `shutdown_timeout` 兜底 detach（Δ15）· **四个 const getter 为何必须线程安全**（否则 SDK 门面的 UI 线程会被 media sequence 挂住，正是本类要消灭的失败模式）· `Seek()` 故意只有关键帧语义，精确 seek 归 `player/seek_controller`（M9），**media 层不应知道"丢帧直到目标"这种概念** |
+| `pipeline_controller.h` | 90 | `PipelineController` + 6 态枚举 + 转移图。注释含 kDestroying **为什么必须存在**（析构期到达的回调要能被识别并丢弃，而不是投给半销毁的 owner——第二轮 sanitizer 抓到的 lost wakeup 就是这一类）· `Stop()` 重复调用是 no-op 而非 error（`~Player()` 与 `Player::Stop()` 都会调） |
+
+**与 docs/03 §6 的三处刻意偏离**（都写进了文件头，M8 若要改走接口评审）：
+
+1. **`PipelineController` 声明为抽象类**，而 docs/03 与 Chromium 都是持有 `unique_ptr<Pipeline>` 的具体类。理由：具体状态机应与它驱动的 Pipeline 住在同一个 TU（`pipeline_impl.cc`），这样转移表与销毁顺序（docs/03 §10.1）不会跨文件——R5（stop/析构死锁）的防线之一。
+2. **`base::SingleThreadTaskRunner` 用既有别名**（`base/task/sequenced_task_runner.h` 里已有 `using SingleThreadTaskRunner = SequencedTaskRunner;`），不新增类型。
+3. **`RendererClient::OnAudioOutputDeviceChanged`** 在 docs/03 里是省略号，本轮补成 `(device_id, is_default, OutputDeviceStatus)` 并新增 `OutputDeviceStatus` 枚举；同时**在文件头写明**：若 M7 不做设备切换就应**删掉这个方法而不是留一个没人触发的回调**——"接口里有死钩子"正是 SDK 用户开始不信任其余接口的起点。
+
+**自检结果**（无编译器环境，故用可机械验证的部分兜底）：
+
+```
+7 个文件：include guard ✅ · STATUS: DRAFT 标记 ✅ · namespace 开闭配平 ✅
+         全部 #include 的目标文件存在 ✅ · 无 >80 列的行（按字符计）✅
+         C20（命名空间）+ C22（media/ 不得 include player/）✅
+tools/check_invariants.py --root .  →  all rules pass (173 files scanned)
+                                    →  note: 7 DRAFT file(s) … （逐一列出，防遗忘）
+```
+
+**未做/不能做的验证**：`-fno-exceptions -fno-rtti -Werror` 下的真实编译、以及
+`video_decoder_factory.h` / `audio_decoder_factory.h` 被 `renderer_factory.h`
+包含后是否有循环包含。这两项必须在有编译器的机器上跑一次
+`cmake --preset debug && cmake --build build/debug`（把它们临时加进
+`ijkpp_media` 的 HEADERS 或直接 `g++ -fsyntax-only -std=c++20 -I.`）。
+**转正前必须做**，否则就是第五轮 `ffmpeg_demuxer` DRAFT 期犯过的同类错误的反面。
+
+### 本轮未做 / 下一步
+
+- **`--ijkplayer` 真机跑一次**（需要 ijkplayer 源码树），把 docs/05 表 7 的
+  "个别 fork 有差异"变成确定结论；有差异就登记 Δ 而不是悄悄改阈值
+- CI 打开 `ffmpeg-matrix`（注释写 "enabled at M4"，**M4 早已完成**）；
+  给 `linux-ffmpeg711` 加 job，否则 322/322 与 43/43 永远只是本机结果；
+  coverage job 的 `lcov --summary || true` 改成真门禁
+- 把 `extract_constants.py --selftest` 加进 CI 的 quick gate
+- README 的测试数（238/293/266）与本轮 PROGRESS（287/322）仍不一致，待同步
+- M7 的第一个真实现：`AudioRendererAlgorithm`（WSOLA）——它单点阻塞音频半边
+- R2 的降级债（`bind.h` 的 L1、`thread.h` 的 L2、缺失的 `message_pump_epoll` /
+  `base/files/ScopedLibrary` / `LockOrderChecker`）此前未在 PROGRESS 显式登记，
+  **本轮登记**：docs/08 说"M13 后补齐"，但 M13 的 checklist 里没有这一项，
+  需要在 M13 规格中补上，否则 `LockOrderChecker` 缺失会让 R5（stop/析构死锁，R=15）
+  失去应对⑤
+
+---
 
 ### 可执行的验证命令
 
@@ -14,6 +258,8 @@ cmake --preset debug       && cmake --build build/debug       && (cd build/debug
 cmake --preset asan        && cmake --build --preset asan  -j2 && (cd build/asan  && ctest)
 cmake --preset tsan        && cmake --build --preset tsan  -j2 && (cd build/tsan  && ctest)
 python3 tools/check_invariants.py --root .
+python3 tools/extract_constants.py --root . --selftest   # 第九轮新增，无需 ijkplayer 源码
+python3 tools/extract_constants.py --root . --ijkplayer /path/to/ijkplayer  # 三方校验
 ```
 
 **实测结果（Debian 12 / GCC 12.2 / CMake 3.25 / Ninja）**：
@@ -403,28 +649,45 @@ tools/inspect/
 
 ## 未完成（按里程碑）
 
+> **第九轮修订**：本表此前混着几轮的历史行，同一条 M4/M5 既出现在 ✅ 行也出现在
+> ⬜ 行（"**M4 ← 下一个关键路径** ⬜"与上面"M4 完成"直接矛盾），读者无法判断真实
+> 进度。本轮按当前代码状态重写一遍；各轮的过程记录仍保留在上文对应小节里。
+
 | M | 内容 | 状态 |
 |---|---|---|
-| ✅ M1 | `base/` 核心件 | **完成** |
-| ✅ **M2** | **`base/task/*` + `base/threading/*` + `TaskEnvironment`** | **完成** |
-| M1+ | `base/` 补充件（`feature_list`、`circular_deque`、`trace_event`、`strings`、`files`） | ⬜ 非关键路径 |
-| ✅ **M4 地基** | `platform/ffmpeg/`（`av_includes` / `compat` / `av_packet_storage` / `log_bridge` / `interrupt_callback`）+ `cmake/FindFFmpeg.cmake` + `tools/setup_ffmpeg.sh` + `media/base` 解复用接口（`Demuxer` / `DemuxerStream` / `DataSource` / `decoder_config` / `data_source_descriptor`）+ 5 个测试媒体文件 | **完成** |
-| ✅ **M4** | `FFmpegDemuxer`（专用 demux 线程 + `interrupt_callback` + `MediaInfo` 构建 + seek/serial + 背压 + `DemuxerStream::Read` 异步契约）+ `ffmpeg_glue` | **完成，12 个端到端测试对真实媒体全绿** |
-| M4 余项 | `ijkpp-inspect probe` CLI · `DataSource` 后端的 `AVIOContext` 桥（内存/fd/自定义源） | ⬜ |
-| ✅ **M3 核心** | `DecoderBuffer` + `DecoderBufferQueue` + `VideoFrameQueue`(SlotGuard) + `MediaLog` + `media_constants` | **完成，51 个新单测** |
-| M3 余项 | `AudioBuffer`、`video/audio_decoder_config`、`AudioRendererAlgorithm`(WSOLA) | ⬜ 与 M7 一起做（只有 AudioRendererImpl 用得到） |
-| **M4 ← 下一个关键路径** | `platform/ffmpeg/` + `FFmpegDemuxer`（含专用 demux 线程与 `interrupt_callback`） | ⬜ |
-| M3 余项 | `media/base/` 剩余值类型（`DecoderBuffer`、`AudioBuffer`、configs、`MediaLog`、`DecoderBufferQueue`、`AudioRendererAlgorithm`） | ⬜ |
-| M4 | `platform/ffmpeg/` + `FFmpegDemuxer`（含专用 demux 线程与 `interrupt_callback`） | ⬜ |
-| M5 | `DecoderStream<T,D>` + `FFmpegVideoDecoder`/`FFmpegAudioDecoder` + `DecoderSelector` | ⬜ |
-| M6 | `AvSyncController`（seqlock）· `VideoFrameQueue`（`SlotGuard`）· `DisplayGeometry` | ⬜（compositor 已完成） |
-| M7 | `VideoRendererImpl` · `AudioRendererImpl` · `RendererImpl` | ⬜ |
-| M8 | `Pipeline` · `StateMachine` · `EventHub` · `SeekController` · `BufferController` · `Player` 接线 | ⬜（头文件已冻结） |
-| M9 | 缓冲三级 HWM + 精确 seek 完整版 + `RetryDataSource` | ⬜ |
-| M10 | Null 后端 + Golden 录制基建 | ⬜ |
-| **M11** | **`platform/sdl2` → Linux 出画** | ⬜ |
-| **M12** | **`platform/linux` 原生 GL + X11/Wayland + ALSA/Pulse** | ⬜ |
-| M13 | 质量收口 | ⬜ |
+| ✅ M0 | 工程基建（CMake / Presets / flags / FindFFmpeg / CI） | 完成 |
+| ✅ M1 | `base/` 核心件 | 完成，**但已落到 R2 的 L1+L2 降级**（见上文"(4) R2 降级债"） |
+| ✅ M2 | `base/task/*` + `base/threading/*` + `TaskEnvironment` | 完成（L2：`TaskQueue` 驱动，无 `message_pump_epoll`） |
+| ⬜ M1+ | `base/` 补充件：`feature_list` · `circular_deque` · `trace_event` · `strings` · `files`（含 `ScopedLibrary`，**M12 dlopen 弱依赖的前置**）· `LockOrderChecker`（**R5 应对⑤的前置**） | 非关键路径，但后两项已被 M12/M8 依赖 |
+| ✅ M3 | `media/base/` 值类型与两个队列 + `AudioBuffer` + `decoder_config` | 完成 |
+| ⬜ M3 余项 | `AudioRendererAlgorithm`（WSOLA） | **单点阻塞 M7 的音频半边** |
+| ✅ M4 | `platform/ffmpeg/` + `FFmpegDemuxer` + `ffmpeg_glue` + 5 个测试媒体 | 完成，12 个端到端测试对真实媒体全绿 |
+| ⬜ M4 余项 | `DataSource` 后端的 `AVIOContext` 桥（内存 / fd / 自定义源） | ⬜（`ijkpp-inspect probe` 已在第八轮完成） |
+| ✅ M5 | `DecoderStream<Traits>` + `FFmpegVideoDecoder` / `FFmpegAudioDecoder` + `DecoderSelector` | 完成 |
+| ✅ M6 | `AvSyncController`（seqlock）· `VideoFrameCompositor` · `Clock` | 完成（第九轮移入 `media/filters/legacy/`） |
+| ⬜ M6 余项 | `DisplayGeometry`（letterbox / SAR / DPI，docs/09 §4.4） | ⬜ M12 需要 |
+| ⬜ **M7** | `VideoRendererImpl` · `AudioRendererImpl` · `RendererImpl` · `TextRenderer` · `media/audio/*` · WSOLA | ⬜ **下一个关键路径**；接口头第九轮已 DRAFT 冻结 |
+| ⬜ M8 | `pipeline_impl` · `player_impl` · `state_machine` · `event_hub` · `seek_controller` · `buffer_controller` · `diagnostics` | ⬜ SDK 的 12 个头已冻结；**`media/base/` 的 7 个管线接口头第九轮已 DRAFT 冻结**；`player.cc` 的 10 个方法仍返回 `kNotImplemented` |
+| ⬜ M8 余项 | `tools/gen_options.py` + `option_registry.inc` | ⬜ **`OptionRegistry` 现仅 8 个 key / 规划 60+**，直接卡住验收标准 A10 与 docs/10 Level 3 迁移路径 |
+| ⬜ M9 | 三级 HWM `BufferController` · 精确 seek · `RetryDataSource` · `LiveDataSource` · `UrlRewriteInterceptor` | ⬜ |
+| ⬜ M10 | `platform/null` · `tools/ijkplayer-recorder` · 15 份 golden JSONL · `golden_record/diff.py` · `tolerance.yaml` · `synthetic_demuxer` | ⬜ **被开放问题 Q8（golden 基线锁哪个 ijkplayer 版本）卡住** |
+| ⬜ **M11** | `platform/sdl2`（5 文件）· `FindLinuxMediaDeps.cmake` · `examples/play_sdl2` · `tools/verify_e2e.py` · CI `e2e-linux` | ⬜ **Linux 首次出画**；`platform/CMakeLists.txt` 里该开关目前仍是 `FATAL_ERROR` |
+| ⬜ **M12** | `platform/linux/`：`gl/` 8 文件 · `window/` 4 文件（含 Wayland 协议代码生成）· `audio/` ALSA+Pulse · `zero_copy/` dmabuf · dlopen loader（11 个库）· `play_native` + `play_embed` | ⬜ 单项最大（~3800 行 / 3 周） |
+| ⬜ M13 | Fuzz ×5（24h）· Stress ×11（含 10 小时 long_play）· Bench ×16 + 趋势守护 · 覆盖率门禁 · 9 份 SDK 文档 · cpack/vcpkg/conan · V1–V10 · 28 项质量门禁 → **发布 0.1.0** | ⬜ 另需补上 R2 降级债（docs/08 说"M13 后补齐"，但 M13 checklist 里没有这一项） |
+| ⏳ M14–M18 | VAAPI + 完整 HDR · C ABI · Android · iOS · `ijkio` 缓存 | 后置增量（共 11 周） |
+| 🚫 不做 | DRM/CDM · libass 排版 · `ijkavformat` patch 族 · `SDL_VoutOverlay` · SoundTouch · Abseil/spdlog/fmt · Mojo/blink/cc/viz · Java/OC UI · Windows/macOS 出画 | docs/08 §4，净减 ~9000 行 |
+
+**工具与门禁现状**（第九轮实测）：
+
+| 项 | 状态 |
+|---|---|
+| `tools/check_invariants.py` | ✅ 14 条规则，173 文件全通过；本轮更新 `LINE_LIMIT_ALLOWLIST` 的 legacy 路径 |
+| `tools/extract_constants.py` | ✅ **本轮新增**，26 个条目；`--selftest` 两方校验 24 项一致 + 1 项 Δ4 声明偏离 + 1 项待 M9；`--ijkplayer` 三方校验已用合成 ffplay 源码树验证（含 0.04→0.4 手抄错、宏缺失、fork 差异三种失败模式） |
+| `tools/inspect/`（`ijkpp-inspect`） | ✅ probe / decode / sync；⬜ doctor / play / dump / golden |
+| `tools/gen_options.py` · `golden_record.py` · `golden_diff.py` · `verify_e2e.py` · `build_linux.sh` · `ijkplayer-recorder/` | ⬜ 全部未建 |
+| CI | ✅ quick + full 矩阵（本轮已把 `extract_constants --selftest` 加进两个 job）；⬜ `ffmpeg-matrix` 与 `e2e-linux` 仍是 `if: false`（前者注释写 "enabled at M4"，**M4 早已完成**）；⬜ coverage job 是 `lcov --summary \|\| true`，不会 fail；⬜ `check-format` / `check-cpplint` / `check-no-vendor-leak` |
+| 许可证 | ✅ **本轮落地**：根 `LICENSE`（BSD-3 + 4 节第三方说明）· `media/filters/legacy/`（LGPL-2.1 全文 + README 准入规则 + 6 个文件头重写）；⬜ **法务确认（Q1/R8）仍未做** |
+| 仓库卫生 | ⬜ `.clang-tidy` · `.editorconfig` 仍缺（STYLE.md 与 README §8 都列了） |
 
 ---
 
