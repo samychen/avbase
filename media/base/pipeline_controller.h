@@ -28,6 +28,15 @@
 //      omitted from this draft on purpose rather than written speculatively:
 //      adding 20 one-line forwarders before pipeline_impl.cc exists would
 //      freeze names that the implementation has not yet earned.
+//
+// .cc owed by this header -- media/base/pipeline_controller.cc:
+//   PipelineControllerStateToString(PipelineController::State)
+//   PipelineController::PipelineController()   -- out-of-line `= default`
+//   PipelineController::~PipelineController()
+// The destructor must be the thing that drives the state to kDestroying and
+// joins every sequence, in the fixed order at docs/03 §10.1. That ordering is
+// mitigation 1 for risk R5 (stop/destructor deadlock), so it belongs in the
+// .cc next to the transition table rather than in a header.
 
 #ifndef IJKPP_MEDIA_BASE_PIPELINE_CONTROLLER_H_
 #define IJKPP_MEDIA_BASE_PIPELINE_CONTROLLER_H_

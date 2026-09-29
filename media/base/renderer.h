@@ -28,6 +28,18 @@
 //      the MediaResource's. That matches Demuxer::GetStream() (frozen at M4)
 //      but needs a DCHECK-and-document pass once SelectTrack() (M8) can null
 //      it mid-playback.
+//
+// .cc owed by this header -- media/base/renderer.cc:
+//   RendererTypeToString(RendererType)
+//   Renderer::Renderer()      -- out-of-line `= default`, matching the
+//   Renderer::~Renderer()        convention in media/base/demuxer.cc and
+//                                video_decoder.cc, which keeps the vtable and
+//                                the key function out of every includer
+//   Renderer::SetCdm(CdmContext*, OnceCallback<void(bool)>)
+//       -- the only non-pure virtual. Its default implementation must run
+//       cdm_attached_cb with false rather than drop it: D8 leaves DRM
+//       unimplemented, and a caller waiting on that callback would otherwise
+//       hang, which is the exact failure class Δ15 exists to prevent.
 
 #ifndef IJKPP_MEDIA_BASE_RENDERER_H_
 #define IJKPP_MEDIA_BASE_RENDERER_H_

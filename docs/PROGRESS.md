@@ -167,6 +167,152 @@ DRAFT 清单防止被遗忘。本轮 `check_invariants.py` 输出已包含这 7 
    本轮按 Chromium 补成 `(const std::string& device_id, bool is_default, OutputDeviceStatus)`，
    并新增 `OutputDeviceStatus` 枚举——`media/audio/`（M7）落地时若要改，走接口评审。
 
+#### 七个文件的内容与刻意偏离
+
+| 文件 | 关键内容 |
+|---|---|
+| `pipeline_status.h` | `PipelineStatus` 枚举（13 个状态，按产生阶段分组）· `PipelineStatusCallback` · **`PipelineStatusToMediaError()` 要求映射是全射**——任何 status 都不得落到泛化的 "playback failed"，这正是 docs/10 §4 要防的失败模式 |
+| `media_resource.h` | `MediaResource::GetStream(type)`。注释写清了**为什么不直接用 `Demuxer*`**：① `tests/support/synthetic_demuxer` 要能替身；② `SelectTrack()` 改流不应重开源。返回 nullptr 不是错误——无音轨时必须退回 external 时钟，与 ffplay 一致 |
+| `renderer_client.h` | `RendererClient` 9 个回调 · **`BufferingState`（4 值枚举）** · `OutputDeviceStatus` · **`PipelineStatistics`（21 个计数器，含 `avg_av_diff_ms` / `max_av_diff_ms`——R1 的触发信号"av_diff 稳态 > 40ms"从此可观测）**。注释标明它是 `FFP_PROP_INT64_*` × 20 的替代：一次返回结构体，消费者不会看到半更新的画面 |
+| `renderer.h` | `Renderer` 11 个方法 · **`RendererType`**。注释含"替代了什么"（`ff_ffplay.c` 整体 + ~200 字段的 `VideoState`）、线程归属（仅 `GetMediaTime()` 线程安全，走 seqlock）、**顺序契约**（Initialize 先于一切；违反在 debug 是 DCHECK、release 是 `kInvalidState`，**绝不是 UB**） |
+| `renderer_factory.h` | `RendererFactory` 6 个方法。注释写明**这就是平台接缝**：`platform/` 可依赖 `media/`，反向不行（C22），所以 media 层不能提 `Sdl2VideoSink` 的名字，只能向工厂要"给这个 display 的 video sink"。`CreateRenderer` 返回 nullptr 表示本工厂不服务该 type，从而支持链式回退（与 `DecoderSelector` 同形，Δ12） |
+| `pipeline.h` | `Pipeline` 24 个方法 + 嵌套 `Client`（7 回调）+ `Statistics`。注释含：`Stop()` 非阻塞（Δ1）与 `shutdown_timeout` 兜底 detach（Δ15）· **四个 const getter 为何必须线程安全**（否则 SDK 门面的 UI 线程会被 media sequence 挂住，正是本类要消灭的失败模式）· `Seek()` 故意只有关键帧语义，精确 seek 归 `player/seek_controller`（M9），**media 层不应知道"丢帧直到目标"这种概念** |
+| `pipeline_controller.h` | `PipelineController` + 6 态枚举 + 转移图。注释含 kDestroying **为什么必须存在**（析构期到达的回调要能被识别并丢弃，而不是投给半销毁的 owner——第二轮 sanitizer 抓到的 lost wakeup 就是这一类）· `Stop()` 重复调用是 no-op 而非 error（`~Player()` 与 `Player::Stop()` 都会调） |
+
+**与 docs/03 §6 的三处刻意偏离**（都写进了文件头，M8 若要改走接口评审）：
+
+1. **`PipelineController` 声明为抽象类**，而 docs/03 与 Chromium 都是持有
+   `unique_ptr<Pipeline>` 的具体类。理由：具体状态机应与它驱动的 Pipeline 住在同一个
+   TU（`pipeline_impl.cc`），这样转移表与销毁顺序（docs/03 §10.1）不会跨文件——
+   R5（stop/析构死锁）的防线之一。
+2. **`base::SingleThreadTaskRunner` 用既有别名**（`base/task/sequenced_task_runner.h`
+   里已有 `using SingleThreadTaskRunner = SequencedTaskRunner;`），不新增类型。
+3. **`RendererClient::OnAudioOutputDeviceChanged`** 在 docs/03 里是省略号，本轮按
+   Chromium 补成 `(const std::string& device_id, bool is_default, OutputDeviceStatus)`
+   并新增 `OutputDeviceStatus` 枚举；同时在文件头写明：若 M7 不做设备切换就该**删掉它
+   而不是留一个没人触发的回调**——"接口里有死钩子"正是 SDK 用户开始不信任其余接口的起点。
+
+### (3b) 七个 DRAFT 头的无编译器审查 — ✅ 完成
+
+本环境没有编译器（只有 python3/git，apt 装不到 g++/cmake），所以"转正前必须真实编译"
+这一条**无法在此完成**。退而求其次做了两层审查：一层机械（可自动化的部分），
+一层人工（语义与跨文件一致性）。
+
+#### 机械层：一次性检查器（9 类规则，**刻意不入库**）
+
+写了一个 9 类规则的检查器扫描全仓 95 个头 / 359 条 include 边。不入库的理由：
+DRAFT 期结束后真实编译器会取代它除"`.cc` 欠账清单"以外的一切，入库就是给
+`tools/` 添一个会腐烂的成员。
+
+| 规则 | 查什么 | 结果 |
+|---|---|---|
+| A | include 目标存在 | 1 项，**既有问题非本轮引入**（见 F4） |
+| B | include 图循环（全仓） | **0** |
+| C | 头文件卫士与路径一致（含 `legacy/` 改名后的 3 个） | **0** |
+| D | 分层（C22 复核） | **0** |
+| E | `media/` 里的 `std::shared_ptr` / `weak_ptr` | **0** |
+| F | 符号可见性（本地定义 / 传递 include / 前置声明 / 允许集） | **0** |
+| G | 有虚成员却无虚析构（`-Wnon-virtual-dtor` 是构建告警集成员） | **0** |
+| H | refcounted 类的 `REQUIRE_ADOPTION` + friend 规约 | **0** |
+| I | 声明了但无定义 → `.cc` 欠账清单 | 16 项（已写进各文件头） |
+
+**检查器自身返工两次**，教训值得记：F 类的第一版把**方法名当成类型**，7 个头报了
+70 条噪音，把真信号全埋了（`renderer_factory.h` 里 4 个真实可见性问题混在 66 条假报里）。
+第二版按"大驼峰标识符 + 排除函数调用/声明 + 花括号深度区分成员与命名空间作用域"重写，
+并把嵌套类（`Pipeline::Client`、`Pipeline::Statistics`）按两种名字都登记。
+**一个会误报的检查器比没有检查器更糟**——这正是 `check_invariants.py` 八轮里长出
+14 条规则、并且把 C18 改成"先剥字符串再剥注释"的同一个教训。
+
+#### 人工层：4 个跨文件发现
+
+**★F1 · `player/public/deps.h`（M8 已冻结）用 `std::shared_ptr` 持有 3 个 `RefCountedThreadSafe` 类型——不是风格问题，是这三个字段填不进去**
+
+| `Deps` 字段 | 持有方式 | 该类型的真实所有权模型 | 后果 |
+|---|---|---|---|
+| `data_source` | `std::shared_ptr<media::DataSource>` | `RefCountedThreadSafe<DataSource>` + `REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE()` + **protected ctor + protected `virtual ~DataSource();`** | **无法构造**：`shared_ptr` 需要可访问的 ctor 与 dtor；且与 `scoped_refptr` 形成**两套独立计数 → double-free / use-after-free** |
+| `video_decoder_factories` | `vector<shared_ptr<VideoDecoderFactory>>` | 同上（protected ctor/dtor + REQUIRE_ADOPTION） | 同上 |
+| `audio_decoder_factories` | `vector<shared_ptr<AudioDecoderFactory>>` | 同上 | 同上 |
+| `video_sink_factory` / `audio_sink_factory` | `shared_ptr<...SinkFactory>` | 非 refcounted，protected ctor/dtor | 风格不一致，但 `shared_ptr` 可通过派生类的 public ctor 工作 |
+| `tick_clock` | `shared_ptr<const base::TickClock>` | **public `virtual ~TickClock() = default`** | ✅ 无问题 |
+
+**同一个 frozen 头文件内部还是自相矛盾的**：`player.h:103` 的
+`SetVideoSurface(base::scoped_refptr<NativeDisplay>)` 用的正是 `scoped_refptr`
+（`NativeDisplay` 也是 `RefCountedThreadSafe` + `REQUIRE_ADOPTION`），
+而 `deps.h` 对同类对象用 `shared_ptr`。这与 README TL;DR 的
+"引用计数 `scoped_refptr<T>` + `RefCountedThreadSafe<T>`（不用 `std::shared_ptr`）"
+直接冲突。
+
+**为什么至今没被发现**：`Deps` 只有类型声明，没有任何代码真正去填这三个字段
+（`Player` 的实现是 skeleton），而 `deps.cc` 里也没有构造它们的语句。
+**第一个试图写 `deps->data_source = ...` 的人会在编译期撞墙**——好消息是编译期而非运行期，
+坏消息是它撞的是"已冻结的对外 API"。
+
+**修法**（按破坏性从小到大）：① `Deps` 的这三个字段改 `base::scoped_refptr`
+（0.x 不承诺 API 稳定，R10 明确写了"1.0 才冻结"，现在改代价最小）；
+② 若坚持 `shared_ptr` 的对外人体工学，则必须在 `PlayerImpl` 里做**所有权桥接**
+（`shared_ptr` 持有 + `WrapRefCounted` 别名到 `scoped_refptr`，并保证只有一套计数决定生命周期）
+——这条路能走通但需要写清楚谁是 owner，否则就是 double-free 的温床。
+**建议 ①**，并把它作为 M8 接口评审的第一项。
+
+**F2 · sink 有三条注入路径，关系没写下来**
+
+(a) `media::VideoRendererSinkFactory` / `AudioRendererSinkFactory`（既有，且正是 `Deps` 持有的类型）；
+(b) `Player::SetVideoSurface(scoped_refptr<NativeDisplay>)`（运行期换目标，**不是**工厂路径）；
+(c) 本轮 `RendererFactory::Create*RendererSink()`。
+意图是 `DefaultRendererFactory`（M7）**由 (a) 构造、对内回答 (c)**，即 (c) 是内部接缝、
+(a) 是公开接缝。已写进 `renderer_factory.h` 的缺口清单第 4 条，免得 M8 的人再开出第四条路径。
+**注意 (c) 依赖 F1 先解决**，否则 `Deps` 里的工厂传不进 `DefaultRendererFactory`。
+
+**F3 · `base::MakeRefCounted` 无法直接构造带 `REQUIRE_ADOPTION` 的类（潜在阻塞，M9/M18 会撞上）**
+
+`MakeRefCounted<T>` 的实现是 `new T(...)`，而 `REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE()`
+只 friend 了 `subtle::AdoptionHelper`，**没有 friend `MakeRefCounted`**；这些类的 ctor 又是
+protected。所以 `MakeRefCounted<DataSource>()` / `MakeRefCounted<MediaLog>()` 编译不过。
+现有测试之所以能跑，是因为**测试替身在派生类里开了 public ctor**
+（`FakeVideoDecoderFactory`、`FakeAudioDecoderFactory`），绕过了基类限制。
+`base/memory/ptr_util.h` 只有 `WrapUnique`，**没有 `WrapRefCounted`**（Chromium 有）。
+
+现在还不痛（生产代码里没有构造 refcounted `DataSource` 的地方，
+`DataSourceDescriptor::FromSource` 收的是已经存在的 `scoped_refptr`），
+但 **M9 的 `RetryDataSource` 与 M18 的 `CacheDataSource` 都是"包装一个已有
+`scoped_refptr<DataSource>`"的装饰器**，届时必然撞上。
+建议：给 `ptr_util.h` 加 `WrapRefCounted`（约 5 行，与 `scoped_refptr` 的 adopt 语义配合），
+并把这个缺口记进 M9 的前置。
+
+**F4 · `player/public/version.h` include 了生成头 `ijkpp/Version.h`**
+
+源树里没有这个文件（`CMakeLists.txt:52` 用 `configure_file` 生成到
+`${CMAKE_BINARY_DIR}/generated/ijkpp/Version.h`），所以**公开头不是自包含的**：
+`install` 之后必须把 generated 目录一起装并加进 include path，否则下游
+`find_package(ijkpp)` 后 `#include <ijkpp/player.h>` 会因 `global.h → version.h` 断链。
+不是 bug（构建时成立），但是 **M8 DoD "install 后下游 find_package 可用" 的一个隐藏前置**，
+`cmake/IjkppInstall.cmake`（尚不存在）必须处理它。
+
+#### 据此对七个 DRAFT 头做的修改（改自己的，不改 frozen 的）
+
+1. **`renderer_factory.h` 收窄 include**：6 个 → 2 个，其余 5 个类型改前置声明
+   （它们只以指针/智能指针出现，无需完整类型）。与 `video_decoder_factory.h`
+   和 `deps.h` 的既有规约一致。传递闭包 **33 → 27 个头**（`pipeline.h` 40 → 34，
+   `pipeline_controller.h` 41 → 35）。每个平台后端都要 include 这个头，闭包大小是编译时间。
+2. **`renderer_factory.h` 补缺口第 4 条**：把 F2 的三条注入路径与预期关系写进文件头。
+3. **5 个头补 ".cc owed by this header" 清单**（共 10 个符号）：按
+   `media/base/demuxer.cc` 的既有约定（out-of-line `= default` 的 ctor/dtor，
+   把 vtable 与 key function 留在一个 TU 里）。其中特别写明
+   **`Renderer::SetCdm` 的默认实现必须把 `cdm_attached_cb` 以 false 跑掉而不是丢弃**——
+   D8 不实现 DRM，而一个等回调的调用方会就此挂住，那正是 Δ15 要消灭的失败类型。
+4. **`pipeline.h` 补第 5 条缺口**：`Pipeline::Statistics` 与 `PipelineStatistics`
+   重复（Chromium 也有两份），但**放任两个结构体漂移正是 A12 悄悄烂掉的方式**；
+   建议 M8 让前者成为后者的别名，或直接删掉。
+
+#### 审查后仍不能保证的（必须在有编译器的机器上做）
+
+- `-std=c++20 -fno-exceptions -fno-rtti -Werror` 下的真实编译（含 `-Wnon-virtual-dtor`、
+  `-Woverloaded-virtual`、`-Wshadow`、`-Wuseless-cast` 等 Google 告警集）
+- `renderer_factory.h` 前置声明后，**include 它的 TU 是否仍能拿到完整类型**
+  （`DefaultRendererFactory` 需要完整类型才能调 `Create*`，它得自己 include）
+- 模板与 `base::OnceCallback<void(bool)>` 的实参推导（L1 版 `BindOnce` 的支持范围）
+- 与 `player/public/deps.h` 的所有权桥接（F1 的修法决定后才可验证）
+
 ### (4) R2 降级债的显式登记 — ✅ 本轮补记
 
 `docs/08` §5.1 给 R2（自研 `base/` 工期超支，P4×I4=**16**，高危）准备了 L0–L3
@@ -197,56 +343,37 @@ docs/08 §5.1 明确说 L1/L2 **保持接口形态不变**（所以 `media/`、`
 
 ---
 
-#### 七个文件的内容与刻意偏离
-
-| 文件 | 行数 | 关键内容 |
-|---|---|---|
-| `pipeline_status.h` | 60 | `PipelineStatus` 枚举（13 个状态，按产生阶段分组）· `PipelineStatusCallback` · **`PipelineStatusToMediaError()` 要求映射是全射**——任何 status 都不得落到泛化的 "playback failed"，这正是 docs/10 §4 要防的失败模式 |
-| `media_resource.h` | 63 | `MediaResource::GetStream(type)`。注释写清了**为什么不直接用 `Demuxer*`**：① `tests/support/synthetic_demuxer` 要能替身；② `SelectTrack()` 改流不应重开源。返回 nullptr 不是错误——无音轨时必须退回 external 时钟，与 ffplay 一致 |
-| `renderer_client.h` | 155 | `RendererClient` 9 个回调 · **`BufferingState`（4 值枚举）** · `OutputDeviceStatus` · **`PipelineStatistics`（21 个计数器，含 `avg_av_diff_ms` / `max_av_diff_ms`——R1 的触发信号"av_diff 稳态 > 40ms"从此可观测）**。注释标明它是 `FFP_PROP_INT64_*` × 20 的替代：一次返回结构体，消费者不会看到半更新的画面 |
-| `renderer.h` | 132 | `Renderer` 11 个方法 · **`RendererType`**。注释含"替代了什么"（`ff_ffplay.c` 整体 + ~200 字段的 `VideoState`）、线程归属（仅 `GetMediaTime()` 线程安全，走 seqlock）、**顺序契约**（Initialize 先于一切；违反在 debug 是 DCHECK、release 是 `kInvalidState`，**绝不是 UB**） |
-| `renderer_factory.h` | 87 | `RendererFactory` 6 个方法。注释写明**这就是平台接缝**：`platform/` 可依赖 `media/`，反向不行（C22），所以 media 层不能提 `Sdl2VideoSink` 的名字，只能向工厂要"给这个 display 的 video sink"。`CreateRenderer` 返回 nullptr 表示本工厂不服务该 type，从而支持链式回退（与 `DecoderSelector` 同形，Δ12） |
-| `pipeline.h` | 148 | `Pipeline` 24 个方法 + 嵌套 `Client`（7 回调）+ `Statistics`。注释含：`Stop()` 非阻塞（Δ1）与 `shutdown_timeout` 兜底 detach（Δ15）· **四个 const getter 为何必须线程安全**（否则 SDK 门面的 UI 线程会被 media sequence 挂住，正是本类要消灭的失败模式）· `Seek()` 故意只有关键帧语义，精确 seek 归 `player/seek_controller`（M9），**media 层不应知道"丢帧直到目标"这种概念** |
-| `pipeline_controller.h` | 90 | `PipelineController` + 6 态枚举 + 转移图。注释含 kDestroying **为什么必须存在**（析构期到达的回调要能被识别并丢弃，而不是投给半销毁的 owner——第二轮 sanitizer 抓到的 lost wakeup 就是这一类）· `Stop()` 重复调用是 no-op 而非 error（`~Player()` 与 `Player::Stop()` 都会调） |
-
-**与 docs/03 §6 的三处刻意偏离**（都写进了文件头，M8 若要改走接口评审）：
-
-1. **`PipelineController` 声明为抽象类**，而 docs/03 与 Chromium 都是持有 `unique_ptr<Pipeline>` 的具体类。理由：具体状态机应与它驱动的 Pipeline 住在同一个 TU（`pipeline_impl.cc`），这样转移表与销毁顺序（docs/03 §10.1）不会跨文件——R5（stop/析构死锁）的防线之一。
-2. **`base::SingleThreadTaskRunner` 用既有别名**（`base/task/sequenced_task_runner.h` 里已有 `using SingleThreadTaskRunner = SequencedTaskRunner;`），不新增类型。
-3. **`RendererClient::OnAudioOutputDeviceChanged`** 在 docs/03 里是省略号，本轮补成 `(device_id, is_default, OutputDeviceStatus)` 并新增 `OutputDeviceStatus` 枚举；同时**在文件头写明**：若 M7 不做设备切换就应**删掉这个方法而不是留一个没人触发的回调**——"接口里有死钩子"正是 SDK 用户开始不信任其余接口的起点。
-
-**自检结果**（无编译器环境，故用可机械验证的部分兜底）：
-
-```
-7 个文件：include guard ✅ · STATUS: DRAFT 标记 ✅ · namespace 开闭配平 ✅
-         全部 #include 的目标文件存在 ✅ · 无 >80 列的行（按字符计）✅
-         C20（命名空间）+ C22（media/ 不得 include player/）✅
-tools/check_invariants.py --root .  →  all rules pass (173 files scanned)
-                                    →  note: 7 DRAFT file(s) … （逐一列出，防遗忘）
-```
-
-**未做/不能做的验证**：`-fno-exceptions -fno-rtti -Werror` 下的真实编译、以及
-`video_decoder_factory.h` / `audio_decoder_factory.h` 被 `renderer_factory.h`
-包含后是否有循环包含。这两项必须在有编译器的机器上跑一次
-`cmake --preset debug && cmake --build build/debug`（把它们临时加进
-`ijkpp_media` 的 HEADERS 或直接 `g++ -fsyntax-only -std=c++20 -I.`）。
-**转正前必须做**，否则就是第五轮 `ffmpeg_demuxer` DRAFT 期犯过的同类错误的反面。
-
 ### 本轮未做 / 下一步
 
-- **`--ijkplayer` 真机跑一次**（需要 ijkplayer 源码树），把 docs/05 表 7 的
-  "个别 fork 有差异"变成确定结论；有差异就登记 Δ 而不是悄悄改阈值
-- CI 打开 `ffmpeg-matrix`（注释写 "enabled at M4"，**M4 早已完成**）；
-  给 `linux-ffmpeg711` 加 job，否则 322/322 与 43/43 永远只是本机结果；
-  coverage job 的 `lcov --summary || true` 改成真门禁
-- 把 `extract_constants.py --selftest` 加进 CI 的 quick gate
-- README 的测试数（238/293/266）与本轮 PROGRESS（287/322）仍不一致，待同步
-- M7 的第一个真实现：`AudioRendererAlgorithm`（WSOLA）——它单点阻塞音频半边
-- R2 的降级债（`bind.h` 的 L1、`thread.h` 的 L2、缺失的 `message_pump_epoll` /
-  `base/files/ScopedLibrary` / `LockOrderChecker`）此前未在 PROGRESS 显式登记，
-  **本轮登记**：docs/08 说"M13 后补齐"，但 M13 的 checklist 里没有这一项，
-  需要在 M13 规格中补上，否则 `LockOrderChecker` 缺失会让 R5（stop/析构死锁，R=15）
-  失去应对⑤
+**本轮已在上面完成、不要再列为待办的**：`extract_constants.py --selftest` 进 CI
+quick gate ✅ · README 的过期测试数与重复行 ✅ · PROGRESS"未完成"表的自相矛盾 ✅ ·
+LICENSE / LGPL 隔离 ✅ · 七个管线接口头 DRAFT ✅ · R2 降级债登记 ✅。
+
+**下一轮的第一优先（按"解除阻塞 × 暴露风险"排序）**：
+
+1. **★F1 的接口评审**：把 `player/public/deps.h` 的 `data_source` /
+   `video_decoder_factories` / `audio_decoder_factories` 三个字段从
+   `std::shared_ptr` 改成 `base::scoped_refptr`。这三个类型都是
+   `RefCountedThreadSafe` + protected ctor/dtor，**现在这三个字段谁都填不进去**；
+   而且它与同一个 frozen 头文件里的 `Player::SetVideoSurface(scoped_refptr<NativeDisplay>)`
+   自相矛盾。0.x 不承诺 API 稳定（R10），现在改代价最小，等 M8 接线后改就是破坏性变更。
+2. **F3 的前置**：给 `base/memory/ptr_util.h` 加 `WrapRefCounted`（约 5 行）。
+   `MakeRefCounted<T>` 对带 `REQUIRE_ADOPTION` 的类编译不过（它 `new T(...)`，
+   而宏只 friend 了 `AdoptionHelper`），现在靠"测试替身在派生类开 public ctor"绕过；
+   M9 的 `RetryDataSource` / M18 的 `CacheDataSource` 都是装饰器，必然撞上。
+3. **在有编译器的机器上把 7 个 DRAFT 头转正**：`g++ -fsyntax-only -std=c++20
+   -fno-exceptions -fno-rtti -I.` 逐个过，然后加进 `ijkpp_media` 并写 10 个符号的
+   `.cc`（清单已在各文件头）。**转正前它们对 M7/M8 只是纸面契约。**
+4. **`--ijkplayer` 真机跑一次**（需要 ijkplayer 源码树），把 docs/05 表 7 的
+   "个别 fork 有差异"变成确定结论；有差异就登记 Δ 而不是悄悄改阈值。
+   顺带定案 `AV_SYNC_FRAMEDUP_THRESHOLD` 的注释矛盾（注释写 0.1、值是 10ms）。
+5. **CI**：打开 `ffmpeg-matrix`（注释写 "enabled at M4"，**M4 早已完成**）；
+   给 `linux-ffmpeg711` 加 job，否则 322/322 与 43/43 永远只是本机结果；
+   coverage job 的 `lcov --summary || true` 改成真门禁。
+6. **M7 的第一个真实现**：`AudioRendererAlgorithm`（WSOLA）——单点阻塞音频半边。
+7. **R2 降级债的偿还排期**：docs/08 说"M13 后补齐"，但 M13 的 checklist 里没有
+   这一项。其中 `base/files/ScopedLibrary` 是 **M12 dlopen 弱依赖的前置**、
+   `LockOrderChecker` 是 **R5 应对⑤的前置**，两者都不能等到 M13 之后。
 
 ---
 

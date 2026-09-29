@@ -30,6 +30,17 @@
 //      (Player::SelectTrack). Until M8 wires them, an implementation should
 //      return without effect and LOG(WARNING) -- not DCHECK, because the SDK
 //      facade may legitimately call them before the pipeline is ready.
+//   5. Statistics and PipelineStatistics (renderer_client.h) overlap. Both are
+//      declared because Chromium has both, but shipping two structs that drift
+//      is how A12 (every legacy FFP_PROP_* reachable) silently rots. M8 should
+//      either make Statistics an alias of the PipelineStatistics subset the
+//      facade exposes, or delete it and have GetStatistics() return
+//      PipelineStatistics.
+//
+// .cc owed by this header -- media/base/pipeline.cc:
+//   Pipeline::Pipeline()      -- out-of-line `= default`, same convention as
+//   Pipeline::~Pipeline()        media/base/demuxer.cc
+// Pipeline::Client owes nothing (all pure virtual, dtor inline-defaulted).
 
 #ifndef IJKPP_MEDIA_BASE_PIPELINE_H_
 #define IJKPP_MEDIA_BASE_PIPELINE_H_

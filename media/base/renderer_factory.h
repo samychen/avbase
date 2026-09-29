@@ -21,11 +21,29 @@
 //   2. player/public/deps.h (frozen at M8, 79 lines) is where a business
 //      injects its own factory. The wiring from Deps to
 //      Pipeline::Start(renderer_factory) does not exist yet.
-//   3. CreateRendererSink's NativeDisplay argument is nullable, which is how
-//      headless playback (examples/headless) and config.render.
-//      disable_video_output are expressed. platform/null must accept nullptr
-//      and still honour VideoRendererSinkContract; that is the contract test's
+//   3. CreateVideoRendererSink()'s NativeDisplay argument is nullable, which is
+//      how headless playback (examples/headless) and config.render.
+//      disable_video_output are expressed. platform/null must accept
+//      nullptr and still honour VideoRendererSinkContract; that is the test's
 //      SetOutputTargetNullEntersDiscardMode case (docs/07 §4).
+//   4. THIS INTERFACE OVERLAPS THREE EXISTING INJECTION PATHS, and M8 must
+//      collapse them into one story instead of letting them drift:
+//        a. media::VideoRendererSinkFactory / AudioRendererSinkFactory
+//           (media/base/*_renderer_sink.h) -- already exist, and are already
+//           what player::Deps holds.
+//        b. Player::SetVideoSurface(scoped_refptr<NativeDisplay>) --
+//           retargets a live sink, so it is NOT a factory path.
+//        c. Create*RendererSink() below.
+//      The intended relation: DefaultRendererFactory (M7) is *constructed from*
+//      (a) and answers (c) with what it was given, so (c) is an internal seam
+//      and (a) is the public one. That belongs in DefaultRendererFactory's
+//      header, and it needs the shared_ptr/scoped_refptr conflict in
+//      player/public/deps.h settled first -- see docs/PROGRESS.md, ninth round,
+//      finding F2.
+//
+// .cc owed by this header: none. Every member is pure virtual or deleted, so it
+// needs no translation unit of its own; the sinks it returns are what owe .cc
+// files (platform/null at M10, platform/sdl2 at M11).
 
 #ifndef IJKPP_MEDIA_BASE_RENDERER_FACTORY_H_
 #define IJKPP_MEDIA_BASE_RENDERER_FACTORY_H_
@@ -33,15 +51,22 @@
 #include <memory>
 
 #include "base/memory/scoped_refptr.h"
-#include "media/base/audio_renderer_sink.h"
-#include "media/base/native_display.h"
 #include "media/base/renderer.h"
-#include "media/base/video_decoder_factory.h"
-#include "media/base/audio_decoder_factory.h"
-#include "media/base/video_renderer_sink.h"
 #include "media/media_export.h"
 
 namespace ijkpp::media {
+
+// Forward-declared rather than included, matching the convention already set by
+// media/base/video_decoder_factory.h (which forward-declares VideoDecoder and
+// VideoDecoderConfig) and player/public/deps.h. Every one of these is used here
+// only through a pointer or a smart pointer, so none needs to be complete.
+// Not including them also keeps this header's transitive closure small,
+// which matters because every platform backend includes it.
+class AudioDecoderFactory;
+class AudioRendererSink;
+class NativeDisplay;
+class VideoDecoderFactory;
+class VideoRendererSink;
 
 // Builds the renderer and the two output endpoints for one playback.
 //

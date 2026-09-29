@@ -25,6 +25,12 @@
 //      coarse. ijkplayer reports the same coarseness through FFP_MSG_ERROR; if
 //      M8 needs the decoder name in the event payload, extend the mapping
 //      rather than the enum (Δ12 already carries the decoder name separately).
+//
+// .cc owed by this header -- media/base/pipeline_status.cc:
+//   PipelineStatusToString(PipelineStatus)
+//   PipelineStatusToMediaError(PipelineStatus)   <- total, see the rule above;
+//       every entry needs summary/detail/suggestion text that satisfies
+//       docs/10 §4.3, which ErrorMessagesTest asserts verbatim
 
 #ifndef IJKPP_MEDIA_BASE_PIPELINE_STATUS_H_
 #define IJKPP_MEDIA_BASE_PIPELINE_STATUS_H_

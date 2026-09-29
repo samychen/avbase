@@ -25,6 +25,14 @@
 //      table 6, and acceptance criterion A12 requires every legacy
 //      FFP_PROP_* to appear somewhere in the pair. That reconciliation is a
 //      M8 task and may add fields here.
+//
+// .cc owed by this header -- media/base/renderer_client.cc:
+//   BufferingStateToString(BufferingState)
+//   OutputDeviceStatusToString(OutputDeviceStatus)
+// RendererClient itself owes nothing: every member is pure virtual, the
+// destructor is inline-defaulted, and the copy operations are deleted. That
+// matches media/base/video_renderer_sink.h, whose factory is likewise
+// header-only.
 
 #ifndef IJKPP_MEDIA_BASE_RENDERER_CLIENT_H_
 #define IJKPP_MEDIA_BASE_RENDERER_CLIENT_H_
