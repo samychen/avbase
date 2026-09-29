@@ -8,6 +8,13 @@
 // such as media::DecoderBuffer and media::VideoFrame, matching Chromium. It is
 // smaller (no weak count), has no exception paths, and interoperates with the
 // REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE() guard.
+//
+// The three free functions at the bottom of this header are the whole ownership
+// vocabulary, and picking the wrong one is a lifetime bug rather than a style
+// problem: MakeRefCounted creates, WrapRefCounted shares, AdoptRef takes over.
+// They live here and not in base/memory/ptr_util.h because two of them need
+// scoped_refptr's adopting constructor, and ptr_util.h deliberately does not
+// include this header.
 
 #ifndef IJKPP_BASE_MEMORY_SCOPED_REFPTR_H_
 #define IJKPP_BASE_MEMORY_SCOPED_REFPTR_H_
@@ -110,6 +117,12 @@ class scoped_refptr {
     return a.ptr_ <=> b.ptr_;
   }
 
+  // Takes ownership of a reference the caller already holds, WITHOUT adding
+  // one. Public because the tag type below is unnameable outside base/, which
+  // is what keeps this from becoming a second, silent way to adopt.
+  struct AdoptTag {};
+  constexpr scoped_refptr(T* p, AdoptTag) noexcept : ptr_(p) {}
+
  private:
   constexpr void AddRef() const noexcept {
     if (ptr_) ptr_->AddRef();
@@ -121,14 +134,74 @@ class scoped_refptr {
   T* ptr_ = nullptr;
 };
 
+// Creates a new ref-counted object held by exactly one reference.
+//
+// The `new T(...)` here is the ONLY place in base/ that constructs a
+// ref-counted object outside its own translation unit, so T's constructor must
+// be reachable from this function. That is why media::MediaLog declares
+// `MediaLog();` public while keeping `~MediaLog()` private with
+// `friend class base::RefCountedThreadSafe<MediaLog>`: Release() needs the
+// destructor, MakeRefCounted needs the constructor, and neither needs the
+// other. A class that wants to forbid direct construction makes its
+// constructor protected too -- media::DataSource does -- at the cost that only
+// a derived class with a public constructor (MemoryDataSource, and the test
+// fakes) can be instantiated this way.
+//
+// Refcount arithmetic: RefCountedBase starts at 0, the scoped_refptr(T*)
+// constructor adds one, Release() subtracts one and deletes at 0, and
+// ~RefCountedBase DCHECKs that the count is back to 0. Adopting instead of
+// adding here would leave the count at 0 while a scoped_refptr holds it, and
+// the first Release() would take it to -1.
 template <typename T, typename... Args>
 scoped_refptr<T> MakeRefCounted(Args&&... args) {
   return scoped_refptr<T>(new T(std::forward<Args>(args)...));
 }
 
+// Takes over a reference the caller already holds, without adding one.
+//
+//   T* raw = new T;            // caller holds the only reference
+//   auto p = AdoptRef(raw);    // p owns it; count is still 1, not 2
+//
+// THIS USED TO BE WRONG. It was spelled `return scoped_refptr<T>(p);`, which
+// adds a reference -- identical to WrapRefCounted below -- so the caller's
+// original reference was leaked and the object was never deleted (in a debug
+// build, ~RefCountedBase's DCHECK_EQ(count, 0) would fire first). Nothing
+// called it, which is the only reason the bug was latent rather than live; a
+// grep for AdoptRef across the tree returned its own definition and nothing
+// else. Fixed before M9's RetryDataSource becomes the first real caller.
 template <typename T>
-scoped_refptr<T> AdoptRef(T* p) {
+constexpr scoped_refptr<T> AdoptRef(T* p) noexcept {
+  return scoped_refptr<T>(p, typename scoped_refptr<T>::AdoptTag{});
+}
+
+// Adds a reference to an object that is already ref-counted and owned by
+// someone else.
+//
+//   void SetInner(base::scoped_refptr<DataSource> inner);   // owns a ref
+//   base::scoped_refptr<DataSource> inner_;
+//   ...
+//   auto alias = base::WrapRefCounted(inner_.get());        // second owner
+//
+// This is the spelling to use when a raw pointer arrives from an API that does
+// not transfer ownership -- a Demuxer stream, a decorator's inner source, a
+// callback argument -- and the result must share the object's lifetime rather
+// than steal it. `scoped_refptr<T>(p)` does exactly the same thing; this name
+// exists because at a call site "wrap" and "adopt" are one character apart in
+// meaning and a lifetime apart in consequence, and Chromium pays for the
+// explicit name for the same reason.
+//
+// Passing nullptr is fine and yields a null scoped_refptr.
+template <typename T>
+constexpr scoped_refptr<T> WrapRefCounted(T* p) noexcept {
   return scoped_refptr<T>(p);
+}
+
+// Overload for the common case of re-wrapping something a scoped_refptr
+// already owns, so callers do not have to write .get() and think about whether
+// the pointer could be null.
+template <typename T>
+constexpr scoped_refptr<T> WrapRefCounted(const scoped_refptr<T>& p) noexcept {
+  return p;
 }
 
 }  // namespace ijkpp::base

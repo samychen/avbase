@@ -15,6 +15,9 @@ ijkpp_add_unittest(base_unittests
         unit/base/time_unittest.cc
         unit/base/expected_unittest.cc
         unit/base/scoped_refptr_unittest.cc
+        # DRAFT: written without a compiler; do not count it in the
+        # 287/322 totals until a real build has run it green.
+        unit/base/refcount_ownership_unittest.cc
         unit/base/weak_ptr_unittest.cc
         unit/base/callback_bind_unittest.cc
         unit/base/synchronization_unittest.cc

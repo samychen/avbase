@@ -4,7 +4,7 @@
 
 ## 当前状态：**M0 ✅ · M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 音视频 ✅ · M6 ✅ · DecoderStream ✅ · inspect CLI ✅ · M8 契约 ✅**
 
-最后更新：2026-09-29（第九轮）—— **工程治理轮：LICENSE 落地 + LGPL 隔离目录 · `tools/extract_constants.py`（R1 应对④「禁止手抄」）· `media/base/` 七个管线接口头冻结为 DRAFT**
+最后更新：2026-09-29（第九轮）—— **工程治理轮：LICENSE 落地 + LGPL 隔离目录 · `tools/extract_constants.py`（R1 应对④「禁止手抄」）· `media/base/` 七个管线接口头冻结为 DRAFT · 无编译器审查（含 4 个跨文件发现）· `base::WrapRefCounted` + 修掉潜伏的 `AdoptRef` bug**
 > 第八轮：音频解码链打通 · `DecoderStream<Traits>` 泛型化 · `ijkpp-inspect` CLI 落地；CLI 首跑即抓到 bug #32（主时钟被 uptime 偏移）与 bug #33（水位线未生效）
 
 ## 第九轮（本轮）：许可证落地 · 阈值提取工具 · 管线接口冻结
@@ -313,6 +313,131 @@ protected。所以 `MakeRefCounted<DataSource>()` / `MakeRefCounted<MediaLog>()`
 - 模板与 `base::OnceCallback<void(bool)>` 的实参推导（L1 版 `BindOnce` 的支持范围）
 - 与 `player/public/deps.h` 的所有权桥接（F1 的修法决定后才可验证）
 
+### (3c) `base::WrapRefCounted` + 一个潜伏的 `AdoptRef` bug — ✅ 完成（F3）
+
+上一轮的 F3 说"给 `ptr_util.h` 加 `WrapRefCounted`"。真去写的时候发现两件事：
+**位置不该在 `ptr_util.h`**，而且**顺手挖出一个已经错了很久的 `AdoptRef`**。
+
+#### ★F5 · `AdoptRef` 的语义是错的：它 AddRef，也就是和 `WrapRefCounted` 完全一样
+
+```cpp
+// 修改前 —— base/memory/scoped_refptr.h
+template <typename T>
+scoped_refptr<T> AdoptRef(T* p) {
+  return scoped_refptr<T>(p);        // scoped_refptr(T*) 的 ctor 里就 AddRef 了
+}
+```
+
+`AdoptRef` 的语义应当是"**接管调用方已经持有的那一个引用，不再加**"
+（Chromium 同名函数就是这样）。写成上面这样等于：调用方那个引用被泄漏，
+对象永远删不掉；debug 构建里 `~RefCountedBase` 的 `DCHECK_EQ(ref_count_, 0)`
+会先炸。
+
+**为什么一直没被发现**：全仓 `grep -rn AdoptRef --include=*.h --include=*.cc`
+**除了它自己的定义之外零调用点**（既有 8 个 `ScopedRefptrTest` 也不涉及它）。
+潜伏 bug，不是活 bug。但 **M9 的 `RetryDataSource` 会是第一个真实调用方**
+（装饰器要把自己已持有的 inner 引用交出去），到那时它会以"内存慢慢涨、
+10 小时 `long_play` 压力测试失败"的形式出现——正是 A9 要防的那一类。
+在第一个调用方出现之前修掉，成本是 1 行。
+
+修法需要 `scoped_refptr` 有一个"**不加引用的接管 ctor**"，否则无法表达 adopt：
+
+```cpp
+  // public，但 tag 类型在 base/ 之外无法命名，这就是它的护栏
+  struct AdoptTag {};
+  constexpr scoped_refptr(T* p, AdoptTag) noexcept : ptr_(p) {}
+
+template <typename T>
+constexpr scoped_refptr<T> AdoptRef(T* p) noexcept {
+  return scoped_refptr<T>(p, typename scoped_refptr<T>::AdoptTag{});
+}
+```
+
+引用计数算术核对过：`RefCountedBase` 起点 0 → `scoped_refptr(T*)` 加 1 →
+`Release()` 减 1、归零时 `delete` → `~RefCountedBase` DCHECK 计数为 0。
+**`MakeRefCounted` 必须继续走"加 1"这条路**（`new T` 出来是 0，adopt 会停在 0，
+第一次 `Release()` 就变 -1），所以它保持原样，只在注释里写清为什么。
+
+#### `WrapRefCounted` 落在 `scoped_refptr.h` 而不是 `ptr_util.h`
+
+原计划放 `ptr_util.h`（"指针工具"的直觉位置），但 `ptr_util.h` **刻意不 include
+`scoped_refptr.h`**（只有 `<memory>` 和 `<utility>`），而 adopt 需要那个 tag ctor。
+Chromium 也是把 `MakeRefCounted` / `WrapRefCounted` / `AdoptRef` 三个都放在
+`scoped_refptr.h` 底部——**所有权词汇表和拥有权类型住在一起**才是对的。
+改为在 `ptr_util.h` 留一段指路注释，说明"如果你来这儿找 `WrapRefCounted`，
+说明这个命名拆分起作用了：独占所有权和共享所有权是两个问题，base/ 把它们的
+帮助函数放在不同地方"。
+
+```cpp
+template <typename T>
+constexpr scoped_refptr<T> WrapRefCounted(T* p) noexcept;              // 加一个引用
+template <typename T>
+constexpr scoped_refptr<T> WrapRefCounted(const scoped_refptr<T>& p);  // 免写 .get()
+```
+
+三个动词的分工写进了 `scoped_refptr.h` 的头注释：**`MakeRefCounted` 创造、
+`WrapRefCounted` 共享、`AdoptRef` 接管**。
+
+#### ★F6 · 更正上一轮 F3 的一处过头说法：`REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE()` 并不强制任何事
+
+上一轮我写"`MakeRefCounted` 无法构造带 `REQUIRE_ADOPTION` 的类，因为宏只 friend 了
+`AdoptionHelper`"。**前半句的现象对，归因错了。**核对后：
+
+```cpp
+#define REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE()                  \
+  static_assert(sizeof(::ijkpp::base::subtle::AdoptionHelper) > 0, "");  \
+  friend class ::ijkpp::base::subtle::AdoptionHelper
+```
+
+- `static_assert(sizeof(...) > 0, "")` 是**恒真**的；
+- `friend class AdoptionHelper` 授予的友谊**没人使用**——`AdoptionHelper::CheckUse()`
+  在全仓**零调用点**。
+
+**所以这个宏是纯文档，不构成任何编译期强制。** 真正挡住"栈上构造 / 裸 `new`"的是
+各类**自己手写的 protected/private ctor + dtor**（`media/base/data_source.h` 的注释
+把这层推理写得很清楚）。这与 Chromium 一致：Chromium 的这个宏同样主要靠
+`scoped_refptr` 的私有 ctor + `base::subtle` 友谊来落地，宏本身也偏文档性。
+**上一轮把它说成"强制"是我说过头了，此处更正。**
+
+对 F3 结论的影响：**没有影响，反而更简单**。`MakeRefCounted<MediaLog>()` 能编译
+（`MediaLog()` 是 **public**，只有 `~MediaLog()` 是 private + friend），
+所以 `tools/inspect/` 里那 3 个调用点是好的；`MakeRefCounted<DataSource>()` 编译不过
+仅仅因为 **`DataSource()` 是 protected**（与宏无关），而 `MemoryDataSource`
+和测试替身都开了 public ctor，所以现有测试能跑。
+
+#### 新增测试：`tests/unit/base/refcount_ownership_unittest.cc`（10 个用例，**DRAFT**）
+
+覆盖三个动词的**可观测后果**，而不只是"能编译"：
+
+| 用例 | 断言的实质 |
+|---|---|
+| `WrapRefCountedTest.AddsExactlyOneReference` | 加 1 个引用；alias 置空后 owner 仍持 1 |
+| `WrapRefCountedTest.NullIsSafeAndYieldsNullPtr` | 传 nullptr 不崩、得到空 `scoped_refptr` |
+| `WrapRefCountedTest.OverloadAcceptsAnExistingScopedRefptr` | 免写 `.get()` 的重载 |
+| **`AdoptRefTest.DoesNotAddASecondReference`** | **`ref_count() == 1` 而非 2；作用域结束后对象确实被销毁**（这条直接钉死 F5） |
+| `AdoptRefTest.NullIsSafe` | — |
+| `MakeRefCountedTest.StartsAtOneReference` | 起点是 1 不是 0 |
+| `MakeRefCountedTest.DestroysExactlyOnce` | 恰好销毁一次 |
+| `OwnershipVocabularyTest.DecoratorCanShareItselfAndItsInner` | **M9 装饰器的形状**：同时持有 inner 与 self 的额外引用，释放后各回到 1 |
+| `OwnershipVocabularyTest.ProtectedCtorTypeIsReachableThroughDerived` | private ctor 基类可经 public ctor 派生类实例化（即 `MemoryDataSource` / 测试替身依赖的那条路） |
+
+用"销毁标志位"（`WatchDestruction(bool*)`，标志位活在测试栈上、比对象长寿）
+来断言"确实被删了"，而不是只看计数——计数对但对象泄漏是这类 bug 的典型形态。
+
+**标为 DRAFT 的理由**：本环境无编译器，**它从未被编译过**。已按第五轮的规矩
+登记进 `tests/CMakeLists.txt` 的 `base_unittests`（`no-ffmpeg` preset 就能跑，
+只依赖 `ijkpp::base` + GTest），但**不得计入 287/322 的用例总数**，
+直到真实构建跑绿。文件头写明了"第一次 `ctest --preset no-ffmpeg` 跑绿后删掉这段横幅"。
+
+#### 顺带发现：`check_invariants.py` 没有列宽规则
+
+STYLE.md 与 `.clang-format` 都规定 80 列，但 `base/memory/scoped_refptr.h`
+**在首次提交里就有 6 行超过 80 列**（第 34/40/100/103/106/109 行，最长 94 字符），
+而 `check_invariants.py` 的 14 条规则里**没有列宽检查**，`check-format` 的 CI job
+也还不存在（docs/07 §13 的门禁之一）。本轮**不动这 6 行**——没有 `clang-format`
+可跑，手工重排模板声明有可能改变含义，而"看起来更整齐"不值得冒这个险。
+记在这里，等 `check-format` job 建起来时由工具一次性处理。
+
 ### (4) R2 降级债的显式登记 — ✅ 本轮补记
 
 `docs/08` §5.1 给 R2（自研 `base/` 工期超支，P4×I4=**16**，高危）准备了 L0–L3
@@ -357,10 +482,10 @@ LICENSE / LGPL 隔离 ✅ · 七个管线接口头 DRAFT ✅ · R2 降级债登�
    `RefCountedThreadSafe` + protected ctor/dtor，**现在这三个字段谁都填不进去**；
    而且它与同一个 frozen 头文件里的 `Player::SetVideoSurface(scoped_refptr<NativeDisplay>)`
    自相矛盾。0.x 不承诺 API 稳定（R10），现在改代价最小，等 M8 接线后改就是破坏性变更。
-2. **F3 的前置**：给 `base/memory/ptr_util.h` 加 `WrapRefCounted`（约 5 行）。
-   `MakeRefCounted<T>` 对带 `REQUIRE_ADOPTION` 的类编译不过（它 `new T(...)`，
-   而宏只 friend 了 `AdoptionHelper`），现在靠"测试替身在派生类开 public ctor"绕过；
-   M9 的 `RetryDataSource` / M18 的 `CacheDataSource` 都是装饰器，必然撞上。
+2. ~~F3 的前置：加 `WrapRefCounted`~~ → **本轮已完成**，见 (3c)。连带修掉了
+   `AdoptRef` 的语义 bug（F5）并**更正了 F3 里对 `REQUIRE_ADOPTION` 的过头归因**（F6）。
+   剩下的是：`tests/unit/base/refcount_ownership_unittest.cc` 仍是 DRAFT，
+   需要真实构建跑绿后摘掉横幅并计入用例总数。
 3. **在有编译器的机器上把 7 个 DRAFT 头转正**：`g++ -fsyntax-only -std=c++20
    -fno-exceptions -fno-rtti -I.` 逐个过，然后加进 `ijkpp_media` 并写 10 个符号的
    `.cc`（清单已在各文件头）。**转正前它们对 M7/M8 只是纸面契约。**
