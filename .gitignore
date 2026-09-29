@@ -7,3 +7,5 @@ compile_commands.json
 cov.info
 cov-html/
 bench-history.local.jsonl
+__pycache__/
+*.pyc
