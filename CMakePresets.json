@@ -1,0 +1,225 @@
+{
+  "version": 4,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "IJKPP_BUILD_TESTS": "ON",
+        "IJKPP_BUILD_EXAMPLES": "ON"
+      }
+    },
+    {
+      "name": "default",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "IJKPP_STRICT_WARNINGS": "ON",
+        "IJKPP_WERROR": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "IJKPP_ENABLE_LTO": "ON",
+        "IJKPP_ENABLE_DCHECK": "OFF",
+        "IJKPP_BUILD_TESTS": "OFF",
+        "IJKPP_BUILD_SHARED": "ON"
+      }
+    },
+    {
+      "name": "no-ffmpeg",
+      "inherits": "base",
+      "displayName": "Core only - no FFmpeg needed",
+      "cacheVariables": {
+        "IJKPP_ENABLE_FFMPEG": "OFF"
+      }
+    },
+    {
+      "name": "linux-sdl2",
+      "inherits": "default",
+      "cacheVariables": {
+        "IJKPP_ENABLE_SDL2": "ON",
+        "IJKPP_ENABLE_LINUX_NATIVE": "OFF"
+      }
+    },
+    {
+      "name": "linux-native",
+      "inherits": "default",
+      "cacheVariables": {
+        "IJKPP_ENABLE_LINUX_NATIVE": "ON",
+        "IJKPP_ENABLE_SDL2": "OFF"
+      }
+    },
+    {
+      "name": "linux-all",
+      "inherits": "default",
+      "cacheVariables": {
+        "IJKPP_ENABLE_LINUX_NATIVE": "ON",
+        "IJKPP_ENABLE_SDL2": "ON"
+      }
+    },
+    {
+      "name": "asan",
+      "inherits": "debug",
+      "cacheVariables": {
+        "IJKPP_SANITIZERS": "address;undefined",
+        "IJKPP_WERROR": "OFF"
+      }
+    },
+    {
+      "name": "tsan",
+      "inherits": "debug",
+      "cacheVariables": {
+        "IJKPP_SANITIZERS": "thread",
+        "IJKPP_WERROR": "OFF"
+      }
+    },
+    {
+      "name": "ubsan",
+      "inherits": "debug",
+      "cacheVariables": {
+        "IJKPP_SANITIZERS": "undefined",
+        "IJKPP_WERROR": "OFF"
+      }
+    },
+    {
+      "name": "coverage",
+      "inherits": "debug",
+      "cacheVariables": {
+        "IJKPP_COVERAGE": "ON",
+        "IJKPP_WERROR": "OFF"
+      }
+    },
+    {
+      "name": "android-arm64",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-21",
+        "ANDROID_STL": "c++_shared",
+        "IJKPP_ENABLE_ANDROID": "ON",
+        "IJKPP_ENABLE_FFMPEG": "ON",
+        "IJKPP_FFMPEG_ROOT": "${sourceDir}/prebuilt/ffmpeg/android/arm64-v8a",
+        "IJKPP_BUILD_TESTS": "OFF",
+        "IJKPP_BUILD_EXAMPLES": "OFF"
+      }
+    },
+    {
+      "name": "linux-ffmpeg711",
+      "inherits": "default",
+      "displayName": "FFmpeg 7.1.1 pinned via IJKPP_FFMPEG_ROOT",
+      "cacheVariables": {
+        "IJKPP_ENABLE_FFMPEG": "ON",
+        "IJKPP_FFMPEG_ROOT": "$env{IJKPP_FFMPEG_ROOT}"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "no-ffmpeg",
+      "configurePreset": "no-ffmpeg"
+    },
+    {
+      "name": "linux-sdl2",
+      "configurePreset": "linux-sdl2",
+      "targets": [
+        "play_sdl2"
+      ]
+    },
+    {
+      "name": "linux-native",
+      "configurePreset": "linux-native",
+      "targets": [
+        "play_native"
+      ]
+    },
+    {
+      "name": "linux-all",
+      "configurePreset": "linux-all"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan"
+    },
+    {
+      "name": "linux-ffmpeg711",
+      "configurePreset": "linux-ffmpeg711"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false,
+        "jobs": 8
+      }
+    },
+    {
+      "name": "no-ffmpeg",
+      "configurePreset": "no-ffmpeg",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "needs-ffmpeg"
+        }
+      }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "no-tsan"
+        }
+      }
+    }
+  ]
+}

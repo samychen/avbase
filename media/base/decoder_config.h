@@ -1,0 +1,90 @@
+// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+//
+// Mirrors Chromium's media/base/video_decoder_config.h and
+// audio_decoder_config.h (BSD-3-Clause), merged into one header because they
+// share most of their shape and ijkpp does not need Chromium's per-field
+// change tracking yet.
+
+#ifndef IJKPP_MEDIA_BASE_DECODER_CONFIG_H_
+#define IJKPP_MEDIA_BASE_DECODER_CONFIG_H_
+
+#include <stdint.h>
+
+#include <string>
+#include <vector>
+
+#include "base/time/time.h"
+#include "media/base/audio_parameters.h"
+#include "media/base/media_types.h"
+#include "media/base/video_frame.h"
+#include "media/media_export.h"
+
+namespace ijkpp::media {
+
+// Fallback when the container reports no time base. Kept here rather than
+// including libavutil (invariant C4).
+inline constexpr int kAvTimeBase = 1000000;
+
+
+// Codec identity as a stable string, matching FFmpeg's AVCodec::name so that
+// logs and diagnostics are comparable across the two.
+enum class VideoCodec {
+  kUnknown = 0, kH264, kHevc, kVp8, kVp9, kAv1, kMpeg4, kMpeg2Video, kTheora,
+};
+enum class AudioCodec {
+  kUnknown = 0, kAac, kMp3, kOpus, kVorbis, kFlac, kPcmS16Le, kAc3, kEac3,
+};
+
+IJKPP_MEDIA_EXPORT const char* GetVideoCodecName(VideoCodec codec);
+IJKPP_MEDIA_EXPORT const char* GetAudioCodecName(AudioCodec codec);
+IJKPP_MEDIA_EXPORT VideoCodec VideoCodecFromName(std::string_view name);
+IJKPP_MEDIA_EXPORT AudioCodec AudioCodecFromName(std::string_view name);
+
+struct IJKPP_MEDIA_EXPORT VideoDecoderConfig {
+  VideoCodec codec{VideoCodec::kUnknown};
+  std::string codec_name;              // FFmpeg's name, e.g. "h264".
+  std::string profile;
+  std::string level;
+  Size coded_size;
+  Size natural_size;
+  Rational sar{1, 1};
+  int rotation{0};
+  VideoFormat expected_output_format{VideoFormat::kUnknown};
+  std::vector<uint8_t> extra_data;     // AVCodecParameters::extradata (SPS/PPS).
+  Rational frame_rate{0, 1};
+  Rational avg_frame_rate{0, 1};
+  // The container stream's time base (AVStream::time_base). The decoder needs
+  // it to interpret AVFrame::pts; without it every decoded timestamp is 0.
+  Rational time_base{1, kAvTimeBase};
+  int64_t bit_rate{0};
+  bool has_hdr_metadata{false};
+
+  bool IsValidConfig() const {
+    return codec != VideoCodec::kUnknown && !coded_size.IsEmpty();
+  }
+};
+
+struct IJKPP_MEDIA_EXPORT AudioDecoderConfig {
+  AudioCodec codec{AudioCodec::kUnknown};
+  std::string codec_name;
+  std::string profile;
+  ChannelLayout channel_layout{ChannelLayout::kNone};
+  SampleFormat sample_format{SampleFormat::kUnknown};
+  int sample_rate{0};
+  int channels{0};
+  int64_t bit_rate{0};
+  std::vector<uint8_t> extra_data;
+  // AAC/ADTS needs this to size the priming padding correctly.
+  int codec_delay_frames{0};
+  int seek_preroll_frames{0};
+
+  bool IsValidConfig() const {
+    return codec != AudioCodec::kUnknown && sample_rate > 0 && channels > 0;
+  }
+};
+
+}  // namespace ijkpp::media
+
+#endif  // IJKPP_MEDIA_BASE_DECODER_CONFIG_H_

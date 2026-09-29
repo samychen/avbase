@@ -1,0 +1,64 @@
+# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  # Fast gate: no FFmpeg, no X11, no SDL2. Proves design goal G2 — the core
+  # builds and its tests pass with nothing but a C++20 compiler.
+  quick:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build python3
+      - run: cmake --preset no-ffmpeg
+      - run: cmake --build --preset no-ffmpeg
+      - run: python3 tools/check_invariants.py --root .
+      - run: ctest --preset no-ffmpeg --output-on-failure
+
+  full:
+    needs: quick
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, preset: no-ffmpeg, label: core-gcc11 }
+          - { os: ubuntu-24.04, preset: no-ffmpeg, label: core-gcc13 }
+          - { os: ubuntu-24.04, preset: asan,      label: asan }
+          - { os: ubuntu-24.04, preset: tsan,      label: tsan }
+          - { os: ubuntu-24.04, preset: ubsan,     label: ubsan }
+          - { os: ubuntu-24.04, preset: coverage,  label: coverage }
+          - { os: macos-14,     preset: no-ffmpeg, label: macos }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y ninja-build python3 lcov
+          else
+            brew install ninja python3
+          fi
+      - run: cmake --preset ${{ matrix.preset }}
+      - run: cmake --build build/${{ matrix.preset }}
+      - run: python3 tools/check_invariants.py --root .
+      - run: ctest --test-dir build/${{ matrix.preset }} --output-on-failure
+      - if: matrix.label == 'coverage'
+        run: |
+          lcov --capture --directory build/coverage -o cov.info \
+               --exclude '*/tests/*' --exclude '*/third_party/*' || true
+          lcov --summary cov.info || true
+
+  # Populated at M4 (FFmpeg adapters) and M11/M12 (Linux backends).
+  # Kept in the workflow from day one so the job names are stable.
+  ffmpeg-matrix:
+    if: false   # enabled at M4
+    runs-on: ubuntu-24.04
+    steps: [{ run: echo "FFmpeg 4.4 / 5.1 / 6.1 / 7.1 matrix lands at M4" }]
+
+  e2e-linux:
+    if: false   # enabled at M11
+    runs-on: ubuntu-24.04
+    steps: [{ run: echo "xvfb + llvmpipe playback verification lands at M11" }]

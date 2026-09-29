@@ -1,0 +1,16 @@
+# ASan/LSan suppressions for third-party code only.
+#
+# Policy (docs/07 §9.1): a sanitizer report originating in ijkpp's own code is
+# a release blocker and must be fixed, never suppressed. Only vendor libraries
+# that ijkpp cannot modify may appear here, and each entry needs a reason.
+
+# FFmpeg's swscale/swresample use hand-written assembly and long-lived caches
+# that LSan cannot see through. Not a leak in practice.
+interceptor_via_fun:sws_scale
+interceptor_via_fun:swr_convert
+leak:libavformat
+leak:libavcodec
+
+# Mesa's llvmpipe keeps a shader cache for the process lifetime.
+leak:libLLVM
+leak:libgallium

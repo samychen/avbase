@@ -1,0 +1,77 @@
+# ijkpp 采用 Google C++ Style Guide，并叠加 Chromium 的工程约定。
+# 本文件是唯一的格式真相源；CI 用 `git clang-format` 校验，禁止手工偏离。
+#
+# 参考：
+#   https://google.github.io/styleguide/cppguide.html
+#   https://chromium.googlesource.com/chromium/src/+/main/.clang-format
+BasedOnStyle: Google
+IndentWidth: 2
+ColumnLimit: 80
+TabWidth: 8
+UseTab: Never
+AccessModifierOffset: -1
+ConstructorInitializerIndentWidth: 4
+ContinuationIndentWidth: 4
+DerivePointerAlignment: false
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Inline
+AlwaysBreakAfterReturnType: None
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBinaryOperators: None
+BreakBeforeBraces: Attach
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+Cpp11BracedListStyle: true
+IncludeBlocks: Preserve
+IncludeCategories:
+  - Regex:    '^<[^/]+\.h>'
+    Priority: 2
+  - Regex:    '^<[^/]+>'
+    Priority: 3
+  - Regex:    '^<.*>'
+    Priority: 2
+  - Regex:    '^".*"'
+    Priority: 4
+  - Regex:    '.*'
+    Priority: 1
+IndentCaseLabels: false
+MaxEmptyLinesToKeep: 1
+NamespaceIndentation: None
+ReflowComments: true
+SortIncludes: true
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 2
+SpacesInAngles: false
+SpacesInCStyleCastParentheses: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+Standard: c++20
+FixNamespaceComments: true
+ForEachMacros:
+  - IJKPP_OBSERVE
+PenaltyBreakAssignment: 2
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 60

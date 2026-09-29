@@ -1,0 +1,122 @@
+// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include "tools/inspect/inspect_common.h"
+
+#include <stdlib.h>
+
+#include <string>
+#include <utility>
+
+#include "base/functional/bind.h"
+#include "base/logging.h"
+#include "media/base/data_source_descriptor.h"
+
+namespace ijkpp {
+
+const char* StreamKindName(media::StreamKind kind) {
+  switch (kind) {
+    case media::StreamKind::kVideo: return "video";
+    case media::StreamKind::kAudio: return "audio";
+    case media::StreamKind::kText: return "text";
+    case media::StreamKind::kUnknown: return "unknown";
+  }
+  return "unknown";
+}
+
+
+void Usage() {
+  printf(
+      "ijkpp-inspect -- diagnostics over the real ijkpp media stack\n"
+      "\n"
+      "usage:\n"
+      "  ijkpp-inspect probe  <file>\n"
+      "      Print container and per-stream information.\n"
+      "\n"
+      "  ijkpp-inspect decode <file> [--video|--audio] [--limit N]\n"
+      "      Demux and decode, then report per-stream frame counts,\n"
+      "      timestamp range and monotonicity.\n"
+      "\n"
+      "  ijkpp-inspect sync   <file> [--limit N]\n"
+      "      Decode both streams and drive AvSyncController with the\n"
+      "      real timestamps, printing the resolved master clock and\n"
+      "      the audio sample correction at each step.\n"
+      "\n"
+      "options:\n"
+      "  --limit N   Stop after N decoded outputs per stream (default 100000).\n"
+      "  --verbose   Enable ijkpp INFO logging.\n"
+      "  -h, --help  This text.\n");
+}
+
+
+bool ParseArgs(int argc, char** argv, Options* out) {
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "-h" || arg == "--help") {
+      Usage();
+      return false;
+    } else if (arg == "--video") {
+      out->video_only = true;
+    } else if (arg == "--audio") {
+      out->audio_only = true;
+    } else if (arg == "--verbose") {
+      base::logging::SetMinLogLevel(base::logging::LOG_INFO);
+    } else if (arg == "--limit") {
+      if (i + 1 >= argc) {
+        fprintf(stderr, "error: --limit needs a value\n");
+        return false;
+      }
+      out->limit = static_cast<size_t>(atol(argv[++i]));
+    } else if (!arg.empty() && arg[0] == '-') {
+      fprintf(stderr, "error: unknown option '%s'\n", arg.c_str());
+      return false;
+    } else if (out->subcommand.empty()) {
+      out->subcommand = arg;
+    } else if (out->path.empty()) {
+      out->path = arg;
+    } else {
+      fprintf(stderr, "error: unexpected argument '%s'\n", arg.c_str());
+      return false;
+    }
+  }
+  if (out->subcommand.empty()) {
+    Usage();
+    return false;
+  }
+  if (out->path.empty()) {
+    fprintf(stderr, "error: %s needs a media file\n", out->subcommand.c_str());
+    return false;
+  }
+  return true;
+}
+
+// Host that prints demuxer errors instead of swallowing them. A silent Host
+bool OpenDemuxer(media::FFmpegDemuxer* demuxer, const std::string& path,
+                 InspectHost* host, Pump* pump,
+                 base::scoped_refptr<base::SequencedTaskRunner> runner,
+                 const media::MediaInfo** info) {
+  media::Status result =
+      media::Err(media::ErrorCode::kNotImplemented, "not run", {}, {});
+  bool done = false;
+  demuxer->Initialize(media::DataSourceDescriptor::FromUri(path),
+                      media::DemuxerOptions{}, host, runner,
+                      base::BindOnce([](media::Status* out, bool* flag,
+                                        media::Status s) {
+                        *out = std::move(s);
+                        *flag = true;
+                      }, &result, &done));
+  if (!pump->Until([&done] { return done; })) {
+    fprintf(stderr, "error: opening '%s' timed out\n", path.c_str());
+    return false;
+  }
+  if (!result.has_value()) {
+    fprintf(stderr, "error: cannot open '%s'\n%s\n", path.c_str(),
+            result.error().ToString().c_str());
+    return false;
+  }
+  *info = &demuxer->media_info();
+  return true;
+}
+
+}  // namespace ijkpp

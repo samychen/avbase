@@ -1,0 +1,9 @@
+build/
+dist/
+prebuilt/
+.cache/
+compile_commands.json
+*.jsonl.actual
+cov.info
+cov-html/
+bench-history.local.jsonl
