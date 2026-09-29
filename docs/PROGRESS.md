@@ -613,6 +613,112 @@ media 接口，不把 5 个 media 头拖进每个 SDK 使用者的编译单元�
 而把它塞进构建，正好破坏了它要防的那件事。`check_invariants.py` 会在每次运行末尾
 列出 DRAFT 文件，防遗忘已经由工具负责了，不需要靠构建目标来提醒。
 
+### (3f) `tools/gen_options.py` — ✅ 完成，A10 从"无法度量"变成 **9/66**
+
+`player/public/option_registry.h:42` 与 `player/option_registry.cc:197` 都声称那张表
+由 `tools/gen_options.py` 生成"so the two can never drift"——工具不存在，表是手写的，
+**而且已经漂移**（9 个 key vs `PlayerConfig` 的 67 个字段 / docs/05 表 4 的 ~60 个 key）。
+后果是验收标准 **A10 只有 9/66**，且 Δ2（未知选项报错而非静默忽略）会让存量
+ijkplayer 配置大面积失败。
+
+本轮补齐工具，三方交叉核对：
+
+```
+docs/05 表 4（规格，表头自称"已核对原文"）
+   ⟷  player/public/player_config.h（字段名 / 类型 / 默认值）
+   ⟷  tools/option_map.py（键 → 字段 + 变换 kind）
+```
+
+| 模式 | 作用 |
+|---|---|
+| `--check` | 六类漂移：`FIELD_MISSING` · `TYPE_MISMATCH`（kind 与字段 C++ 类型不符）· `KEY_UNMAPPED`（文档有、映射无）· `RANGE_DIFFERS` · `DEFAULT_DIFFERS`（降为提示）· `DOC_NEGATION_DIFFERS`（文档标"取反"而映射没有） |
+| `--coverage` | **A10 的度量**：解析 `option_registry.cc` 里已实现的 key，报出缺哪些、以及哪些是实现有而文档无 |
+| `--emit` | 生成 `player/option_registry.inc`（**DRAFT，无人 include**） |
+| `--selftest` | 用合成 `player_config.h` + 合成 docs/05 片段验证解析器，含 `fcc()` 公式断言 |
+
+**当前结果**：`findings: 0`（63→66 个可发射 key 全部与两个权威一致）·
+**A10 = 9/66**（缺 54 个）· 13 个 `PlayerConfig` 字段无 legacy key（`shutdown_timeout`、
+`stats_interval`、`video.hdr_tone_mapping`、`data_source.cache_*` 等都是 ijkpp 新增，
+本来就不该有）。
+
+#### 14 种 kind：迁移不是恒等映射
+
+`an`/`vn`/`skip-calc-frame-rate` 是**取反**（写的是 `disabled`）· `volume` 是
+**0..100 → 0.0..1.0**（Δ6）· 4 个 `*-ms` 与 `timeout`/`analyzeduration` 是
+**毫秒 → `base::TimeDelta`** · `loop` 的 `INT_MIN` 表示无限 · `overlay-format` 是
+**FourCC → 枚举** · `mediacodec*` 5 个键写**同一个位掩码字段** · `mediacodec`/
+`videotoolbox` 两个键写**同一个 `decoder_preference`** · `headers` 是
+**CRLF 文本块 → `std::map`**。把这些编码成 kind，发射出的 C++ 才是机械的而不是聪明的。
+
+#### ★FourCC 手抄错了一个，被自己的改动抓出来
+
+第一版把六个 FourCC 手抄成十六进制，其中 `kNative` 写成 `0x32565220`——
+**那是 `' RV2'`，不是 `'_es2'`（应为 `0x3273655f`）**。
+是我后来加的"十六进制 + 字符拼写注释"把它暴露出来的：生成物里出现
+`// ' RV2'` 一眼就是错的。
+
+修法不是改那一个数字，而是**从字符拼写推导**：
+
+```python
+def fcc(chars):   # 与 ijksdl_fourcc.h 的 SDL_FOURCC(a,b,c,d) 同式
+    return ord(chars[0]) | ord(chars[1]) << 8 | ord(chars[2]) << 16 | ord(chars[3]) << 24
+enum={fcc("_es2"): "kNative", fcc("I420"): "kI420", ...}
+```
+
+并在 `--selftest` 里把六个值钉死。**这正是 R1 应对④"禁止手抄"要防的那类错误，
+在我自己写的、本该防止它的工具里重演了一次**——值得记下来。
+
+#### 生成器自身的 5 个 bug（都已修，其中 3 个朝"静默通过"方向失败）
+
+| # | bug | 方向 |
+|---|---|---|
+| a | `Opt.__init__` 把 `category` 放在第 5 位，而调用方用 `*BOOL01` 展开 lo/hi → **`0` 被当成 category** | 🔴 静默：所有条目类别错乱 |
+| b | `FIELD_RE` 要求必须有初始化器 → `std::string filter_graph;` 这类**裸声明字段全部漏掉** | 🔴 静默：报成 `FIELD_MISSING`，把真漂移盖住 |
+| c | docs/05 用 **U+2212 负号**（`−1..120`），我的正则只认 ASCII `-` → 范围读成 `1..120` | 🔴 静默：范围校验形同虚设 |
+| d | `MEMBER_RE` 在 b 修好后会被 `FIELD_RE` 抢先匹配 → `BufferConfig buffer;` 被当字段，**前缀推导失效**，所有嵌套字段路径错 | 🔴 静默 |
+| e | 枚举 case 的注释插在值与冒号之间（`case 0x30323449 // 'I420': c->...`）→ **冒号被注释掉**，生成的 C++ 语法错 | 🟠 吵闹，但生成物不可用 |
+| f | `ApplyGeneratedOption` 的签名里**没有 `key` 参数**，而共享字段的分派要用它 → 生成物编译不过 | 🟠 同上 |
+
+a 是签名设计问题：`category` 改成**关键字专属**（`*` 之后），这样"展开一个范围"
+在语法上就不可能落到它头上。e/f 说明**生成器也要被审查**，而不只是它的输出。
+
+#### 负向验证（5 种漂移全部被抓，`exit 1`）
+
+| 注入 | 报告 |
+|---|---|
+| 从 `option_map.py` 删掉 `rdftspeed` | `KEY_UNMAPPED` |
+| 字段名写错（`min_frames` → `min_framez`） | `FIELD_MISSING` |
+| `framedrop` 的 lo 从 −1 改成 0 | `RANGE_DIFFERS: lo: map says 0, docs/05 says -1` |
+| `max-fps` 的 hi 从 121 改成 999 | `RANGE_DIFFERS: hi: map says 999, docs/05 says 121` |
+| `packet-buffering` 的 kind 改成 `string` | `TYPE_MISMATCH: kind string writes ['std::string'], field is bool` |
+| `an` 的取反标记去掉 | `DOC_NEGATION_DIFFERS` |
+
+**过程中还撞到一个环境陷阱**：改完 `option_map.py` 跑测试时，还原源码后仍报旧结果——
+是 **`__pycache__` 陈旧字节码**：`cp` 还原后**文件大小相同**（`121` 与 `999` 都是 3 字节）
+且 mtime 落在同一秒，Python 的 pyc 校验（mtime + size，秒级精度）判定源码未变。
+`rm -rf tools/__pycache__` 后恢复正常。**这也是上一轮把 `__pycache__/` 加进
+`.gitignore` 的又一个理由**，并且提示：改这两个数据模块后跑工具，最好先清缓存。
+
+#### 生成物 `player/option_registry.inc`（730 行，**DRAFT**）
+
+- 66 条 `GeneratedOption` 表 + 60 个 `GeneratedField` 枚举 + 60 个 `case` 的
+  `ApplyGeneratedOption()` + 一个手写函数的前置声明 `ApplyHeaderBlob()`
+  （**字符串解析这种非机械逻辑不生成**，放手写代码里才可单测）
+- 结构自检：花括号 140/140、圆括号 394/394、方括号 6/6 配平；守卫与 DRAFT 标记齐备
+- 加了 `wrap_emitted()` 后处理，把最长行从 **228 列压到 106 列**（超 80 列 101 → 49）。
+  理由：**这里没有编译器，生成物只能靠人眼审**，而 228 列的一行没法审
+- **无人 include 它**，因此不影响构建。接进去需要：把 `option_registry.cc` 的 9 条
+  `e.push_back` 换成遍历 `kGeneratedOptions` + 调用 `ApplyGeneratedOption`，
+  实现 `ApplyHeaderBlob`，然后编译。那一步需要编译器。
+
+#### 顺带修的两处既有笔误（与本轮无关）
+
+- `docs/05` 表 1 与 `docs/06` §7.2 把 `video_frame_queue.{h,cc}` 写在 `media/filters/`，
+  实际从首次提交起就在 **`media/base/`**（3 处已改）。
+- `parse_player_config` 第一版把 `ConfigIssue` 的 `field`/`problem`/`suggestion`
+  当成配置字段，虚增了"无 legacy key"清单——现在只统计 `PlayerConfig` 本身
+  与它作为成员持有的那些 struct。
+
 ### (4) R2 降级债的显式登记 — ✅ 本轮补记
 
 `docs/08` §5.1 给 R2（自研 `base/` 工期超支，P4×I4=**16**，高危）准备了 L0–L3
