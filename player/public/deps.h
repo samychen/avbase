@@ -54,14 +54,45 @@ struct IJKPP_PLAYER_EXPORT Deps {
   Deps& operator=(Deps&&) noexcept;
   ~Deps();
 
-  std::vector<std::shared_ptr<media::VideoDecoderFactory>> video_decoder_factories;
-  std::vector<std::shared_ptr<media::AudioDecoderFactory>> audio_decoder_factories;
+  // OWNERSHIP VOCABULARY FOR THIS STRUCT (see STYLE.md §3 and the three verbs
+  // at the bottom of base/memory/scoped_refptr.h).
+  //
+  // A field whose type derives from base::RefCountedThreadSafe MUST be held in
+  // base::scoped_refptr. media::DataSource, media::VideoDecoderFactory and
+  // media::AudioDecoderFactory all do, and all three carry
+  // REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE() with protected constructors and
+  // protected destructors. Holding one in std::shared_ptr is not a style
+  // preference but two distinct failures: the field cannot be assigned at all
+  // (shared_ptr needs an accessible destructor, and these are protected), and
+  // if it somehow could be, the two smart pointers would keep two independent
+  // counts on one object -- a double free or a use-after-free.
+  //
+  // These three were std::shared_ptr until the ninth round. The evidence that
+  // this was drift rather than a decision: this header already included
+  // base/memory/scoped_refptr.h without using it, the comment in deps.cc
+  // already said "Deps holds scoped_refptrs to forward-declared interfaces",
+  // and Player::SetVideoSurface() in the same frozen surface already takes
+  // scoped_refptr<NativeDisplay> -- another RefCountedThreadSafe type.
+  //
+  // The remaining shared_ptr fields below (sink factories, tick clock, event
+  // dispatcher) name types that are NOT ref-counted, so shared_ptr is
+  // functional there. They still deviate from STYLE.md §3, which marks
+  // shared_ptr "not recommended"; changing them is churn on a frozen header
+  // without a defect to fix, so it is left to the M8 interface review as a
+  // recorded decision rather than done silently here.
+  std::vector<base::scoped_refptr<media::VideoDecoderFactory>>
+      video_decoder_factories;
+  std::vector<base::scoped_refptr<media::AudioDecoderFactory>>
+      audio_decoder_factories;
   std::shared_ptr<media::VideoRendererSinkFactory> video_sink_factory;
   std::shared_ptr<media::AudioRendererSinkFactory> audio_sink_factory;
 
   // Custom byte source (encrypted streams, an in-app downloader, a cache).
   // When set, ijkpp reads through it instead of opening the URI itself.
-  std::shared_ptr<media::DataSource> data_source;
+  // Build one with base::MakeRefCounted<media::MemoryDataSource>(...), or with
+  // your own DataSource subclass; M9's RetryDataSource and M18's
+  // CacheDataSource are decorators that wrap an existing scoped_refptr.
+  base::scoped_refptr<media::DataSource> data_source;
 
   // Injectable monotonic clock. Null means base::DefaultTickClock. Tests use
   // base::SimpleTestTickClock, which is what makes the scheduling logic
