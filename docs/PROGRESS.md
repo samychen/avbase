@@ -964,6 +964,81 @@ F 类规则改了三次才对，前两次我都差点相信它的输出。
 ❌ 100µs 的结论是算术而非实测（`BM_AudioRenderCallback` 才能定案）
 ```
 
+### (3i) `VideoRendererImpl` + `RendererImpl` —— M7 渲染三件套齐了
+
+交付两对文件（**191 + 264 + 192 + 443 = 1,090 行，DRAFT**）：
+
+| 文件 | 行数 | 职责 |
+|---|---|---|
+| `media/filters/video_renderer_impl.{h,cc}` | 191 + 264 | `DecoderStream<Video>` 泵 + `VideoFrameCompositor`（legacy/，已存在）+ `VideoRendererSink`（已存在）；实现 `VideoRendererSink::RenderCallback` |
+| `media/filters/renderer_impl.{h,cc}` | 192 + 443 | **组合根**：拥有 `AvSyncController`（时钟）+ 两个子渲染器，实现 `Renderer`，向上驱动 `RendererClient` |
+
+M7 的渲染三件套（`RendererImpl` / `VideoRendererImpl` / `AudioRendererImpl`）到此**代码齐全**；
+仍缺 `TextRenderer` 与 `media/audio/*`。
+
+#### ★一处对 docs/04 §1 线程表的刻意偏离（提出而非偷改）
+
+docs/04 的线程表把 **compositor 的写侧放在 S1**（`ijkpp-media`，`RendererImpl` 所在），
+S3（`ijkpp-video`，`VideoRendererImpl` 所在）只写"VideoFrameCompositor 的**部分读**"。
+照字面执行意味着：S3 解出一帧 → PostTask 到 S1 → S1 调 `PutCurrentFrame()`。
+
+**本实现没有这样做**，解码泵与 `PutCurrentFrame()` 都在 S3。三条理由写在头文件里：
+
+1. **解码与发布是一个因果步骤**。拆开就在"解码器产出第 N 帧"与"compositor 可以显示第 N 帧"
+   之间插入一个队列和一次任务跳转，而那个队列是**第二个**可能丢帧、乱序、seek 后滞留的地方。
+   ijkpp 已经有一个这样的队列（`VideoFrameQueue`）；为满足一行表格而加第二个隐式队列，
+   正是 ffplay 变成 `pictq` + `sampq` + refresh 线程三条路径的方式。
+2. compositor **内部有锁**，且它的读侧 `Render()` 本来就跑在 sink 的序列（S6）。
+   所以把写侧从 S1 挪到 S3 **不产生数据竞争**，只是改变了"由哪个序列串行化"。
+3. **时钟的所有权仍在 `RendererImpl`**：它周期性把 `SetMasterClock()` PostTask 到 S3。
+   docs/04 真正在意的东西——主时钟只有一个权威写者、A/V 同步决策不在两处做——**保住了**。
+
+代价：docs/04"所有 compositor 写都在某一个具名序列上"的保证从 S1 变成 S3，**表格需要更新**。
+这是带设计论证的文档变更，按 (3d) 的判据**登记在此而没有擅自改**。若评审偏好字面的 S1 模型，
+改动是机械的：给本类第二个 task runner，把 `PutCurrentFrame()` post 过去。
+
+#### 写这两个文件时抓到 / 修掉的问题
+
+| # | 问题 | 处置 |
+|---|---|---|
+| a | 用了 **`LOG_EVERY_N`**，而 `base/logging.h` 没有这个宏（只有 `LOG`/`LOG_IF`/`DLOG`/`VLOG`/`DVLOG`） | 改成计数器限流（`submit_failures_`，第 1 次与每 100 次各打一行）。**必须限流**：它跑在显示刷新率上，不限流就是坏 surface 期间 ~60 行/秒 |
+| b | `MaybeReportInitializedWith()` 用了但**没在头文件声明** | 补声明，并写明为什么与 `MaybeReportInitialized()` 分开（只有视频路径持有 pipeline 的 status 回调） |
+| c | 调了不存在的 `audio_->GetBufferedDuration()` | 改为存 `audio_params_` 并用 `buffered_frames()/sample_rate` 换算 |
+| d | `SetRenderMutedAudio()` 写成 `SetMuted(!render_muted_audio && volume_==0.0f)` —— **语义胡话**：`SetMuted` 是用户的静音控制，而这个参数是省电/同步策略 | 改为**存起来不执行**，并在注释写明为什么不能映射到 `SetMuted`。宁可留一个诚实的空实现，也不把调用方的请求悄悄重新解释成别的东西 |
+| e | `OnVideoStarted` / `OnAudioStarted` / `MaybeReportStarted` 三个方法**没人调用**（死钩子） | **删掉**。这正是我上一轮在 `renderer_client.h` 里写下的原则——"接口里有死钩子是 SDK 用户开始不信任其余接口的起点"——自己差点违反 |
+| f | 删掉 e 之后 `video_started_` / `audio_started_` / `start_requested_` 变成**只写不读**的死状态 | 一并删除 |
+| g | `scoped_refptr<AudioRendererSink>` 漏了 `base::` 限定 | 补上 |
+
+#### 两个新登记的 gap（都写在文件头）
+
+- **gap 7（`renderer_impl.h`）：`Initialize()` 把 `std::unique_ptr<VideoRendererSink>`
+  绑进 `base::BindOnce`**。`bind.h` 自称是"docs/08 §5.1 R2 降级预案的 L1 层"并列出**不支持**
+  `Passed()`/`Owned()`/变参包，但**没说 move-only 绑定参数支不支持**。所以这行能不能编译
+  **是真实构建要回答的第一批问题之一**；若 L1 搬不动 `unique_ptr`，就要改成"任务体内读成员字段"
+  而不是绑定参数。这是 R2 降级债第一次具体地挡住一段新代码。
+- **`OnTracksChanged` 对 kText 与 kAudio/kVideo 都返回 `kNotImplemented` 而不是假装成功**。
+  gap 3 特别写明：让 `Player::SelectTrack(kText)` 报成功而什么都不发生，**比失败更糟**——
+  UI 会显示一个不起作用的字幕开关。
+
+#### 验证边界
+
+```
+✅ check_invariants → all rules pass (188 files)，19 个 DRAFT 全部列出
+✅ 审查器（101 头 / 417 include 边）：B 循环 0 · C 卫士 0 · D 分层 0 · E shared_ptr 0
+   F 符号可见性 0 · G 虚析构 0 · H refcounted 0
+   （F 类第一次跑出 2 条误报：检查器的 CLASS 正则不认 `class X final : public Y {`，
+    已修——这是该检查器第三次因符号提取太朴素而误报）
+✅ 80 列全合规 · 花括号配平 · DRAFT 标记各 1 处 · 无死状态/死钩子
+✅ 传递闭包：renderer_impl.h 51 头 / video 40 头 / audio 43 头
+❌ 从未编译 ❌ 无任何测试（需要 tests/support/ 的 MockRendererClient + 假 sink）
+❌ 七个 DRAFT 文件互相依赖，必须一起转正，无法单独验证
+```
+
+**M7 剩余**：`TextRenderer`（或明确不做并让 kText 永远报错）· `media/audio/`（AudioManager /
+AudioOutputDevice，gap 2 的真正解法）· `tests/support/` 脚手架 · `DefaultRendererFactory`
+（把 `RendererFactory` 接口与这三个类接起来，并解决 (3b) 里 F2 的三条 sink 注入路径）。
+**然后才是 M8 的 `pipeline_impl` + `player_impl` 接线。**
+
 ### (4) R2 降级债的显式登记 — ✅ 本轮补记
 
 `docs/08` §5.1 给 R2（自研 `base/` 工期超支，P4×I4=**16**，高危）准备了 L0–L3
