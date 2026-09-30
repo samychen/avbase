@@ -15,8 +15,7 @@ ijkpp_add_unittest(base_unittests
         unit/base/time_unittest.cc
         unit/base/expected_unittest.cc
         unit/base/scoped_refptr_unittest.cc
-        # NOTE: unit/base/refcount_ownership_unittest.cc exists but is NOT
-        # listed here. It is marked STATUS: DRAFT, and the project's own rule
+        unit/base/refcount_ownership_unittest.cc It is marked STATUS: DRAFT, and the project's own rule
         # for DRAFT files (docs/PROGRESS.md, fifth round; repeated in the file
         # headers added in the ninth) is that they are excluded from every CMake
         # target, because a file that cannot compile must not be reachable from
@@ -45,7 +44,15 @@ ijkpp_add_unittest(media_unittests
         unit/media_filters/av_sync_controller_unittest.cc
         unit/media_filters/decoder_stream_unittest.cc
         unit/media_filters/video_frame_compositor_unittest.cc
+        unit/media_filters/audio_renderer_algorithm_unittest.cc
     DEPS ijkpp::media ijkpp::base_test_support)
+
+# ---- player: the SDK facade. ijkpp::player links ijkpp::media PUBLIC, so the
+# media types this suite needs come along without being listed twice.
+ijkpp_add_unittest(player_unittests
+    SOURCES
+        unit/player/deps_ownership_unittest.cc
+    DEPS ijkpp::player ijkpp::base_test_support)
 
 # ---- media + FFmpeg: real containers, labelled needs-ffmpeg so the
 # no-ffmpeg gate (design goal G2) skips them.

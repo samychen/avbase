@@ -42,6 +42,17 @@ LINE_LIMIT_ALLOWLIST = {
              "LGPL-2.1 quarantine, see media/filters/legacy/README.md."),
     "player/option_registry.cc": (
         700, "Generated table at M1; hand-written until then."),
+    "media/filters/audio_renderer_algorithm.cc": (
+        620, "WSOLA buffering, index bookkeeping and the three FillBuffer "
+             "modes. It was 756 lines before wsola_internals and "
+             "audio_frame_queue were split out, which is the split Chromium "
+             "uses too; the remaining overshoot is the queue-sizing block "
+             "(SetLatencyHint, IsQueueAdequateForPlayback, IsQueueFull, "
+             "IncreasePlaybackThreshold), which overlaps M9 BufferController's "
+             "three-tier high water mark. Whether that policy belongs here or "
+             "there is a design question for M9, and answering it by cutting a "
+             "file to a line count would be the wrong reason. See the LENGTH "
+             "note in the file header."),
 }
 
 # Layers that must never see a vendor or platform header (invariants C4, C5).
@@ -82,6 +93,17 @@ FUNCTION_LIMIT_ALLOWLIST = {
              "into a helper passed the context by value and reintroduced a "
              "double-free on the failure path (all 10 end-to-end tests "
              "SEGFAULTed). Keeping it linear is the safer shape here."),
+    ("media/base/pipeline_status.cc", "PipelineStatusToMediaError"): (
+        160, "One case per PipelineStatus, each a four-part message literal. "
+             "The header requires this mapping to be TOTAL -- no status may "
+             "fall through to a generic playback-failed message, which is the "
+             "failure mode docs/10 4 exists to prevent -- so the cases cannot "
+             "be distributed into helpers without losing the one place where "
+             "totality is visible and checkable. Converting it to a static "
+             "table of {status, code, summary, detail, suggestion} would be "
+             "better and is recorded as a follow-up; until then the length is "
+             "the price of the guarantee. There is no default label, so adding "
+             "an enumerator is a -Wswitch error rather than a silent gap."),
     ("player/option_registry.cc", "OptionRegistry::OptionRegistry"): (
         400, "Hand-written option table; replaced by tools/gen_options.py "
              "output at M1 (invariant C13)."),

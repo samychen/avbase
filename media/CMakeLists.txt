@@ -18,12 +18,26 @@ add_library(ijkpp_media
     base/media_log.cc
     base/media_types.cc
     base/native_display.cc
+    # Pipeline interfaces, promoted from DRAFT in the tenth round. Each of these
+    # is the key function for its class's vtable, which is why the constructors
+    # and destructors are out-of-line (see media/base/demuxer.cc).
+    base/pipeline.cc
+    base/pipeline_controller.cc
+    base/pipeline_status.cc
+    base/renderer.cc
+    base/renderer_client.cc
     base/video_decoder.cc
     base/video_frame.cc
     base/video_frame_queue.cc
     base/waiting.cc
+    filters/audio_frame_queue.cc
+    filters/audio_renderer_algorithm.cc
+    filters/audio_renderer_impl.cc
     filters/decoder_selector.cc
     filters/decoder_stream.cc
+    filters/renderer_impl.cc
+    filters/video_renderer_impl.cc
+    filters/wsola_internals.cc
     # LGPL-2.1 quarantine: line-by-line ports of ff_ffplay.c algorithms.
     # See media/filters/legacy/README.md and root LICENSE section 1.
     filters/legacy/av_sync_controller.cc

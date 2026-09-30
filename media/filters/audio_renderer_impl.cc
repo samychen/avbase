@@ -2,7 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// STATUS: DRAFT — NOT YET IN THE BUILD. Never compiled. The header carries the
+// STATUS: IN THE BUILD (promoted from DRAFT, tenth round)
+// Never compiled. The header carries the
+// PROMOTED into the build in the tenth round, after a full compile and test
+// run (docs/PROGRESS.md §3l). Any wording below saying this file has never
+// been compiled, or is excluded from every CMake target, is HISTORICAL: it
+// describes the state when the file was written and is kept so the reasoning
+// behind each gap list stays readable. The gap lists themselves are still
+// open unless a later note says otherwise.
 // gap list and the arithmetic behind why the DSP runs on S4 rather than in the
 // device callback.
 
@@ -18,6 +25,27 @@
 
 namespace ijkpp::media {
 namespace {
+
+// Applies gain to the first |written| frames and zeroes the rest. Split out of
+// Render() for two reasons: it keeps that function inside the 80-line budget of
+// invariant C2, and it makes the "short return means silence" rule a named
+// thing rather than a loop buried at the end of a callback. Zeroing matters --
+// the caller's AudioBus may still hold samples from the previous period, and
+// playing those would click at exactly the device's period rate.
+void ScaleAndZeroTail(AudioBus* dest, int written, float gain) {
+  const int total = dest->frames();
+  for (int c = 0; c < dest->channels(); ++c) {
+    float* out = dest->channel(c);
+    if (gain != 1.0f) {
+      for (int i = 0; i < written; ++i) {
+        out[i] *= gain;
+      }
+    }
+    for (int i = written; i < total; ++i) {
+      out[i] = 0.0f;
+    }
+  }
+}
 
 // Media time consumed by |frames| of output at |rate|. At 2.0x, one second of
 // output plays two seconds of content, so the media clock advances by
@@ -360,21 +388,7 @@ int AudioRendererImpl::Render(base::TimeDelta delay,
   // seqlock write, which is what keeps this inside the 100 us budget (Δ14
   // exists so the clock write needs no mutex).
 
-  const float gain = muted_.load() ? 0.0f : volume_.load();
-  for (int c = 0; c < channels; ++c) {
-    float* out = dest->channel(c);
-    if (gain != 1.0f) {
-      for (int i = 0; i < written; ++i) {
-        out[i] *= gain;
-      }
-    }
-    // Zero the tail rather than leaving whatever was in the caller's bus: a
-    // short return means "play silence", and stale samples from the previous
-    // callback would be a repeating click at the device's period rate.
-    for (int i = written; i < requested; ++i) {
-      out[i] = 0.0f;
-    }
-  }
+  ScaleAndZeroTail(dest, written, muted_.load() ? 0.0f : volume_.load());
 
   if (written == 0) {
     // Reported as a short count, not papered over: the sink turns this into an

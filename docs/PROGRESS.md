@@ -1175,6 +1175,58 @@ join 所有 sequence"。**但 `PipelineController` 是抽象类且不持有任�
 **手写正则做 C++ 解析一定会在"注释与字符串"和"多行声明"这两处翻车**，
 所以每次都必须配负向验证，否则会把假错当真错去"修"好代码。
 
+### (3l) ★27 个文件全部转正：DRAFT → 构建目标
+
+用户报告"可以编译成功"（情形 C：全量构建 + DRAFT 全部接进去跑通），据此执行转正。
+
+| 动作 | 明细 |
+|---|---|
+| 标记转换 | 27 个文件的 `STATUS: DRAFT — NOT YET IN THE BUILD` → **`STATUS: IN THE BUILD (promoted from DRAFT, tenth round)`**，标记**独立成行**，并插入一段说明："下方任何'从未编译''不在任何构建目标'的措辞属**历史记录**，保留是为了让每条 gap 的推理仍可读；gap 清单本身除非另有说明仍然有效" |
+| `media/CMakeLists.txt` | **+11 个源文件**：`base/{pipeline,pipeline_controller,pipeline_status,renderer,renderer_client}.cc` · `filters/{audio_frame_queue,audio_renderer_algorithm,audio_renderer_impl,renderer_impl,video_renderer_impl,wsola_internals}.cc` |
+| `tests/CMakeLists.txt` | `base_unittests` += `refcount_ownership_unittest.cc` · `media_unittests` += `audio_renderer_algorithm_unittest.cc` · **新建 `player_unittests`** += `deps_ownership_unittest.cc`（`ijkpp_player` 已 PUBLIC 链接 `ijkpp::media`，故不必重复声明依赖） |
+| **仍未转正** | `player/option_registry.inc`。接进去需要把 `option_registry.cc` 的 9 条手写 `e.push_back` 换成遍历 `kGeneratedOptions` + 调用 `ApplyGeneratedOption`，并实现 `ApplyHeaderBlob()`——那是**改动一个正在工作的文件**，盲改的风险高于收益 |
+
+#### ★棘轮门禁在转正的当下就抓到了 11 处
+
+C23（列宽棘轮）此前对这 27 个文件是**豁免**的。一转正立刻报出 **11 行超 80 列**——
+全部是我自己在写 DRAFT 期间留下的，其中 9 处是**我做标记替换时把标记行本身撑长了**
+（`STATUS: DRAFT — NOT YET IN THE BUILD` 36 字符 → `STATUS: IN THE BUILD (promoted from DRAFT, tenth round)` 56 字符，
+加上原行尾的正文就超了）。**这是棘轮存在的意义的第一次实证**：如果没有 C23，
+这 11 行会带着"新代码"的身份进入主干，而列宽在 `check-format` job 建起来之前没有任何别的门禁。
+
+同时 C1/C2 也开始生效，抓到两处真问题：
+
+| 违规 | 处置 | 理由 |
+|---|---|---|
+| **C2**：`PipelineStatusToMediaError` 142 行（限 80） | **登记带理由的豁免**（上限 160） | 它是**全射映射**：头文件要求任何 status 都不得落到泛化的 "playback failed"。把各 case 分散进 helper 就会**失去唯一能一眼看出"全射"的地方**。没有 `default` 标签，所以新增枚举值是 `-Wswitch` 编译错误而不是静默缺口。豁免理由里同时写明**更好的做法是改成 `{status, code, summary, detail, suggestion}` 静态表**，作为 follow-up 记录在案——登记豁免不等于认为现状最好 |
+| **C2**：`AudioRendererImpl::Render` 86 行（限 80） | **真拆**：抽出文件内静态函数 `ScaleAndZeroTail(dest, written, gain)` | 6 行的超出可以靠豁免混过去，但这里拆出来**本身更好**：它把"短返回即静音"这条规则变成一个具名函数，而不是埋在回调末尾的两个循环；而且清零那段的理由（调用方的 bus 可能残留上一周期的样本，会以设备周期频率咔哒作响）值得有自己的注释 |
+
+两处处置不同，判据是同一条：**豁免用于"线性本身就是价值"的函数（全射映射、`AVFormatContext` 生命周期），拆分用于"拆完更好读"的函数。** 这与 `ffmpeg_demuxer.cc` 的 `OpenOnDemuxThread` 豁免（第四轮 bug #25：为满足行数规则而抽 helper，结果按值传指针引入 double-free，10 个端到端测试全 SEGFAULT）是同一套判断。
+
+#### 一个标记机制的二次踩坑
+
+`wsola_internals.h` 转正后**仍被判定为 DRAFT**。原因：我上一轮为防止标记被重排拆行，
+在该文件里加了一段说明，而那段说明**字面引用了标记本身**（`matches the literal substring "STATUS: DRAFT"`）
+——于是文件里出现了第二个匹配。已把说明改成**描述机制而不拼写标记**。
+
+这与"重排把标记拆到两行"是同一个机制的两面：**用字面子串做治理状态的判据，
+则任何提到该子串的散文都会改变治理状态。** 已在该文件注明这条推论。
+
+#### 转正后的全量校验
+
+```
+✅ check_invariants.py --root .  → all rules pass (193 files)
+   C23: 323 over-length line(s), unchanged from baseline（棘轮未退化）
+   DRAFT 文件数：27 → 0（.h/.cc 口径；option_registry.inc 仍标 DRAFT）
+✅ gen_options.py --check        → findings 0 · A10 9/66
+✅ extract_constants.py --selftest → exit 0
+✅ CMakeLists 引用的源文件全部存在（一条"缺失"是我的快速检查器把注释里
+   提到的 media/base/demuxer.cc 当成了源文件——又是"没剥注释"那一类）
+❌ 用例总数未更新：287/322 是转正前的数字，新增 3 个测试文件（10 + 17 + 5 = 32 个用例）
+   后应为 ~319/~354，但**我没有 ctest 可跑，不编造数字**。README 与 PROGRESS 已改为
+   指向活文档并注明"下次真实 ctest 后填回"
+```
+
 ### (4) R2 降级债的显式登记 — ✅ 本轮补记
 
 `docs/08` §5.1 给 R2（自研 `base/` 工期超支，P4×I4=**16**，高危）准备了 L0–L3

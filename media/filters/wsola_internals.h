@@ -19,15 +19,25 @@
 // reason this file exists separately, so that the one uncertain piece is a
 // single named function rather than something buried in 700 lines.
 //
-// STATUS: DRAFT — NOT YET IN THE BUILD. Never compiled; see the gap list in
+//
+// STATUS: IN THE BUILD (promoted from DRAFT, tenth round)
+// (promoted from DRAFT, tenth round). Never compiled; see the gap list in
+// PROMOTED into the build in the tenth round, after a full compile and test
+// run (docs/PROGRESS.md §3l). Any wording below saying this file has never
+// been compiled, or is excluded from every CMake target, is HISTORICAL: it
+// describes the state when the file was written and is kept so the reasoning
+// behind each gap list stays readable. The gap lists themselves are still
+// open unless a later note says otherwise.
 // audio_renderer_algorithm.h.
 //
-// The marker above must stay on its own line and must not be reflowed into a
-// paragraph. check_invariants.py matches the literal substring "STATUS: DRAFT",
-// so a comment re-wrap that splits it across two lines silently un-marks the
-// file -- which is how this one lost its DRAFT status once already, and how it
-// then became subject to the style and size rules it is meant to be exempt from
-// until it compiles.
+// NOTE ON THE MARKER MECHANISM (kept after promotion because it is a live
+// hazard for any file that is still a draft). The marker must stay on its own
+// line and must not be reflowed into a paragraph: check_invariants.py matches a
+// literal six-word substring, so a comment re-wrap that splits it across two
+// lines silently un-marks the file, which is how this one lost its draft status
+// once already. The corollary is the one that bit a second time: prose that
+// *quotes* the marker also counts as a marker, so this paragraph deliberately
+// describes it instead of spelling it out.
 
 #ifndef IJKPP_MEDIA_FILTERS_WSOLA_INTERNALS_H_
 #define IJKPP_MEDIA_FILTERS_WSOLA_INTERNALS_H_

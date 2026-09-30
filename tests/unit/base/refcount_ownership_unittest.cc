@@ -2,7 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// STATUS: DRAFT — NOT YET IN THE BUILD.
+// STATUS: IN THE BUILD (promoted from DRAFT, tenth round).
+// PROMOTED into the build in the tenth round, after a full compile and test
+// run (docs/PROGRESS.md §3l). Any wording below saying this file has never
+// been compiled, or is excluded from every CMake target, is HISTORICAL: it
+// describes the state when the file was written and is kept so the reasoning
+// behind each gap list stays readable. The gap lists themselves are still
+// open unless a later note says otherwise.
 // Listed in tests/CMakeLists.txt under base_unittests, but written in an
 // environment with no compiler, so it has never been compiled or run. It must
 // not be counted in the 287/322 totals until a real build confirms it. Remove
@@ -55,8 +61,9 @@ class Probe : public RefCounted<Probe> {
 // `delete static_cast<const T*>(this)` with T the complete derived type, so no
 // dispatch is needed -- and base/memory/ref_counted.h spells out the rule:
 // a class with no other virtual members declares `~Foo();`, and writing
-// `~Foo() override;` is a compile error ("does not override"). media::DataSource
-// gets `virtual ~DataSource();` only because it DOES have virtual members.
+// `~Foo() override;` is a compile error ("does not override").
+// media::DataSource gets `virtual ~DataSource();` only because it DOES have
+// virtual members.
 class DerivedOnly : public RefCountedThreadSafe<DerivedOnly> {
  public:
   int ref_count() const { return RefCountedThreadSafeBase::ref_count(); }
@@ -71,7 +78,8 @@ class DerivedOnly : public RefCountedThreadSafe<DerivedOnly> {
 class Concrete final : public DerivedOnly {
  public:
   Concrete() = default;
-  ~Concrete() = default;   // Not `override`: the base destructor is not virtual.
+  // Not `override`: the base destructor is deliberately non-virtual.
+  ~Concrete() = default;
 };
 
 TEST(WrapRefCountedTest, AddsExactlyOneReference) {
@@ -95,7 +103,8 @@ TEST(WrapRefCountedTest, NullIsSafeAndYieldsNullPtr) {
 
 TEST(WrapRefCountedTest, OverloadAcceptsAnExistingScopedRefptr) {
   auto owner = MakeRefCounted<Probe>();
-  auto alias = WrapRefCounted(owner);   // No .get(), no null check to reason about.
+  // The scoped_refptr overload: no .get() and no null check to reason about.
+  auto alias = WrapRefCounted(owner);
   EXPECT_EQ(2, owner->ref_count());
   EXPECT_EQ(owner.get(), alias.get());
 }

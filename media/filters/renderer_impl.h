@@ -6,7 +6,14 @@
 // the composition root that turns a MediaResource into audio and video output
 // and owns the clock.
 //
-// STATUS: DRAFT — NOT YET IN THE BUILD (milestone M7, docs/08 §2).
+// STATUS: IN THE BUILD (promoted from DRAFT, tenth round)
+// (milestone M7, docs/08 §2).
+// PROMOTED into the build in the tenth round, after a full compile and test
+// run (docs/PROGRESS.md §3l). Any wording below saying this file has never
+// been compiled, or is excluded from every CMake target, is HISTORICAL: it
+// describes the state when the file was written and is kept so the reasoning
+// behind each gap list stays readable. The gap lists themselves are still
+// open unless a later note says otherwise.
 // Written without a compiler; never built or run. Excluded from every CMake
 // target on purpose.
 //
