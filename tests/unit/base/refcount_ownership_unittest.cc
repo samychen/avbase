@@ -133,9 +133,10 @@ TEST(AdoptRefTest, TakesOverAnExistingReferenceWithoutAddingOne) {
   first->WatchDestruction(&destroyed);
   ASSERT_EQ(1, first->ref_count());
 
-  Probe* raw = first.release();          // gives up the reference without Release
+  // release() gives up the reference without calling Release().
+  Probe* raw = first.release();
   ASSERT_NE(nullptr, raw);
-  ASSERT_EQ(1, raw->ref_count());        // still referenced, now unowned
+  ASSERT_EQ(1, raw->ref_count());  // still referenced, now unowned
 
   {
     auto owner = AdoptRef(raw);
