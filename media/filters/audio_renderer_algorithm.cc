@@ -300,6 +300,10 @@ int AudioRendererAlgorithm::FillBuffer(AudioBus* dest, int dest_offset,
 
   const int initial_input_frames = buffered_frames();
   int rendered = 0;
+  // Every path below reads through the queue, and the queue converts into this
+  // bus. Creating it here rather than in AllocateWsolaBuffers() is the fix for
+  // passthrough returning zero frames.
+  EnsureScratch(requested_frames);
 
   if (is_bitstream_format_) {
     rendered = queue_->ReadFrames(requested_frames, dest_offset, dest,
@@ -395,6 +399,13 @@ void AudioRendererAlgorithm::ApplyVolume(AudioBus* dest, int dest_offset,
   }
 }
 
+void AudioRendererAlgorithm::EnsureScratch(int frames) {
+  if (scratch_ && scratch_->frames() >= frames) {
+    return;
+  }
+  scratch_ = AudioBus::Create(channels_, frames);
+}
+
 void AudioRendererAlgorithm::AllocateWsolaBuffers() {
   if (wsola_output_) {
     return;
@@ -411,7 +422,10 @@ void AudioRendererAlgorithm::AllocateWsolaBuffers() {
   target_block_ = AudioBus::Create(channels_, ola_window_size_);
   const int search_frames = num_candidate_blocks_ + (ola_window_size_ - 1);
   search_block_ = AudioBus::Create(channels_, search_frames);
-  scratch_ = AudioBus::Create(channels_, search_frames);
+  // PeekAudioWithZeroPrepend reads up to search_block_->frames() at a time, so
+  // the scratch bus must be at least that large even if FillBuffer() asked for
+  // fewer output frames.
+  EnsureScratch(search_frames);
 }
 
 // ---------------------------------------------------------------------------

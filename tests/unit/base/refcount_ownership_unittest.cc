@@ -38,7 +38,16 @@ namespace {
 class Probe : public RefCounted<Probe> {
  public:
   Probe() = default;
-  ~Probe() { *destroyed_ = true; }
+  // The null check is the fix for four SEGFAULTs: tests that only inspect the
+  // reference count never call WatchDestruction(), so destroyed_ is null and
+  // the unconditional dereference crashed the process during teardown -- after
+  // the test body had already passed, which is why ctest reported SEGFAULT
+  // rather than a failed assertion.
+  ~Probe() {
+    if (destroyed_) {
+      *destroyed_ = true;
+    }
+  }
 
   int ref_count() const { return RefCountedBase::ref_count(); }
   bool HasOneRef() const { return ref_count() == 1; }
@@ -109,21 +118,34 @@ TEST(WrapRefCountedTest, OverloadAcceptsAnExistingScopedRefptr) {
   EXPECT_EQ(owner.get(), alias.get());
 }
 
-TEST(AdoptRefTest, DoesNotAddASecondReference) {
+TEST(AdoptRefTest, TakesOverAnExistingReferenceWithoutAddingOne) {
+  // This test asserted the wrong thing in its first version: it did
+  // `AdoptRef(new Probe())` and expected a count of 1. But in ijkpp a freshly
+  // newed ref-counted object has count 0, MakeRefCounted reaches 1 by way of
+  // the *adding* constructor, and ~RefCountedBase DCHECKs the count is back to
+  // 0. AdoptRef therefore means "take over a reference someone already holds",
+  // and handing it a count-0 pointer is misuse -- the first Release() would
+  // take the count to -1 and never delete. The correct handoff is release() on
+  // one scoped_refptr and AdoptRef on the other, which is also the shape a
+  // C-style factory returning a +1'd pointer has.
   bool destroyed = false;
-  Probe* raw = new Probe();
-  raw->WatchDestruction(&destroyed);
-  ASSERT_EQ(0, raw->ref_count());
+  auto first = MakeRefCounted<Probe>();
+  first->WatchDestruction(&destroyed);
+  ASSERT_EQ(1, first->ref_count());
+
+  Probe* raw = first.release();          // gives up the reference without Release
+  ASSERT_NE(nullptr, raw);
+  ASSERT_EQ(1, raw->ref_count());        // still referenced, now unowned
 
   {
     auto owner = AdoptRef(raw);
-    // The whole point: one owner, one reference. The pre-fix spelling made this
-    // 2 and leaked the object.
+    // The whole point: still exactly one reference, not two. The pre-fix
+    // spelling of AdoptRef added one here, which leaked the object.
     EXPECT_EQ(1, owner->ref_count());
     EXPECT_TRUE(owner->HasOneRef());
     EXPECT_FALSE(destroyed);
   }
-  EXPECT_TRUE(destroyed);               // Release() ran exactly once.
+  EXPECT_TRUE(destroyed);                // Release() ran exactly once.
 }
 
 TEST(AdoptRefTest, NullIsSafe) {

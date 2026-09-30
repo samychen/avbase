@@ -210,6 +210,13 @@ class IJKPP_MEDIA_EXPORT AudioRendererAlgorithm {
   bool TargetIsWithinSearchRegion() const;
   void PeekAudioWithZeroPrepend(int read_offset_frames, AudioBus* dest);
   void AllocateWsolaBuffers();
+  // The scratch bus is what AudioFrameQueue::PeekFrames() converts into before
+  // the caller's offset is applied. It is needed by EVERY read path, not just
+  // WSOLA's -- and the first draft created it only inside
+  // AllocateWsolaBuffers(), so passthrough and bitstream reads silently
+  // returned zero frames. Lazily grown because FillBuffer()'s requested_frames
+  // is not known at Initialize() time.
+  void EnsureScratch(int frames);
   FillBufferMode ChooseBufferMode(double playback_rate) const;
   void SetFillBufferMode(FillBufferMode mode);
   void ResetWsolaState();

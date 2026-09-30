@@ -92,7 +92,22 @@ int AudioFrameQueue::PeekFrames(int num_frames, int read_offset,
     // float planar. That is the single place the conversion happens, which is
     // the same reason ffplay's swr_convert was moved out of the audio callback
     // (Δ13): the device callback must copy, not convert.
-    buffer->ReadFrames(chunk, offset, scratch);
+    const int converted = buffer->ReadFrames(chunk, offset, scratch);
+    if (converted < chunk) {
+      // ReadFrames can legitimately return fewer frames than asked (a truncated
+      // buffer, or a format it cannot convert). Counting `chunk` anyway would
+      // report frames that were never produced, which is how a decoder bug
+      // turns into an A/V-sync bug several layers up. Zero the rest and stop.
+      for (int c = 0; c < dest->channels(); ++c) {
+        float* out = dest->channel(c) + dst;
+        for (int i = converted; i < chunk; ++i) {
+          out[i] = 0.0f;
+        }
+      }
+      dst += converted;
+      remaining -= converted;
+      break;
+    }
     for (int c = 0; c < dest->channels(); ++c) {
       const float* src = scratch->channel(c);
       float* out = dest->channel(c) + dst;
