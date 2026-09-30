@@ -208,6 +208,18 @@ class IJKPP_MEDIA_EXPORT AudioRendererAlgorithm {
   int WriteCompletedFramesTo(int requested_frames, int dest_offset,
                              AudioBus* dest);
   bool TargetIsWithinSearchRegion() const;
+  // Width of the search block: num_candidate_blocks_ candidates, each of which
+  // needs a whole ola_window_size_ block to fit, so the last candidate starts
+  // at ola_window_size_ - 1 frames from the end. search_block_ is allocated
+  // with this width; keeping the arithmetic in one place is what stops the
+  // allocation and the bounds checks from drifting apart.
+  int SearchBlockFrames() const;
+  // How much of the search block is real audio rather than the zero-fill that
+  // PeekAudioWithZeroPrepend() puts past the end of the queue. Equal to
+  // SearchBlockFrames() except at end of stream, where the queue can be
+  // narrower than one search block; 0 means not even one candidate window
+  // fits, which is the caller's signal to stop iterating.
+  int EffectiveSearchBlockFrames() const;
   void PeekAudioWithZeroPrepend(int read_offset_frames, AudioBus* dest);
   void AllocateWsolaBuffers();
   // The scratch bus is what AudioFrameQueue::PeekFrames() converts into before

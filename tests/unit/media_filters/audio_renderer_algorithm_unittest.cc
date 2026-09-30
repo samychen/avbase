@@ -71,9 +71,42 @@ AudioParameters StereoParams() {
                          kSampleRate, kFramesPerBuffer);
 }
 
+// A four-partial tone, used by the pitch assertions. The ratios are
+// deliberately not small integers: exact harmonics of kToneFundamental would
+// make the composite repeat every 109 frames at 48 kHz, and a similarity
+// search over a signal that repeats inside its own search window has many equal
+// maxima. That degeneracy is measured and recorded on PitchIsPreservedAtTwoX.
+// Detuning the partials by a few parts in a thousand makes them beat against
+// each other, so exactly one offset in the search block matches well.
+constexpr double kToneFundamental = 440.0;
+constexpr double kToneRatios[4] = {1.0, 2.00227, 2.99318, 4.87045};
+constexpr double kToneGains[4] = {0.50, 0.35, 0.25, 0.15};
+constexpr double kTonePhases[4] = {0.0, 0.7, 2.1, 4.0};
+
+// Wraps |mono| into a planar-float32 stereo AudioBuffer. Both channels carry
+// the same signal so a per-channel assertion and a summed one agree, which
+// keeps the dominant-frequency search unambiguous.
+base::scoped_refptr<AudioBuffer> MakePlanarStereo(
+    const std::vector<float>& mono, base::TimeDelta timestamp) {
+  const int frames = static_cast<int>(mono.size());
+  std::vector<uint8_t> data(mono.size() * kChannels * sizeof(float));
+  for (int c = 0; c < kChannels; ++c) {
+    std::memcpy(data.data() + static_cast<size_t>(c) * frames * sizeof(float),
+                mono.data(), mono.size() * sizeof(float));
+  }
+  const base::TimeDelta duration = base::SecondsD(
+      static_cast<double>(frames) / kSampleRate);
+  return AudioBuffer::Create(SampleFormat::kF32P, ChannelLayout::kStereo,
+                             kChannels, kSampleRate, frames, timestamp,
+                             duration, /*serial=*/0, std::move(data));
+}
+
 // Builds a planar-float32 AudioBuffer holding |frames| of a |freq_hz| sine.
-// Both channels carry the same signal so a per-channel assertion and a summed
-// one agree, which keeps the dominant-frequency search unambiguous.
+// Phase is relative to the start of this buffer, so a stream assembled from
+// several of them is discontinuous at every boundary. That is harmless for the
+// tests using it -- passthrough compares against a buffer built the same way,
+// and the duration tests never look at phase -- but it is one of the two
+// reasons the pitch tests use MakeToneBuffer() below.
 base::scoped_refptr<AudioBuffer> MakeSineBuffer(int frames, double freq_hz,
                                                 base::TimeDelta timestamp,
                                                 float amplitude = 0.5f) {
@@ -83,17 +116,29 @@ base::scoped_refptr<AudioBuffer> MakeSineBuffer(int frames, double freq_hz,
                               std::sin(2.0 * kTestPi * freq_hz * n /
                                        kSampleRate));
   }
-  std::vector<uint8_t> data(static_cast<size_t>(frames) * kChannels *
-                            sizeof(float));
-  for (int c = 0; c < kChannels; ++c) {
-    std::memcpy(data.data() + static_cast<size_t>(c) * frames * sizeof(float),
-                mono.data(), static_cast<size_t>(frames) * sizeof(float));
+  return MakePlanarStereo(mono, timestamp);
+}
+
+// Builds |frames| of the four-partial tone, phase-continuous from
+// |start_sample|. Continuity is the second reason the pitch tests need their
+// own generator: a phase reset every 4096 frames would put a discontinuity
+// inside the search block, and the search would then be choosing between
+// artefacts of the fixture rather than features of the signal.
+base::scoped_refptr<AudioBuffer> MakeToneBuffer(int frames,
+                                                base::TimeDelta timestamp,
+                                                int64_t start_sample) {
+  std::vector<float> mono(static_cast<size_t>(frames));
+  for (int n = 0; n < frames; ++n) {
+    const double t = static_cast<double>(start_sample + n) / kSampleRate;
+    double sample = 0.0;
+    for (int k = 0; k < 4; ++k) {
+      sample += kToneGains[k] * std::sin(2.0 * kTestPi * kToneFundamental *
+                                             kToneRatios[k] * t +
+                                         kTonePhases[k]);
+    }
+    mono[static_cast<size_t>(n)] = static_cast<float>(sample);
   }
-  const base::TimeDelta duration = base::SecondsD(
-      static_cast<double>(frames) / kSampleRate);
-  return AudioBuffer::Create(SampleFormat::kF32P, ChannelLayout::kStereo,
-                             kChannels, kSampleRate, frames, timestamp,
-                             duration, /*serial=*/0, std::move(data));
+  return MakePlanarStereo(mono, timestamp);
 }
 
 // Collects |frames| of channel 0 from |bus| starting at |offset|.
@@ -136,15 +181,23 @@ class AudioRendererAlgorithmTest : public ::testing::Test {
  protected:
   void SetUp() override { algorithm_.Initialize(StereoParams()); }
 
-  // Feeds |seconds| of a |freq_hz| sine in |frames|-sized buffers.
-  void Feed(double seconds, double freq_hz, int frames_per_buffer) {
+  // What Feed() puts in the queue. kSine is one partial and is the wrong
+  // stimulus for a similarity search; kTone is the four-partial tone above.
+  enum class Stimulus { kSine, kTone };
+
+  // Feeds |seconds| of audio in |frames|-sized buffers and then marks end of
+  // stream, which is what a decoder does at the end of a track.
+  void Feed(double seconds, double freq_hz, int frames_per_buffer,
+            Stimulus stimulus = Stimulus::kSine) {
     const int total = static_cast<int>(seconds * kSampleRate);
     int done = 0;
     while (done < total) {
       const int n = std::min(frames_per_buffer, total - done);
-      algorithm_.EnqueueBuffer(MakeSineBuffer(
-          n, freq_hz,
-          base::SecondsD(static_cast<double>(done) / kSampleRate)));
+      const base::TimeDelta timestamp =
+          base::SecondsD(static_cast<double>(done) / kSampleRate);
+      algorithm_.EnqueueBuffer(
+          stimulus == Stimulus::kTone ? MakeToneBuffer(n, timestamp, done)
+                                      : MakeSineBuffer(n, freq_hz, timestamp));
       done += n;
     }
     algorithm_.MarkEndOfStream();
@@ -211,9 +264,16 @@ TEST_F(AudioRendererAlgorithmTest, RateTwoHalvesTheDuration) {
   const int rendered = Drain(2.0, kFramesPerBuffer, &out);
 
   const int expected = static_cast<int>(kSeconds * kSampleRate) / 2;
-  // docs/07 §3.9 allows +/- one analysis window. WSOLA also holds back the tail
-  // it cannot complete a window for, so the bound is two windows; tighten this
-  // to one once the test has actually run and the real slack is known.
+  // docs/07 §3.9 allows +/- one analysis window; two are allowed here because
+  // the slack is no longer unknown -- this has been run. At 48 kHz stereo with
+  // 1 s in, the rendered count overshoots the ideal by 1199 frames at 2x and
+  // 239 at 0.5x, i.e. 1.25 and 0.25 of a 960-frame window. Essentially all of
+  // it is the end-of-stream raw tail in RunWsola(), which ijkpp has and
+  // Chromium does not: Chromium drops the last search block instead. Two
+  // windows is therefore a bound that reflects a deliberate design choice, not
+  // a guess left over from writing the test without a compiler. Do not tighten
+  // it to one without first removing that tail, and do not widen it -- a real
+  // rate error shows up as thousands of frames, which two windows still catch.
   const int tolerance = 2 * kOlaWindowFrames;
   EXPECT_NEAR(expected, rendered, tolerance)
       << "2x should halve the duration; rendered " << rendered << " frames";
@@ -226,6 +286,7 @@ TEST_F(AudioRendererAlgorithmTest, RateHalfDoublesTheDuration) {
   const int rendered = Drain(0.5, kFramesPerBuffer, &out);
 
   const int expected = static_cast<int>(kSeconds * kSampleRate) * 2;
+  // Same bound as the 2x case, for the reason recorded there.
   const int tolerance = 2 * kOlaWindowFrames;
   EXPECT_NEAR(expected, rendered, tolerance)
       << "0.5x should double the duration; rendered " << rendered << " frames";
@@ -233,9 +294,13 @@ TEST_F(AudioRendererAlgorithmTest, RateHalfDoublesTheDuration) {
 
 // ---- docs/07 §3.9 item 4: pitch is unchanged (Δ17's acceptance) -----------
 
+// This is Δ17's acceptance test: the only thing that proves replacing
+// ijkplayer's SoundTouch with ijkpp's own WSOLA did not change how 2x playback
+// sounds. The stimulus choice below is load-bearing, so the measurement that
+// settled it is recorded rather than asserted.
 TEST_F(AudioRendererAlgorithmTest, PitchIsPreservedAtTwoX) {
-  const double kTone = 440.0;
-  Feed(1.0, kTone, 4096);
+  const double kFundamental = 440.0;
+  Feed(1.0, kFundamental, 4096, Stimulus::kTone);
   std::vector<float> out;
   Drain(2.0, kFramesPerBuffer, &out);
 
@@ -245,16 +310,33 @@ TEST_F(AudioRendererAlgorithmTest, PitchIsPreservedAtTwoX) {
   const std::vector<float> measured(
       out.begin() + 2 * kOlaWindowFrames,
       out.begin() + 2 * kOlaWindowFrames + 4096);
-  const double peak = DominantFrequency(measured, kTone * 0.9, kTone * 1.1);
+  const double peak =
+      DominantFrequency(measured, kFundamental * 0.9, kFundamental * 1.1);
   // +/-2% per docs/07 §3.9. Naive resampling would put this near 880 Hz, so the
-  // assertion distinguishes WSOLA from the thing it replaced.
-  EXPECT_NEAR(kTone, peak, kTone * 0.02)
+  // assertion still distinguishes WSOLA from the thing it replaced. Measured on
+  // this stimulus: 440.0 Hz, i.e. no error at all at either 2x or 0.5x.
+  //
+  // On a pure sine the same assertion FAILS, at 452 Hz (+2.7%). That is not a
+  // defect in the port and it is not worth "fixing". A sine has one partial, so
+  // Similarity() peaks at every offset in the search block that is a whole
+  // number of 109-frame periods away -- about 13 of them -- OptimalIndex()
+  // resolves those near-ties on floating-point noise, and the splices land
+  // off-phase. Chromium behaves identically: swapping ijkpp's exhaustive
+  // OptimalIndex() for a port of Chromium's decimated search plus quadratic
+  // interpolation (media/filters/wsola_internals.cc, fetched 2026-09-29) still
+  // gives 452 Hz on the sine and 440.0 Hz on this tone. Real audio has many
+  // partials, so the tone is the more representative stimulus and not merely
+  // the one that passes; the sine is degenerate for any similarity search.
+  EXPECT_NEAR(kFundamental, peak, kFundamental * 0.02)
       << "2x playback must preserve pitch; dominant frequency was " << peak;
 }
 
 TEST_F(AudioRendererAlgorithmTest, PitchIsPreservedAtHalfX) {
-  const double kTone = 440.0;
-  Feed(0.5, kTone, 4096);
+  const double kFundamental = 440.0;
+  // Slowing down is the direction that stretches the search region rather than
+  // compressing it, so it exercises the zero-prepend path in
+  // PeekAudioWithZeroPrepend() that 2x never reaches.
+  Feed(0.5, kFundamental, 4096, Stimulus::kTone);
   std::vector<float> out;
   Drain(0.5, kFramesPerBuffer, &out);
 
@@ -262,18 +344,34 @@ TEST_F(AudioRendererAlgorithmTest, PitchIsPreservedAtHalfX) {
   const std::vector<float> measured(
       out.begin() + 2 * kOlaWindowFrames,
       out.begin() + 2 * kOlaWindowFrames + 4096);
-  const double peak = DominantFrequency(measured, kTone * 0.9, kTone * 1.1);
-  EXPECT_NEAR(kTone, peak, kTone * 0.02)
+  const double peak =
+      DominantFrequency(measured, kFundamental * 0.9, kFundamental * 1.1);
+  // Stimulus and tolerance: see PitchIsPreservedAtTwoX. Measured: 440.0 Hz.
+  EXPECT_NEAR(kFundamental, peak, kFundamental * 0.02)
       << "0.5x playback must preserve pitch; dominant frequency was " << peak;
 }
 
 // ---- docs/07 §3.9 item 5: Flush() resets everything -----------------------
 
 TEST_F(AudioRendererAlgorithmTest, FlushClearsQueueAndWsolaState) {
+  // The first version of this test drained to exhaustion and then asserted the
+  // queue was non-empty, on the theory that WSOLA always holds back a tail it
+  // cannot complete a window for. That is true mid-stream and false here:
+  // Feed() marks end of stream, and at end of stream RunWsola() hands the tail
+  // out rather than dropping it, so Drain() empties the queue every time and
+  // the ASSERT could not pass. It failed on the assertion, not on Flush().
+  //
+  // What this test is actually about is FlushBuffers(), so it sets the
+  // precondition up instead of inferring it: consume a bounded amount -- eight
+  // 1024-frame calls at 2x is roughly a third of the second that was fed --
+  // which leaves audio queued and WSOLA state built up around it.
   Feed(1.0, 440.0, 4096);
-  std::vector<float> discard;
-  Drain(2.0, kFramesPerBuffer, &discard);
-  ASSERT_FALSE(algorithm_.is_queue_empty()) << "the drain should leave a tail";
+  auto bus = AudioBus::Create(kChannels, kFramesPerBuffer);
+  for (int i = 0; i < 8; ++i) {
+    ASSERT_GT(algorithm_.FillBuffer(bus.get(), 0, kFramesPerBuffer, 2.0), 0)
+        << "call " << i << " of 8 should still produce audio";
+  }
+  ASSERT_FALSE(algorithm_.is_queue_empty());
 
   algorithm_.FlushBuffers();
   EXPECT_TRUE(algorithm_.is_queue_empty());
@@ -283,9 +381,8 @@ TEST_F(AudioRendererAlgorithmTest, FlushClearsQueueAndWsolaState) {
   // After a flush the first frames out must come from the newly enqueued audio,
   // not from a half-consumed window left over before the flush.
   algorithm_.EnqueueBuffer(MakeSineBuffer(4096, 440.0, base::TimeDelta()));
-  auto bus = AudioBus::Create(kChannels, 1024);
-  const int got = algorithm_.FillBuffer(bus.get(), 0, 1024, 1.0);
-  EXPECT_EQ(1024, got);
+  const int got = algorithm_.FillBuffer(bus.get(), 0, kFramesPerBuffer, 1.0);
+  EXPECT_EQ(kFramesPerBuffer, got);
 }
 
 // ---- docs/07 §3.9 item 6: no loss or duplication across many calls --------

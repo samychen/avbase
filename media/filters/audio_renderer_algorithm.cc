@@ -23,17 +23,18 @@
 // ported constant and not only to the A/V-sync ones -- and because the first
 // version of tools/gen_options.py got a hand-copied FourCC wrong.
 //
-// LENGTH: at 555 lines this exceeds MAX_FILE_LINES (invariant C1, limit 500).
-// It is exempt right now only because DRAFT files are exempt from the size
-// rules. Before it joins a build target it needs one of:
-//   * a C1 allowlist entry with a reason, the way ffmpeg_demuxer.cc has one; or
-//   * a further split. The natural seam is the queue-sizing block
-//     (SetLatencyHint / IsQueueAdequateForPlayback / IsQueueFull /
-//     IncreasePlaybackThreshold / capacity_ / playback_threshold_), which
-//     overlaps M9's BufferController three-tier high water mark. Whether that
-//     policy belongs here or there is a real design question, not a cosmetic
-//     one, and it should be settled at M9 rather than by splitting a file to
-//     satisfy a line count.
+// LENGTH: this exceeds MAX_FILE_LINES (invariant C1, limit 500) and carries a
+// C1 allowlist entry, currently 660, the way ffmpeg_demuxer.cc does. The first
+// version of this note described that entry as still owed, from when the file
+// was a DRAFT and drafts are exempt from the size rules; it was written before
+// promotion and is corrected here rather than left to mislead the next reader.
+// The alternative to an allowlist entry is a further split, and the natural
+// seam is the queue-sizing block (SetLatencyHint /
+// IsQueueAdequateForPlayback / IsQueueFull / IncreasePlaybackThreshold /
+// capacity_ / playback_threshold_), which overlaps M9's BufferController
+// three-tier high water mark. Whether that policy belongs here or there is a
+// real design question, not a cosmetic one, and it should be settled at M9
+// rather than by splitting a file to satisfy a line count.
 //
 // Do not "fix" the line count by deleting comments: the provenance and the
 // reasoning are the point of this file's shape.
@@ -357,10 +358,14 @@ int AudioRendererAlgorithm::RunWsola(AudioBus* dest, int dest_offset,
                                        dest_offset + rendered, dest);
   } while (rendered < requested_frames && RunOneWsolaIteration(playback_rate));
 
-  // At end of stream the queue will never grow enough to complete another
-  // window, so the tail is handed out unprocessed rather than dropped. Losing
-  // the last ~20 ms is inaudible; losing it on every track is a truncated
-  // ending, which is not.
+  // At end of stream the queue eventually gets too narrow for even one
+  // candidate window, and what is left is handed out unprocessed rather than
+  // dropped. Chromium has no equivalent and simply loses the tail; ijkpp keeps
+  // it, because a truncated ending is audible on every track while the last
+  // few milliseconds at the wrong rate are not. EffectiveSearchBlockFrames()
+  // bounds the raw remainder to under one ola_window_size_ -- before that, the
+  // whole 2399-frame search block fell through here and the 2x duration test
+  // overshot by two thirds of a window.
   if (reached_end_of_stream_ && rendered < requested_frames &&
       !CanPerformWsola()) {
     rendered += queue_->ReadFrames(requested_frames - rendered,
@@ -420,7 +425,7 @@ void AudioRendererAlgorithm::AllocateWsolaBuffers() {
   wsola_output_->Zero();
   optimal_block_ = AudioBus::Create(channels_, ola_window_size_);
   target_block_ = AudioBus::Create(channels_, ola_window_size_);
-  const int search_frames = num_candidate_blocks_ + (ola_window_size_ - 1);
+  const int search_frames = SearchBlockFrames();
   search_block_ = AudioBus::Create(channels_, search_frames);
   // PeekAudioWithZeroPrepend reads up to search_block_->frames() at a time, so
   // the scratch bus must be at least that large even if FillBuffer() asked for
@@ -432,15 +437,49 @@ void AudioRendererAlgorithm::AllocateWsolaBuffers() {
 // WSOLA iteration
 // ---------------------------------------------------------------------------
 
+int AudioRendererAlgorithm::SearchBlockFrames() const {
+  return num_candidate_blocks_ + (ola_window_size_ - 1);
+}
+
+int AudioRendererAlgorithm::EffectiveSearchBlockFrames() const {
+  const int full = SearchBlockFrames();
+  if (!reached_end_of_stream_) {
+    return full;
+  }
+  // Subtracting a negative search_block_index_ is deliberate: that index means
+  // PeekAudioWithZeroPrepend() prepends -search_block_index_ zeros, so the
+  // block holds that many frames of content before the queue's first frame is
+  // even reached, and content is what bounds the candidate range.
+  const int logical = buffered_frames() - search_block_index_;
+  if (logical < ola_window_size_) {
+    return 0;
+  }
+  return std::min(full, logical);
+}
+
 bool AudioRendererAlgorithm::CanPerformWsola() const {
-  const int search_block_size = num_candidate_blocks_ + (ola_window_size_ - 1);
+  // Shrinking the search block at end of stream, rather than giving up on it,
+  // is what keeps the tail time-compressed at the requested rate. Without this
+  // the last search_block_size_ frames can never complete a window, so they
+  // fall through to the raw drain in RunWsola() -- which at 2x plays the end of
+  // every track at 1x and makes the rendered duration overshoot by about half
+  // a window. Measured on the 1 s / 2x case in
+  // audio_renderer_algorithm_unittest.cc: 26066 frames rendered for 24000
+  // expected, versus 25199 with this in place.
+  const int search_block_size = EffectiveSearchBlockFrames();
+  if (search_block_size == 0) {
+    return false;
+  }
   const int frames = buffered_frames();
   return target_block_index_ + ola_window_size_ <= frames &&
          search_block_index_ + search_block_size <= frames;
 }
 
 bool AudioRendererAlgorithm::TargetIsWithinSearchRegion() const {
-  const int search_block_size = num_candidate_blocks_ + (ola_window_size_ - 1);
+  const int search_block_size = EffectiveSearchBlockFrames();
+  if (search_block_size == 0) {
+    return false;
+  }
   return target_block_index_ >= search_block_index_ &&
          target_block_index_ + ola_window_size_ <=
              search_block_index_ + search_block_size;
@@ -552,7 +591,8 @@ void AudioRendererAlgorithm::GetOptimalBlock() {
     const int half_exclude = kExcludeIntervalLengthFrames / 2;
     optimal_index = internal::OptimalIndex(
         search_block_.get(), target_block_.get(),
-        last_optimal - half_exclude, last_optimal + half_exclude);
+        last_optimal - half_exclude, last_optimal + half_exclude,
+        EffectiveSearchBlockFrames());
     optimal_index += search_block_index_;
     PeekAudioWithZeroPrepend(optimal_index, optimal_block_.get());
 
@@ -599,7 +639,14 @@ void AudioRendererAlgorithm::PeekAudioWithZeroPrepend(int read_offset_frames,
   // thread takes the whole player down over a transient underrun, which for an
   // SDK is the wrong trade: DCHECK in debug so the bug is found, zero-fill in
   // release so playback survives it. PeekFrames already zero-fills the tail.
-  DCHECK_LE(read_offset_frames + to_read, buffered_frames());
+  //
+  // End of stream is exempt, and has to be: EffectiveSearchBlockFrames() lets
+  // WSOLA keep running on a search block wider than the queue, so the zero-fill
+  // is then the intended content of the block's tail and OptimalIndex is told
+  // how many frames are real. Without the exemption the first end-of-stream
+  // iteration trips this in every debug build.
+  DCHECK(reached_end_of_stream_ ||
+         read_offset_frames + to_read <= buffered_frames());
   if (to_read > 0) {
     queue_->PeekFrames(to_read, read_offset_frames, write_offset, dest,
                        scratch_.get());

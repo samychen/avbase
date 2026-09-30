@@ -43,7 +43,7 @@ LINE_LIMIT_ALLOWLIST = {
     "player/option_registry.cc": (
         700, "Generated table at M1; hand-written until then."),
     "media/filters/audio_renderer_algorithm.cc": (
-        620, "WSOLA buffering, index bookkeeping and the three FillBuffer "
+        660, "WSOLA buffering, index bookkeeping and the three FillBuffer "
              "modes. It was 756 lines before wsola_internals and "
              "audio_frame_queue were split out, which is the split Chromium "
              "uses too; the remaining overshoot is the queue-sizing block "
@@ -51,8 +51,13 @@ LINE_LIMIT_ALLOWLIST = {
              "IncreasePlaybackThreshold), which overlaps M9 BufferController's "
              "three-tier high water mark. Whether that policy belongs here or "
              "there is a design question for M9, and answering it by cutting a "
-             "file to a line count would be the wrong reason. See the LENGTH "
-             "note in the file header."),
+             "file to a line count would be the wrong reason. Raised "
+             "620 -> 660 when SearchBlockFrames() and "
+             "EffectiveSearchBlockFrames() were added to shrink the search "
+             "region at end of stream; that is index bookkeeping, which is "
+             "this file's stated reason to exist, and the measured "
+             "before/after numbers live in the comment on CanPerformWsola(). "
+             "See the LENGTH note in the file header."),
 }
 
 # Layers that must never see a vendor or platform header (invariants C4, C5).

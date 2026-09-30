@@ -1343,6 +1343,123 @@ LICENSE / LGPL 隔离 ✅ · 七个管线接口头 DRAFT ✅ · R2 降级债登�
 
 ---
 
+### (3n) ★ctest 剩下 4 个失败：2 个是实现 bug，2 个是测试 bug，靠数值仿真定的位
+
+用户跑了 `ctest -R 'AudioRendererAlgorithm|AudioFrameQueue' --output-on-failure`，
+4 个失败，其中 1 个给出了 `Check failed: !buffer->end_of_stream()`。
+沙箱里没有编译器，而这 4 个失败里有 3 个的断言值（渲染帧数、主频）
+**只靠读代码推不出来**——它们是信号处理的结果，不是控制流的结果。
+所以这一轮的办法是：把 WSOLA 整条路径**逐行移植成 Python 数值模型**
+（`tools/sim_wsola.py`，本轮新增），在秒级时间里把数字量出来，再决定改哪一层。
+
+这一步的产出比预期大：它不仅定位了 4 个失败，还顺带把
+`wsola_internals.h` 上那个 ★PROVENANCE GAP 关掉了（见下）。
+
+#### 失败 1：`AudioFrameQueueTest.EndOfStreamMarkerIsRejected`（Subprocess aborted）
+
+`Append()` 里同时写了 `DCHECK(!buffer->end_of_stream())` 和紧随其后的
+`if (buffer->end_of_stream()) return;`。debug preset 下 `DCHECK` 就是 `CHECK`，
+所以**那个优雅返回分支在任何 debug 构建里都不可达**——测试断言的正是这个分支。
+两层都在过滤 EOS：上层 `AudioRendererAlgorithm::EnqueueBuffer()` 的 DCHECK 保留
+（它的调用方是 `AudioRendererImpl`，那里冒出 EOS 标记确实是 bug）；
+叶子层的队列去掉 DCHECK，理由和本文件 `PeekAudioWithZeroPrepend()` 里已经写下的
+那条一致——**音频线程上不做 CHECK**。
+
+#### 失败 2：`RateTwoHalvesTheDuration`（实现 bug，已修）
+
+量出来：2x、1 s 输入，渲染 **26066** 帧，理想 24000，容差 1920 → 超 146 帧。
+根因是 ijkpp 自己加的、**Chromium 没有的**那段 EOS 尾部直排：
+`RunWsola()` 在 `!CanPerformWsola()` 时把队列里剩下的帧**原样**交给调用方，
+而"剩下的"正好是一整个搜索块（2399 帧）。原样直排意味着**这 53 ms 永远按 1x 播**，
+不管请求的倍速是多少。
+
+修法：`EffectiveSearchBlockFrames()`——EOS 时把搜索区收缩到队列里真实存在的宽度，
+让 WSOLA 一直压到最后一帧，只有不足一个 `ola_window_size_` 的残余才走直排。
+`internal::OptimalIndex()` 因此多了一个 `search_frames` 参数（默认 0 = 用整个 bus），
+否则它会拿"和静音最像"的块当最优解。
+同时 `PeekAudioWithZeroPrepend()` 的 `DCHECK_LE` 必须放行 EOS：收缩之后
+搜索块**本来就会**比队列宽，那条 DCHECK 会在第一个 EOS 迭代上把进程带走。
+修完：25199 帧（+1199，PASS）。
+
+#### 失败 3：`PitchIsPreservedAtTwoX`（**测试**bug——激励信号退化，已换）
+
+量出来：纯 440 Hz 正弦在 2x 下主频 **452 Hz（+2.7%）**，超出 docs/07 §3.9 的 ±2%。
+但这**不是移植的缺陷**，两条独立证据：
+
+1. **换激励就完全正确**：四泛音、且泛音比**故意不是整数比**
+   （1 / 2.00227 / 2.99318 / 4.87045）的复合音，2x 与 0.5x 主频都是
+   **440.0 Hz，误差 0.00%**。
+2. **换成 Chromium 自己的搜索也一样**：把 `OptimalIndex()` 换成 Chromium 真实实现
+   （滑动块能量 + 步长 5 的抽取搜索 + 二次插值 + 11 候选精搜），
+   正弦仍是 **452.0 Hz**，复合音仍是 **440.0 Hz**。
+
+机理：正弦只有一个泛音，`Similarity()` 在搜索块内**每 109 帧（一个周期）就有一个
+几乎相等的极大值**，1440 个候选里约有 13 个并列；`OptimalIndex()` 只能在浮点噪声上
+分辨它们，于是拼接点落在非整周期处，相位被系统性地推快。任何基于相似度搜索的
+时间伸缩算法在纯正弦上都会这样——**这是激励的退化，不是算法的偏差**。
+复合音之所以正确，恰恰是因为失谐的泛音互相打拍，让搜索块里只有一个位置匹配得好。
+
+所以改的是测试：激励换成语义上更接近真实音频的复合音，并把上面这组数字写进注释。
+这不是"为了让测试过而放松测试"——容差 ±2% 一个字没动，动的是那个
+让任何 WSOLA 实现都无法通过的信号；而且新的激励在两个方向上都给出**零误差**，
+比原来更严格。
+
+#### 失败 4：`FlushClearsQueueAndWsolaState`（**测试**bug——前置条件不成立）
+
+它 `Drain()` 到枯竭，然后 `ASSERT_FALSE(is_queue_empty())`，理由是
+"WSOLA 总会留一段凑不满窗的尾巴"。这话在流中间成立，在这里不成立：
+`Feed()` 打了 EOS 标记，而失败 2 里那段尾部直排会把队列**吃干净**。
+所以断言必然失败——**它挂在自己的前置条件上，一行 Flush 的代码都没测到**。
+改成显式构造前置条件：8 次 1024 帧的有界消费（约占输入的三分之一），
+仿真验证剩 31919 帧、每次都产满 1024 帧。
+
+#### ★PROVENANCE GAP 关闭：`wsola_internals.h`
+
+那个 ★ 标记说：写这个文件时 `media/filters/wsola_internals.cc` 在
+chromium.googlesource.com 上返回 503，所以 `Similarity()` 是"教科书公式，
+未经比对"，并且**比对是该文件脱离 DRAFT 的前置条件**。
+本轮发现 **503 只是那一个路径的问题**：GitHub 镜像
+`raw.githubusercontent.com/chromium/chromium/main/` 当天就能取到同一份文件。
+逐行比对的结果，三处**有意保留**的偏离已经写进那个 ★ 段落：
+
+| 偏离 | Chromium | ijkpp | 为什么保留 |
+|---|---|---|---|
+| 归一化 | 逐声道归一后**相加**（`kEpsilon=1e-12f` 在 sqrt 内） | 各声道能量**求和后**归一一次 | 各声道信号相同时两者选出的块完全一致（差一个 `channels` 倍数）；每候选省一次 sqrt。真实立体声下会有差异——**已记为待用真实素材+听感复测的项**，不盲改 |
+| `OptimalIndex` | 抽取搜索（步长 5）+ 二次插值 + 11 候选精搜，块能量 O(N) 滑窗复用 | 1440 候选全搜，精确最优 | 候选集相同、结果更精确；代价是约 **5 倍点积**。已量过：两种实现在两个激励上结果一致。**这是性能债不是正确性债**，移植是机械工作，已列为该文件的下一步 |
+| 排除区间 | `InInterval` 两端**闭** | 半开 `[begin, end)` | 1440 个候选差 1 个；半开与本文件其余区间写法一致 |
+
+另外 `GetPeriodicHanningWindow`（Chromium 名）↔ `FillPeriodicHanningWindow`（ijkpp 名）
+公式一致：`0.5 * (1 - cos(2*pi*n/N))`，仅浮点精度不同（Chromium 用
+`std::numbers::pi_v<float>`，ijkpp 用 double 后转 float）。
+
+#### 元教训（第 3 次出现同一类）
+
+前两次是"手写正则在 C++ 上失效"和"`check_invariants` 不看 CMakeLists"。
+这次的版本是：**断言值本身可以是错的，而失败信息不会告诉你是哪一种错**。
+`EXPECT_NEAR(24000, rendered, 1920)` 失败时，gtest 只说 rendered 是多少，
+不说"是算法错了还是期望错了"。四个失败里两个是测试自己错，
+一个的期望值来自**从未运行过的容差猜测**（测试注释里我自己写过
+"跑过一次之后把 2 个窗口收紧到 1 个"——现在跑过了，量出来的松弛是 1.25 个窗口，
+所以 2 个窗口是对的，但理由从"猜"变成了"测"）。
+
+可复现的证据比推理更值钱，所以仿真器留在仓库里：
+`python3 tools/sim_wsola.py --check`（含 `--chromium` 变体）会重算上面每一组数字。
+它不进任何构建目标、不进 CI、`check_invariants.py` 也不扫它（只扫 `.h`/`.cc`），
+存在的意义是让 C++ 注释里的每个数字都能被重新算一遍。
+
+#### 本轮改动
+
+| 文件 | 改动 |
+|---|---|
+| `media/filters/audio_frame_queue.{h,cc}` | `Append()` 去掉 EOS 的 DCHECK，保留优雅返回；头注释说明两层过滤的分工 |
+| `media/filters/audio_renderer_algorithm.{h,cc}` | 新增 `SearchBlockFrames()` / `EffectiveSearchBlockFrames()`；`CanPerformWsola()`、`TargetIsWithinSearchRegion()`、`GetOptimalBlock()` 改用它们；EOS 放行 `PeekAudioWithZeroPrepend()` 的 DCHECK；LENGTH 注释更正（它还在说"欠一个 C1 白名单条目"，其实早有了） |
+| `media/filters/wsola_internals.{h,cc}` | `OptimalIndex()` 增 `search_frames` 参数（默认 0 = 整个 bus）；★PROVENANCE GAP → ★PROVENANCE，写入三处有意偏离及理由 |
+| `tests/.../audio_renderer_algorithm_unittest.cc` | 复合音激励 + `MakeToneBuffer()`（相位跨 buffer 连续）+ `Stimulus` 枚举；`FlushClearsQueueAndWsolaState` 前置条件改为显式构造；容差注释写入实测松弛 |
+| `tools/check_invariants.py` | C1 白名单 620 → 660（`audio_renderer_algorithm.cc` 因索引簿记新增 46 行），理由同步更新 |
+| `tools/sim_wsola.py` | **新增**：WSOLA 数值模型 + `--check` 复现全部实测数字 |
+
+---
+
 ### 可执行的验证命令
 
 ```bash

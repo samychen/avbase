@@ -26,7 +26,12 @@ void AudioFrameQueue::Append(base::scoped_refptr<AudioBuffer> buffer) {
   if (!buffer) {
     return;
   }
-  DCHECK(!buffer->end_of_stream());
+  // Not a DCHECK: this is the defensive half of a two-layer filter, and a
+  // DCHECK here would make the branch below unreachable in every debug build
+  // (which is how EndOfStreamMarkerIsRejected came to abort instead of
+  // failing). AudioRendererAlgorithm::EnqueueBuffer DCHECKs the same condition
+  // one layer up, where the caller is AudioRendererImpl and an EOS marker
+  // really does mean a bug.
   if (buffer->end_of_stream()) {
     return;
   }

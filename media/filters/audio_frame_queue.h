@@ -58,8 +58,14 @@ class IJKPP_MEDIA_EXPORT AudioFrameQueue {
   AudioFrameQueue& operator=(const AudioFrameQueue&) = delete;
   ~AudioFrameQueue();
 
-  // Takes ownership. |buffer| must not be an end-of-stream marker: EOS carries
-  // no audio, and letting one in would make frames() and front_timestamp() lie.
+  // Takes ownership. An end-of-stream marker is ignored rather than queued: it
+  // carries no audio, and letting one in would make frames() and
+  // front_timestamp() lie to the buffering controller. Callers should filter
+  // EOS out and signal it separately (AudioRendererImpl calls
+  // AudioRendererAlgorithm::MarkEndOfStream); ignoring it here is the second
+  // line of defence, not the first, and it is deliberately not a DCHECK because
+  // this queue is drained from the audio thread -- see the note on the same
+  // trade in AudioRendererAlgorithm::PeekAudioWithZeroPrepend.
   void Append(base::scoped_refptr<AudioBuffer> buffer);
 
   int frames() const { return frames_; }

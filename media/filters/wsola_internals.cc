@@ -74,11 +74,16 @@ float Similarity(const AudioBus* search, int offset, const AudioBus* target) {
 }
 
 int OptimalIndex(const AudioBus* search, const AudioBus* target,
-                 int exclude_begin, int exclude_end) {
+                 int exclude_begin, int exclude_end, int search_frames) {
   if (!search || !target) {
     return 0;
   }
-  const int last = search->frames() - target->frames();
+  // Clamped to the allocation so a caller that over-estimates how much real
+  // audio is present cannot make the loop below read past the end of |search|.
+  const int available = search_frames > 0
+                            ? std::min(search_frames, search->frames())
+                            : search->frames();
+  const int last = available - target->frames();
   int best_index = 0;
   // Below the attainable minimum of -1, so any real candidate wins and the
   // "everything excluded" case still returns a defined index.
