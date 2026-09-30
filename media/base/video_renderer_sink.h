@@ -68,9 +68,24 @@ class IJKPP_MEDIA_EXPORT VideoRendererSink {
   virtual VideoSinkStats GetStats() const = 0;
   virtual const char* name() const = 0;
 
+  // PUBLIC, and that is load-bearing. VideoRendererSink is not ref-counted --
+  // VideoRendererSinkFactory::Create() hands it back in a std::unique_ptr, and
+  // default_delete<VideoRendererSink> calls `delete` through a
+  // VideoRendererSink*, which needs an accessible destructor. A protected one
+  // makes every unique_ptr<VideoRendererSink> ill-formed at the point of
+  // destruction, so Create() could never have been called. This is not a new
+  // constraint introduced by RendererImpl; it is a latent defect in this header
+  // that nothing instantiated until the tenth round.
+  //
+  // Contrast AudioRendererSink, whose destructor is correctly protected: it IS
+  // ref-counted, befriends base::RefCountedThreadSafe<AudioRendererSink>, and
+  // Release() performs the delete from inside that friend. The two sinks look
+  // alike and are owned differently, which is why one of them was
+  // wrong.
+  virtual ~VideoRendererSink() = default;
+
  protected:
   VideoRendererSink() = default;
-  virtual ~VideoRendererSink() = default;
 };
 
 class IJKPP_MEDIA_EXPORT VideoRendererSinkFactory {

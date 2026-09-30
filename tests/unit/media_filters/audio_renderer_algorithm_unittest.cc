@@ -117,8 +117,11 @@ double DominantFrequency(const std::vector<float>& x, double lo_hz,
     double re = 0.0;
     double im = 0.0;
     for (size_t n = 0; n < x.size(); ++n) {
-      re += x[n] * std::cos(w * static_cast<double>(n));
-      im -= x[n] * std::sin(w * static_cast<double>(n));
+      // The cast is required, not cosmetic: -Wdouble-promotion is in
+      // the warning set and the debug preset builds with -Werror.
+      const double sample = static_cast<double>(x[n]);
+      re += sample * std::cos(w * static_cast<double>(n));
+      im -= sample * std::sin(w * static_cast<double>(n));
     }
     const double magnitude = re * re + im * im;
     if (magnitude > best_magnitude) {

@@ -223,6 +223,14 @@ void AudioRendererImpl::SetPreservesPitch(bool preserves_pitch) {
   algorithm_.SetPreservesPitch(preserves_pitch);
 }
 
+void AudioRendererImpl::SetLatencyHint(
+    std::optional<base::TimeDelta> latency_hint) {
+  // Runs on S4. The algorithm does the clamping to
+  // [min_playback_threshold_, max_capacity_] and owns the resulting queue
+  // sizing, so this forwards rather than deciding policy.
+  algorithm_.SetLatencyHint(latency_hint);
+}
+
 base::TimeDelta AudioRendererImpl::GetMediaTime() const {
   return base::TimeDelta::FromMicroseconds(last_media_time_micros_.load());
 }

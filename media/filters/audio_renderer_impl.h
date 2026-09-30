@@ -84,6 +84,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "base/functional/callback.h"
@@ -163,6 +164,14 @@ class IJKPP_MEDIA_EXPORT AudioRendererImpl final
   void SetMuted(bool muted);
   void SetPlaybackRate(double rate);
   void SetPreservesPitch(bool preserves_pitch);
+
+  // Live-stream latency target, forwarded to the algorithm, which owns the
+  // queue sizing it clamps. nullopt restores the default. This declaration
+  // was missing from the first draft while RendererImpl already called it --
+  // the mechanical review checked that every used *type* was visible, not
+  // that every called *member* existed, which is a gap only a compiler
+  // closes.
+  void SetLatencyHint(std::optional<base::TimeDelta> latency_hint);
 
   // Media time of the last sample handed to the device. Read through
   // AvSyncController rather than from here when a caller is on another
