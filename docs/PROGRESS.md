@@ -848,6 +848,122 @@ R1 应对④（"阈值用工具提取，禁止手抄"）适用于**任何**移�
 对 `Similarity()` 与 Chromium 做 diff 并记录结论 → 接进 `ijkpp_media` 与
 `media_filters_unittests` → 摘掉 4 个文件里的 DRAFT 横幅 → 处理 555 行的 C1 问题。
 
+### (3h) `AudioRendererImpl` —— 以及一个由算术揭穿的设计矛盾
+
+交付 `media/filters/audio_renderer_impl.{h,cc}`（**249 + 412 行，DRAFT**）：
+把 `DecoderStream<AudioDecoderStreamTraits>` + `AudioRendererAlgorithm` +
+`AudioRendererSink` 接起来，并负责推进音频时钟。这是 (3g) 之后 M7 音频半边的下一个阻塞。
+
+#### ★发现：docs/04 §6.3 与 <100µs 预算不可能同时成立
+
+docs/04 §6.3 和 §8 都写 `Render()` 里**内联调用** `AudioRendererAlgorithm::FillBuffer()`，
+并说"持 `AudioRendererAlgorithm::lock_` **< 5µs**"。而 **<100µs 的回调预算出现在 5 个地方**：
+
+| 出处 | 措辞 |
+|---|---|
+| `media/base/audio_renderer_sink.h:45` | "Budget: < 100 us. Enforced by tests/contract/…" |
+| `docs/07` §4 | 契约测试 **`Render` 耗时 p99 < 100µs（实测断言）** |
+| `docs/07` §10 | `BENCHMARK(BM_AudioRenderCallback); // ★必须 < 100µs` |
+| `docs/04` §1 S7 行 / §6.3 / §8 预算表 | "❌ **预算 < 100µs**" ×3 |
+| `docs/08` M7 DoD | **`AudioRendererSinkContract.RenderCallbackBudget` p99 < 100µs 通过** |
+
+按 Chromium 自己的常量在 48kHz 立体声下算一遍：
+
+```
+ola_window = 960 帧   hop = 480   num_candidate_blocks = 1440
+search_block = 1440 + 959 = 2399 帧
+一次 GetOptimalBlock 要打分的候选数 = 2399 - 960 + 1 = 1440
+每次迭代 ≈ 1440 × 960 × 2ch × 6 flop ≈ 16.6 Mflop
+  → 1 GFLOP/s: 16.6 ms   2 GFLOP/s: 8.3 ms   4 GFLOP/s: 4.1 ms
+FillBuffer(1024 帧) ≈ 1024/480 ≈ 2.1 次迭代 → ≈ 18 ms（按 2 GFLOP/s）
+```
+
+**超出 100µs 预算约 177 倍**，而"持锁 <5µs"这个数字更小。所以两句话不可能都对。
+
+#### 处置：S4 预拉伸 + 环形就绪块交接
+
+```
+S4 ijkpp-audio（独占）        环形（handoff_lock_，只护 O(1) 索引）      S7 设备线程
+DecoderStream<Audio> ─┐
+AudioRendererAlgorithm ├─ FillBuffer() ─► [4 × frames_per_buffer] ─► 拷贝 + Scale
+（8–18ms 的 DSP 在这里）┘                                            + seqlock 写时钟
+                                                                     （~µs 级）
+```
+
+- **满足 100µs**：`Render()` 只做 2048 个 float 的拷贝 + 缩放 + 一次 seqlock 写。
+- **满足 Δ13 的意图**：Δ13 抱怨的正是 ffplay 的 `sdl_audio_callback` 在设备线程做
+  `swr_convert`（几毫秒的 DSP）。它的"改法"栏写"只做 `FillBuffer` + `Scale`"，
+  但 **`FillBuffer` 就是那几毫秒**；"只做 copy + Scale"严格更强，也更符合该行的本意。
+- **"持锁 <5µs" 唯一可满足的读法**：锁只护环形索引的 O(1) 更新。
+- **代价是延迟**：音频在环里最多待 `kReadyChunks × frames_per_buffer`
+  = 4 × 1024/48000 ≈ **85ms**。所以环刻意做小，且 `Flush()` 会丢掉它。
+  不能容忍这个延迟的直播流应走 `config.net.live_max_latency`（M9 的事）。
+
+**docs/04 §6.3 与 §8 需要据此改写**（把 `FillBuffer` 从 S7 挪到 S4，并把
+`AudioRendererAlgorithm::lock_` 改成"环形交接锁"）。本轮**没有擅自改设计文档**——
+这是设计层的裁决，不是路径笔误，按 (3d) 的判据应留给评审；已在此登记。
+
+#### 环形为什么可以不锁 DSP 路径
+
+单生产者（S4）单消费者（S7），**`ring_count_` 就是同步点**：
+
+- S4 先**不持锁**写入未发布的槽（`slot.frames` / `slot.media_time` / bus 内容），
+  再**持锁** `++ring_count_` 发布；
+- S7 持锁读 `ring_count_`，只触碰 `[ring_head_, ring_head_+ring_count_)` 内的槽；
+- S7 **只消费**（推进 head、减 count），所以"空闲集合只会变大不会变小"，
+  S4 在锁外写的那个槽不可能被 S7 读到；
+- 锁的 acquire/release 同时充当内存屏障，保证 S7 看到 S4 的字段写入。
+
+**这不是无锁编程，是把锁的持有时间压到 O(1)**——比手写无锁环更不容易错，
+而在这个环境里"不容易错"比"少一次原子操作"重要得多。
+
+#### 另外三个实现决定
+
+1. **`Flush()` 自己先 `Pause()` 再 `Flush()` sink**：sink 契约写明 `Flush()` 只在非播放态有效。
+   把这条规则关在本类里，`RendererImpl::Flush()` 就不必知道某个 sink 的脾气。
+2. **`OnRenderError()` 用 `exchange` 闩锁而非每次上报**：设备报错会持续报错，
+   每个周期打一行日志就是 ~50 行/秒的洪水。是否重开设备由 `RendererImpl` 决定。
+3. **短计数时把尾部清零**：`Render()` 返回值 < 请求值意味着"放静音"，
+   而调用方的 bus 里可能残留上一次的样本——那会变成按设备周期重复的咔哒声。
+
+#### 写这个文件时抓到的两类错误
+
+| # | 错误 | 怎么发现的 |
+|---|---|---|
+| a | 把 `DecoderStatus` 当**枚举**用（`status != DecoderStatus::kOk`、`DecoderStatus::kEndOfStream`）。它其实是**带嵌套 `Codes` 的类**，而且**根本没有 `kEndOfStream`**——音频的 EOS 是通过一个专门的 `AudioBuffer` 传的（`AudioDecoderStreamTraits::IsEndOfStreamOutput` 的注释写明了） | 动手前读了 `decoder_status.h` 全文。改成 `!status.is_ok()` + `status.AsDebugString()`，EOS 只认 buffer |
+| b | 一次性审查器的 `CLASS` 正则不认 `class X final : public Y {`（`final` 卡在名字与基类之间），于是 **`AvSyncController` 和 `AudioRendererImpl` 都被误报为"符号不可见"** | 复核这 2 条 F 类发现时。这是该检查器**第三次**因为符号提取太朴素而误报（前两次：把方法名当类型、多行声明），已把 `final`/`sealed` 与次行花括号都纳入 |
+
+★b 的教训与 (3f) 的同一条：**检查器的误报会消耗掉它对真问题的信用**。
+F 类规则改了三次才对，前两次我都差点相信它的输出。
+
+#### 刻意**没有**写测试，以及为什么
+
+`AudioRendererImpl` 的测试需要一整套假件：一个假 `AudioRendererSink`（要能驱动
+`Render()`）、假 `AudioDecoderFactory`/`AudioDecoder`、假 `DemuxerStream`、
+`MockRendererClient`，以及一个能在测试里推进的时钟——**这正是 `tests/support/` 的
+12 个组件**（`recording_sinks` / `mock_audio_decoder` / `mock_demuxer_stream` /
+`event_collector` / `synthetic_demuxer` …），而那个目录**一个都不存在**。
+
+在没有编译器、也没有这套脚手架的情况下，盲写几百行假件再盲写测试，
+产出的是"看起来测了"而不是"测了"。**本轮的选择是把这笔债记在这里**：
+`tests/support/` 是 M7 剩余部分的前置，不是可以顺手补的东西。
+(3g) 的 17 个用例之所以能写，是因为 `AudioRendererAlgorithm` 只依赖
+`AudioBuffer`/`AudioBus`，不需要假件。
+
+#### 验证边界
+
+```
+✅ check_invariants → all rules pass (184 files)，17 个 DRAFT 全部列出
+✅ 审查器（99 头 / 390 include 边）：B 循环 0 · C 卫士 0 · D 分层 0
+   E media/ 里的 shared_ptr 0 · F 符号可见性 0 · G 虚析构 0 · H refcounted 0
+   A 仍是既有的 version.h 生成头（F4）
+✅ 80 列全合规 · 括号配平 · DRAFT 标记各 1 处
+✅ 传递闭包 43 个头（本类要被 RendererImpl include，闭包偏大，M7 接线时可考虑
+   把 decoder_stream.h 的模板实例化挪到 .cc 以缩小它）
+❌ 从未编译 ❌ 无任何测试 ❌ 环形交接的内存序只有推理没有 TSan 验证
+❌ 100µs 的结论是算术而非实测（`BM_AudioRenderCallback` 才能定案）
+```
+
 ### (4) R2 降级债的显式登记 — ✅ 本轮补记
 
 `docs/08` §5.1 给 R2（自研 `base/` 工期超支，P4×I4=**16**，高危）准备了 L0–L3
