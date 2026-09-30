@@ -719,6 +719,135 @@ a 是签名设计问题：`category` 改成**关键字专属**（`*` 之后）�
   当成配置字段，虚增了"无 legacy key"清单——现在只统计 `PlayerConfig` 本身
   与它作为成员持有的那些 struct。
 
+### (3g) ★M7 的第一个真实现：`AudioRendererAlgorithm`（WSOLA）— ✅ 代码完成，DRAFT
+
+这是 M7 音频半边的**单点阻塞**，也是 Δ17（用自研 WSOLA 换掉 SoundTouch）的风险承担者。
+交付 3 对文件 + 1 个测试文件，共 **1,196 行**：
+
+| 文件 | 行数 | 内容 |
+|---|---|---|
+| `media/filters/wsola_internals.{h,cc}` | 80 + 92 | DSP 原语：`TimeToFrames` · `FillPeriodicHanningWindow` · **`Similarity`** · `OptimalIndex` |
+| `media/filters/audio_frame_queue.{h,cc}` | 97 + 118 | 按**帧**寻址的队列（= Chromium 的 `AudioBufferQueue`）：`Append`/`frames`/`SeekFrames`/`PeekFrames`/`ReadFrames`/`FrontTimestamp` |
+| `media/filters/audio_renderer_algorithm.{h,cc}` | 256 + 555 | 缓冲、索引记账、`FillBuffer()` 三模式、完整 WSOLA 迭代 |
+| `tests/unit/media_filters/audio_renderer_algorithm_unittest.cc` | 435 | **17 个用例**，实现 docs/07 §3.9 的清单 |
+
+#### 常量全部从 Chromium 源码取回，不是凭记忆写的
+
+R1 应对④（"阈值用工具提取，禁止手抄"）适用于**任何**移植常量，不只是 A/V 同步那几个——
+尤其因为本轮之前我刚在 `gen_options.py` 里手抄错了一个 FourCC。
+用抓取工具从 `chromium.googlesource.com`（`refs/heads/main`，2026-09-29）取回
+`media/filters/audio_renderer_algorithm.cc` 全文，逐条摘录并在代码里标注原标识符：
+
+| ijkpp 常量 | 值 | Chromium 原名 |
+|---|---|---|
+| `kOlaWindowSize` | 20 ms | `kOlaWindowSize` |
+| `kWsolaSearchInterval` | 30 ms | `kWsolaSearchInterval` |
+| `kStartingCapacity` | 200 ms | `kStartingCapacity` |
+| `kMaxCapacity` | 3 s | `kMaxCapacity` |
+| `kExcludeIntervalLengthFrames` | 160 帧 | 同名（Chromium 注释自称"rather arbitrary, derived heuristically"） |
+| `ola_window_size_` 强制取偶、`ola_hop_size_ = /2` | — | 同 |
+| `search_block_center_offset_` 公式 | — | 同（含 Chromium 的推导注释） |
+| `min_playback_threshold_ = frames_per_buffer * 2` | — | 同 |
+
+算法主干也照取回的实现走：`ChooseBufferMode`（`ceil(ola*rate)` / `ceil(ola/rate)` 的
+"接近 1"判据）· `RunOneWsolaIteration` 的 OLA 混合式
+`out[n] = out[n]*w[hop+n] + opt[n]*w[n]` + 后半直接拷贝 · `UpdateOutputTime` ·
+`RemoveOldInputFrames` 的 `earliest = min(target, search)` 与 `output_time_` 反向修正 ·
+`GetOptimalBlock` 的"目标已在搜索区内则跳过昂贵搜索"分支 + 过渡窗混合 ·
+`PeekAudioWithZeroPrepend` 的负偏移补零。
+
+#### ★一处出处缺口，明确标注而不是含糊过去
+
+`media/filters/wsola_internals.cc` 取回时返回 **HTTP 503**（重试同样失败）。
+所以 `Similarity()` 是**教科书的归一化互相关**，不是 `internal::SimilarityFloat` 的核对过的移植。
+它是这里唯一可能与 Chromium 有"听感差异"的函数，因此：
+
+1. 在 `wsola_internals.h` 顶部用 ★ 标出，并写清"其余函数取自达得到的
+   `audio_renderer_algorithm.cc`，只有这一个没有"；
+2. **这正是把 DSP 原语单独拆成一个文件的理由之一**——不确定的那一块是一个具名函数，
+   而不是埋在 700 行里的某几行；
+3. 列为该文件离开 DRAFT 的**前置条件**（与"必须编译过"并列）。
+
+#### 为什么拆成三个文件（而不是一个大文件）
+
+第一版是单文件 **756 行**，超了 C1 的 500 行上限。可选"登记豁免"（`ffmpeg_demuxer.cc`
+就是这么办的，1100 行），但这里**拆分本身就是对的**，不只是为满足行数：
+
+- **与 Chromium 的划分一致**（`audio_renderer_algorithm.cc` + `wsola_internals.cc`），
+  而 docs/02 §2 把"镜像 Chromium 目录"定为设计原则；
+- **把出处缺口隔离成一个文件**（见上）；
+- `AudioFrameQueue` 有独立的可测试性——它的 5 个用例不需要 WSOLA 参与。
+
+拆完 `audio_renderer_algorithm.cc` 仍是 **555 行**，超限 11%。已在文件头写明：离开 DRAFT 前
+要么登记 C1 豁免，要么再拆一次；**自然的接缝是队列容量策略那一块**
+（`SetLatencyHint` / `IsQueueAdequateForPlayback` / `IsQueueFull` /
+`IncreasePlaybackThreshold` / `capacity_` / `playback_threshold_`），它与 **M9
+`BufferController` 的三级 HWM 职责重叠**——这策略到底该住在这里还是那里，是个真设计问题，
+应该在 M9 定，而不是为了凑行数现在硬拆。同时写明**不要靠删注释来降行数**。
+
+#### 我自己写的代码里抓到的 5 个问题
+
+| # | 问题 | 怎么发现的 | 处置 |
+|---|---|---|---|
+| a | 重写 `.cc` 时**把整个文件头丢了**（版权 + `STATUS: DRAFT` + 常量出处说明） | **`check_invariants.py` 报 C1 违规**——因为丢了 DRAFT 标记，它就不再享受豁免 | 恢复文件头。★这是"不变量检查 earns its keep"的实例：我本来只当它是行数规则 |
+| b | 注释重排脚本把 `wsola_internals.h` 的 **DRAFT 标记跨行拆开**（`STATUS:` 在行尾、`DRAFT` 在下一行），而 `check_invariants.py` 匹配的是字面子串 `"STATUS: DRAFT"` → **文件被静默取消 DRAFT 资格**，转而受风格/长度规则约束 | 人工核对 6 个文件的 DRAFT 计数时发现（`grep -c` 得 0） | 标记独立成行，并在该处写明"不得被重排进段落"。★这暴露了标记机制本身的脆弱性：**一次注释 reflow 就能悄悄改变一个文件的治理状态** |
+| c | 用了 `M_PI`，而 `M_PI` 是 POSIX 扩展不是标准 C++；本项目 `CMAKE_CXX_STANDARD 20` 且未关 `CXX_EXTENSIONS`，所以现在能用，但一旦设 `CXX_EXTENSIONS OFF` 或换严格工具链就编译不过 | 全仓 grep `M_PI` 发现**只有我的新文件在用**，无先例 | 自定义 `internal::kPi`（Chromium 也是定义 `base::kPiDouble` 而非用 `M_PI`）；测试文件同理 |
+| d | 测试里写了个**不存在的函数** `FillBufferModeExpectation()`；另有 `FillBuffer` 前断言 `last_fill_mode()` 的位置错误（`last_mode_` 默认就是 `kPassthrough`，**先断言等于永真**） | 人工复读 | 改为 `AudioRendererAlgorithm::FillBufferMode::kPassthrough` 并移到调用之后，注释说明为什么位置有关系 |
+| e | `RunOneWsolaIteration` 缺**输出缓冲余量检查**：Chromium 的调用方总是请求一整个设备缓冲，所以 `num_complete_frames_` 不会超过一个 hop；而 ijkpp 的 `FillBuffer()` 接受任意 `requested_frames`，**一个只请求几帧的调用方会让它无界增长并写越界** | 对着 Chromium 的调用假设逐条比对自己的接口 | 加了 `num_complete_frames_ + ola_window_size_ > wsola_output_->frames()` 就拒绝本次迭代（调用方这次少拿几帧、下次排空），并注释说明这是**比 Chromium 多的一道防线及其原因** |
+
+#### 三处刻意偏离 Chromium（都写进了注释）
+
+1. **`AudioFrameQueue` 放 `media/filters/` 而非 `media/base/`**：Chromium 的
+   `AudioBufferQueue` 在 `media/base`，但那是**已冻结的接口层**，加头文件要走接口评审；
+   而这个类目前只有一个消费者。升级的信号写清了：**出现第二个消费者时**（M9 的水位线，或
+   `AudioRendererImpl` 自己的缓冲）就该搬上去。
+2. **`PeekAudioWithZeroPrepend` 用 `DCHECK` + 补零，而不是 Chromium 的 `CHECK`**：
+   在音频线程上 `CHECK` 会因为一次瞬时欠载就把整个播放器打死，对 SDK 是错误的取舍——
+   debug 下断言以便发现 bug，release 下补零以便播放活下去。
+3. **EOS 尾部排空**：到流末尾时队列永远不会长到能再凑出一个完整窗口，
+   于是把尾巴**原样发出**而不是丢掉。丢最后 ~20ms 听不出来，但每首都丢就是被截断的结尾。
+
+另外 `FillBufferMode::kResampler` **没有实现**（ijkpp 还没有 `MultiChannelResampler`），
+所以 `SetPreservesPitch(false)` 目前**记一次 `LOG(WARNING)` 后继续走 WSOLA**——
+时长对、音高错。选这个方向是因为"音高错但时长对"对 A/V 同步是两者中较安全的错误，
+且日志让它无法被误认为正常行为。已在头文件列为 gap 4：**M13 前必须要么实现要么明确拒绝**。
+
+#### 17 个测试用例覆盖 docs/07 §3.9
+
+| §3.9 条目 | 用例 | 备注 |
+|---|---|---|
+| 1 rate==1.0 快速路径，逐样本相等 | `RateOneIsPassthroughAndSampleExact` | 与**输入**逐样本比，不是与重算的正弦比——断言的是"passthrough 不碰样本" |
+| 2 rate==2.0 时长 ≈ 一半 | `RateTwoHalvesTheDuration` | 容差放宽到 **±2 个窗口**（文档写 ±1）；WSOLA 会留一个凑不满的尾巴。**已注明这是未经执行的猜测，首次跑通后应收紧** |
+| 3 rate==0.5 时长 ≈ 两倍 | `RateHalfDoublesTheDuration` | 同上 |
+| **4 变速后音调不变（★Δ17 验收）** | `PitchIsPreservedAtTwoX` / `PitchIsPreservedAtHalfX` | 自带**朴素 DFT 主频搜索**（1 Hz 栅格，±10% 区间），不引第三方库；测 2 个窗口之后的数据，避开 OLA 的零填充 ramp-in。**朴素重采样会把峰值放到 880 Hz，所以这条断言确实能区分 WSOLA 与它替代的东西** |
+| 5 Flush 后从头开始 | `FlushClearsQueueAndWsolaState` | — |
+| 6 连续 Enqueue+Fill 无丢失/重复 | `PassthroughLosesNoFramesAcrossManyCalls` | 20 × 512 帧累计计数 |
+| 7 与 Chromium 输出差 < −40dB | ❌ **未实现** | 需要参考录音，而那是 M10 的 golden 基建；已在文件头写明 |
+| （补）欠载语义 | `UnderflowReturnsFewerFramesNotSilence` | **短计数而非补静音**——补了 `audio_glitches` 就永远测不出来 |
+| （补）队列策略 | `PlaybackThresholdDoublesUpToTheCap` · `LatencyHintIsClampedAtBothEnds` · `BufferedDurationMatchesBufferedFrames` | M9 `BufferController` 的消费面 |
+| （补）队列原语 | 5 个 `AudioFrameQueueTest`：peek 不消费 / 带偏移 peek 看到后续帧 / **尾部补零**（先写脏值再断言被覆盖）/ `SeekFrames` 跨缓冲边界 / **EOS 标记被拒** | 拆文件的直接收益：这些不需要 WSOLA 参与 |
+
+#### 验证到什么程度（诚实边界）
+
+```
+✅ check_invariants.py --root .     → all rules pass (182 files)，15 个 DRAFT 全部被列出
+✅ 一次性审查器（98 头 / 374 include 边）
+     A 缺目标 0（全仓仅既有的 version.h 生成头）· B 循环 0 · C 卫士 0
+     D 分层 0 · E media/ 里的 shared_ptr 0 · F 符号可见性 0
+     G 虚析构 0 · H refcounted 规约 0
+✅ 6 个新文件 + 测试：80 列全部合规、花括号/圆括号配平、命名空间开闭配平
+✅ 传递闭包很小：wsola_internals.h 5 头 / audio_frame_queue.h 12 头 /
+   audio_renderer_algorithm.h 13 头（音频线程要 include 它，闭包小是有意义的）
+❌ 从未编译（沙箱无编译器）
+❌ 17 个用例从未执行；容差是照文档写的，其中 rate 2.0/0.5 那两条我自己放宽到了 ±2 窗口
+❌ Similarity() 未与 Chromium 的 internal::SimilarityFloat 对过（503）
+❌ 未接入任何 CMake target（按 DRAFT 规矩；上一轮刚犯过把它接进去的错）
+```
+
+**离开 DRAFT 的前置条件**（按顺序）：编译 → 跑 17 个用例并按实测收紧容差 →
+对 `Similarity()` 与 Chromium 做 diff 并记录结论 → 接进 `ijkpp_media` 与
+`media_filters_unittests` → 摘掉 4 个文件里的 DRAFT 横幅 → 处理 555 行的 C1 问题。
+
 ### (4) R2 降级债的显式登记 — ✅ 本轮补记
 
 `docs/08` §5.1 给 R2（自研 `base/` 工期超支，P4×I4=**16**，高危）准备了 L0–L3
@@ -776,7 +905,12 @@ LICENSE / LGPL 隔离 ✅ · 七个管线接口头 DRAFT ✅ · R2 降级债登�
 5. **CI**：打开 `ffmpeg-matrix`（注释写 "enabled at M4"，**M4 早已完成**）；
    给 `linux-ffmpeg711` 加 job，否则 322/322 与 43/43 永远只是本机结果；
    coverage job 的 `lcov --summary || true` 改成真门禁。
-6. **M7 的第一个真实现**：`AudioRendererAlgorithm`（WSOLA）——单点阻塞音频半边。
+6. ~~M7 的第一个真实现：`AudioRendererAlgorithm`（WSOLA）~~ → **本轮已写代码**，见 (3g)。
+   剩下的不是"写"而是"验"：编译 → 跑那 17 个用例 → 按实测收紧 rate 2.0/0.5 的容差 →
+   把 `Similarity()` 与 Chromium 的 `internal::SimilarityFloat` 对一次（当时 503 没取到）。
+   **M7 音频半边的下一个真阻塞变成 `AudioRendererImpl`**（把 `DecoderStream<Audio>` +
+   本类 + `AudioRendererSink` 接起来，并解决"EnqueueBuffer 在 audio sequence、
+   FillBuffer 在 sink 的音频线程"这个交接的加锁/无锁选择）。
 7. **R2 降级债的偿还排期**：docs/08 说"M13 后补齐"，但 M13 的 checklist 里没有
    这一项。其中 `base/files/ScopedLibrary` 是 **M12 dlopen 弱依赖的前置**、
    `LockOrderChecker` 是 **R5 应对⑤的前置**，两者都不能等到 M13 之后。
