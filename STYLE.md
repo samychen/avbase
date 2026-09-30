@@ -7,12 +7,19 @@
 >
 > ⚠️ **工具落地状态（第九轮核对）**：`.clang-format` ✅ 存在 ·
 > `tools/check_invariants.py` ✅ 存在（14 条规则 / 174 文件，已进 CI）·
-> **`.clang-tidy` ❌ 文件不存在**（§8 是它的内容，尚未落盘）·
+> **`.clang-tidy` ✅ 已落盘**（第十轮，内容照抄 §8）但**仍未接入 CI**
+> （没有 `check-clang-tidy` job，所以现在只对手动运行它的人生效）·
 > **`cpplint` ❌ 未接入**（CI 里没有 `check-cpplint` job）·
-> **`check-format` job ❌ 未接入**。因此下文标注 clang-tidy / cpplint 的规则
-> **目前只靠人工评审执行**；`check_invariants.py` 覆盖的那 14 条才是真正有门禁的。
-> 另：`check_invariants.py` **没有列宽规则**，所以 80 列这条目前也无门禁
-> （`base/memory/scoped_refptr.h` 在首次提交里就有 6 行超 80 列）。
+> **`check-format` job ❌ 未接入**（clang-format 不在 CI 里跑）。
+> 因此下文标注 clang-tidy / cpplint 的规则**目前只靠人工评审执行**。
+>
+> **列宽（第十轮起有门禁）**：`check_invariants.py` 的 **C23** 规则以
+> **棘轮**方式守 80 列——基线 `tools/column_baseline.txt` 记录了首次提交以来
+> 累积的 **323 行超长（分布在 80 个文件）**，规则只拦"某文件超长行数变多"
+> 与"新文件有超长行"，`--update-baseline` **拒绝提高任何既有条目**。
+> 不做一次性全量重排的理由：这里既没有 clang-format 二进制也没有编译器，
+> 323 行的盲改无法验证，而手工重排模板声明有可能改变含义。
+> **棘轮的意义是：从此每个因别的原因被改到的文件，都必须顺手清干净，且清完不会退化。**
 
 ---
 

@@ -22,6 +22,9 @@ import sys
 # deliberately conservative so they never produce a false pass.
 MAX_FILE_LINES = 500
 MAX_FUNCTION_LINES = 80
+MAX_COLUMNS = 80
+# C23's ratchet baseline: "<path> <count of lines over MAX_COLUMNS>" per line.
+COLUMN_BASELINE = "tools/column_baseline.txt"
 
 # Files that legitimately exceed MAX_FILE_LINES, with the reason. Adding an
 # entry here requires a linked issue (invariant C12 / risk R12).
@@ -104,9 +107,16 @@ DRAFT_FILES: list[str] = []
 class Report:
     def __init__(self) -> None:
         self.violations: list[str] = []
+        # Non-fatal observations. Kept separate from violations so that "the
+        # baseline has a stale entry" cannot be mistaken for "the code is wrong",
+        # and so that notes never affect the exit code.
+        self.notes: list[str] = []
 
     def add(self, rule: str, path: pathlib.Path, line: int, msg: str) -> None:
         self.violations.append(f"{rule}  {path}:{line}: {msg}")
+
+    def note(self, msg: str) -> None:
+        self.notes.append(msg)
 
     def ok(self) -> bool:
         return not self.violations
@@ -322,6 +332,121 @@ def check_function_length(path: pathlib.Path, rel: str, report: Report) -> None:
         in_namespace_only = stripped.startswith("namespace")
 
 
+def load_column_baseline(root: pathlib.Path) -> dict:
+    path = root / COLUMN_BASELINE
+    if not path.exists():
+        return {}
+    out = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.rsplit(" ", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            out[parts[0]] = int(parts[1])
+    return out
+
+
+def check_columns(root: pathlib.Path, report: Report, update: bool) -> None:
+    """C23: column width, as a ratchet rather than a hard limit.
+
+    .clang-format declares ColumnLimit 80 and STYLE.md calls it mandatory, but
+    nothing enforced it: clang-tidy does not check width, clang-format is not run
+    in CI, and no check-format job exists. Counting the existing codebase found
+    323 lines over 80 columns across 80 files -- the tree has never been
+    formatted to its own stated limit.
+
+    Adding a hard rule would turn CI red on 323 pre-existing lines and teach
+    everyone to ignore it. Reformatting them all in one pass is worse: there is
+    no clang-format binary and no compiler here, so the diff would be
+    unverifiable, and rewrapping template declarations by hand can change
+    meaning. So the rule ratchets: a file may not gain over-length lines, and a
+    new file may not have any. The baseline only ever shrinks, which is the point
+    -- every file touched for another reason comes back clean and stays clean.
+
+    DRAFT files are exempt, consistent with every other style rule here: they are
+    not in a build, and their authors are already working without a compiler.
+    """
+    baseline = load_column_baseline(root)
+    current: dict = {}
+    for path in sorted(iter_sources(root)):
+        rel = path.relative_to(root).as_posix()
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if DRAFT_MARKER in text:
+            continue
+        over = [(i, len(line)) for i, line in enumerate(text.splitlines(), 1)
+                if len(line) > MAX_COLUMNS]
+        if over:
+            current[rel] = len(over)
+    if update:
+        write_column_baseline(root, baseline, current, report)
+        return
+    for rel, count in sorted(current.items()):
+        allowed = baseline.get(rel, 0)
+        if count > allowed:
+            report.add("C23", root / rel, count,
+                       f"{count} line(s) over {MAX_COLUMNS} columns, baseline "
+                       f"allows {allowed}; rewrap them (clang-format -i {rel})")
+    for rel in sorted(set(baseline) - set(current)):
+        # Not a failure: the file was cleaned up, or moved, or became DRAFT.
+        # Reported so the baseline gets regenerated instead of quietly rotting.
+        report.note(f"C23 baseline entry is stale: {rel} "
+                    f"({baseline[rel]} line(s)) -- run --update-baseline")
+    total_now = sum(current.values())
+    total_base = sum(baseline.values())
+    if total_now < total_base:
+        print(f"C23: {total_now} over-length line(s), down from {total_base} "
+              f"in the baseline")
+    elif total_now == total_base:
+        print(f"C23: {total_now} over-length line(s), unchanged from baseline")
+
+
+def write_column_baseline(root: pathlib.Path, old: dict, current: dict,
+                          report: Report) -> None:
+    # Bootstrapping is not the same as raising an allowance. With no baseline
+    # file yet, every entry looks like growth from zero, and refusing to write
+    # would make the rule impossible to adopt -- which is how a gate that should
+    # exist ends up never existing. So: no baseline file on disk means record the
+    # current state and say loudly that this is a starting point, not an
+    # approval. Once the file exists, growth is refused.
+    bootstrapping = not (root / COLUMN_BASELINE).exists()
+    grew = {} if bootstrapping else {
+        r: (old.get(r, 0), c) for r, c in current.items()
+        if c > old.get(r, 0)}
+    if grew:
+        # Growing the baseline is how a ratchet dies, so it is never silent.
+        for rel, (before, after) in sorted(grew.items()):
+            report.add("C23", root / rel, after,
+                       f"--update-baseline would RAISE the allowance from "
+                       f"{before} to {after}; fix the lines instead")
+        return
+    lines = [
+        "# C23 column-width ratchet baseline. Regenerate with:",
+        "#   python3 tools/check_invariants.py --root . --update-baseline",
+        "#",
+        "# Each entry is '<path> <number of lines over 80 columns>'. The tool",
+        "# refuses to raise an entry, so this file can only shrink. Do not edit",
+        "# it by hand: an entry added by hand is an exemption with no reason",
+        "# attached, which is what R12 says must not happen.",
+        f"# Total: {sum(current.values())} line(s) in {len(current)} file(s).",
+        "",
+    ]
+    lines += [f"{rel} {count}" for rel, count in sorted(current.items())]
+    (root / COLUMN_BASELINE).write_text("\n".join(lines) + "\n")
+    total = sum(current.values())
+    if bootstrapping:
+        print(f"C23: baseline CREATED with {total} over-length line(s) in "
+              f"{len(current)} file(s). This records the existing debt so the "
+              f"rule can start gating; it is not an endorsement of it. Every "
+              f"file touched from now on must not add to its count, and "
+              f"--update-baseline refuses to raise any entry.")
+    else:
+        shrunk = sum(old.values()) - total
+        print(f"C23: baseline written -- {total} over-length line(s) in "
+              f"{len(current)} file(s)"
+              + (f", {shrunk} fewer than before" if shrunk > 0 else ""))
+
+
 def check_test_pairing(root: pathlib.Path, report: Report) -> None:
     """C11: every non-trivial source directory has a matching unit test dir."""
     for layer in ("base", "media/base", "media/filters"):
@@ -339,6 +464,9 @@ def check_test_pairing(root: pathlib.Path, report: Report) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=".", help="repository root")
+    parser.add_argument("--update-baseline", action="store_true",
+                        help="regenerate the C23 column-width baseline; refuses "
+                             "to raise any entry")
     args = parser.parse_args()
     root = pathlib.Path(args.root).resolve()
 
@@ -353,6 +481,10 @@ def main() -> int:
         if DRAFT_MARKER not in path.read_text(encoding='utf-8', errors='replace'):
             check_function_length(path, rel, report)
 
+    check_columns(root, report, args.update_baseline)
+
+    for note in report.notes:
+        print(f"note: {note}")
     if DRAFT_FILES:
         print(f"note: {len(DRAFT_FILES)} DRAFT file(s) excluded from style/size "
               f"rules (they are not in any build target):")

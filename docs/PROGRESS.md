@@ -1039,6 +1039,68 @@ AudioOutputDevice，gap 2 的真正解法）· `tests/support/` 脚手架 · `De
 （把 `RendererFactory` 接口与这三个类接起来，并解决 (3b) 里 F2 的三条 sink 注入路径）。
 **然后才是 M8 的 `pipeline_impl` + `player_impl` 接线。**
 
+### (3j) 质量门禁：`.clang-tidy` · `.editorconfig` · **C23 列宽棘轮** — ✅ 完成
+
+STYLE.md 与 README §8 都把 `.clang-tidy` / `.editorconfig` 列为项目工具，而两个文件
+**都不存在**；STYLE.md §8 甚至已经写好了 `.clang-tidy` 应有的完整 YAML，并注明
+"落盘时直接照抄这一段即可"。本轮照做。
+
+但真正有价值的发现是**列宽**：`.clang-format` 声明 `ColumnLimit: 80`、STYLE.md 称其为
+"强制"，而**全仓有 323 行超 80 列、分布在 80 个非 DRAFT 文件里**——这棵树从未按自己
+声明的限制格式化过。原因是三道门全都不存在：clang-tidy 不查列宽、clang-format 不在 CI 里跑、
+`check_invariants.py` 的 14 条规则里没有列宽。（我上一轮只说了 `scoped_refptr.h` 的 6 行，
+那是因为我只查了自己碰过的文件；全仓扫描后是 323 行。）
+
+#### 为什么不直接加硬规则，也不直接全量重排
+
+- **加硬规则** → CI 立刻红 323 条，而"一上线就红的规则"教会所有人的是忽略它（R12 担心的
+  正是"不变量变摆设"）。
+- **一次性全量重排** → 这里**既没有 clang-format 二进制也没有编译器**，323 行的盲改无法验证；
+  而手工重排模板声明**有可能改变含义**（`scoped_refptr.h` 那 6 行全是模板 ctor 与
+  friend operator）。"看起来更整齐"不值得冒这个险。
+
+所以做成**棘轮（ratchet）**：
+
+| 行为 | 结果 |
+|---|---|
+| 某文件的超长行数**变多** | ❌ C23 fail，消息里直接给出 `clang-format -i <file>` |
+| **新文件**有超长行（基线额度为 0） | ❌ C23 fail |
+| 某文件超长行数**变少** | ✅ 通过；`--update-baseline` 后基线缩小 |
+| `--update-baseline` 试图**提高**某条目 | ❌ **拒绝**，并报"would RAISE the allowance from N to M; fix the lines instead" |
+| 基线条目失效（文件被删/改名/转为 DRAFT） | ℹ️ 以 `note:` 提示重新生成，**不计入违规**（清理是好事，不该报错） |
+| DRAFT 文件 | 豁免（与本工具其他风格规则一致：它们不在构建里，作者本来就没有编译器） |
+
+**棘轮的意义**：从此每个因别的原因被改到的文件都必须顺手清干净，**且清完不会退化**。
+基线只可能缩小——这正是 R12 要求的"白名单必须只减不增"的机制化版本。
+
+**自举与提额必须区分**（第一版就栽在这里）：没有基线文件时，每个条目看起来都是
+"从 0 涨上来"，于是拒绝写入 → 规则永远无法启用。现在"磁盘上没有基线文件"被识别为
+**首次建立**，会写入并**大声说明这是起点不是认可**；文件存在后才拒绝增长。
+
+#### 负向验证（4 项全部按预期）
+
+| 注入 | 结果 |
+|---|---|
+| 给 `base/logging.h`（基线额度 1）加一行超长 | `C23 … 2 line(s) over 80 columns, baseline allows 1` · **exit 1** |
+| 新建 `media/base/zz_probe.h` 带一行超长 | `C23 … baseline allows 0` · **exit 1** |
+| 超长后跑 `--update-baseline` | **拒绝**：`would RAISE the allowance from 1 to 2; fix the lines instead` · exit 1 |
+| 把 `ptr_util.h` 的超长行清掉后 `--update-baseline` | 基线 **323→322、80→79 个文件**，该条目消失 |
+
+#### 交付
+
+| 文件 | 内容 |
+|---|---|
+| `.clang-tidy` | 49 行 = 15 行说明（含"为什么现在才落盘"与"仍未接入 CI"）+ **34 行照抄 STYLE.md §8** |
+| `.editorconfig` | 与 `.clang-format` 对齐（Google / 2 空格 / 80 列 / c++20）；`.md` 保留行尾双空格（那是 Markdown 换行）、YAML/JSON/CMake 关闭列宽限制 |
+| `tools/column_baseline.txt` | 89 行（8 行说明 + 80 个条目 + 总计）；头部写明**不要手改**："手工加的条目等于一个没有理由的豁免，正是 R12 说不许发生的事" |
+| `tools/check_invariants.py` | 新增 **C23** + `--update-baseline`；`Report` 增加 `notes`（非致命观察，不影响退出码，避免"基线有失效条目"被误读成"代码有问题"） |
+| `STYLE.md` | 工具状态同步：`.clang-tidy` ❌→✅（但仍未接 CI）；列宽从"无门禁"改为"C23 棘轮"，并写明不做全量重排的理由 |
+
+**仍未接入 CI 的**：`check-clang-tidy` / `check-cpplint` / `check-format` 三个 job 都不存在
+（docs/07 §13 把它们列为 release 门禁）。C23 是目前**唯一**真正有门禁的格式规则，
+而它只在本地运行——`ci.yml` 里已经调 `check_invariants.py`，所以 **C23 自动就在 CI 里了**，
+不需要动 workflow（也就绕开了 PAT 缺 `workflow` scope 的限制）。
+
 ### (4) R2 降级债的显式登记 — ✅ 本轮补记
 
 `docs/08` §5.1 给 R2（自研 `base/` 工期超支，P4×I4=**16**，高危）准备了 L0–L3

@@ -1,0 +1,40 @@
+# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+#
+# Must agree with .clang-format (BasedOnStyle: Google, IndentWidth: 2,
+# ColumnLimit: 80, Standard: c++20). If the two ever disagree, .clang-format
+# wins for C++ and this file is wrong.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.{h,cc}]
+# .clang-format's ColumnLimit. Enforced by tools/check_invariants.py rule C23
+# as a ratchet, because 323 pre-existing lines exceed it and reformatting them
+# blind -- with no clang-format binary and no compiler to check the result --
+# is not something to do in one pass.
+max_line_length = 80
+
+[*.py]
+max_line_length = 80
+
+[*.{md,yml,yaml,json,cmake}]
+# Markdown tables and CI matrices are legitimately wide; CMake lists too.
+max_line_length = off
+
+[*.md]
+# Trailing double-space is a Markdown line break, not stray whitespace.
+trim_trailing_whitespace = false
+
+[CMakeLists.txt]
+indent_size = 2
+
+[Makefile]
+indent_style = tab

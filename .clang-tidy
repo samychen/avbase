@@ -1,0 +1,49 @@
+# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+#
+# This file is the content STYLE.md §8 has always specified, now on disk. Until
+# the ninth round it existed only as a fenced block inside a document, so every
+# rule below that claims clang-tidy enforcement (google-explicit-constructor,
+# modernize-use-override, the readability-identifier-naming set) was in fact
+# enforced by nothing at all -- see the tool-status note at the top of STYLE.md.
+#
+# Still not wired into CI: there is no check-clang-tidy job, and docs/07 §13
+# lists check-cpplint and check-format as release gates that also do not exist.
+# Column width in particular has no gate here -- clang-tidy does not check it and
+# clang-format is not run in CI -- so tools/check_invariants.py rule C23 covers
+# it with a ratchet instead. See that rule's comment.
+Checks: >
+  -*,
+  bugprone-*,
+  google-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-identifier-naming,
+  readability-redundant-*,
+  cppcoreguidelines-interfaces-global-init,
+  cppcoreguidelines-pro-type-member-init,
+  misc-unused-*,
+  -google-readability-todo,
+  -modernize-use-trailing-return-type,
+  -bugprone-easily-swappable-parameters,
+  -readability-identifier-length
+CheckOptions:
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.EnumConstantPrefix: k
+  readability-identifier-naming.FunctionCase: CamelCase
+  readability-identifier-naming.MethodCase: CamelCase
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.MemberSuffix: _
+  readability-identifier-naming.PrivateMemberSuffix: _
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.ConstantPrefix: k
+  readability-identifier-naming.NamespaceCase: lower_case
+  readability-identifier-naming.MacroCase: UPPER_CASE
+  modernize-use-nullptr.NullMacros: 'NULL'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '(base|media|player|platform)/.*\.h$'
+FormatStyle: file
