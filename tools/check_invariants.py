@@ -369,6 +369,76 @@ def load_column_baseline(root: pathlib.Path) -> dict:
     return out
 
 
+# Target names may contain hyphens (ijkpp-inspect), and a source path may not
+# contain whitespace -- the first version of this rule allowed spaces in the
+# path character class, so it captured the indentation along with the filename
+# and reported every source in the tree as missing. A rule that reports
+# everything is worse than no rule: it gets deleted, and then the real breakage
+# it was written for goes uncaught.
+CMAKE_CALL_RE = re.compile(r"\b(?:add_library|add_executable)\s*\(")
+CMAKE_SOURCE_RE = re.compile(r"(?<![\w./-])([\w./-]+\.(?:cc|cpp|c))(?![\w./-])")
+
+
+def cmake_target_calls(text: str):
+    """Yields (target, body) for every add_library/add_executable in |text|.
+
+    The body is found by counting parentheses rather than by looking for a blank
+    line. The blank-line version was wrong in a way that mattered: comments are
+    stripped before matching, which turns a comment-only line into a
+    whitespace-only line, and a whitespace-only line satisfies the same
+    "\n\s*\n" that a blank line does -- so the body was truncated at the first
+    comment block and every source listed after it went unchecked. That is how
+    this rule passed while a genuinely missing source file sat in the list.
+    """
+    for m in CMAKE_CALL_RE.finditer(text):
+        depth = 0
+        i = m.end() - 1          # at the '('
+        start = m.end()
+        while i < len(text):
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        body = text[start:i]
+        head = body.split("\n", 1)[0]
+        target = head.strip().split()[0] if head.strip() else "?"
+        yield target, body
+
+
+def check_cmake_sources(root: pathlib.Path, report: Report) -> None:
+    """C24: every source file named in add_library/add_executable must exist.
+
+    Added because a bad edit to tests/CMakeLists.txt once left a fragment of a
+    deleted comment in the SOURCES list -- a bare `It` with no `#` in front of
+    it -- and CMake failed with "Cannot find source file: It". Fifteen rules ran
+    green over that tree, because none of them looked inside a CMakeLists.
+
+    Comments are stripped before matching, which is the discipline C18 needed:
+    a source path mentioned in prose is not a source file. Without stripping,
+    media/CMakeLists.txt reports a missing media/base/demuxer.cc purely because
+    a comment refers to it.
+    """
+    for cm in sorted(root.rglob("CMakeLists.txt")):
+        if any(part in (".git", "build", "third_party") for part in cm.parts):
+            continue
+        text = re.sub(r"#[^\n]*", "",
+                      cm.read_text(encoding="utf-8", errors="replace"))
+        for target, body in cmake_target_calls(text):
+            if re.search(r"\b(IMPORTED|ALIAS|INTERFACE)\b", body.split("\n")[0]):
+                continue          # no source list to validate
+            for src in CMAKE_SOURCE_RE.findall(body):
+                if "$" in src or "{" in src:
+                    continue      # generated or variable-driven path
+                if not (cm.parent / src).exists():
+                    report.add("C24", cm, 0,
+                               f"target {target} lists {src}, which does not "
+                               f"exist relative to "
+                               f"{cm.parent.relative_to(root) or '.'}")
+
+
 def check_columns(root: pathlib.Path, report: Report, update: bool) -> None:
     """C23: column width, as a ratchet rather than a hard limit.
 
@@ -503,6 +573,7 @@ def main() -> int:
         if DRAFT_MARKER not in path.read_text(encoding='utf-8', errors='replace'):
             check_function_length(path, rel, report)
 
+    check_cmake_sources(root, report)
     check_columns(root, report, args.update_baseline)
 
     for note in report.notes:

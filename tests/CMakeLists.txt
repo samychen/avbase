@@ -15,14 +15,7 @@ ijkpp_add_unittest(base_unittests
         unit/base/time_unittest.cc
         unit/base/expected_unittest.cc
         unit/base/scoped_refptr_unittest.cc
-        unit/base/refcount_ownership_unittest.cc It is marked STATUS: DRAFT, and the project's own rule
-        # for DRAFT files (docs/PROGRESS.md, fifth round; repeated in the file
-        # headers added in the ninth) is that they are excluded from every CMake
-        # target, because a file that cannot compile must not be reachable from
-        # a build. It was registered here by mistake in the ninth round, which
-        # would have failed the next real build. Add it to this list the first
-        # time it compiles, and drop the DRAFT banner from the file at the same
-        # moment.
+        unit/base/refcount_ownership_unittest.cc
         unit/base/weak_ptr_unittest.cc
         unit/base/callback_bind_unittest.cc
         unit/base/synchronization_unittest.cc
