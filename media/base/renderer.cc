@@ -1,0 +1,51 @@
+// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+//
+// STATUS: DRAFT — NOT YET IN THE BUILD, for the same reason as the header it
+// implements (media/base/renderer.h): neither has been compiled in the
+// environment that wrote them. To finish bringing this pair in, add the .cc to
+// media/CMakeLists.txt and drop the DRAFT banner from both files in the same
+// change.
+
+#include "media/base/renderer.h"
+
+#include <utility>
+
+#include "base/logging.h"
+
+namespace ijkpp::media {
+
+const char* RendererTypeToString(RendererType type) {
+  switch (type) {
+    case RendererType::kRendererImpl: return "RendererImpl";
+    case RendererType::kNullRenderer: return "NullRenderer";
+    case RendererType::kCastRenderer: return "CastRenderer";
+  }
+  return "invalid";
+}
+
+// Out-of-line `= default`, matching media/base/demuxer.cc and
+// media/base/video_decoder.cc. The point is not stylistic: with the destructor
+// defined here, this translation unit is the key function for Renderer's
+// vtable, so the vtable is emitted once instead of in every includer.
+Renderer::Renderer() = default;
+Renderer::~Renderer() = default;
+
+void Renderer::SetCdm(CdmContext* cdm_context,
+                      base::OnceCallback<void(bool)> cdm_attached_cb) {
+  // Decision D8: DRM is not implemented, and cdm_context.h deliberately does
+  // not exist so that the empty interface cannot be mistaken for an API
+  // promise. The callback MUST still run, with false: a caller awaiting it
+  // would otherwise block forever, which is the failure class Δ15 exists to
+  // prevent ("leak a thread rather than hang the caller" -- and here there is
+  // not even a thread to leak, just a promise never kept).
+  (void)cdm_context;
+  LOG(WARNING) << "ijkpp.pipeline: SetCdm() ignored; DRM is not implemented "
+                  "in this build (decision D8)";
+  if (cdm_attached_cb) {
+    std::move(cdm_attached_cb).Run(false);
+  }
+}
+
+}  // namespace ijkpp::media

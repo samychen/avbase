@@ -1101,6 +1101,80 @@ STYLE.md 与 README §8 都把 `.clang-tidy` / `.editorconfig` 列为项目工�
 而它只在本地运行——`ci.yml` 里已经调 `check_invariants.py`，所以 **C23 自动就在 CI 里了**，
 不需要动 workflow（也就绕开了 PAT 缺 `workflow` scope 的限制）。
 
+### (3k) 7 个接口头欠的 5 个 `.cc` — ✅ 写完并机械验证
+
+上一轮建议的"第 ② 项"：把 7 个 DRAFT 接口头在各文件头列出的 `.cc owed by this
+header` 清单实现掉。选它的理由是**这是唯一"必须做、且盲写也不太可能错"的一块**
+——纯机械的枚举映射 + out-of-line defaulted ctor/dtor，没有 DSP、没有线程、没有模板。
+
+| 新文件 | 行数 | 内容 |
+|---|---|---|
+| `media/base/pipeline_status.cc` | 193 | `PipelineStatusToString` · **`PipelineStatusToMediaError`（全射，14 个构造点）** |
+| `media/base/renderer_client.cc` | 36 | `BufferingStateToString` · `OutputDeviceStatusToString` |
+| `media/base/renderer.cc` | 51 | `RendererTypeToString` · `Renderer::Renderer()/~Renderer()`（out-of-line `= default`）· **`Renderer::SetCdm()`** |
+| `media/base/pipeline.cc` | 23 | `Pipeline::Pipeline()/~Pipeline()` |
+| `media/base/pipeline_controller.cc` | 41 | `PipelineControllerStateToString` · ctor/dtor |
+
+三个实现决定：
+
+1. **switch 穷尽、无 `default`**。这样往枚举里加一个值会在 `debug` preset 的
+   `-Werror` 下变成 `-Wswitch` 编译错误，而不是运行时静默返回 `"invalid"`。
+   与既有 `GetWaitingReasonName()` / `GetDemuxerStreamTypeName()` 同形。
+   `kMaxValue` 是别名（`= kFailedToCreatePipeline`），**正确地没有自己的 case**
+   ——重复的 case 值是编译错误。
+2. **`SetCdm()` 必须把回调以 `false` 跑掉**，而不是丢弃。D8 不实现 DRM，
+   而一个等这个回调的调用方会永久挂住——那正是 Δ15 要消灭的失败类型
+   （"宁泄漏一个线程也绝不卡死调用方"，而这里连线程都没有，只有一个没兑现的承诺）。
+   同时 `LOG(WARNING)` 一次，让"被忽略"这件事可见。
+3. **`PipelineStatusToMediaError` 的局限写在注释里而不是藏起来**：它只收到一个
+   status，所以 `detail` **不可能**含 docs/10 §4.2 要求的运行时实际值（uri / codec /
+   分辨率 / native code）。能保证的是 summary 指明失败阶段、suggestion 指明一个
+   API / 配置项 / 命令；有实际值的调用方（`PipelineImpl`、子渲染器经 `MediaLog`）
+   必须用 `MediaError` 的 `context` 参数重新包装后再上报。
+
+#### ★发现：`ErrorCode` 缺 renderer/pipeline 类错误码
+
+`kRendererError`（"渲染器报了不可归因于 demuxer/解码器/sink 的致命错误"）
+**没有合适的 `ErrorCode`**，只能映射到 `kInvalidState`——这是"最不坏"而不是"对"。
+`ErrorCode` 在 `media/base/media_error.h`（M3 冻结），**扩枚举是纯追加、不构成破坏性变更**，
+所以正确的修法是加 `kRendererError` / `kPipelineError`。本轮**没有擅自改冻结头**，
+按 (3e) 对 `deps.h` 的同一处理方式登记为发现，留给接口评审。
+
+#### `pipeline_controller.h` 的 `.cc owed` 清单自己写错了
+
+该清单说这个析构函数"必须驱动状态到 `kDestroying` 并按 docs/03 §10.1 的固定顺序
+join 所有 sequence"。**但 `PipelineController` 是抽象类且不持有任何成员**
+（我在 (3) 的偏离 1 里就是这么设计的），所以这里既没有状态可驱动也没有 sequence 可 join。
+那段描述属于**具体实现** `media/filters/pipeline_impl.cc`（M8），R5 的应对①必须落在那里。
+已在 `.cc` 里保留说明而不是删掉，免得下一个人从头文件重新推出同一个错误结论。
+
+#### 机械验证（无编译器下能做的最强验证）
+
+写了一个一次性的全射性/三段式检查器：
+
+```
+✅ PipelineStatusToString          15/15 个非别名枚举值有 case，无 default
+✅ PipelineStatusToMediaError      15/15 同上
+✅ BufferingStateToString           4/4
+✅ OutputDeviceStatusToString       4/4
+✅ RendererTypeToString             3/3
+✅ 14 个 MediaError 构造点全部 ≥4 实参（code + summary + detail + suggestion）
+✅ 14 条 summary 全部 ≤80 字符（最长 45），符合 docs/10 §4.2
+✅ check_invariants → all rules pass (193 files)，27 个 DRAFT 全部列出，C23 基线未变
+```
+
+**这个检查器第一版又报了 2 条假错**，两处都是检查器的问题而不是代码的问题：
+① 不认识 `kX = kY` 别名，把 `kMaxValue` 报成"未覆盖"（而给它加 case 反而是编译错误）；
+② 用非贪婪正则找 `MediaError(...)` 的结尾，被**字符串字面量里的** `DumpDiagnostics();`
+截断，于是把一个四实参的调用数成两实参。第 ② 处与 `check_invariants` C18 历史上那次
+"把错误提示文案里的英文单词 `try` 当成 `try` 关键字"（第四轮 bug #24）**是同一个 bug 类**：
+**在字符串里做代码匹配**。修法也相同——先把字符串内容挖空再匹配。
+
+这是本轮系列里我写的检查器**第五次**在同一方向上出错（把方法名当类型、多行声明、
+`class X final :`、glob 漏 `.cc`、字符串里的 `);`）。规律很清楚：
+**手写正则做 C++ 解析一定会在"注释与字符串"和"多行声明"这两处翻车**，
+所以每次都必须配负向验证，否则会把假错当真错去"修"好代码。
+
 ### (4) R2 降级债的显式登记 — ✅ 本轮补记
 
 `docs/08` §5.1 给 R2（自研 `base/` 工期超支，P4×I4=**16**，高危）准备了 L0–L3
