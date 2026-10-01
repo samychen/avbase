@@ -79,6 +79,12 @@ class IJKPP_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   void Pause() override;
   void SetOutputTarget(
       base::scoped_refptr<NativeDisplay> display) override;
+  // Concrete-side accurate-seek plumbing backing Player::SeekTo(kAccurate):
+  // opens/closes the renderer's drop-frames-before-target window. Not on the
+  // frozen Pipeline interface -- the keyframe-only Seek() contract stays
+  // exact, and the framing policy belongs to the facade's SeekController.
+  void BeginAccurateSeek(base::TimeDelta target, base::OnceClosure reached_cb);
+  void EndAccurateSeek();
   bool IsRunning() const override;
   void SetVolume(float volume) override;
   void SetPlaybackRate(double rate) override;
@@ -127,6 +133,8 @@ class IJKPP_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   void FinishSeekIfBothDone();
   void DoStop();
   void DoSetOutputTarget(base::scoped_refptr<NativeDisplay> display);
+  void DoBeginAccurateSeek(base::TimeDelta target, base::OnceClosure cb);
+  void DoEndAccurateSeek();
 
   // Demuxer::Host (media sequence):
   void SetDuration(base::TimeDelta duration) override;

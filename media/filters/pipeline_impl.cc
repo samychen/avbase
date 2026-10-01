@@ -210,6 +210,42 @@ void PipelineImpl::DoSetOutputTarget(
   }
 }
 
+void PipelineImpl::BeginAccurateSeek(base::TimeDelta target,
+                                     base::OnceClosure reached_cb) {
+  if (!media_runner_) {
+    std::move(reached_cb).Run();
+    return;
+  }
+  media_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&PipelineImpl::DoBeginAccurateSeek, base::Unretained(this),
+                     target, std::move(reached_cb)));
+}
+
+void PipelineImpl::DoBeginAccurateSeek(base::TimeDelta target,
+                                       base::OnceClosure reached_cb) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (renderer_) {
+    renderer_->BeginAccurateSeek(target, std::move(reached_cb));
+  }
+}
+
+void PipelineImpl::EndAccurateSeek() {
+  if (!media_runner_) {
+    return;
+  }
+  media_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&PipelineImpl::DoEndAccurateSeek, base::Unretained(this)));
+}
+
+void PipelineImpl::DoEndAccurateSeek() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (renderer_) {
+    renderer_->EndAccurateSeek();
+  }
+}
+
 void PipelineImpl::Seek(base::TimeDelta time, base::OnceClosure seeked_cb) {
   if (!media_runner_) {
     std::move(seeked_cb).Run();

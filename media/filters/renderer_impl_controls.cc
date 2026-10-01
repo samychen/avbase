@@ -54,6 +54,70 @@ void RendererImpl::SetOutputTarget(
   }
 }
 
+void RendererImpl::BeginAccurateSeek(base::TimeDelta target,
+                                     base::OnceClosure reached_cb) {
+  // S1 in. The window is opened on S3 and observed by the presented-frame
+  // hook; opening before the keyframe seek is the point -- the window
+  // survives Flush(), so the new generation is already framed when decoding
+  // restarts.
+  accurate_reached_cb_ = std::move(reached_cb);
+  accurate_target_micros_.store(target.InMicroseconds());
+  if (video_) {
+    deps_.video_task_runner->PostTask(
+        FROM_HERE, base::BindOnce(&VideoRendererImpl::BeginAccurateSeek,
+                                  base::Unretained(video_.get()), target));
+  } else if (accurate_reached_cb_) {
+    // No video stream: nothing will ever be presented, so the wait cannot
+    // succeed -- report immediately rather than ride the caller's timeout.
+    std::move(accurate_reached_cb_).Run();
+  }
+}
+
+void RendererImpl::EndAccurateSeek() {
+  accurate_target_micros_.store(0);
+  // The callback, if still pending, belongs to a completion path the caller
+  // has decided against (timeout, supersede); dropping it here would leave
+  // the caller's wait hanging, so it runs -- the caller re-checks its own
+  // state on its sequence, where the closed window makes "reached" moot.
+  if (accurate_reached_cb_) {
+    deps_.media_task_runner->PostTask(
+        FROM_HERE, base::BindOnce(&RendererImpl::OnAccurateSeekTargetReached,
+                                  base::Unretained(this)));
+  }
+  if (video_) {
+    deps_.video_task_runner->PostTask(
+        FROM_HERE,
+        base::BindOnce(&VideoRendererImpl::EndAccurateSeek,
+                       base::Unretained(video_.get())));
+  }
+}
+
+void RendererImpl::OnVideoFramePresented(base::TimeDelta timestamp,
+                                         int32_t serial) {
+  // S6. The video clock gets every presented frame, exactly as before; the
+  // accurate-seek check only observes the atomic target and defers every
+  // decision to S1.
+  if (av_sync_) {
+    av_sync_->OnVideoFramePresented(timestamp, serial);
+  }
+  const int64_t target = accurate_target_micros_.load();
+  if (target > 0 && timestamp >= base::TimeDelta::FromMicroseconds(target)) {
+    deps_.media_task_runner->PostTask(
+        FROM_HERE, base::BindOnce(&RendererImpl::OnAccurateSeekTargetReached,
+                                  base::Unretained(this)));
+  }
+}
+
+void RendererImpl::OnAccurateSeekTargetReached() {
+  // S1. Re-checked here because EndAccurateSeek() also routes through this
+  // hop when a callback was still pending at close time.
+  if (accurate_target_micros_.load() == 0 || !accurate_reached_cb_) {
+    return;
+  }
+  accurate_target_micros_.store(0);
+  std::move(accurate_reached_cb_).Run();
+}
+
 void RendererImpl::SetCdm(CdmContext* /*cdm_context*/,
                           base::OnceCallback<void(bool)> cdm_attached_cb) {
   // D8: DRM is not implemented. Run the callback with false rather than drop

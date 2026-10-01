@@ -187,6 +187,20 @@ class IJKPP_MEDIA_EXPORT Renderer {
   // VideoRendererSink::SetOutputTarget().
   virtual void SetOutputTarget(base::scoped_refptr<NativeDisplay> display);
 
+  // Accurate-seek window, backing Player::SeekTo(SeekMode::kAccurate) (M9).
+  // Begin opens the compositor's drop-frames-before-|target| window; it
+  // survives Flush() by design, so the caller may open it before the keyframe
+  // seek that restarts decoding. |reached_cb| runs on the media sequence when
+  // a frame at or after |target| has actually been presented. End closes the
+  // window; it must be called on every completion path -- reached, timed out
+  // (Δ10), or superseded -- or the window eats frames forever.
+  virtual void BeginAccurateSeek(base::TimeDelta target,
+                                 base::OnceClosure reached_cb) {
+    (void)target;
+    (void)reached_cb;
+  }
+  virtual void EndAccurateSeek() {}
+
   virtual RendererType GetRendererType() = 0;
 
  protected:

@@ -66,6 +66,8 @@
 
 #include <stdint.h>
 
+#include <atomic>
+
 #include <memory>
 #include <vector>
 
@@ -153,6 +155,9 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   void SetPaused(bool paused) override;
   void SetOutputTarget(
       base::scoped_refptr<NativeDisplay> display) override;
+  void BeginAccurateSeek(base::TimeDelta target,
+                         base::OnceClosure reached_cb) override;
+  void EndAccurateSeek() override;
   // Thread-safe: reads the clock through AvSyncController's seqlock (Δ14), so
   // Player::GetMediaTime() can answer from the caller's thread without a
   // PostTask round trip and without a mutex.
@@ -197,6 +202,11 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   // existing sub-renderer has reported end of stream *and* the video side has
   // nothing left to present. Fires OnEnded() once per playback.
   void PostVideoEnded();
+  // S6: every frame the sink takes, feeding the video clock and the
+  // accurate-seek target check.
+  void OnVideoFramePresented(base::TimeDelta timestamp, int32_t serial);
+  // S1: the presented frame satisfies the open accurate-seek window.
+  void OnAccurateSeekTargetReached();
   void PostAudioEnded();
   void OnVideoStreamEnded();
   void OnAudioStreamEnded();
@@ -229,6 +239,15 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   // Kept so GetStatistics() can turn audio_->buffered_frames() into a duration
   // without asking the sub-renderer for its sample rate.
   AudioParameters audio_params_;
+  // ---- accurate seek (renderer_impl_controls.cc) --------------------------
+  // The open window's target in microseconds, 0 when closed. Atomic because
+  // the S6 presented-frame hook reads it; every decision happens on S1
+  // (BeginAccurateSeek/EndAccurateSeek/OnAccurateSeekTargetReached), so the
+  // hook only ever observes.
+  std::atomic<int64_t> accurate_target_micros_{0};
+  // S1-only: the facade's "target reached" callback, held between Begin and
+  // the completion hop.
+  base::OnceClosure accurate_reached_cb_;
   // SetRenderMutedAudio()'s argument, stored because it cannot be honoured yet:
   // "stop rendering while muted" needs a device to stop, and media/audio/ does
   // not exist. Recording it here means the flag is not silently dropped, and

@@ -191,8 +191,7 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
     video_->set_ended_cb(base::BindRepeating(
         &RendererImpl::PostVideoEnded, base::Unretained(this)));
     video_->set_frame_presented_cb(base::BindRepeating(
-        &AvSyncController::OnVideoFramePresented,
-        base::Unretained(av_sync_.get())));
+        &RendererImpl::OnVideoFramePresented, base::Unretained(this)));
   }
   if (audio_) {
     audio_->set_ended_cb(base::BindRepeating(
