@@ -27,9 +27,15 @@ set(IJKPP_WARNINGS_COMMON
     -Werror=narrowing -Werror=delete-non-virtual-dtor -Werror=reorder
     -Wno-unknown-pragmas)
 set(IJKPP_WARNINGS_STRICT
-    -Wconversion -Wsign-conversion -Wold-style-cast -Wuseless-cast
+    -Wconversion -Wsign-conversion -Wold-style-cast
     -Wsuggest-override -Wzero-as-null-pointer-constant -Wextra-semi
     -Wpessimizing-move)
+# GCC-only. clang rejects -Wuseless-cast as an unknown option, which together
+# with IJKPP_WERROR makes the strict/debug preset -- the configuration
+# docs/BUILDING.md points reviewers at -- fail on the first translation unit
+# instead of compiling the tree. There is no clang equivalent to fall back to.
+set(IJKPP_WARNINGS_STRICT_GCC_ONLY
+    -Wuseless-cast)
 
 function(ijkpp_configure_target target)
   target_compile_features(${target} PUBLIC cxx_std_20)
@@ -49,6 +55,7 @@ function(ijkpp_configure_target target)
   else()
     target_compile_options(${target} PRIVATE ${IJKPP_WARNINGS_COMMON}
         $<$<BOOL:${IJKPP_STRICT_WARNINGS}>:${IJKPP_WARNINGS_STRICT}>
+        $<$<AND:$<BOOL:${IJKPP_STRICT_WARNINGS}>,$<CXX_COMPILER_ID:GNU>>:${IJKPP_WARNINGS_STRICT_GCC_ONLY}>
         $<$<BOOL:${IJKPP_WERROR}>:-Werror>)
     check_cxx_compiler_flag(-Wthread-safety IJKPP_HAS_THREAD_SAFETY)
     if(IJKPP_HAS_THREAD_SAFETY)
