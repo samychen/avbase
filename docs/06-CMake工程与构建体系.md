@@ -1121,6 +1121,12 @@ ijkpp_add_example(ijkpp_inspect SOURCES examples/ijkpp_inspect/main.cc
 
 架构约束只写在文档里，半年后一定失效。这里把它变成构建目标。
 
+**实现范围（收敛后）**：本节的目录是设计全集；`check_invariants.py` 只实现其中
+**违规即藏缺陷**的 7 条——`C1`（文件 ≤500 行，迫使真实接缝被命名）、`C4`/`C5`/`C22`
+（分层架构：FFmpeg 隔离、平台隔离、media/base 不依赖 player）、`C23`（80 列棘轮）、
+`C24`/`C25`（构建覆盖的双向检查）。风格类规则（C2·C7-C9·C11·C14·C17·C18·C20·C21）已删：
+C18/C20 本就是编译器必报的错，其余只是把"taste"写成了门禁——一条会误伤的门禁教人无视门禁。
+
 ```cmake
 add_custom_target(check-invariants
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_invariants.py
