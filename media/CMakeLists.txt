@@ -40,6 +40,7 @@ add_library(ijkpp_media
     filters/pipeline_impl.cc
     filters/pipeline_impl_host.cc
     filters/renderer_impl.cc
+    filters/renderer_impl_controls.cc
     filters/video_renderer_impl.cc
     filters/wsola_internals.cc
     renderers/default_renderer_factory.cc

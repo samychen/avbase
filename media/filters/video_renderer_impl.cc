@@ -47,6 +47,14 @@ VideoRendererImpl::~VideoRendererImpl() {
   }
 }
 
+void VideoRendererImpl::set_ended_cb(base::RepeatingClosure cb) {
+  ended_cb_ = std::move(cb);
+}
+
+void VideoRendererImpl::set_frame_presented_cb(FramePresentedCB cb) {
+  frame_presented_cb_ = std::move(cb);
+}
+
 void VideoRendererImpl::Initialize(DemuxerStream* stream,
                                   std::unique_ptr<VideoRendererSink> sink,
                                   InitializeCB cb) {
@@ -220,14 +228,32 @@ void VideoRendererImpl::OnDecoderOutput(
                << status.AsDebugString() << ")";
     ended_ = true;
     compositor_.SetEndOfStream();
+    ReportEndedOnce();
     return;
   }
   if (frame) {
     // Publish immediately: decode and pacing are one causal step (see the
     // threading note in the header for why this is not posted to S1).
     compositor_.PutCurrentFrame(std::move(frame));
+    // Posted, not inline: same reasoning as the audio pump -- a synchronous
+    // delivery burst recursed once per buffered frame and could exhaust the
+    // video thread's stack.
+    task_runner_->PostTask(FROM_HERE, std::move(pump_again));
+    return;
   }
-  std::move(pump_again).Run();
+  // kOk with no frame is how DecoderStream reports a *drained* stream
+  // (MaybeDeliver's "EOS is reported as kOk with a null output"); the first
+  // draft treated it as "nothing to do" and pumped forever, so a file that
+  // played to its end never reached RendererClient::OnEnded().
+  ended_ = true;
+  compositor_.SetEndOfStream();
+  ReportEndedOnce();
+}
+
+void VideoRendererImpl::ReportEndedOnce() {
+  if (ended_cb_) {
+    ended_cb_.Run();
+  }
 }
 
 void VideoRendererImpl::OnDecoderStreamEvent(DecoderStreamEvent event) {
@@ -250,7 +276,25 @@ base::scoped_refptr<VideoFrame> VideoRendererImpl::Render(
   // block, allocate or call back into Player: this runs on the sink's render
   // sequence, which for the SDL2 backend is the window's event loop (docs/04
   // §1, S6) -- stalling it freezes input handling as well as video.
-  return compositor_.Render(deadline_min, deadline_max);
+  base::scoped_refptr<VideoFrame> frame =
+      compositor_.Render(deadline_min, deadline_max);
+  // Feed the video clock from here, on S6: this is the one sequence that knows
+  // a frame actually left for the display, which mirrors ffplay setting
+  // vidclk inside video_refresh(). A null frame means "repeat the previous
+  // one", and repeating must not move the clock.
+  if (frame && frame_presented_cb_) {
+    frame_presented_cb_.Run(frame->timestamp(), frame->serial());
+  }
+  // Consumer wake-up for the decode pump (counterpart of ffplay's
+  // frame_queue_signal): the pump stops at compositor back-pressure, and only
+  // a present frees watermark room. Posted to S3; PumpDecoder re-checks every
+  // condition there, so a spurious kick is a cheap no-op.
+  if (frame) {
+    task_runner_->PostTask(FROM_HERE,
+                           base::BindOnce(&VideoRendererImpl::PumpDecoder,
+                                          base::Unretained(this)));
+  }
+  return frame;
 }
 
 void VideoRendererImpl::OnFrameSubmitFailure() {

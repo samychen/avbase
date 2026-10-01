@@ -184,9 +184,25 @@ void AudioRendererImpl::Flush(base::OnceClosure closure) {
                      // media-time origin, or a straggler buffer could publish a
                      // chunk stamped with the new origin.
                      self->next_chunk_media_time_ = base::TimeDelta();
-                     std::move(done).Run();
+                     if (done) {
+                       std::move(done).Run();
+                     }
                    },
                    base::Unretained(this), std::move(closure)));
+}
+
+void AudioRendererImpl::SetPaused(bool paused) {
+  const bool was = paused_.exchange(paused);
+  if (was == paused) {
+    return;
+  }
+  if (!paused) {
+    // Resume both halves of the pipeline: the pump may have stopped because
+    // the algorithm was dry, and the ring may have drained through Render()
+    // while the device was gated.
+    PumpDecoder();
+    PreStretch();
+  }
 }
 
 void AudioRendererImpl::Stop() {
@@ -282,6 +298,9 @@ void AudioRendererImpl::OnDecoderOutput(
   if (AudioDecoderStreamTraits::IsEndOfStreamOutput(buffer)) {
     algorithm_.MarkEndOfStream();
     ended_ = true;
+    if (ended_cb_) {
+      ended_cb_.Run();
+    }
   } else if (!status.is_ok()) {
     LOG(ERROR) << "ijkpp.adec: decode failed (" << status.AsDebugString()
                << "), reporting to the pipeline";
@@ -290,9 +309,21 @@ void AudioRendererImpl::OnDecoderOutput(
     return;
   } else if (buffer) {
     algorithm_.EnqueueBuffer(std::move(buffer));
+  } else {
+    // kOk with no buffer is DecoderStream's drained-stream signal; without
+    // this branch a fully buffered stream pumped a null read forever and the
+    // pipeline never learned the stream had ended.
+    ended_ = true;
+    if (ended_cb_) {
+      ended_cb_.Run();
+    }
   }
   PreStretch();
-  std::move(pump_again).Run();
+  // Posted, not run inline: DecoderStream delivers from its cache
+  // synchronously, so running the pump inline recurses once per buffered
+  // frame and overflowed the audio thread's stack on real files. One task hop
+  // per buffer costs nothing measurable and makes the pump iterative.
+  task_runner_->PostTask(FROM_HERE, std::move(pump_again));
 }
 
 void AudioRendererImpl::OnDecoderStreamEvent(DecoderStreamEvent event) {
@@ -346,6 +377,54 @@ void AudioRendererImpl::PreStretch() {
 // S7: the device callback
 // ---------------------------------------------------------------------------
 
+int AudioRendererImpl::DrainRing(AudioBus* dest, int64_t* first_media_micros) {
+  DCHECK(dest);
+  DCHECK(first_media_micros);
+  const int requested = dest->frames();
+  const int channels = dest->channels();
+  const double rate = playback_rate_.load();
+  int written = 0;
+  bool have_time = false;
+
+  base::AutoLock scoped(handoff_lock_);
+  while (written < requested && ring_count_ > 0) {
+    ReadyChunk& front = ring_[ring_head_];
+    const int available = front.frames - front_offset_;
+    const int n = std::min(available, requested - written);
+    for (int c = 0; c < channels; ++c) {
+      const float* src = front.bus->channel(c) + front_offset_;
+      float* out = dest->channel(c) + written;
+      for (int i = 0; i < n; ++i) {
+        out[i] = src[i];
+      }
+    }
+    if (!have_time) {
+      *first_media_micros =
+          (front.media_time +
+           OutputFramesToMediaTime(front_offset_, rate,
+                                   params_.sample_rate()))
+              .InMicroseconds();
+      have_time = true;
+    }
+    front_offset_ += n;
+    written += n;
+    if (front_offset_ >= front.frames) {
+      front_offset_ = 0;
+      ring_head_ = (ring_head_ + 1) % kReadyChunks;
+      --ring_count_;
+      // Consumer wake-up (the counterpart of ffplay's frame_queue_signal,
+      // expressed as a posted task rather than a condvar): the pump may have
+      // stopped on ring back-pressure, and only the consumer can observe that
+      // the pressure has cleared. PumpDecoder re-checks every condition on S4,
+      // so a spurious kick is a cheap no-op.
+      task_runner_->PostTask(FROM_HERE,
+                             base::BindOnce(&AudioRendererImpl::PumpDecoder,
+                                            base::Unretained(this)));
+    }
+  }
+  return written;
+}
+
 int AudioRendererImpl::Render(base::TimeDelta delay,
                               base::TimeTicks delay_timestamp,
                               const AudioGlitchInfo& glitch_info,
@@ -353,45 +432,18 @@ int AudioRendererImpl::Render(base::TimeDelta delay,
   if (!dest || render_error_.load()) {
     return 0;
   }
+  if (paused_.load()) {
+    // Gated by SetPaused(): consume nothing, report nothing. Returning 0 is
+    // the documented "play silence" answer, and counting it as an underrun
+    // would fill audio_glitches with one entry per device period for as long
+    // as the user is paused.
+    return 0;
+  }
   DCHECK(sink_->CurrentThreadIsRenderingThread());
 
-  const int requested = dest->frames();
-  const int channels = dest->channels();
   const double rate = playback_rate_.load();
-  int written = 0;
   int64_t first_media_micros = 0;
-  bool have_time = false;
-
-  {
-    base::AutoLock scoped(handoff_lock_);
-    while (written < requested && ring_count_ > 0) {
-      ReadyChunk& front = ring_[ring_head_];
-      const int available = front.frames - front_offset_;
-      const int n = std::min(available, requested - written);
-      for (int c = 0; c < channels; ++c) {
-        const float* src = front.bus->channel(c) + front_offset_;
-        float* out = dest->channel(c) + written;
-        for (int i = 0; i < n; ++i) {
-          out[i] = src[i];
-        }
-      }
-      if (!have_time) {
-        first_media_micros =
-            (front.media_time +
-             OutputFramesToMediaTime(front_offset_, rate,
-                                     params_.sample_rate()))
-                .InMicroseconds();
-        have_time = true;
-      }
-      front_offset_ += n;
-      written += n;
-      if (front_offset_ >= front.frames) {
-        front_offset_ = 0;
-        ring_head_ = (ring_head_ + 1) % kReadyChunks;
-        --ring_count_;
-      }
-    }
-  }
+  const int written = DrainRing(dest, &first_media_micros);
   // Everything past the lock is arithmetic on |written| samples plus one
   // seqlock write, which is what keeps this inside the 100 us budget (Δ14
   // exists so the clock write needs no mutex).
@@ -405,7 +457,8 @@ int AudioRendererImpl::Render(base::TimeDelta delay,
     underruns_.fetch_add(1);
     return 0;
   }
-  if (av_sync_ && have_time) {
+  // |written| > 0 here, so DrainRing() necessarily filled |first_media_micros|.
+  if (av_sync_) {
     av_sync_->OnAudioFramesConsumed(written,
                                     base::TimeDelta::FromMicroseconds(
                                         first_media_micros),

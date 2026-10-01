@@ -127,6 +127,24 @@ class IJKPP_MEDIA_EXPORT VideoRendererImpl final
   void Initialize(DemuxerStream* stream,
                   std::unique_ptr<VideoRendererSink> sink, InitializeCB cb);
 
+  // Both callbacks are invoked on S6 (the sink's render thread), which is the
+  // same thread that runs Render() -- the single-writer sequence the video
+  // clock's seqlock requires (Δ14).
+  //
+  // |ended_cb| fires once when the decoder stream reports end of stream, on
+  // top of whatever |ended_| already records. RendererImpl uses it to fire
+  // RendererClient::OnEnded() when every existing sub-renderer has drained;
+  // without it, natural end of stream was never reported upward and a file
+  // simply played to silence forever.
+  using FramePresentedCB =
+      base::RepeatingCallback<void(base::TimeDelta, int32_t)>;
+  void set_ended_cb(base::RepeatingClosure cb);
+  // Invoked with (frame timestamp, frame serial) for every frame Render()
+  // returns, i.e. every frame actually handed to a sink. Feeds
+  // AvSyncController::OnVideoFramePresented -- the video clock had no writer
+  // before this, so a video-only stream never had a valid master clock.
+  void set_frame_presented_cb(FramePresentedCB cb);
+
   void StartPlayingFrom(base::TimeDelta time);
   void Flush(int32_t serial, base::OnceClosure closure);
   void Stop();
@@ -168,12 +186,15 @@ class IJKPP_MEDIA_EXPORT VideoRendererImpl final
   void OnDecoderOutput(base::OnceClosure pump_again, DecoderStatus status,
                        base::scoped_refptr<VideoFrame> frame);
   void OnDecoderStreamEvent(DecoderStreamEvent event);
+  void ReportEndedOnce();
 
   base::scoped_refptr<base::SequencedTaskRunner> task_runner_;
   std::vector<base::scoped_refptr<VideoDecoderFactory>> factories_;
   DecoderStream<VideoDecoderStreamTraits> decoder_stream_;
   VideoFrameCompositor compositor_;
   std::unique_ptr<VideoRendererSink> sink_;
+  base::RepeatingClosure ended_cb_;
+  FramePresentedCB frame_presented_cb_;
 
   bool initialized_{false};
   bool started_{false};

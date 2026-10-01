@@ -158,6 +158,17 @@ class IJKPP_MEDIA_EXPORT AudioRendererImpl final
   // the decoder.
   void Stop();
 
+  // Runs on S4. Pausing gates the device path, not the decoder path: the
+  // device callback returns 0 (the sink plays silence and consumes nothing),
+  // so no frame is consumed, no clock update reaches AvSyncController, and the
+  // audio clock freezes at its last anchor once RendererImpl zeroes its speed.
+  // Decoding continues to fill the ring, which is what makes unpause instant
+  // and bounds the post-pause startup latency to whatever was already decoded.
+  // |ended_cb| fires once on the audio sequence when the decoder stream
+  // reports end of stream (RendererImpl fires OnEnded from it).
+  void SetPaused(bool paused);
+  void set_ended_cb(base::RepeatingClosure cb) { ended_cb_ = std::move(cb); }
+
   // Callable from any thread; all four are atomics because the device thread
   // reads them inside Render() and must not take a lock to do it.
   void SetVolume(float volume);
@@ -209,6 +220,11 @@ class IJKPP_MEDIA_EXPORT AudioRendererImpl final
   void PreStretch();
   // S4: publishes one chunk. Returns false when the ring is full.
   bool PublishChunk();
+  // S7: copies at most |dest->frames()| frames out of the ring and posts a
+  // consumer wake-up whenever back-pressure clears. Returns the number of
+  // frames written; when that is non-zero, |first_media_micros| holds the
+  // media time of the first frame handed over, which re-anchors the clock.
+  int DrainRing(AudioBus* dest, int64_t* first_media_micros);
 
   base::scoped_refptr<base::SequencedTaskRunner> task_runner_;
   std::vector<base::scoped_refptr<AudioDecoderFactory>> factories_;
@@ -224,6 +240,9 @@ class IJKPP_MEDIA_EXPORT AudioRendererImpl final
   bool ended_{false};
   bool stopping_{false};
   int32_t serial_{0};
+  // Atomic because Render() (S7) checks it; set from S4 via SetPaused().
+  std::atomic<bool> paused_{false};
+  base::RepeatingClosure ended_cb_;
 
   // ---- shared with S7; handoff_lock_ guards all four ----
   mutable base::Lock handoff_lock_;

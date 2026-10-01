@@ -147,6 +147,11 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   void StartPlayingFrom(base::TimeDelta time) override;
   void SetPlaybackRate(double playback_rate) override;
   void SetVolume(float volume) override;
+  // Added with the M8 pipeline wiring (see Renderer::SetPaused): pauses both
+  // sub-renderers and freezes the clocks. Runs on the media sequence.
+  void SetPaused(bool paused) override;
+  void SetOutputTarget(
+      base::scoped_refptr<NativeDisplay> display) override;
   // Thread-safe: reads the clock through AvSyncController's seqlock (Δ14), so
   // Player::GetMediaTime() can answer from the caller's thread without a
   // PostTask round trip and without a mutex.
@@ -161,26 +166,41 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   bool ended() const { return ended_; }
 
  private:
-  void OnVideoInitialized(PipelineStatusCallback init_cb,
-                          PipelineStatus status);
+  void OnVideoInitialized(PipelineStatus status);
   void OnAudioInitialized(PipelineStatus status);
   void MaybeReportInitialized();
-  // The single place that decides "both sub-renderers are ready". Split from
-  // MaybeReportInitialized() because only the video path holds the pipeline's
-  // status callback -- audio reports errors through RendererClient instead, so
-  // the two arrival paths differ in what they carry.
-  void MaybeReportInitializedWith(PipelineStatusCallback cb);
+  // Builds the sub-renderers the resource has streams for, hands each its sink
+  // and its init callback, and wires the ended/frame-presented callbacks.
+  // Called once from Initialize() on S1; the Posts inside go to S3/S4.
+  void CreateSubRenderers(DemuxerStream* video_stream,
+                          DemuxerStream* audio_stream);
   // Periodic: read the master clock on S1, push it to S3.
   void PushMasterClock();
   void PushStatistics();
   void ReportError(MediaError error);
+  // Runs (on the media sequence, via a hop) the pipeline's init callback with
+  // |status|. Every arrival path funnels here: the sub-renderers complete on
+  // S3/S4, and the pipeline's sequence checker is what caught the first draft
+  // running the callback inline from whichever thread finished last.
+  void CompleteInitialization(PipelineStatus status);
   void OnEnded();
+  // Posted by the sub-renderers' ended callbacks (which fire on S3/S4); the
+  // flags they set and the decision itself stay on S1. "Ended" means every
+  // existing sub-renderer has reported end of stream *and* the video side has
+  // nothing left to present. Fires OnEnded() once per playback.
+  void PostVideoEnded();
+  void PostAudioEnded();
+  void OnVideoStreamEnded();
+  void OnAudioStreamEnded();
+  void CheckForEnded();
   static AudioParameters MakeAudioParameters(const AudioDecoderConfig& config,
                                              int frames_per_buffer);
 
   Deps deps_;
   base::raw_ptr<RendererClient> client_;
-  std::unique_ptr<AvSyncController> av_sync_;
+  // Shared with PipelineImpl (see Deps::av_sync); GetMediaTime() reads it
+  // through the seqlock from any thread.
+  std::shared_ptr<AvSyncController> av_sync_;
   std::unique_ptr<VideoRendererImpl> video_;
   std::unique_ptr<AudioRendererImpl> audio_;
 
@@ -190,6 +210,11 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   bool has_video_{false};
   bool has_audio_{false};
   bool ended_{false};
+  bool paused_{false};
+  // S1-only: the sub-renderers reported end of stream. The final decision
+  // waits for the buffers to drain (CheckForEnded).
+  bool video_ended_{false};
+  bool audio_ended_{false};
   bool clock_push_scheduled_{false};
   bool stats_scheduled_{false};
   base::TimeDelta start_time_;
@@ -203,6 +228,11 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   bool render_muted_audio_{true};
   double playback_rate_{1.0};
   float volume_{1.0f};
+  // The pipeline's init callback, held from Initialize() until both
+  // sub-renderers report. The first draft passed it through the video path's
+  // callback; when video finished before audio, the closure died in the
+  // returning stack frame and the pipeline waited forever.
+  PipelineStatusCallback pending_init_cb_;
 };
 
 }  // namespace ijkpp::media
