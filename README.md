@@ -50,6 +50,7 @@
 |---|---|---|
 | — | [STYLE.md](STYLE.md) | **代码风格细则**：Google Style 落地规则、Chromium 约定、命名表、注释模板、clang-tidy 配置、提交规范、**与 Chromium 的对照速查表** |
 | — | [PROGRESS.md](docs/PROGRESS.md) | **实施进度活文档**：已完成/未完成清单、可执行验证命令、check_invariants 抓到的真实问题、移植中发现的 2 个缺陷 |
+| — | [项目架构与能力分析](docs/项目架构与能力分析.md) | **时点快照**（第十轮开工前 @ `7b1e039`）：按代码实测的架构与能力盘点、逐项缺口、以及"文档说到了但代码还没有"的对照（§5.4）。快照不随代码更新 |
 | 01 | [现状剖析与设计目标](docs/01-现状剖析与设计目标.md) | ijkplayer 的 12 条病灶（代码取证）、设计目标 G1–G12、10 条设计原则、"为什么参照 Chromium media" |
 | 02 | [总体架构与模块划分](docs/02-总体架构与模块划分.md) | **Chromium 式四层架构**（base/media/player/platform）、完整目录树（镜像 `media/base` + `media/filters`）、CMake target 拓扑、依赖方向铁律 |
 | 03 | [核心类与接口设计](docs/03-核心类与接口设计.md) | 头文件级 C++20 声明，**命名与签名对齐 Chromium**：`DecoderBuffer` / `VideoFrame` / `AudioBus` / `DemuxerStream` / `VideoDecoder` / `Renderer` / `Pipeline` / `VideoFrameCompositor` / `AudioRendererSink` / `MediaLog` / `Player` |
@@ -260,57 +261,63 @@ ijkpp/
 ├── .clang-format            ✅   .gitignore ✅（第九轮补 __pycache__/ *.pyc）
 ├── .clang-tidy              ⬜ STYLE.md §8 有完整配置内容，文件本身不存在
 ├── .editorconfig            ⬜
-├── STYLE.md · VERSION(0.1.0) · CMakeLists.txt · CMakePresets.json ✅
+├── STYLE.md · VERSION.txt(0.1.0) · CMakeLists.txt · CMakePresets.json ✅
 ├── .github/workflows/ci.yml ✅ quick + full 矩阵；ffmpeg-matrix 与 e2e-linux 仍是 if:false
-├── cmake/                   ✅ 7 个：IjkppOptions · IjkppCompilerFlags · IjkppThirdParty
-│                               FindFFmpeg · IjkppCheckInvariants · BuildConfig.h.in · Version.h.in
+├── cmake/                   ✅ 8 个：IjkppOptions · IjkppCompilerFlags · IjkppThirdParty
+│                               FindFFmpeg · FindSDL2 · IjkppCheckInvariants
+│                               BuildConfig.h.in · Version.h.in
 │                            ⬜ FindLinuxMediaDeps(M12) · IjkppInstall(M8) · ijkpp.map(R18)
-├── base/                    ✅ 44 文件 / 3,763 行
+├── base/                    ✅ 44 文件 / 3,785 行
 │   ├── functional/ memory/ time/ synchronization/ task/ threading/ types/ test/
 │   └── ⬜ containers/ files/ strings/ trace_event/ · feature_list.h
 │         threading/message_pump_epoll.cc（R2 的 L2 降级：现为 TaskQueue 驱动）
 ├── media/
-│   ├── base/                ✅ 54 文件 / 5,301 行
-│   │     其中 7 个是第九轮冻结的 DRAFT 接口头（17 行注释级缺口清单，未进构建）：
-│   │     pipeline_status · media_resource · renderer_client · renderer ·
-│   │     renderer_factory · pipeline · pipeline_controller
-│   ├── filters/             ✅ 12 文件 / 3,031 行（ffmpeg_* · decoder_stream ·
-│   │                            decoder_selector · ffmpeg_glue）
-│   │   └── legacy/          ✅ 6 文件 / 1,716 行 —— LGPL-2.1 隔离区（第九轮建）：
+│   ├── base/                ✅ 59 文件 / 5,798 行
+│   │     第九轮冻结的 7 个接口头（pipeline_status · media_resource ·
+│   │     renderer_client · renderer · renderer_factory · pipeline ·
+│   │     pipeline_controller）第十轮已进构建，缺口的注释作为历史保留
+│   ├── filters/             ✅ 40 文件 / 9,751 行（ffmpeg_* · decoder_stream ·
+│   │                            decoder_selector · ffmpeg_glue · pipeline_impl
+│   │                            + pipeline_impl_host · null 双 sink ·
+│   │                            renderer_impl + renderer_impl_controls）
+│   │   └── legacy/          ✅ 6 文件 / 1,720 行 —— LGPL-2.1 隔离区（第九轮建）：
 │   │                            video_frame_compositor · av_sync_controller · clock
 │   │                            + LICENSE.LGPL-2.1(501 行) + README.md（准入规则）
-│   ├── renderers/           ⬜ M7
+│   ├── renderers/           ✅ 2 文件 / 183 行 —— DefaultRendererFactory（M8）
 │   └── audio/               ⬜ M7
 ├── player/
-│   ├── public/              ✅ 12 个 SDK 头 / 997 行（M8 契约冻结）
-│   └── *.cc                 ⚠️ 7 文件 / 909 行，全是 skeleton：player.cc 的 10 个方法
-│                               返回 kNotImplemented；option_registry 只覆盖 8/60+ 个 key
-│                            ⬜ player_impl · state_machine · event_hub · seek_controller
-│                               buffer_controller · diagnostics · public/c/
+│   ├── public/              ✅ 12 个 SDK 头 / 1,051 行（M8 契约冻结）
+│   └── *.cc                 ✅ 11 文件 / 1,891 行 —— 门面已实现：10 个方法里 9 个接通
+│                               （player_impl + player_impl_events 承载状态机、事件枢纽
+│                               与 S1/S3/S4 三线程）；option_registry 仍只覆盖 8/60+ 个 key
+│                            ⬜ seek_controller · buffer_controller · diagnostics · public/c/
 ├── platform/
-│   ├── ffmpeg/              ✅ 9 文件 / 730 行（全项目唯一链接 FFmpeg 的 target）
-│   └── null/ sdl2/ linux/   ⬜ M10 / M11 / M12 —— 后两个开关目前在
+│   ├── ffmpeg/              ✅ 9 文件 / 776 行（全项目唯一链接 FFmpeg 的 target）
+│   ├── sdl2/                ✅ 5 文件 / 592 行 —— M11 的双后端提前落地（M8 轮）
+│   └── null/ · linux/       ⬜ M10 / M12 —— null 仍是空目录；linux 开关在
 │                               platform/CMakeLists.txt 里是有意的 FATAL_ERROR
-├── tests/                   ✅ unit/ 23 文件 / 5,940 行 · 322 用例 · testdata/ 5 个样本
-│                               （含 1 个 DRAFT 测试文件，10 用例，未计入 322）
+├── tests/                   ✅ unit/ 26 文件 / 6,743 行 · 323 用例 · testdata/ 5 个样本
+│                               （两个曾被记为"未计入总数"的测试文件均已进构建并跑绿）
 │                            ⬜ contract/ integration/ golden/ e2e/ stress/ fuzz/
 │                               bench/ support/
-├── tools/                   ✅ check_invariants.py(374，14 条规则/174 文件)
+├── tools/                   ✅ check_invariants.py(604，16 条规则/220 文件)
 │                               extract_constants.py(547) + ported_constants.py(222)
+│                               gen_options.py(820) · option_map.py(327) · sim_wsola.py(704)
 │                               inspect/ → ijkpp-inspect（probe · decode · sync）
 │                               setup_ffmpeg.sh（FindFFmpeg.cmake 引用，非死代码）
-│                            ⬜ gen_options.py · golden_record.py · golden_diff.py
-│                               verify_e2e.py · ijkplayer-recorder/ · build_linux.sh
+│                            ⬜ golden_record.py · golden_diff.py · verify_e2e.py
+│                               ijkplayer-recorder/ · build_linux.sh
 │                               inspect 的 doctor/play/dump/golden 子命令
-├── examples/                ⬜ 12 个示例全部未建（M8/M11/M12）
+├── examples/                ✅ 2 个 / 328 行（headless · play_sdl2）；⬜ 其余 10 个
 ├── third_party/             ⬜ 按设计保持为空（不 vendor）
-└── docs/                    ✅ 11 篇（01–10 + PROGRESS，约 41.7 万字符）
-                             ⬜ BUILDING · API · COOKBOOK · MIGRATION · TROUBLESHOOTING
+└── docs/                    ✅ 13 篇（01–10 + PROGRESS + BUILDING + 项目架构与能力分析，
+                             约 49.3 万字符）
+                             ⬜ API · COOKBOOK · MIGRATION · TROUBLESHOOTING
                                 EXTENDING · PERFORMANCE · CHANGELOG（M13 发版 blocker）
 ```
 
-合计：**174 个 `.h`/`.cc`**（其中 8 个 DRAFT）、C++ **22,975 行**（实现 17,203 / 测试 5,772）、
-`tools/*.py` **1,143 行**。逐项进度以 [docs/PROGRESS.md](docs/PROGRESS.md) 的
+合计：**220 个 `.h`/`.cc`**（无 DRAFT：第九轮冻结的 DRAFT 文件第十轮全部转正）、
+C++ **32,110 行**（实现 25,367 / 测试 6,743）、`tools/*.py` **3,224 行**。逐项进度以 [docs/PROGRESS.md](docs/PROGRESS.md) 的
 "未完成（按里程碑）"与"工具与门禁现状"两张表为准。
 
 ### 8.2 规划（目标布局，docs/02 §2 的完整版）

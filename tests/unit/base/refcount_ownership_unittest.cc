@@ -9,10 +9,6 @@
 // describes the state when the file was written and is kept so the reasoning
 // behind each gap list stays readable. The gap lists themselves are still
 // open unless a later note says otherwise.
-// Listed in tests/CMakeLists.txt under base_unittests, but written in an
-// environment with no compiler, so it has never been compiled or run. It must
-// not be counted in the 287/322 totals until a real build confirms it. Remove
-// this banner the first time `ctest --preset no-ffmpeg` runs it green.
 //
 // What this suite pins down is the distinction between the three ownership
 // verbs in base/memory/scoped_refptr.h. They are one word apart and a lifetime

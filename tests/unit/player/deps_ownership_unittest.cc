@@ -9,12 +9,6 @@
 // describes the state when the file was written and is kept so the reasoning
 // behind each gap list stays readable. The gap lists themselves are still
 // open unless a later note says otherwise.
-// Deliberately not listed in tests/CMakeLists.txt: the project's rule for
-// DRAFT files is that they are excluded from every CMake target, because a
-// file that cannot compile must not be reachable from a build. This one was
-// written in an environment with no compiler. Add it to a player_unittests
-// target (which does not exist yet either) the first time it builds, and drop
-// this banner at the same moment.
 //
 // WHAT THIS PINS DOWN. player::Deps held media::DataSource,
 // media::VideoDecoderFactory and media::AudioDecoderFactory in

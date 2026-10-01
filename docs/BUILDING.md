@@ -15,7 +15,8 @@
 | **只跑 Python 工具** | 仅 Python 3 —— **不需要编译器、不需要 FFmpeg** | 见 §5 |
 | 真实媒体测试 | 系统 FFmpeg 开发包（4.4 ~ 7.x 均可，**不需要打 patch**） | `pkg-config --modversion libavformat` |
 | FFmpeg 版本锁定 | `tools/setup_ffmpeg.sh`（从源码编一个固定版本到 prefix） | — |
-| SDL2 / 原生 Linux 后端 | ❌ **尚未实现**（M11 / M12）。打开这两个开关会直接 `FATAL_ERROR` | 见 §4 |
+| SDL2 后端 | ✅ 已实现（M11 的代码提前落地）：`-DIJKPP_ENABLE_SDL2=ON`，另需 SDL2 开发包 | 见 §4 |
+| 原生 Linux 后端（X11/Wayland） | ❌ **尚未实现**（M12）。打开 `IJKPP_ENABLE_LINUX_NATIVE` 会直接 `FATAL_ERROR` | 见 §4 |
 
 Debian/Ubuntu 一次装齐（不含 FFmpeg）：
 
@@ -251,12 +252,12 @@ grep -rln "STATUS: DRAFT" --include='*.h' --include='*.cc' .
 
 | 症状 | 原因与处置 |
 |---|---|
-| `IJKPP_ENABLE_SDL2 is scheduled for milestone M11` | 不是 bug，是有意的 `FATAL_ERROR`。M11 之前没有 SDL2 后端 |
+| `IJKPP_ENABLE_LINUX_NATIVE is scheduled for milestone M12` | 不是 bug，是有意的 `FATAL_ERROR`：原生 GL 后端还没写。SDL2 后端已经可用，见 §4 |
 | `FindFFmpeg` 报版本为空 / 门禁形同虚设 | 第四轮修过一个：版本正则用小写组件名而实际宏是 `LIBAVCODEC_VERSION_MAJOR`。若再现，检查 `cmake/FindFFmpeg.cmake` 的 `string(TOUPPER)` |
 | `av_dict_iterate` 未声明 | 那是 FFmpeg 6.0 才有的；5.x 走 `IJKPP_FFMPEG_HAS_DICT_ITERATE` 分支。兼容层已在 7.1.1 与 5.1.9 双版本验证过 |
 | 工具跑出来的结果与源码不符 | `__pycache__` 陈旧字节码，见 §5 的警告 |
 | `check_invariants` 报 C1 超长 | DRAFT 文件豁免；非 DRAFT 文件要么拆，要么在 `LINE_LIMIT_ALLOWLIST` 登记**带理由**的豁免（每条豁免要关联 issue，见 R12） |
-| 构建产物里出现 `libSDL2` / `libGL` | 现在不可能（后端不存在）。M12 之后应由 dlopen 弱依赖保证 `ldd libijkpp.so` 只有 libc/libstdc++/libm/libdl/libpthread |
+| 构建产物里出现 `libSDL2` | 应然：`IJKPP_ENABLE_SDL2=ON` 时 `platform_sdl2` 是唯一链接 SDL2 的 target。`libGL` 则仍不可能（原生后端不存在）；M12 之后应由 dlopen 弱依赖保证 `ldd libijkpp.so` 只有 libc/libstdc++/libm/libdl/libpthread |
 
 ---
 
