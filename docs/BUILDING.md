@@ -117,18 +117,35 @@ cmake --build --preset linux-ffmpeg711          # 或任何 IJKPP_ENABLE_FFMPEG=
 
 ---
 
-## 4. 现在还跑不起来的东西
+## 4. 播放：现在能跑了（第十轮起）
+
+```bash
+# headless：不需要窗口系统，整个 decode→sync→render 链路对 null sink 播完
+./build/<cfg>/bin/headless tests/testdata/small_h264_aac_3s.mp4
+#   → "completed at media time 2.99s"，退出码 0
+#   可选 --seek 1.5 / --rate 2.0 / --timeout n
+
+# SDL2 真窗口（需 IJKPP_ENABLE_SDL2=ON 配置；宿主创建窗口，嵌入模式见
+# platform/sdl2/surface.h）：
+./build/<cfg>/bin/play_sdl2 --url tests/testdata/small_h264_aac_3s.mp4
+```
+
+`Player` 门面已接线：SetDataSource / PrepareAsync / PrepareSync / Start / Pause /
+Stop / SeekTo（按 request_id 回调）/ 音量 / 静音 / 倍速 / 循环 / SetVideoSurface /
+事件流全部可用。**仍返回 kNotImplemented 的**：StepOnce、SelectTrack、TakeSnapshot、
+UpdateConfig、RunUntilIdle（各自注明所需里程碑）。
+
+## 4.1 还跑不起来的东西
 
 | 想跑的 | 状态 | 原因 |
 |---|---|---|
-| `examples/play_sdl2 video.mp4` | ❌ | `examples/` 目录不存在（M11） |
-| `cmake --preset linux-sdl2` | ❌ **配置期就失败** | `platform/CMakeLists.txt` 里 `IJKPP_ENABLE_SDL2` 是有意的 `FATAL_ERROR "scheduled for milestone M11"` |
-| `cmake --preset linux-native` / `linux-all` | ❌ 同上 | `IJKPP_ENABLE_LINUX_NATIVE` 同样是 `FATAL_ERROR`（M12） |
+| `cmake --preset linux-native` / `linux-all` | ❌ 配置期 `FATAL_ERROR` | 原生 GL 后端仍是 M12 |
 | `cmake --preset android-arm64` | ❌ | `platform/android/` 不存在（M16） |
-| 播放任何视频 | ❌ | **`Player` 的 10 个方法全部返回 `kNotImplemented`**；`Pipeline`/`StateMachine`/`EventHub` 未实现（M8）；无输出后端（M11/M12） |
-| Golden Test | ❌ | `tools/ijkplayer-recorder/`、`golden_*.py`、`tests/golden/` 都不存在（M10），且被开放问题 Q8（基线锁哪个 ijkplayer 版本）卡住 |
+| Golden Test | ❌ | `tools/ijkplayer-recorder/`、`golden_*.py`、`tests/golden/` 不存在（M10），且被开放问题 Q8 卡住 |
+| 精确 seek / 轨选切换 / 快照 | ❌ kNotImplemented | M9（SeekController、子渲染器重建） |
 
-**一句话：这个仓库现在能构建、能测、能用 CLI 分析媒体文件，但不能播放视频。**
+**一句话：这个仓库现在能构建、能测、能分析媒体文件，并且能播放视频（headless +
+SDL2 双通道验证过）；精确 seek、golden 对齐和原生 GL 后端仍在 M9–M12。**
 
 ---
 

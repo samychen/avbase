@@ -5,25 +5,23 @@
 **定位**：面向二次开发者的 **SDK**（API 易用、文档完整、示例齐全、错误信息可操作）
 **依赖**：系统 FFmpeg（`find_package`，不打 patch）
 
-> **当前状态：M0–M6 ✅ · DecoderStream ✅ · inspect CLI ✅ · M8 契约 ✅ · 第九轮工程治理 ✅**
+> **当前状态：M0–M6 ✅ · M7 渲染层代码完成 · M8 播放链路已接线 ✅ · 端到端播放 ✅（headless + SDL2 真窗口）**
 >
 > | 配置 | 结果 |
 > |---|---|
-> | `no-ffmpeg`（无 FFmpeg / SDL2 / X11） | ✅ 全绿（用例数见下方注记） |
-> | `linux-ffmpeg711`（FFmpeg **7.1.1** + 真实媒体） | ✅ 全绿 |
+> | `no-ffmpeg`（无 FFmpeg / SDL2 / X11） | ✅ 323/323 |
+> | mac 配置（FFmpeg 7.1.1 + SDL2 + 示例） | ✅ 358/358，`headless`/`play_sdl2` 真实播放到 kCompleted |
 > | `debug`（Debug + DCHECK + `-Werror`） | ✅ 全绿，零警告 |
 > | `asan`（ASan + UBSan + **LSan**） | ✅ 全绿，**0 泄漏** |
 > | `tsan`（**ThreadSanitizer**） | ✅ 全绿，**0 data race** |
-> | `check_invariants.py` | ✅ **14 条规则全通过（173 文件；含 7 个 DRAFT 接口头）** |
-> | `extract_constants.py --selftest` | ✅ 24 个移植常量与 docs/05 表 7 一致（第九轮新增） |
+> | `check_invariants.py` | ✅ 全规则通过（220 文件；C23 列宽棘轮 323→311） |
+> | `extract_constants.py --selftest` | ✅ 24 个移植常量与 docs/05 表 7 一致 |
 >
-> ⚠️ **用例数以 [docs/PROGRESS.md](docs/PROGRESS.md) 为准**（活文档，第八轮为
-> 287/287 与 322/322）。本表此前写的是更早一轮的 238/293/266，且 `asan` 一行
-> 重复了两次；第九轮把重复行删掉、把数字改为指向活文档，因为**本环境没有编译器，
-> 无法重新构建验证具体数字**——下一次真实构建后应把准确数字填回本表。
->
-> Sanitizer 已抓到并修复 **4 个真 bug**，含一个 `Stop()` 永久挂起的 lost wakeup
-> 和一个会击穿 `WeakPtr` 安全机制的 `BindOnce` 重载缺陷 → [docs/PROGRESS.md](docs/PROGRESS.md)
+> ⚠️ **用例数以 [docs/PROGRESS.md](docs/PROGRESS.md) 为准**（活文档，第十轮为
+> 358/358 与 323/323，macOS / AppleClang 21 / Homebrew FFmpeg 7.1.1 实测）。
+> **能播放了**：`examples/headless <url>` 完整播到 kCompleted，`examples/play_sdl2
+> --url <url>` 真窗口带音频出画（SDL2 后端，M11 代码提前落地）。
+> Sanitizer 历史战果与第十轮抓到的 12 个真 bug → [docs/PROGRESS.md](docs/PROGRESS.md)
 ---
 
 ## 0. TL;DR

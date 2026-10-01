@@ -2,12 +2,104 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0 ✅ · M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 音视频 ✅ · M6 ✅ · DecoderStream ✅ · inspect CLI ✅ · M8 契约 ✅**
+## 当前状态：**M0–M6 ✅ · M7 渲染层代码完成 · M8 播放链路已接线 ✅ · 端到端播放 ✅（headless + SDL2 真窗口）**
 
-最后更新：2026-09-29（第九轮）—— **工程治理轮：LICENSE 落地 + LGPL 隔离目录 · `tools/extract_constants.py`（R1 应对④「禁止手抄」）· `media/base/` 七个管线接口头冻结为 DRAFT · 无编译器审查（含 4 个跨文件发现）· `base::WrapRefCounted` + 修掉潜伏的 `AdoptRef` bug**
-> 第八轮：音频解码链打通 · `DecoderStream<Traits>` 泛型化 · `ijkpp-inspect` CLI 落地；CLI 首跑即抓到 bug #32（主时钟被 uptime 偏移）与 bug #33（水位线未生效）
+最后更新：2026-10-01（第十轮）—— **播放轮：M7 收尾 + M8 接线，第一次真正播放了视频。**
+`Player` 的 10 个桩方法接通 9 个（SetDataSource/Prepare/Start/Pause/Stop/SeekTo/音量/倍速/事件全部可用）；
+`headless` 示例对 5 个测试媒体完成"prepare→play→EOS→kCompleted"全流程（退出码 0），
+`play_sdl2` 在真实窗口带音频出画。全量测试 358/358（FFmpeg 配置）与 323/323（no-ffmpeg）全绿，
+`check_invariants` 全过（220 文件）且 C23 列宽基线 323→311（只降不升）。本轮在 **macOS / AppleClang 21 / FFmpeg 7.1.1 (Homebrew) / SDL2 2.32** 上开发——这是项目第一次在 Linux 之外构建，见 §10.1 的四项 macOS 修复。
+> 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
+> 27 个文件转正进构建）
 
-## 第九轮（本轮）：许可证落地 · 阈值提取工具 · 管线接口冻结
+## 第十轮（本轮）：播放链路打通
+
+本轮把"能构建、能测"推进到"能播放"。新增实现约 2,900 行：`PipelineImpl`（管线编排）、
+`DefaultRendererFactory`、media 层 null 双 sink、`FFmpegVideo/AudioDecoderFactory`、
+player 层 `PlayerImpl`/`StateMachine`/`EventHub`，以及 platform/sdl2 双后端（M11 的
+代码提前落地）与两个示例。**验证边界**：macOS 本机（Xcode 工具链）；Linux 真机
+X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
+
+### (1) 新增组件
+
+| 组件 | 说明 |
+|---|---|
+| `media/filters/pipeline_impl.{h,cc}` · `pipeline_impl_host.cc` | Pipeline 的唯一实现：demuxer 先于 renderer 初始化（并行会让 renderer 拿到零条流）、seek 为"renderer flush ∥ demuxer seek"两阶段完成、Stop 按文档 §10.1 顺序销毁。GetMediaTime 直读共享的 AvSyncController（seqlock），renderer 销毁后仍可安全应答。**C1 拆两个 TU**：`pipeline_impl_host.cc` 承接 stream-id 查询、M9 轨选桩与 Demuxer::Host / RendererClient 回调 |
+| `media/renderers/default_renderer_factory.{h,cc}` | 把 Deps 的 sink/decoder 工厂组装成 RendererImpl；sink 工厂缺省时回落 media 层 null sink——零配置 headless 播放的落点 |
+| `media/filters/null_{video,audio}_sink.{h,cc}` | 放在 media/filters 而非 platform/null（Chromium 的 media/video/null_video_sink 先例）：headless 是框架能力不是平台能力。null 音频 sink 真实按设备周期消费（音频时钟才能前进），null 视频 sink 以 60Hz 驱动 compositor |
+| `media/filters/ffmpeg_decoder_factories.{h,cc}` | 软解工厂（.cc 进 platform_ffmpeg target），排在注入的硬解工厂之后（Δ12 回落链的尾巴） |
+| `player/player_impl.{h,cc}` · `player_impl_events.cc` · `state_machine.{h,cc}` · `event_hub.{h,cc}` | 门面实现：S1/S3/S4 三线程 + 事件线程、PlayerState 转移表（非法转移拒绝并给出可操作错误）、seek 按 request_id 匹配回调、loop 循环播放、~Player 有界等待（Δ15）。**C1 拆两个 TU**：`player_impl_events.cc` 承接 seek 完成、运行时控制、观察者回调与状态访问器 |
+| `platform/sdl2/`（M11 提前） | Sdl2VideoSink（宿主持窗口/renderer，sink 线程独占绘制 YUV 纹理）+ Sdl2AudioSink（SDL 音频回调只做 planar→interleaved 拷贝，Δ13）+ `cmake/FindSDL2.cmake`。宿主窗口嵌入模式（surface.h 的两条线程规则） |
+| `examples/headless.cc` · `play_sdl2.cc` | headless 支持 --seek/--rate/--timeout，是 CI e2e 的雏形；play_sdl2 约 150 行（docs/10 的"main 行数 = API 易用性"度量）——C2 把参数解析、建窗与事件泵移出 `main()`，承载该度量的是文件而不是 main 本身 |
+
+### (2) 对既有文件的修改（全部有理由）
+
+| 文件 | 修改 | 理由 |
+|---|---|---|
+| `media/base/demuxer.h` | `Demuxer : public MediaResource` | media_resource.h gap 1 预言的改动；RendererImpl::Initialize 需要 MediaResource 视图，而无 RTTI 无法跨无关基类转换 |
+| `media/base/renderer.h` | + `SetPaused`/`SetOutputTarget`（默认 no-op，实现移出 .h）；`media/base/pipeline.h` + `Play`/`Pause`/`SetOutputTarget` | Chromium Pipeline 本有 Play/Pause（DRAFT 时被裁掉）；暂停不能走 `SetPlaybackRate(0)`——AudioRendererAlgorithm 明确拒绝 rate 0 |
+| `renderer_impl.{h,cc}` | 暂停/换窗转发、外部时钟锚定、视频时钟喂入（Render 回调调 `OnVideoFramePresented`——此前**无人喂视频时钟**，纯视频流永远没有有效主时钟）、EOS 传播（CheckForEnded + 周期复查）、init 回调改为成员持有并 hop 到 S1、Flush 完成回调 hop、dtor 在子渲染器自己的 sequence 上销毁它们 | 逐条见 §(3) 的 bug 列表。**C1 拆两个 TU**：`renderer_impl_controls.cc` 承接启动后的控制面；**C2**：`Initialize()` 的子渲染器装配移到 `CreateSubRenderers()` |
+| `audio_renderer_impl.{h,cc}` | `SetPaused`（设备路径门控）、`kOk+null`（流排空）标记 EOS、消费方唤醒；取环循环移到 `DrainRing()`（C2） | #36/#41/#42 |
+| `video_renderer_impl.{h,cc}` | 自然 EOS（kOk+null）此前被当作"无事发生"无限泵；帧呈现回调；消费方唤醒 | #36 |
+| `decoder_stream.cc` | demuxer 读回调整 hop 到自身 sequence | #40 |
+| `ffmpeg_demuxer.{h,cc}` | open 时安装 log bridge（否则 FFmpeg 失败原因不可见）；网络专用选项按 URI 协议门控（reconnect*/user_agent/headers 传给本地文件只会变成 Δ2 的"未消费选项"噪音） | |
+| `player/player.cc` | 改为纯转发到 PlayerImpl；RunUntilIdle/StepOnce/TakeSnapshot/UpdateConfig/SelectTrack/ReconnectNow 保持 kNotImplemented 并指明里程碑（M9+） | |
+
+### (3) 本轮抓到的 bug（接通播放 = 第一条真正跑全链路的路径，收获很大）
+
+| # | 问题 | 性质 |
+|---|---|---|
+| 35 | `PlayerStateMachine::TransitionTo` 只校验不赋值——状态机形同虚设，每次调用都停在 kIdle | 🔴 实现 bug（本轮新写） |
+| 36 | 视频"自然 EOS"（kOk+null）被当作无事发生、无限泵；音频流排空（kOk+null）同样未标记 ended → 播完永不 kCompleted | 🔴 两个子渲染器各一个 |
+| 37 | RendererImpl 的 init 回调经视频路径传递，video 先完成时闭包随返回栈帧销毁 → pipeline 永远等不到 ready | 🔴 回调生命周期 |
+| 38 | init 回调在最后完成的子渲染器线程（S4）内联执行，PipelineImpl 的 sequence checker 当场击毙——checker 第一次抓住真问题 | 🔴 跨 sequence |
+| 39 | RendererImpl dtor 在 S1 销毁子渲染器，DecoderStream 的 checker 拒绝 → 销毁必须发生在各自 sequence（post+Wait，外部由 Δ15 兜底） | 🔴 销毁顺序 |
+| 40 | `DemuxerStream::Read` 回调直达 DecoderStream（S1→S3）：不只是 DCHECK 违规，`pending_reads_`/`decoded_outputs_` 是真实数据竞争 | 🔴 数据竞争 |
+| 41 | 解码泵内联递归：DecoderStream 缓存同步交付时每帧一层栈，真实文件直接栈溢出（SIGBUS on S4） | 🔴 |
+| 42 | 泵在背压处停止后无人唤醒（消费方清空压力没有人通知生产者）——ffplay 用 condvar，这里用 Render 回调里的 post | 🔴 逻辑缺口 |
+| 43 | RendererImpl::Flush 给音频路径传空 closure，AudioRendererImpl::Flush 无条件 Run → "null callback" CHECK | 🟠 |
+| 44 | RendererImpl::Flush 完成回调从 S3 直达 PipelineImpl | 🔴 跨 sequence |
+| 45 | PipelineImpl 并行初始化 demuxer 和 renderer，后者拿到零条流报 kMissingDemuxerStreams（首跑的"StreamNotFound"假象） | 🔴 编排顺序 |
+| 46 | **macOS 移植四件**：根目录 `VERSION` 文件在大小写不敏感 FS 上遮蔽 libc++ 的 `<version>`（改名 VERSION.txt）；`pthread_setname_np` 平台差异（统一截断 15 字符）；FindFFmpeg 的 pkg-config 分支 include 目录经 `PkgConfig::` 中转后丢失（改为从 PC_* 变量直构）；`ijkpp-inspect` 因 FFmpeg PRIVATE 链接拿不到头（显式链接） | 🟠 平台 |
+
+### (4) 验证结果（macOS 24.5 arm64 / AppleClang 21 / Homebrew FFmpeg 7.1.1 / SDL2 2.32.6）
+
+```
+✅ headless: small_h264_aac_3s.mp4  → completed at 2.99s（对照 ffprobe 3.000s）
+✅ headless --seek 1.5             → seek ok → 续播 → completed at 2.11s
+✅ headless: audio_only.m4a        → completed at 0.71s（纯音频路径）
+✅ headless: video_only.mp4        → completed at 1.00s（纯视频路径，视频时钟经
+                                      Render 回调喂入后主时钟正确回退）
+✅ headless: truncated_tail.mp4    → completed at 2.88s（截断文件优雅播到 EOF）
+✅ corrupt_header.mp4              → prepare 失败，错误含 DecodeFailed/建议（不崩溃）
+✅ play_sdl2（真窗口 + 音频）       → 播完 kCompleted，退出码 0
+✅ ctest: 358/358（mac 配置，+5 状态机用例）· 323/323（no-ffmpeg）
+✅ check_invariants 全过（220 文件）；C23 列宽基线 323 → 311（净减 12 行，棘轮只降不升）
+✅ 全程零警告（AppleClang 与 Debian 同一警告集）
+```
+
+### (5) 本轮未做 / 遗留
+
+1. **渲染三件套的直接单测仍欠**（tests/support/ 假件未建）——本轮的验证是 headless
+   端到端 + 既有 358 用例；RendererImpl 的暂停恢复、seek 后串号隔离、环形交接内存序
+   仍只有推理与 TSan 待跑。
+2. 首播 seek 曾触发一次 NAL 损坏（改为首播不重复寻址后消失）——根因未深究，
+   真实 seek 已验证干净，但 seek 后串号隔离的黄金验证要等 M10。
+3. `RunUntilIdle`（需要 message_pump_epoll，R2 降级债）、精确 seek（M9
+   SeekController）、轨选切换、快照、UpdateConfig 白名单、`option_registry.inc`
+   接线（A10 仍 9/66）——全部按桩返回 kNotImplemented 并指明里程碑。
+4. SDL2 后端只在 macOS 验证；Linux 真机 X11/Wayland、CI `e2e-linux`、ASan/TSan
+   对新代码的完整跑、覆盖率门禁——下一轮。
+5. macOS 首次构建暴露的文档失真已按本轮实测修正 README/BUILDING 的对应行。
+6. C1/C2 清理把三个实现文件各拆成两个 TU（`pipeline_impl_host` · `renderer_impl_controls`
+   · `player_impl_events`），并把音频取环、渲染器装配与两个示例的 `main` 抽成辅助函数。
+   一处代价记在这里：`pipeline_impl_host.cc` 的 `OnDemuxerError`/`OnError`/`OnEnded` 各写
+   一次 `state_`/`playing_`，与 M8 那条"具体状态机应与它驱动的 Pipeline 同 TU"的理由
+   相反；M9 重排时把这三处收回 `pipeline_impl.cc` 即可闭合。
+
+---
+
+## 第九轮：许可证落地 · 阈值提取工具 · 管线接口冻结
 
 本轮不增加播放能力，专门收三类**非功能性缺口**：合规、可验证性、以及 M7/M8 的并行前置。
 
