@@ -172,12 +172,14 @@ class PipelineThrottleTest : public ::testing::Test {
 // the audio algorithm's queue absorbs the whole burst. Needs instrumentation
 // (buffered-bytes over time), not assertion loosening -- re-enable with the
 // next M9 round.
-// Still schedule-dependent (1-in-3 the DRY instant is never sampled: the
-// throttler's refill cadence vs the 10 ms observer). The root cause found
-// this round -- StartPlayingFrom reset starved_reported_ and swallowed the
-// recovery edge -- is fixed; what remains here is observing a transient
-// simultaneous-dry instant at 60KB/s. Needs a budget/timeline hook in the
-// throttler, not assertion changes.
+// Two causes already fixed: StartPlayingFrom swallowing the recovery edge,
+// and the audio floor (256) sitting BELOW WSOLA's residual OLA window (960
+// frames) so starvation was unsatisfiable mid-stream -- the floor is now
+// four periods. What remains: video-pending and audio-buffered each
+// oscillate independently, so their simultaneous-dry instant still escapes
+// the 10 ms sampler in ~3/8 runs. The proper design is per-stream starved
+// flags published by the sub-renderers themselves (they know their own dry
+// state exactly); that refactor is the next M9 item.
 TEST_F(PipelineThrottleTest, DISABLED_ThrottledSourceProducesAStallRecoverCycle) {
   const std::vector<uint8_t> bytes =
       ReadFileBytes("small_h264_aac_3s.mp4");

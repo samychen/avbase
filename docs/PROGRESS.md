@@ -49,8 +49,11 @@
    **根因已修**——`StartPlayingFrom` 重置 `starved_reported_`，把 Flush 刚发布的
    DRY 边沿状态吞掉；seek 重启后数据若先于首个 10ms tick 到达，RECOVER 永不发布。
    重置本身语义错误（起播时的干涸是合法的 kHaveNothing，ffplay 同义），移除后
-   12/12 稳定；(b) 限速源用例仍有 1/3 的 DRY 观察丢失——节流器回填节拍与 10ms
-   观察者的相互作用，需要节流器提供预算/时间线钩子，继续 park。
+   12/12 稳定；(b) 限速源用例本轮又修掉一层：音频干涸判据撞上 WSOLA 残余 OLA 窗口（960 帧）——
+   地板曾设为单设备周期（测试配置 256）低于残余，干涸在流中间不可满足；已提到
+   四个周期。剩余 3/8 的偶发是 video-pending 与 audio-buffered **各自独立振荡、
+   同时低于门槛的瞬间**逃过采样——正解是子渲染器各自发布自己的 starved 标志
+   （它们精确知道自己是否干涸），RendererImpl 只做合并，待下一轮重构。
 2. **限速源卡顿-恢复集成用例**：断言层已就位（边沿到达客户端），差的是
    FFmpeg+ThrottledDataSource 的夹具变体（进 media_ffmpeg_unittests）——
    FFmpegDemuxer(ThrottledDataSource(Memory(file))) + 假 sink 的管线级驱动，
