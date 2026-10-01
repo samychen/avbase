@@ -50,6 +50,7 @@ ijkpp_add_unittest(media_unittests
         ${IJKPP_MEDIA_UNITTEST_SOURCES}
         unit/media_filters/av_sync_controller_unittest.cc
         unit/media_filters/decoder_stream_unittest.cc
+        unit/media_filters/retry_data_source_unittest.cc
         unit/media_filters/pipeline_seek_unittest.cc
         unit/media_filters/renderer_impl_unittest.cc
         unit/media_filters/audio_renderer_impl_unittest.cc

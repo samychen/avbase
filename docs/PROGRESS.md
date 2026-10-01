@@ -60,7 +60,11 @@
    FFmpeg+ThrottledDataSource 的夹具变体（进 media_ffmpeg_unittests）——
    FFmpegDemuxer(ThrottledDataSource(Memory(file))) + 假 sink 的管线级驱动，
    断言 kHaveNothing→kHaveEnough 的边沿与 hwm_step 递进。下一轮第一优先。
-2. RetryDataSource / LiveDataSource / UrlRewriteInterceptor（故障注入假件就绪）。
+2. **RetryDataSource 已落地（第十四轮）**：`media/filters/retry_data_source.{h,cc}`——
+   连续失败重试同一请求（成功即重置连败计数，间歇抖动不会累积成放弃），可中止的
+   分片睡眠兜住 Δ15，异步 Read 走私有 worker 且绝不内联回调；4 个单测（恢复、
+   预算耗尽、异步投递、Abort 及时解锁）走 media_unittests（无 FFmpeg 依赖）。
+   剩 LiveDataSource / UrlRewriteInterceptor。
 3. docs/07 §5 其余管线级断言。
 4. 精确 seek 的 golden 验证等 M10/Q8。
 

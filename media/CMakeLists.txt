@@ -33,6 +33,7 @@ add_library(ijkpp_media
     filters/null_video_sink.cc
     filters/pipeline_impl.cc
     filters/pipeline_impl_host.cc
+    filters/retry_data_source.cc
     filters/renderer_impl.cc
     filters/renderer_impl_controls.cc
     filters/video_renderer_impl.cc
