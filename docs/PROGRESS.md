@@ -49,6 +49,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | 24 个文件的头注释 | 修复第十轮脚本把新段落插进旧句子中间留下的断句、重复的 `(promoted from DRAFT, tenth round)` 与重复空注释行 | 纯重排与合并，除重复片段外未改字面 |
 | `.github/workflows/ci.yml` · `CMakePresets.json` | 骨架 job 变真：新增 `ffmpeg`（发行版 FFmpeg，359 用例）、`e2e-headless`（5 个样本播到结束）、`sdl2-build`（Linux 上编译 SDL2 后端）；新增 `ffmpeg` 预设，`linux-sdl2` 补上 FFmpeg | 带 FFmpeg 的配置与端到端此前从未在 CI 跑过（`ffmpeg-matrix` / `e2e-linux` 一直是 `if: false`）；`linux-sdl2` 因缺 FFmpeg 连 `play_sdl2` 都建不出来 |
 | `base/synchronization/lock.cc` · `tests/unit/base/synchronization_unittest.cc` | `ObservedOrder()` 补 `thread_local`；新增 `LockTest.ConcurrentOrderRecordingIsRaceFree` | #44 |
+| `tests/support/synthetic_demuxer.{h,cc}` | 合成源（M10 的第一片，docs/07 §5）：10s/30fps/48kHz 的可脚本化 `Demuxer`，**编码即契约**——每个包的负载前 4 字节是它自己的序号（`ReadIndexPayload`），时间戳按序号整数算出（不是累加帧时长，所以第 150 帧恰好是 5.000s），音频音高 = 440 + 该包所落的整秒，关键帧每 30 帧一个，`StartPlayingFrom()` 落在"不晚于请求"的关键帧上并回传实际位置 | 自测 6 例（序号/节奏/关键帧/seek 落点/音频秒边界/EOS/媒体信息）全过且耗时 **0 ms**；帧号画进像素与故障注入（`fail_read_at_packet` 等）**故意未实现**——没有消费方的钩子只会让替身开始说谎 |
 | `tests/support/*` · 三个渲染器套件（`renderer_impl` · `video_renderer_impl` · `audio_renderer_impl`） | 渲染器直接单测：脚本化输入、可编排解码器、手动拉动的双 sink、记录型 renderer client（`renderer_client.h` 里点名"not written yet"的那个）。14 个用例覆盖启动契约（只报一次、绝不内联、视频 sink 在解码器就绪时开、音频设备在 StartPlayingFrom 才开）、结束契约（双流排空 + 尾帧必须发布）、暂停门控（视频不出新帧；音频报静音且不计 underrun）、以及 flush 后的串号隔离（两侧都不许放行旧 serial 的帧） | 第十轮的 12 个渲染器 bug 全靠端到端发现；这套件当场抓出 #47/#48/#49，三处产品修复随它一起进 |
 | 10 个 `CMakeLists.txt` · `cmake/IjkppCheckInvariants.cmake` · `tools/check_invariants.py` | 源文件列举定成一条规则（docs/06 §7.6）：目录成员 == 目标成员处改用 `file(GLOB ... CONFIGURE_DEPENDS)`（`media/base` · `media/renderers` · `media/filters/legacy` · `player` · `platform/{ffmpeg,sdl2}` · `tools/inspect` · `tests/unit/{base,media_base,player}`），其余四处（`media/filters` · `tests/unit/media_filters` · `base` · `examples`）保持显式并在文件里写明理由。**新增门禁 C25**：每个 `.cc` 必须被某个目标覆盖（显式列表，或规则自己展开的 glob），否则非零退出 | 新增文件不必再改 CMake，Ninja 在构建时重跑 glob（`[0/N] Re-checking globbed directories...`）。C24 管"列出的文件存在"，C25 管"存在的文件被编译"——两个方向都不再静默。`aux_source_directory` 明确不用：不递归，且新增文件不触发 CMake 重配（CMake 官方文档警示的正是这一点）。实测 108 个 (target, source) 与改动前逐一相同 |
 
@@ -89,8 +90,9 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 ✅ TSan：三个渲染器套件 14 用例在 `tsan` 预设下 **0 报告**（此前该路径报出 #49 与
    假 sink 自身的 3 处竞争，两者都已修）
 ✅ 严格告警配置覆盖 FFmpeg 层：`debug`（Debug + 严格告警 + `-Werror` + FFmpeg）实测
-   **0 警告、373/373**；此前该预设沿用 `IJKPP_ENABLE_FFMPEG=OFF`，FFmpeg 适配层
-   （`platform/ffmpeg/*` 与 `media/filters/ffmpeg_*.cc`）从未进过严格门禁
+   **0 警告**；此前该预设沿用 `IJKPP_ENABLE_FFMPEG=OFF`，FFmpeg 适配层
+   （`platform/ffmpeg/*` 与 `media/filters/ffmpeg_*.cc`）从未进过严格门禁。
+   合成源是这条门禁扩宽后写下的第一批代码：同样 0 警告
 ✅ 伪证检查：临时撤掉 #48 的修复后，`EndedPublishesTheTailTheRingCouldNotTake` 与
    `EndedIsReportedAfterBothStreamsDrain` 双双报红，恢复后全绿——两条结束用例确实咬住了
    那个缺陷，而不是恰好通过
@@ -105,12 +107,16 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 
 ### (5) 本轮未做 / 遗留
 
-1. **渲染三件套的直接单测已落地，只剩一条**：四组假件 + 三个套件（14 用例）覆盖调用契约、
-   EOS、暂停门控与 flush 串号，并当场抓出 #47/#48/#49。仍欠的是**真实容器上的 seek 行为**：
-   #2 的 NAL 损坏根因未深究，黄金验证要等 M10 的同步样本（合成流只能证明"旧 serial 不放行"，
-   证明不了"seek 落点正确"）。夹具形状备忘：`RendererImpl` 套件必须用真线程（`~RendererImpl`
-   会 post 到 S3/S4 后阻塞等待，单线程夹具在析构处死锁），两个子渲染器套件单线程即可
-   （各自析构只 `sink_->Stop()`）。
+1. **seek 落点断言仍缺一个缝隙**（这是 M10 的下一条）：合成源已落地（包级编码、关键帧几何、
+   seek 落点自测，见 §(1)），但要断言 docs/07 §5 那条"SeekTo(5s) 后下一帧帧号 == 150"，
+   还需要**注入 demuxer 的通道**：`PlayerImpl::CreateDemuxer()` 是私有函数，而
+   `player/public/deps.h` 里没有 demuxer 字段（只有 decoder/sink 工厂与 `data_source`）。
+   加一个字段要动冻结头，属于 M8 的接口评审范围；帧号画进像素的合成解码器与故障注入
+   （`fail_read_at_packet` / `stall_at` / `pts_discontinuities` / `resolution_change_at_half`）
+   随那条缝隙一起做。合成流证明得了"旧 serial 不放行"，证明不了"seek 落点正确"——
+   后者只能由带真实容器或注入了合成 demuxer 的管线回答。
+   夹具形状备忘：`RendererImpl` 套件必须用真线程（`~RendererImpl` 会 post 到 S3/S4 后阻塞
+   等待，单线程夹具在析构处死锁），两个子渲染器套件单线程即可（各自析构只 `sink_->Stop()`）。
 2. 首播 seek 曾触发一次 NAL 损坏（改为首播不重复寻址后消失）——根因未深究，
    真实 seek 已验证干净，但 seek 后串号隔离的黄金验证要等 M10。
 3. `RunUntilIdle`（需要 message_pump_epoll，R2 降级债）、精确 seek（M9

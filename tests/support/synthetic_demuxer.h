@@ -1,0 +1,205 @@
+// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+//
+// A deterministic source with no container and no codec: the M10 deliverable
+// docs/07 §5 specifies, and the other reason media/base/media_resource.h exists
+// ("a fake that returns a fixed stream list"). A real file can test that
+// playback works; only a source whose every byte the test chose can test
+// *where*
+// a seek landed and *which* frame is on screen.
+//
+// THE ENCODING IS THE POINT. Each packet carries its own index in its payload,
+// so a decoder built on top (tests/support/synthetic_decoders.h, next slice)
+// can
+// paint that index into the frame's pixels -- after which "which frame is on
+// screen" is answerable from the frame itself, not from a counter the pipeline
+// keeps about itself. Audio works the same way in the frequency domain: the
+// tone
+// is 440 Hz plus the whole second of the packet's presentation time, so the
+// audio timeline can be read back out of the samples.
+//
+// SCOPE OF THIS FILE, stated because a test double that lies is worse than no
+// test double: cadence, keyframe geometry, seek landing and the packet-level
+// half of the encoding are here and tested in
+// tests/unit/media_filters/synthetic_demuxer_unittest.cc. The pixel half needs
+// the synthetic decoder that reads its output, and the fault-injection fields
+// docs/07 §5 lists (fail_read_at_packet, stall_at, pts_discontinuities,
+// resolution_change_at_half) are absent rather than inert -- a hook nobody
+// fires
+// is how a double starts drifting away from the thing it stands in for.
+
+#ifndef IJKPP_TESTS_SUPPORT_SYNTHETIC_DEMUXER_H_
+#define IJKPP_TESTS_SUPPORT_SYNTHETIC_DEMUXER_H_
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+
+#include "base/memory/scoped_refptr.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/time/time.h"
+#include "media/base/data_source_descriptor.h"
+#include "media/base/decoder_buffer.h"
+#include "media/base/demuxer.h"
+#include "media/base/demuxer_stream.h"
+#include "media/base/media_info.h"
+
+namespace ijkpp::media::test {
+
+// One video frame per 1/fps seconds, one audio packet per
+// |audio_frames_per_packet| audio frames, a keyframe every
+// |keyframe_interval| frames. Defaults are 10 s of 320x240 at 30 fps with
+// 48 kHz stereo, which is what docs/07 §5's checklist counts in.
+struct SyntheticSpec {
+  int width = 320;
+  int height = 240;
+  int fps_num = 30;
+  int fps_den = 1;
+  int sample_rate = 48000;
+  int channels = 2;
+  int audio_frames_per_packet = 1024;
+  base::TimeDelta duration = base::Seconds(10);
+  double base_tone_hz = 440.0;
+  int keyframe_interval = 30;
+
+  base::TimeDelta frame_duration() const;
+  int64_t frame_count() const;
+  int64_t audio_packet_count() const;
+};
+
+// 32-bit little-endian, at the front of every packet's payload. The packet
+// factories below write it; ReadIndexPayload() is how a test checks the same
+// thing from the outside, and how the synthetic decoder will read it once it
+// exists.
+constexpr size_t kSyntheticIndexBytes = 4;
+bool ReadIndexPayload(const DecoderBuffer& buffer, uint32_t* index);
+
+// The tone a packet at |pts| carries: |base_tone_hz| plus the whole seconds of
+// |pts|. A test asserts on this (or on an FFT of the decoded samples) instead
+// of
+// trusting a timestamp the pipeline carried along.
+double ExpectedToneHzAt(base::TimeDelta pts, double base_tone_hz = 440.0);
+
+class SyntheticDemuxer final : public Demuxer {
+ public:
+  explicit SyntheticDemuxer(SyntheticSpec spec);
+  ~SyntheticDemuxer() override;
+
+  const SyntheticSpec& spec() const { return spec_; }
+
+  // Where both streams read from next. StartPlayingFrom() moves it; a test uses
+  // this directly when it only needs to look at one stream.
+  void SetPosition(base::TimeDelta time);
+  base::TimeDelta position() const { return position_; }
+  int seek_count() const { return seek_count_; }
+  int64_t packets_read() const { return packets_read_; }
+
+  // The frame a keyframe seek to |time| lands on: the last keyframe at or
+  // before
+  // it. Exposed so a test can state the landing it expects rather than deriving
+  // the geometry twice and asserting that its own arithmetic agrees with
+  // itself.
+  base::TimeDelta KeyframeAtOrBefore(base::TimeDelta time) const;
+  int64_t FrameIndexAt(base::TimeDelta time) const;
+
+  // Demuxer.
+  void Initialize(
+      const DataSourceDescriptor& source, const DemuxerOptions& options,
+      Host* host,
+      base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
+      InitializeCB init_cb) override;
+  void StartPlayingFrom(base::TimeDelta time, SeekCB cb) override;
+  void Flush(base::OnceClosure flush_cb) override;
+  void Reset(base::OnceClosure reset_cb) override;
+  void Stop() override;
+  DemuxerStream* GetStream(DemuxerStreamType type) override;
+  const MediaInfo& media_info() const override { return media_info_; }
+  base::TimeDelta GetStartTime() const override { return base::TimeDelta(); }
+  bool IsLive() const override { return false; }
+  bool IsSeekable() const override { return true; }
+  DemuxerStats GetStats() const override;
+  const char* name() const override { return "SyntheticDemuxer"; }
+
+ private:
+  // Both streams read the owner's cursor, so a seek moves the two of them
+  // together and neither can drift. They are called on the media sequence only
+  // (DemuxerStream's contract), so no lock guards them.
+  class VideoStream final : public DemuxerStream {
+   public:
+    VideoStream(SyntheticDemuxer* owner);
+    void Read(uint32_t count, ReadCB read_cb) override;
+    const AudioDecoderConfig& audio_decoder_config() const override {
+      return empty_audio_config_;
+    }
+    const VideoDecoderConfig& video_decoder_config() const override {
+      return config_;
+    }
+    DemuxerStreamType type() const override {
+      return DemuxerStreamType::kVideo;
+    }
+    int32_t stream_index() const override { return 0; }
+    bool SupportsConfigChanges() const override { return false; }
+    int32_t serial() const override { return serial_; }
+    void set_serial(int32_t serial) { serial_ = serial; }
+    size_t buffered_buffers() const override;
+    size_t buffered_bytes() const override { return 0; }
+    base::TimeDelta buffered_duration() const override;
+
+   private:
+    SyntheticDemuxer* const owner_;
+    const VideoDecoderConfig config_;
+    const AudioDecoderConfig empty_audio_config_;
+    int32_t serial_ = 0;
+  };
+
+  class AudioStream final : public DemuxerStream {
+   public:
+    AudioStream(SyntheticDemuxer* owner);
+    void Read(uint32_t count, ReadCB read_cb) override;
+    const AudioDecoderConfig& audio_decoder_config() const override {
+      return config_;
+    }
+    const VideoDecoderConfig& video_decoder_config() const override {
+      return empty_video_config_;
+    }
+    DemuxerStreamType type() const override {
+      return DemuxerStreamType::kAudio;
+    }
+    int32_t stream_index() const override { return 1; }
+    bool SupportsConfigChanges() const override { return false; }
+    int32_t serial() const override { return serial_; }
+    void set_serial(int32_t serial) { serial_ = serial; }
+    size_t buffered_buffers() const override;
+    size_t buffered_bytes() const override { return 0; }
+    base::TimeDelta buffered_duration() const override;
+
+   private:
+    SyntheticDemuxer* const owner_;
+    const AudioDecoderConfig config_;
+    const VideoDecoderConfig empty_video_config_;
+    int32_t serial_ = 0;
+  };
+
+  // Packet factories. The index travels in the payload, the geometry in the
+  // timestamp and the keyframe flag. Not const: producing a packet is what
+  // advances the cursor.
+  base::scoped_refptr<DecoderBuffer> MakeVideoPacket(int32_t serial);
+  base::scoped_refptr<DecoderBuffer> MakeAudioPacket(int32_t serial);
+
+  const SyntheticSpec spec_;
+  MediaInfo media_info_;
+  std::unique_ptr<VideoStream> video_;
+  std::unique_ptr<AudioStream> audio_;
+  Host* host_ = nullptr;
+  // Frame index for video, packet index for audio, advanced by Read().
+  int64_t next_frame_ = 0;
+  int64_t next_audio_packet_ = 0;
+  base::TimeDelta position_;
+  int seek_count_ = 0;
+  int64_t packets_read_ = 0;
+};
+
+}  // namespace ijkpp::media::test
+
+#endif  // IJKPP_TESTS_SUPPORT_SYNTHETIC_DEMUXER_H_
