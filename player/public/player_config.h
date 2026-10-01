@@ -42,6 +42,8 @@ struct IJKPP_PLAYER_EXPORT DemuxConfig {
   std::string forced_format;                                 // "iformat"
   base::TimeDelta timeout;                                   // "timeout"/"rw_timeout"
   bool delay_meta_init{false};                               // "ijkmeta-delay-init"
+
+  friend bool operator==(const DemuxConfig&, const DemuxConfig&) = default;
 };
 
 struct IJKPP_PLAYER_EXPORT BufferConfig {
@@ -56,6 +58,8 @@ struct IJKPP_PLAYER_EXPORT BufferConfig {
   base::TimeDelta next_high_water_mark{base::Seconds(1)};
   base::TimeDelta last_high_water_mark{base::Seconds(5)};
   bool sync_av_start{true};                                  // "sync-av-start"
+
+  friend bool operator==(const BufferConfig&, const BufferConfig&) = default;
 };
 
 struct IJKPP_PLAYER_EXPORT SeekConfig {
@@ -63,6 +67,8 @@ struct IJKPP_PLAYER_EXPORT SeekConfig {
   base::TimeDelta accurate_timeout{base::Seconds(5)};        // "accurate-seek-timeout"
   base::TimeDelta seek_at_start;                             // "seek-at-start"
   bool flush_on_seek{true};
+
+  friend bool operator==(const SeekConfig&, const SeekConfig&) = default;
 };
 
 struct IJKPP_PLAYER_EXPORT VideoConfig {
@@ -88,6 +94,8 @@ struct IJKPP_PLAYER_EXPORT VideoConfig {
   int selected_stream{-1};                                   // "vst"
   std::string forced_mime_type;                              // "video-mime-type"
   HdrToneMapping hdr_tone_mapping{HdrToneMapping::kSimple};
+
+  friend bool operator==(const VideoConfig&, const VideoConfig&) = default;
 };
 
 struct IJKPP_PLAYER_EXPORT AudioConfig {
@@ -103,11 +111,16 @@ struct IJKPP_PLAYER_EXPORT AudioConfig {
   double preset_5_1_center_mix_level{0.70710678};            // "preset-5-1-center-mix-level"
   std::string filter_graph;                                  // "af"
   std::string output_device_id;
+
+  friend bool operator==(const AudioConfig&, const AudioConfig&) = default;
 };
 
 struct IJKPP_PLAYER_EXPORT SubtitleConfig {
   bool enabled{false};                                       // "subtitle"
   int selected_stream{-1};                                   // "sst"
+
+  friend bool operator==(const SubtitleConfig&, const SubtitleConfig&) =
+      default;
 };
 
 struct IJKPP_PLAYER_EXPORT NetConfig {
@@ -119,12 +132,17 @@ struct IJKPP_PLAYER_EXPORT NetConfig {
   std::map<std::string, std::string> headers;
   // Zero means "do not chase the live edge".
   base::TimeDelta live_max_latency;
+
+  friend bool operator==(const NetConfig&, const NetConfig&) = default;
 };
 
 struct IJKPP_PLAYER_EXPORT DataSourceConfig {
   bool enable_cache{false};                                  // ijkio master switch (M18)
   std::string cache_dir;
   size_t cache_max_bytes{512 * 1024 * 1024};
+
+  friend bool operator==(const DataSourceConfig&, const DataSourceConfig&) =
+      default;
 };
 
 struct IJKPP_PLAYER_EXPORT RenderConfig {
@@ -136,6 +154,8 @@ struct IJKPP_PLAYER_EXPORT RenderConfig {
   bool use_present_extension_for_vsync{true};
   bool gl_context_sharing{false};
   bool prefer_xshm{false};
+
+  friend bool operator==(const RenderConfig&, const RenderConfig&) = default;
 };
 
 struct IJKPP_PLAYER_EXPORT PlayerConfig {
@@ -168,6 +188,9 @@ struct IJKPP_PLAYER_EXPORT PlayerConfig {
   std::map<std::string, std::string> extra_codec_options;
   std::map<std::string, std::string> extra_scaler_options;
 
+  // Each nested config states its own defaulted comparison; without them this
+  // one is implicitly deleted (clang: -Wdefaulted-function-deleted), so
+  // "compare two configs" was a compile error waiting for its first user.
   friend bool operator==(const PlayerConfig&, const PlayerConfig&) = default;
 };
 

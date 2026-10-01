@@ -129,7 +129,7 @@ void PlayerImpl::OnDurationChange(base::TimeDelta duration) {
 }
 
 void PlayerImpl::OnBufferingStateChange(media::BufferingState state,
-                                        base::TimeDelta memory_usage) {
+                                        base::TimeDelta /*memory_usage*/) {
   if (state == media::BufferingState::kHaveMetadata) {
     OnPipelineReady();
     return;

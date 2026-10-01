@@ -93,7 +93,13 @@ PlayerImpl::~PlayerImpl() {
 
 std::unique_ptr<media::Demuxer> PlayerImpl::CreateDemuxer() {
 #if IJKPP_ENABLE_FFMPEG
-  if (source_set_ && source_.kind == media::DataSourceDescriptor::Kind::kUri) {
+  bool is_uri = false;
+  {
+    base::AutoLock scoped(state_lock_);
+    is_uri =
+        source_set_ && source_.kind == media::DataSourceDescriptor::Kind::kUri;
+  }
+  if (is_uri) {
     return std::make_unique<media::FFmpegDemuxer>(media_log_);
   }
 #endif
@@ -132,10 +138,11 @@ Status PlayerImpl::PrepareAsync() {
       return ErrState("PrepareAsync", machine_.state());
     }
     machine_.TransitionTo(PlayerState::kPreparing);
+    // Same lock as the state it describes: the hop arrives on S1, not here.
+    prepared_handled_ = false;
   }
   event_hub_.PostStateChanged(PlayerState::kInitialized,
                               PlayerState::kPreparing, base::TimeDelta());
-  prepared_handled_ = false;
 
   media::DemuxerOptions options;
   options.probe_size = 0;                   // TEST
@@ -152,7 +159,10 @@ Status PlayerImpl::PrepareAsync() {
 
   auto demuxer = CreateDemuxer();
   if (!demuxer) {
-    machine_.TransitionTo(PlayerState::kError);
+    {
+      base::AutoLock scoped(state_lock_);
+      machine_.TransitionTo(PlayerState::kError);
+    }
     event_hub_.PostError(
         MediaError(ErrorCode::kNotImplemented,
                    "no demuxer is available for this data source",
@@ -171,7 +181,12 @@ Status PlayerImpl::PrepareAsync() {
   pipeline_ = std::make_unique<media::PipelineImpl>();
   pipeline_->SetTickClock(deps_->tick_clock.get());
   pipeline_->SetClock(av_sync);
-  pipeline_->SetSource(source_, std::move(options));
+  media::DataSourceDescriptor source;
+  {
+    base::AutoLock scoped(state_lock_);
+    source = source_;
+  }
+  pipeline_->SetSource(std::move(source), std::move(options));
 
   media::DefaultRendererFactory::Deps factory_deps;
   factory_deps.video_task_runner = video_thread_.task_runner();
@@ -186,7 +201,10 @@ Status PlayerImpl::PrepareAsync() {
   factory_deps.audio_disabled = config_.audio.disabled;
   renderer_factory_ =
       std::make_unique<media::DefaultRendererFactory>(std::move(factory_deps));
-  renderer_factory_->set_display(display_);
+  {
+    base::AutoLock scoped(state_lock_);
+    renderer_factory_->set_display(display_);
+  }
 
   pipeline_->Start(std::move(demuxer), renderer_factory_.get(),
                    media::RendererType::kRendererImpl,
@@ -382,13 +400,13 @@ void PlayerImpl::Reset() {
 void PlayerImpl::SetVideoSurface(base::scoped_refptr<NativeDisplay> display) {
   {
     base::AutoLock scoped(state_lock_);
-    display_ = std::move(display);
+    display_ = display;
   }
   if (renderer_factory_) {
-    renderer_factory_->set_display(display_);
+    renderer_factory_->set_display(display);
   }
   if (pipeline_) {
-    pipeline_->SetOutputTarget(display_);
+    pipeline_->SetOutputTarget(std::move(display));
   }
 }
 
