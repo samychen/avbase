@@ -40,12 +40,13 @@ class SilentHost final : public Demuxer::Host {
 // stream ends. Returns the decoded frames.
 class DecodePipeline {
  public:
-  DecodePipeline(base::test::TaskEnvironment& env, const std::string& path)
+  DecodePipeline(base::test::TaskEnvironment& env, std::string path)
       : env_(env),
         media_log_(base::MakeRefCounted<MediaLog>()),
         demuxer_(std::make_unique<FFmpegDemuxer>(media_log_)),
         decoder_(std::make_unique<FFmpegVideoDecoder>(
-            env.GetMainThreadTaskRunnerRef())) {}
+            env.GetMainThreadTaskRunnerRef())),
+        path_(std::move(path)) {}
 
   bool Open() {
     Status result = Err(ErrorCode::kNotImplemented, "not run", {}, {});
@@ -60,8 +61,6 @@ class DecodePipeline {
     PumpUntil([&done] { return done; });
     return done && result.has_value();
   }
-  void SetPath(std::string path) { path_ = std::move(path); }
-
   // Runs the demux->decode loop until |wanted| frames are produced or EOS.
   size_t Decode(size_t wanted, size_t max_rounds = 4000) {
     DemuxerStream* video = demuxer_->GetStream(DemuxerStreamType::kVideo);
@@ -166,7 +165,6 @@ class FFmpegVideoDecoderTest : public ::testing::Test {
 
 TEST_F(FFmpegVideoDecoderTest, DecodesEveryFrameOfARealFile) {
   DecodePipeline pipeline(task_environment_, TestFile("small_h264_aac_3s.mp4"));
-  pipeline.SetPath(TestFile("small_h264_aac_3s.mp4"));
   ASSERT_TRUE(pipeline.Open()) << "demuxer failed to open the test file";
 
   // testsrc2 at 30 fps for 3 s: 90 frames. The decoder must produce essentially
@@ -179,7 +177,6 @@ TEST_F(FFmpegVideoDecoderTest, DecodesEveryFrameOfARealFile) {
 
 TEST_F(FFmpegVideoDecoderTest, DecodedFramesCarryCorrectGeometry) {
   DecodePipeline pipeline(task_environment_, TestFile("small_h264_aac_3s.mp4"));
-  pipeline.SetPath(TestFile("small_h264_aac_3s.mp4"));
   ASSERT_TRUE(pipeline.Open());
   ASSERT_GE(pipeline.Decode(/*wanted=*/5), 5u);
 
@@ -203,7 +200,6 @@ TEST_F(FFmpegVideoDecoderTest, DecodedFramesCarryCorrectGeometry) {
 
 TEST_F(FFmpegVideoDecoderTest, TimestampsAdvanceAcrossDecodedFrames) {
   DecodePipeline pipeline(task_environment_, TestFile("small_h264_aac_3s.mp4"));
-  pipeline.SetPath(TestFile("small_h264_aac_3s.mp4"));
   ASSERT_TRUE(pipeline.Open());
   ASSERT_GE(pipeline.Decode(/*wanted=*/200), 20u);
 
@@ -232,7 +228,6 @@ TEST_F(FFmpegVideoDecoderTest, TimestampsAdvanceAcrossDecodedFrames) {
 
 TEST_F(FFmpegVideoDecoderTest, SerialPropagatesFromBufferToFrame) {
   DecodePipeline pipeline(task_environment_, TestFile("small_h264_aac_3s.mp4"));
-  pipeline.SetPath(TestFile("small_h264_aac_3s.mp4"));
   ASSERT_TRUE(pipeline.Open());
   ASSERT_GE(pipeline.Decode(/*wanted=*/10), 5u);
   for (const auto& frame : pipeline.frames()) {

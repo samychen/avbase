@@ -510,8 +510,10 @@ bool AudioRendererAlgorithm::RunOneWsolaIteration(double playback_rate) {
     // the second half of the window and the new block by the first half.
     // Because the window is periodic Hanning, the two weights sum to 1 at every
     // sample, so the join is amplitude-continuous.
+    // Raw pointer: an int subscript on the vector trips the strict flag.
+    const float* window = ola_window_.data();
     for (int n = 0; n < hop; ++n) {
-      out[n] = out[n] * ola_window_[hop + n] + opt[n] * ola_window_[n];
+      out[n] = out[n] * window[hop + n] + opt[n] * window[n];
     }
     // The second half has nothing to overlap with yet; it becomes the tail that
     // the next iteration cross-fades into.
@@ -602,12 +604,14 @@ void AudioRendererAlgorithm::GetOptimalBlock() {
     // transition window is twice the block length so it acts as a weighting
     // that favours the target at the start of the block and the optimal block
     // at the end.
+    // Hoisted for the same reason as |window| above: this is the hot path.
+    const float* transition = transition_window_.data();
     for (int c = 0; c < channels_; ++c) {
       float* opt = optimal_block_->channel(c);
       const float* target = target_block_->channel(c);
       for (int n = 0; n < ola_window_size_; ++n) {
-        opt[n] = opt[n] * transition_window_[n] +
-                 target[n] * transition_window_[ola_window_size_ + n];
+        opt[n] = opt[n] * transition[n] +
+                 target[n] * transition[ola_window_size_ + n];
       }
     }
   }

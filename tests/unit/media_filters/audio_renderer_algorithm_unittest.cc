@@ -91,8 +91,9 @@ base::scoped_refptr<AudioBuffer> MakePlanarStereo(
   const int frames = static_cast<int>(mono.size());
   std::vector<uint8_t> data(mono.size() * kChannels * sizeof(float));
   for (int c = 0; c < kChannels; ++c) {
-    std::memcpy(data.data() + static_cast<size_t>(c) * frames * sizeof(float),
-                mono.data(), mono.size() * sizeof(float));
+    const size_t offset = static_cast<size_t>(c) * mono.size() * sizeof(float);
+    std::memcpy(data.data() + offset, mono.data(),
+                mono.size() * sizeof(float));
   }
   const base::TimeDelta duration = base::SecondsD(
       static_cast<double>(frames) / kSampleRate);
@@ -111,10 +112,11 @@ base::scoped_refptr<AudioBuffer> MakeSineBuffer(int frames, double freq_hz,
                                                 base::TimeDelta timestamp,
                                                 float amplitude = 0.5f) {
   std::vector<float> mono(static_cast<size_t>(frames));
+  float* samples = mono.data();
   for (int n = 0; n < frames; ++n) {
-    mono[n] = amplitude * static_cast<float>(
-                              std::sin(2.0 * kTestPi * freq_hz * n /
-                                       kSampleRate));
+    samples[n] = amplitude * static_cast<float>(
+                                std::sin(2.0 * kTestPi * freq_hz * n /
+                                         kSampleRate));
   }
   return MakePlanarStereo(mono, timestamp);
 }

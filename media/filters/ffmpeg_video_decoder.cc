@@ -274,8 +274,10 @@ bool FFmpegVideoDecoder::DecodeAvailableFrames() {
         const int row_bytes = std::min<int>(src_stride, dst_stride);
         const int rows = (p == 0) ? height : ((height + 1) / 2);
         for (int r = 0; r < rows; ++r) {
-          memcpy(dst_span.data() + static_cast<size_t>(r) * dst_stride,
-                 frame->data[p] + static_cast<size_t>(r) * src_stride,
+          memcpy(dst_span.data() +
+                     static_cast<size_t>(r) * static_cast<size_t>(dst_stride),
+                 frame->data[p] +
+                     static_cast<size_t>(r) * static_cast<size_t>(src_stride),
                  static_cast<size_t>(row_bytes));
         }
       }

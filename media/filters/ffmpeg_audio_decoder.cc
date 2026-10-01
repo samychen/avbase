@@ -57,7 +57,8 @@ std::vector<uint8_t> CopyFrameData(const AVFrame* frame, SampleFormat format,
   if (bps == 0 || channels <= 0 || frame->nb_samples <= 0) {
     return {};
   }
-  const size_t per_channel = static_cast<size_t>(frame->nb_samples) * bps;
+  const size_t per_channel =
+      static_cast<size_t>(frame->nb_samples) * static_cast<size_t>(bps);
   std::vector<uint8_t> out;
   if (IsPlanarFormat(format)) {
     out.resize(per_channel * static_cast<size_t>(channels));
@@ -65,8 +66,8 @@ std::vector<uint8_t> CopyFrameData(const AVFrame* frame, SampleFormat format,
       if (!frame->extended_data[ch]) {
         continue;
       }
-      std::memcpy(out.data() + per_channel * ch, frame->extended_data[ch],
-                  per_channel);
+      std::memcpy(out.data() + per_channel * static_cast<size_t>(ch),
+                  frame->extended_data[ch], per_channel);
     }
   } else {
     if (!frame->extended_data[0]) {

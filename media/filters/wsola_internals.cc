@@ -37,8 +37,9 @@ void FillPeriodicHanningWindow(std::vector<float>* out) {
     return;
   }
   const double step = 2.0 * kPi / static_cast<double>(n);
+  float* window = out->data();
   for (int i = 0; i < n; ++i) {
-    (*out)[i] = static_cast<float>(0.5 * (1.0 - std::cos(step * i)));
+    window[i] = static_cast<float>(0.5 * (1.0 - std::cos(step * i)));
   }
 }
 
@@ -55,8 +56,8 @@ float Similarity(const AudioBus* search, int offset, const AudioBus* target) {
     const float* t = target->channel(c);
     const float* s = search->channel(c) + offset;
     for (int n = 0; n < frames; ++n) {
-      const double tv = t[n];
-      const double sv = s[n];
+      const double tv = static_cast<double>(t[n]);
+      const double sv = static_cast<double>(s[n]);
       cross += tv * sv;
       target_energy += tv * tv;
       search_energy += sv * sv;

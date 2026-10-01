@@ -76,7 +76,8 @@ class IJKPP_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
  private:
   // Satisfies a pending Read() if the queue can provide data now.
   // Called with |lock_| held; posts to |media_runner_| and never blocks.
-  void FulfilPendingReadLocked();
+  // The *Locked suffix is the contract: the caller already holds |lock_|.
+  void FulfilPendingReadLocked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   const DemuxerStreamType type_;
   const int32_t index_;

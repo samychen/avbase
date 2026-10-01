@@ -103,8 +103,9 @@ class IJKPP_MEDIA_EXPORT DecoderBufferQueue {
   const std::string& name() const { return name_; }
 
  private:
-  bool IsFullLocked() const;
-  void UpdateCachedDurationLocked();
+  // The *Locked suffix is the contract: the caller already holds |lock_|.
+  bool IsFullLocked() const EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  void UpdateCachedDurationLocked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   const std::string name_;
   const size_t max_buffers_;

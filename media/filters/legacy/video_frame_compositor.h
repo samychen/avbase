@@ -264,12 +264,16 @@ class IJKPP_MEDIA_EXPORT VideoFrameCompositor {
   // Assembles the immutable input snapshot for DecideNextFrame(). Extracted so
   // that Render() stays inside the 80-line budget and so the snapshot's field
   // mapping is reviewable in one place.
+  // The *Locked suffix is the contract: the caller already holds |lock_|.
+  // Stated as an annotation because clang's analysis cannot read a name.
   FrameSyncInput BuildFrameSyncInputLocked(const VideoFrame& candidate,
                                            base::TimeTicks deadline_min,
-                                           base::TimeTicks deadline_max) const;
+                                           base::TimeTicks deadline_max) const
+      EXCLUSIVE_LOCKS_REQUIRED(lock_);
   void PresentLocked(const base::scoped_refptr<VideoFrame>& frame,
-                     const FrameSyncOutput& out);
-  void AccountDropLocked(DropReason reason);
+                     const FrameSyncOutput& out)
+      EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  void AccountDropLocked(DropReason reason) EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   const Thresholds thresholds_;
   const base::raw_ptr<const base::TickClock> tick_clock_;

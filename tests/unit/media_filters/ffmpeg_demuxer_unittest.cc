@@ -27,10 +27,7 @@ std::string TestFile(const char* name) {
 // rather than on internal state.
 class RecordingHost final : public Demuxer::Host {
  public:
-  void SetDuration(base::TimeDelta duration) override {
-    duration = duration;
-    ++duration_calls;
-  }
+  void SetDuration(base::TimeDelta /*duration*/) override { ++duration_calls; }
   void OnBufferedTimeUpdate(base::TimeDelta, base::TimeDelta) override {}
   void OnDemuxerError(MediaError error) override { errors.push_back(error); }
 
@@ -166,7 +163,7 @@ TEST_F(FFmpegDemuxerTest, TruncatedFileReachesEndOfStream) {
   for (int attempt = 0; attempt < 400 && !eos; ++attempt) {
     bool answered = false;
     video->Read(8, base::BindOnce([](bool* flag, bool* eos_flag, int* count,
-                                     DemuxerStream::Status status,
+                                     DemuxerStream::Status /*status*/,
                                      DemuxerStream::DecoderBufferVector b) {
                   *flag = true;
                   *count += static_cast<int>(b.size());

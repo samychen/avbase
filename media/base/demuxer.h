@@ -98,7 +98,10 @@ class IJKPP_MEDIA_EXPORT Demuxer : public MediaResource {
   // interrupted and no further callbacks run.
   virtual void Stop() = 0;
 
-  virtual DemuxerStream* GetStream(DemuxerStreamType type) = 0;
+  // MediaResource's stream accessor, re-declared pure so that every demuxer
+  // must answer it. |override| (not just |virtual|) is what the style rule
+  // asks for, and the base class is the reason it is an override at all.
+  DemuxerStream* GetStream(DemuxerStreamType type) override = 0;
   virtual const MediaInfo& media_info() const = 0;
   virtual base::TimeDelta GetStartTime() const = 0;
   virtual bool IsLive() const = 0;

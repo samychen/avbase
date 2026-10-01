@@ -74,7 +74,6 @@ class IJKPP_MEDIA_EXPORT FFmpegVideoDecoder final : public VideoDecoder {
   std::deque<DecodeCB> pending_decode_cbs_;
   VideoDecoderConfig config_;
   VideoFormat preferred_format_{VideoFormat::kUnknown};
-  VideoFormat output_format_{VideoFormat::kUnknown};
   int thread_count_{0};
   bool initialized_{false};
   bool decoding_eos_{false};

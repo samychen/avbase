@@ -122,8 +122,9 @@ class IJKPP_MEDIA_EXPORT VideoFrameQueue {
 
   // Called by SlotGuard. Returns the slot to the free pool and wakes a waiter.
   void ReturnSlot(size_t index, bool committed);
-  size_t FindFreeSlotLocked() const;
-  bool IsFullLocked() const;
+  // The *Locked suffix is the contract: the caller already holds |lock_|.
+  size_t FindFreeSlotLocked() const EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  bool IsFullLocked() const EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   const std::string name_;
   const int capacity_;

@@ -105,8 +105,8 @@ int AudioFrameQueue::PeekFrames(int num_frames, int read_offset,
       // turns into an A/V-sync bug several layers up. Zero the rest and stop.
       for (int c = 0; c < dest->channels(); ++c) {
         float* out = dest->channel(c) + dst;
-        for (int i = converted; i < chunk; ++i) {
-          out[i] = 0.0f;
+        for (int n = converted; n < chunk; ++n) {
+          out[n] = 0.0f;
         }
       }
       dst += converted;

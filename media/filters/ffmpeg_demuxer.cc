@@ -71,7 +71,7 @@ VideoDecoderConfig MakeVideoConfig(const AVStream* stream) {
   // Rotation lives in a display-matrix side-data entry, not in the codec
   // parameters. ijkplayer reads it in three separate places.
   size_t matrix_size = 0;
-  const uint8_t* matrix = av_stream_get_side_data(
+  const uint8_t* matrix = ijkpp_stream_side_data(
       stream, AV_PKT_DATA_DISPLAYMATRIX, &matrix_size);
   if (matrix && matrix_size >= 9 * sizeof(int32_t)) {
     const double rotation =
@@ -652,12 +652,13 @@ bool FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw, void* packet_raw) {
   }
 
   const int index = packet->stream_index;
-  if (index < 0 || static_cast<size_t>(index) >= streams_.size() ||
-      !streams_[index] || streams_[index]->stream_index() != index) {
+  const size_t slot = static_cast<size_t>(index);
+  if (index < 0 || slot >= streams_.size() ||
+      !streams_[slot] || streams_[slot]->stream_index() != index) {
     av_packet_unref(packet);   // Unselected stream; drop it.
     return true;
   }
-  FFmpegDemuxerStream* stream = streams_[index].get();
+  FFmpegDemuxerStream* stream = streams_[slot].get();
 
   // Zero-copy: the AVPacket is ref'd into the storage, not memcpy'd.
   auto storage = std::make_unique<ff::AvPacketStorage>();
