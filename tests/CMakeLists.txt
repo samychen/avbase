@@ -3,7 +3,10 @@ include(GoogleTest)
 function(ijkpp_add_unittest name)
   cmake_parse_arguments(PARSE_ARGV 1 T "" "" "SOURCES;DEPS")
   add_executable(${name} ${T_SOURCES})
-  target_link_libraries(${name} PRIVATE ${T_DEPS} GTest::gtest GTest::gtest_main)
+  # gtest_main carries GTest::gtest in its INTERFACE, and base_test_support
+  # carries ijkpp::base: naming both sides again made ld report "ignoring
+  # duplicate libraries" on every test link.
+  target_link_libraries(${name} PRIVATE ${T_DEPS} GTest::gtest_main)
   target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR})
   ijkpp_configure_target(${name})
   gtest_discover_tests(${name} PROPERTIES TIMEOUT 120)
@@ -23,7 +26,7 @@ ijkpp_add_unittest(base_unittests
         unit/base/task_queue_unittest.cc
         unit/base/thread_unittest.cc
         unit/base/task_environment_unittest.cc
-    DEPS ijkpp::base ijkpp::base_test_support)
+    DEPS ijkpp::base_test_support)
 
 # ---- media ----
 ijkpp_add_unittest(media_unittests
