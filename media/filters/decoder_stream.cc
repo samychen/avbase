@@ -247,9 +247,26 @@ void DecoderStream<Traits>::ReadFromDemuxer() {
     return;
   }
   demuxer_read_in_flight_ = true;
+  // DemuxerStream::Read's contract delivers the reply on the demuxer's media
+  // sequence (S1), but this object and its sequence checker live on the
+  // owning renderer's sequence (S3/S4). The first draft bound OnBufferReady
+  // directly, which the checker caught as a violation -- and it was not just
+  // a formality: pending_reads_/decoded_outputs_ would have been mutated
+  // concurrently. Hop the reply onto our own runner before touching state.
   demuxer_stream_->Read(
       kBuffersPerRead,
-      base::BindOnce(&DecoderStream::OnBufferReady, weak_factory_.GetWeakPtr()));
+      base::BindOnce(
+          [](base::scoped_refptr<base::SequencedTaskRunner> runner,
+             base::OnceCallback<void(DemuxerStream::Status,
+                                     DemuxerStream::DecoderBufferVector)> cb,
+             DemuxerStream::Status status,
+             DemuxerStream::DecoderBufferVector buffers) {
+            runner->PostTask(FROM_HERE, base::BindOnce(std::move(cb), status,
+                                                       std::move(buffers)));
+          },
+          task_runner_,
+          base::BindOnce(&DecoderStream::OnBufferReady,
+                         weak_factory_.GetWeakPtr())));
 }
 
 template <typename Traits>
