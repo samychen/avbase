@@ -220,6 +220,11 @@ class IJKPP_MEDIA_EXPORT AudioRendererImpl final
   void PreStretch();
   // S4: publishes one chunk. Returns false when the ring is full.
   bool PublishChunk();
+  // Media time consumed by |frames| of output at |rate|. Shared by the ring
+  // half (audio_renderer_ring.cc) and Render(), which live in different
+  // translation units since the file hit the C1 limit for the second time.
+  static base::TimeDelta OutputFramesToMediaTime(int frames, double rate,
+                                                 int sample_rate);
   // S7: copies at most |dest->frames()| frames out of the ring and posts a
   // consumer wake-up whenever back-pressure clears. Returns the number of
   // frames written; when that is non-zero, |first_media_micros| holds the

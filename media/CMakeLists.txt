@@ -26,6 +26,7 @@ add_library(ijkpp_media
     filters/audio_frame_queue.cc
     filters/audio_renderer_algorithm.cc
     filters/audio_renderer_impl.cc
+    filters/audio_renderer_ring.cc
     filters/decoder_selector.cc
     filters/decoder_stream.cc
     filters/null_audio_sink.cc
