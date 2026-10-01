@@ -63,6 +63,14 @@ swr 重采样的消费端胶水）结构上并不相似，"Ported" 措辞疑似*
 - **B（保守）**：文件搬入 `media/filters/legacy/` 并进 LICENSE §1 例外清单，声明为
   LGPL-2.1；代价是 §1 "隔离目录 = 全部衍生作品" 的清单式边界被稀释。
 
+> **决策：A（同轮拍板）。** 作者确认当初的 "Ported" 是措辞夸大——该文件与 ffplay 的
+> 关系是**角色对位**（PROGRESS 第八轮自己就记录了关键差异：输出编解码器原生格式、
+> 转换留给消费者，与 `audio_decode_frame` 的回调线程 swr_convert 正相反），不是表达式
+> 移植。头注释已改写为准确出处（结构追随 Chromium FFmpegAudioDecoder，原创实现，
+> 附一句更名记录防回潮），LICENSE 不变，**基座自此为纯 BSD-3 + legacy/ 一处隔离区**。
+> 全仓 `LGPL|Ported from` 扫描：`filters/` 下仅剩两处指向 legacy/ 的指路注释，
+> 语义准确，保留。
+
 ### 连带登记：`renderer_impl.cc` 的 C1 豁免
 
 更名跑 invariant 时暴露 `media/filters/renderer_impl.cc` 540 行 > 500 限——**分支既有

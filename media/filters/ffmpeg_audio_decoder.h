@@ -2,8 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Ported from ijkplayer's ff_ffplay.c audio_decode_frame() (LGPL-2.1-or-later),
-// restructured behind Chromium's asynchronous AudioDecoder interface.
+// Original implementation (BSD-3-Clause, LICENSE §3). The structure follows
+// Chromium's media::FFmpegAudioDecoder: an asynchronous AudioDecoder over
+// avcodec send/receive. It fills the ROLE ffplay's audio_decode_frame() plays
+// in ijkplayer (documented in docs/05), but shares no line or algorithm with
+// it -- an earlier header comment said "ported from"; that overstated the
+// relationship and was corrected in PROGRESS round 14 (decision A).
 
 #ifndef AVBASE_MEDIA_FILTERS_FFMPEG_AUDIO_DECODER_H_
 #define AVBASE_MEDIA_FILTERS_FFMPEG_AUDIO_DECODER_H_
