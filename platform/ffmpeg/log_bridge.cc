@@ -24,14 +24,25 @@ void AvLogCallback(void* /*avcl*/, int level, const char* fmt, va_list args) {
     return;
   }
   char buf[1024];
+  // The format string is FFmpeg's, not ours: av_log_set_callback hands the
+  // callback the same |fmt| the library would have printed itself, so it cannot
+  // be a literal here. |args| matches it by construction (FFmpeg passes the two
+  // together), which is precisely what -Wformat-nonliteral cannot see.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
   const int printed = vsnprintf(buf, sizeof(buf), fmt, args);
+#pragma GCC diagnostic pop
   if (printed <= 0) {
     return;
   }
   if (g_line_buffer.empty()) {
     g_pending_level = level;
   }
-  g_line_buffer.append(buf, static_cast<size_t>(std::min<size_t>(printed, sizeof(buf) - 1)));
+  // vsnprintf returns the length it *would* have written, so a truncated line
+  // has to be clamped to what |buf| actually holds.
+  const size_t printable =
+      std::min(static_cast<size_t>(printed), sizeof(buf) - 1);
+  g_line_buffer.append(buf, printable);
 
   // Flush on newline, and strip FFmpeg's trailing newline so base/logging does
   // not add a blank line of its own.

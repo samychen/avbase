@@ -28,7 +28,8 @@ void Sdl2AudioSink::Initialize(const AudioParameters& params,
   bus_ = AudioBus::Create(params.channels(), params.frames_per_buffer());
   bus_->Zero();
   interleaved_ = std::make_unique<float[]>(
-      static_cast<size_t>(params.channels()) * params.frames_per_buffer());
+      static_cast<size_t>(params.channels()) *
+      static_cast<size_t>(params.frames_per_buffer()));
   initialized_.store(true);
 }
 
@@ -162,11 +163,13 @@ void Sdl2AudioSink::AudioCallback(uint8_t* stream, int len) {
   }
   // Planar float -> interleaved float (AUDIO_F32SYS), the only work on the
   // device thread; scaling already happened inside Render().
-  const size_t total = static_cast<size_t>(written) * channels;
+  const size_t channels_size = static_cast<size_t>(channels);
+  const size_t total = static_cast<size_t>(written) * channels_size;
   for (int c = 0; c < channels; ++c) {
     const float* src = bus_->channel(c);
     for (int i = 0; i < written; ++i) {
-      interleaved_[static_cast<size_t>(i) * channels + c] = src[i];
+      interleaved_[static_cast<size_t>(i) * channels_size +
+                   static_cast<size_t>(c)] = src[i];
     }
   }
   std::memcpy(stream, interleaved_.get(), total * sizeof(float));

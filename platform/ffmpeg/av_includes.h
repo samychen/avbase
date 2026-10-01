@@ -76,4 +76,39 @@ extern "C" {
 #define IJKPP_FFMPEG_NEEDS_REGISTER_ALL 0
 #endif
 
+// FFmpeg 6.1 (libavformat 60.16) deprecated av_stream_get_side_data() in favour
+// of av_packet_side_data_get() over the stream's codecpar side data.
+#if LIBAVFORMAT_VERSION_MAJOR > 60 || \
+    (LIBAVFORMAT_VERSION_MAJOR == 60 && LIBAVFORMAT_VERSION_MINOR >= 16)
+#define IJKPP_FFMPEG_HAS_CODECPAR_SIDE_DATA 1
+#else
+#define IJKPP_FFMPEG_HAS_CODECPAR_SIDE_DATA 0
+#endif
+
+// Reads a stream's side data of |type|: returns nullptr when it is absent and
+// always sets |*size|. One call shape for both sides of the deprecation, so the
+// version switch stays in this file (rule C8) and callers read the same either
+// way. The modern branch is codecpar's array, which is where FFmpeg 6.1 moved
+// stream side data to.
+inline const uint8_t* ijkpp_stream_side_data(const AVStream* stream,
+                                             AVPacketSideDataType type,
+                                             size_t* size) {
+  *size = 0;
+#if IJKPP_FFMPEG_HAS_CODECPAR_SIDE_DATA
+  if (!stream || !stream->codecpar) {
+    return nullptr;
+  }
+  const AVPacketSideData* side_data =
+      av_packet_side_data_get(stream->codecpar->coded_side_data,
+                              stream->codecpar->nb_coded_side_data, type);
+  if (!side_data) {
+    return nullptr;
+  }
+  *size = side_data->size;
+  return side_data->data;
+#else
+  return av_stream_get_side_data(stream, type, size);
+#endif
+}
+
 #endif  // IJKPP_PLATFORM_FFMPEG_AV_INCLUDES_H_
