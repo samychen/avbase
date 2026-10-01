@@ -49,6 +49,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | 24 个文件的头注释 | 修复第十轮脚本把新段落插进旧句子中间留下的断句、重复的 `(promoted from DRAFT, tenth round)` 与重复空注释行 | 纯重排与合并，除重复片段外未改字面 |
 | `.github/workflows/ci.yml` · `CMakePresets.json` | 骨架 job 变真：新增 `ffmpeg`（发行版 FFmpeg，359 用例）、`e2e-headless`（5 个样本播到结束）、`sdl2-build`（Linux 上编译 SDL2 后端）；新增 `ffmpeg` 预设，`linux-sdl2` 补上 FFmpeg | 带 FFmpeg 的配置与端到端此前从未在 CI 跑过（`ffmpeg-matrix` / `e2e-linux` 一直是 `if: false`）；`linux-sdl2` 因缺 FFmpeg 连 `play_sdl2` 都建不出来 |
 | `base/synchronization/lock.cc` · `tests/unit/base/synchronization_unittest.cc` | `ObservedOrder()` 补 `thread_local`；新增 `LockTest.ConcurrentOrderRecordingIsRaceFree` | #44 |
+| 10 个 `CMakeLists.txt` · `cmake/IjkppCheckInvariants.cmake` · `tools/check_invariants.py` | 源文件列举定成一条规则（docs/06 §7.6）：目录成员 == 目标成员处改用 `file(GLOB ... CONFIGURE_DEPENDS)`（`media/base` · `media/renderers` · `media/filters/legacy` · `player` · `platform/{ffmpeg,sdl2}` · `tools/inspect` · `tests/unit/{base,media_base,player}`），其余四处（`media/filters` · `tests/unit/media_filters` · `base` · `examples`）保持显式并在文件里写明理由。**新增门禁 C25**：每个 `.cc` 必须被某个目标覆盖（显式列表，或规则自己展开的 glob），否则非零退出 | 新增文件不必再改 CMake，Ninja 在构建时重跑 glob（`[0/N] Re-checking globbed directories...`）。C24 管"列出的文件存在"，C25 管"存在的文件被编译"——两个方向都不再静默。`aux_source_directory` 明确不用：不递归，且新增文件不触发 CMake 重配（CMake 官方文档警示的正是这一点）。实测 108 个 (target, source) 与改动前逐一相同 |
 
 ### (3) 本轮抓到的 bug（接通播放 = 第一条真正跑全链路的路径，收获很大）
 
@@ -80,7 +81,8 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 ✅ corrupt_header.mp4              → prepare 失败，错误含 DecodeFailed/建议（不崩溃）
 ✅ play_sdl2（真窗口 + 音频）       → 播完 kCompleted，退出码 0
 ✅ ctest: 359/359（mac 配置）· 324/324（no-ffmpeg）——第十轮末尾各 +1：锁序竞态回归用例（#44）
-✅ check_invariants 全过（220 文件）；C23 列宽基线 323 → 310（净减 13 行，棘轮只降不升）
+✅ check_invariants 全过（220 文件）；C23 列宽基线 323 → 310（净减 13 行，棘轮只降不升）；
+   新增 C25（源文件必须被某个目标覆盖）后复跑全过，且从零 configure 的构建目录同样 324/324
 ✅ 零警告（编译器 + 链接器）：RelWithDebInfo 的 no-ffmpeg / FFmpeg+SDL2 与
    Debug + 严格告警 + `-Werror` 三套配置实测。这份成绩单在第十轮末尾一度是虚的：
    `-Wthread-safety` 报的 660 条里有 642 条源于 `base::Lock` 缺 capability 注解，
@@ -113,6 +115,9 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
    `CreateDemuxer` 一处），以及 `FFmpegDemuxerStream::FulfilPendingReadLocked` 这类
    "约定持锁却没写注解"的助手。前者是真的要把访问挪进锁内（已改），后者用
    `EXCLUSIVE_LOCKS_REQUIRED` 表达即可。渲染三件套仍缺直接单测（见本节第 1 条）。
+8. glob 改的是"新增文件不用改 CMake"，代价落在 DRAFT 的放法上（docs/06 §7.6）：留在一个
+   被 glob 目录里的 DRAFT `.cc` 会被编译，所以它要待在没有任何 glob 能到达的子目录里
+   （glob 不递归）直到能编译为止，并在 `DRAFT_FILES` 里登记。显式列表的四个目录不受此限。
 
 ---
 
