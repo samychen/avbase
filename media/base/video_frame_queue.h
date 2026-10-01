@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_MEDIA_BASE_VIDEO_FRAME_QUEUE_H_
-#define IJKPP_MEDIA_BASE_VIDEO_FRAME_QUEUE_H_
+#ifndef AVBASE_MEDIA_BASE_VIDEO_FRAME_QUEUE_H_
+#define AVBASE_MEDIA_BASE_VIDEO_FRAME_QUEUE_H_
 
 #include <stdint.h>
 
@@ -21,7 +21,7 @@
 #include "media/base/video_frame.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Bounded, serial-aware queue of decoded frames between a decoder and the
 // renderer, with a two-phase (reserve / commit) write protocol.
@@ -38,11 +38,11 @@ namespace ijkpp::media {
 // Here Reserve() returns a SlotGuard. Committing publishes the frame; letting
 // the guard go out of scope returns the slot. There is no code path that can
 // forget.
-class IJKPP_MEDIA_EXPORT VideoFrameQueue {
+class AVBASE_MEDIA_EXPORT VideoFrameQueue {
  public:
   enum class PopStatus { kOk, kEmpty, kFlushed, kAborted, kEndOfStream };
 
-  class IJKPP_MEDIA_EXPORT SlotGuard {
+  class AVBASE_MEDIA_EXPORT SlotGuard {
    public:
     SlotGuard();
     SlotGuard(SlotGuard&& other) noexcept;
@@ -146,9 +146,9 @@ class IJKPP_MEDIA_EXPORT VideoFrameQueue {
   std::atomic<uint64_t> reserve_waits_{0};
 };
 
-IJKPP_MEDIA_EXPORT const char* GetVideoFrameQueuePopStatusName(
+AVBASE_MEDIA_EXPORT const char* GetVideoFrameQueuePopStatusName(
     VideoFrameQueue::PopStatus status);
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_VIDEO_FRAME_QUEUE_H_
+#endif  // AVBASE_MEDIA_BASE_VIDEO_FRAME_QUEUE_H_

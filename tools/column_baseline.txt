@@ -5,7 +5,7 @@
 # refuses to raise an entry, so this file can only shrink. Do not edit
 # it by hand: an entry added by hand is an exemption with no reason
 # attached, which is what R12 says must not happen.
-# Total: 310 line(s) in 79 file(s).
+# Total: 286 line(s) in 72 file(s).
 
 base/functional/bind.h 9
 base/functional/callback.h 1
@@ -17,10 +17,8 @@ base/observer_list.h 2
 base/sequence_checker.h 1
 base/task/task_queue.cc 2
 base/test/task_environment.cc 1
-base/threading/thread.h 2
 base/time/simple_test_tick_clock.h 1
 base/time/time.h 5
-base/types/expected.h 2
 media/base/audio_buffer.cc 3
 media/base/audio_bus.cc 1
 media/base/audio_parameters.h 1
@@ -35,9 +33,7 @@ media/base/decoder_status.h 1
 media/base/demuxer.h 1
 media/base/demuxer_stream.h 1
 media/base/media_log.cc 1
-media/base/media_log.h 3
 media/base/native_display.cc 2
-media/base/native_display.h 2
 media/base/video_decoder.h 2
 media/base/video_decoder_factory.h 1
 media/base/video_frame.h 3
@@ -46,7 +42,6 @@ media/filters/decoder_selector.h 2
 media/filters/decoder_stream.cc 2
 media/filters/decoder_stream.h 3
 media/filters/ffmpeg_audio_decoder.cc 4
-media/filters/ffmpeg_demuxer.cc 11
 media/filters/ffmpeg_demuxer.h 5
 media/filters/ffmpeg_video_decoder.cc 10
 media/filters/ffmpeg_video_decoder.h 2
@@ -83,6 +78,4 @@ tests/unit/media_filters/ffmpeg_video_decoder_unittest.cc 8
 tests/unit/media_filters/video_frame_compositor_unittest.cc 7
 tools/inspect/inspect_common.cc 1
 tools/inspect/inspect_common.h 1
-tools/inspect/inspect_decode.cc 2
 tools/inspect/inspect_main.cc 3
-tools/inspect/inspect_sync.cc 2

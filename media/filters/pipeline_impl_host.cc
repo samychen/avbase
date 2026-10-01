@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -18,7 +18,7 @@
 #include "base/check.h"
 #include "base/logging.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 namespace {
 
@@ -50,27 +50,27 @@ int PipelineImpl::GetTextStreamId() const {
 // diagnostics; the facade rejects them with kNotImplemented before reaching
 // here anyway.
 void PipelineImpl::AddVideoStream(int id) {
-  LOG(WARNING) << "ijkpp.pipeline: AddVideoStream(" << id
+  LOG(WARNING) << "avbase.pipeline: AddVideoStream(" << id
                << ") is not supported until M9";
 }
 void PipelineImpl::RemoveVideoStream(int id) {
-  LOG(WARNING) << "ijkpp.pipeline: RemoveVideoStream(" << id
+  LOG(WARNING) << "avbase.pipeline: RemoveVideoStream(" << id
                << ") is not supported until M9";
 }
 void PipelineImpl::AddAudioStream(int id) {
-  LOG(WARNING) << "ijkpp.pipeline: AddAudioStream(" << id
+  LOG(WARNING) << "avbase.pipeline: AddAudioStream(" << id
                << ") is not supported until M9";
 }
 void PipelineImpl::RemoveAudioStream(int id) {
-  LOG(WARNING) << "ijkpp.pipeline: RemoveAudioStream(" << id
+  LOG(WARNING) << "avbase.pipeline: RemoveAudioStream(" << id
                << ") is not supported until M9";
 }
 void PipelineImpl::AddTextStream(int id) {
-  LOG(WARNING) << "ijkpp.pipeline: AddTextStream(" << id
+  LOG(WARNING) << "avbase.pipeline: AddTextStream(" << id
                << ") is not supported until M9";
 }
 void PipelineImpl::RemoveTextStream(int id) {
-  LOG(WARNING) << "ijkpp.pipeline: RemoveTextStream(" << id
+  LOG(WARNING) << "avbase.pipeline: RemoveTextStream(" << id
                << ") is not supported until M9";
 }
 
@@ -156,7 +156,7 @@ void PipelineImpl::OnAudioOutputDeviceChanged(const std::string& device_id,
   // Pipeline::Client has no device-change hook (it is a RendererClient
   // member); diagnostics get it via the log until M9's device switching
   // defines what a host needs.
-  LOG(INFO) << "ijkpp.pipeline: audio device '" << device_id
+  LOG(INFO) << "avbase.pipeline: audio device '" << device_id
             << "' default=" << is_default << " "
             << OutputDeviceStatusToString(status);
 }
@@ -173,4 +173,4 @@ MediaInfo PipelineImpl::media_info() const {
   return media_info_;
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

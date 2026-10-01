@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_BASE_TASK_TASK_QUEUE_H_
-#define IJKPP_BASE_TASK_TASK_QUEUE_H_
+#ifndef AVBASE_BASE_TASK_TASK_QUEUE_H_
+#define AVBASE_BASE_TASK_TASK_QUEUE_H_
 
 #include <atomic>
 #include <cstddef>
@@ -19,12 +19,12 @@
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // A SequencedTaskRunner backed by one ordered queue plus a run loop.
 //
-// This is ijkpp's message loop. Chromium splits the same responsibility across
-// base::MessageLoop, base::MessagePump and base::TaskQueue; ijkpp collapses
+// This is avbase's message loop. Chromium splits the same responsibility across
+// base::MessageLoop, base::MessagePump and base::TaskQueue; avbase collapses
 // them because the core needs neither fd watching nor nested RunLoops — the
 // platform layer runs its own poll loop for Wayland/epoll (docs/04 §2.1, D3).
 // If fd watching is ever needed in base/, split MessagePump back out behind the
@@ -39,7 +39,7 @@ namespace ijkpp::base {
 // never be destroyed — LeakSanitizer reports it and it is a real leak, not a
 // false positive. Capture a base::WeakPtr instead, or call Clear() before
 // dropping your own reference.
-class IJKPP_BASE_EXPORT TaskQueue final : public SequencedTaskRunner {
+class AVBASE_BASE_EXPORT TaskQueue final : public SequencedTaskRunner {
  public:
   TaskQueue();
   TaskQueue(const TaskQueue&) = delete;
@@ -114,6 +114,6 @@ class IJKPP_BASE_EXPORT TaskQueue final : public SequencedTaskRunner {
   mutable std::atomic<std::thread::id> running_thread_{};
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_TASK_TASK_QUEUE_H_
+#endif  // AVBASE_BASE_TASK_TASK_QUEUE_H_

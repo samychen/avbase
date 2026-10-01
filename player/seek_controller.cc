@@ -1,10 +1,10 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "player/seek_controller.h"
 
-namespace ijkpp::player {
+namespace avbase::player {
 
 // static
 SeekController::Outcome SeekController::Evaluate(bool target_reached,
@@ -39,4 +39,4 @@ int64_t SeekController::End() {
   return id;
 }
 
-}  // namespace ijkpp::player
+}  // namespace avbase::player

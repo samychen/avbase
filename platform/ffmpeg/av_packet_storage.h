@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -6,8 +6,8 @@
 // FFmpeg type appears above platform/. Retrieval is by TypeId address
 // comparison, not RTTI (which is disabled project-wide).
 
-#ifndef IJKPP_PLATFORM_FFMPEG_AV_PACKET_STORAGE_H_
-#define IJKPP_PLATFORM_FFMPEG_AV_PACKET_STORAGE_H_
+#ifndef AVBASE_PLATFORM_FFMPEG_AV_PACKET_STORAGE_H_
+#define AVBASE_PLATFORM_FFMPEG_AV_PACKET_STORAGE_H_
 
 #include <memory>
 #include <span>
@@ -16,7 +16,7 @@
 #include "platform/ffmpeg/av_includes.h"
 #include "platform/ffmpeg/compat.h"
 
-namespace ijkpp::platform::ffmpeg {
+namespace avbase::platform::ffmpeg {
 
 class AvPacketStorage final : public media::DecoderBuffer::Storage {
  public:
@@ -48,6 +48,6 @@ class AvPacketStorage final : public media::DecoderBuffer::Storage {
   std::unique_ptr<AVPacket, PacketDeleter> packet_;
 };
 
-}  // namespace ijkpp::platform::ffmpeg
+}  // namespace avbase::platform::ffmpeg
 
-#endif  // IJKPP_PLATFORM_FFMPEG_AV_PACKET_STORAGE_H_
+#endif  // AVBASE_PLATFORM_FFMPEG_AV_PACKET_STORAGE_H_

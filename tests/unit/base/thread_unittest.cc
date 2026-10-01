@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,14 +12,14 @@
 #include "base/synchronization/waitable_event.h"
 #include "gtest/gtest.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 namespace {
 
 TEST(ThreadTest, StartsAndRunsPostedTasks) {
-  Thread thread("ijkpp-test");
+  Thread thread("avbase-test");
   ASSERT_TRUE(thread.Start());
   EXPECT_TRUE(thread.IsRunning());
-  EXPECT_EQ(thread.name(), "ijkpp-test");
+  EXPECT_EQ(thread.name(), "avbase-test");
 
   WaitableEvent done;
   std::atomic<int> value{0};
@@ -33,7 +33,7 @@ TEST(ThreadTest, StartsAndRunsPostedTasks) {
 }
 
 TEST(ThreadTest, TaskRunnerIsUsableBeforeStart) {
-  Thread thread("ijkpp-early");
+  Thread thread("avbase-early");
   // Tasks posted before Start() are queued and run once the loop begins, so a
   // caller never has to synchronise on thread startup.
   std::atomic<int> value{0};
@@ -47,7 +47,7 @@ TEST(ThreadTest, TaskRunnerIsUsableBeforeStart) {
 }
 
 TEST(ThreadTest, SetsTheOsThreadName) {
-  Thread thread("ijkpp-named");
+  Thread thread("avbase-named");
   ASSERT_TRUE(thread.Start());
 
   WaitableEvent done;
@@ -58,13 +58,13 @@ TEST(ThreadTest, SetsTheOsThreadName) {
         done.Signal();
       })));
   ASSERT_TRUE(done.TimedWait(Seconds(5)));
-  EXPECT_EQ(observed, "ijkpp-named");
+  EXPECT_EQ(observed, "avbase-named");
 }
 
 // Linux truncates thread names to 15 characters; the wrapper must not pass an
 // over-long buffer to pthread_setname_np, which would fail with ERANGE.
 TEST(ThreadTest, LongNameIsTruncatedNotRejected) {
-  Thread thread("ijkpp-this-name-is-far-too-long");
+  Thread thread("avbase-this-name-is-far-too-long");
   ASSERT_TRUE(thread.Start());
 
   WaitableEvent done;
@@ -76,13 +76,13 @@ TEST(ThreadTest, LongNameIsTruncatedNotRejected) {
       })));
   ASSERT_TRUE(done.TimedWait(Seconds(5)));
   EXPECT_LE(observed.size(), 15u);
-  EXPECT_EQ(observed, "ijkpp-this-name");
+  EXPECT_EQ(observed, "avbase-this-nam");
 }
 
 // The guarantee behind Δ15 and docs/04 §5.4: Stop() returns even when the
 // sequence is idle and blocked in a condition wait, and no task runs after it.
 TEST(ThreadTest, StopIsBoundedAndIdempotent) {
-  Thread thread("ijkpp-stop");
+  Thread thread("avbase-stop");
   ASSERT_TRUE(thread.Start());
 
   std::atomic<int> after_stop{0};
@@ -104,7 +104,7 @@ TEST(ThreadTest, StopIsBoundedAndIdempotent) {
 TEST(ThreadTest, DestructorStopsTheThread) {
   std::atomic<bool> was_running{false};
   {
-    Thread thread("ijkpp-dtor");
+    Thread thread("avbase-dtor");
     ASSERT_TRUE(thread.Start());
     was_running.store(thread.IsRunning());
   }
@@ -135,7 +135,7 @@ TEST(ThreadTest, WeakPtrBoundTaskIsInertAfterOwnerDies) {
     WeakPtrFactory<Target> weak_factory_{this};
   };
 
-  Thread thread("ijkpp-weak");
+  Thread thread("avbase-weak");
   ASSERT_TRUE(thread.Start());
 
   {
@@ -181,14 +181,14 @@ TEST(ThreadTest, WeakPtrBoundTaskIsInertAfterOwnerDies) {
 }
 
 TEST(ThreadTest, StartTwiceReturnsFalse) {
-  Thread thread("ijkpp-twice");
+  Thread thread("avbase-twice");
   ASSERT_TRUE(thread.Start());
   EXPECT_FALSE(thread.Start());
   thread.Stop();
 }
 
 TEST(ThreadTest, MultipleThreadsAreIndependent) {
-  Thread a("ijkpp-a"), b("ijkpp-b");
+  Thread a("avbase-a"), b("avbase-b");
   ASSERT_TRUE(a.Start());
   ASSERT_TRUE(b.Start());
 
@@ -210,4 +210,4 @@ TEST(ThreadTest, MultipleThreadsAreIndependent) {
 }
 
 }  // namespace
-}  // namespace ijkpp::base
+}  // namespace avbase::base

@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_PLAYER_PUBLIC_DEPS_H_
-#define IJKPP_PLAYER_PUBLIC_DEPS_H_
+#ifndef AVBASE_PLAYER_PUBLIC_DEPS_H_
+#define AVBASE_PLAYER_PUBLIC_DEPS_H_
 
 #include <memory>
 #include <vector>
@@ -15,7 +15,7 @@
 #include "player/public/player_event.h"
 #include "player/public/player_export.h"
 
-namespace ijkpp {
+namespace avbase {
 namespace media {
 class AudioDecoderFactory;
 class AudioRendererSinkFactory;
@@ -29,7 +29,7 @@ class VideoRendererSinkFactory;
 // Qt event loop). The default dispatcher is a dedicated FIFO thread, which
 // preserves event order and guarantees that no pipeline sequence is ever
 // blocked inside a user callback.
-class IJKPP_PLAYER_EXPORT EventDispatcher {
+class AVBASE_PLAYER_EXPORT EventDispatcher {
  public:
   EventDispatcher(const EventDispatcher&) = delete;
   EventDispatcher& operator=(const EventDispatcher&) = delete;
@@ -43,10 +43,10 @@ class IJKPP_PLAYER_EXPORT EventDispatcher {
   virtual ~EventDispatcher() = default;
 };
 
-// Everything ijkpp needs from the outside world. Every field may be null, in
+// Everything avbase needs from the outside world. Every field may be null, in
 // which case the auto-detected platform default is used — that is what makes
 // `Player player; player.SetDataSource(url);` work with zero setup (rule E1).
-struct IJKPP_PLAYER_EXPORT Deps {
+struct AVBASE_PLAYER_EXPORT Deps {
   Deps();
   Deps(const Deps&) = delete;
   Deps& operator=(const Deps&) = delete;
@@ -88,7 +88,7 @@ struct IJKPP_PLAYER_EXPORT Deps {
   std::shared_ptr<media::AudioRendererSinkFactory> audio_sink_factory;
 
   // Custom byte source (encrypted streams, an in-app downloader, a cache).
-  // When set, ijkpp reads through it instead of opening the URI itself.
+  // When set, avbase reads through it instead of opening the URI itself.
   // Build one with base::MakeRefCounted<media::MemoryDataSource>(...), or with
   // your own DataSource subclass; M9's RetryDataSource and M18's
   // CacheDataSource are decorators that wrap an existing scoped_refptr.
@@ -105,6 +105,6 @@ struct IJKPP_PLAYER_EXPORT Deps {
   static Deps CreateDefault();
 };
 
-}  // namespace ijkpp
+}  // namespace avbase
 
-#endif  // IJKPP_PLAYER_PUBLIC_DEPS_H_
+#endif  // AVBASE_PLAYER_PUBLIC_DEPS_H_

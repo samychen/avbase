@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_PLAYER_PLAYER_IMPL_H_
-#define IJKPP_PLAYER_PLAYER_IMPL_H_
+#ifndef AVBASE_PLAYER_PLAYER_IMPL_H_
+#define AVBASE_PLAYER_PLAYER_IMPL_H_
 
 #include <atomic>
 #include <map>
@@ -24,7 +24,7 @@
 #include "player/seek_controller.h"
 #include "player/state_machine.h"
 
-namespace ijkpp {
+namespace avbase {
 
 // Everything behind the Player facade: the S1/S3/S4 threads, the event hub,
 // the renderer factory and the pipeline.
@@ -189,6 +189,6 @@ class PlayerImpl final : public media::Pipeline::Client {
   player::SeekController accurate_seek_;
 };
 
-}  // namespace ijkpp
+}  // namespace avbase
 
-#endif  // IJKPP_PLAYER_PLAYER_IMPL_H_
+#endif  // AVBASE_PLAYER_PLAYER_IMPL_H_

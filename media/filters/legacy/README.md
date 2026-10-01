@@ -2,7 +2,7 @@
 
 Everything in this directory is a **line-by-line port of an algorithm from
 ijkplayer's `ff_ffplay.c`**, and is therefore a derivative work of ijkplayer
-(LGPL-2.1). The rest of ijkpp is BSD-3-Clause. See the root `LICENSE` §1 and
+(LGPL-2.1). The rest of avbase is BSD-3-Clause. See the root `LICENSE` §1 and
 decision **D10** / risk **R8** in `docs/08` §4 and §5.
 
 Full license text: [`LICENSE.LGPL-2.1`](LICENSE.LGPL-2.1).
@@ -36,7 +36,7 @@ convenience:
 * ✅ A file belongs here **iff** a reviewer could point at a function in
   `ff_ffplay.c` and say "this is that function, transliterated".
 
-Structure, naming, threading model and tests in these files are original ijkpp
+Structure, naming, threading model and tests in these files are original avbase
 work (the compositor's decision logic is a pure static function precisely so it
 can be exhaustively unit tested, which `video_refresh()` cannot be — docs/03
 §8.1). Original authorship of the *shape* does not change the license of the
@@ -44,7 +44,7 @@ can be exhaustively unit tested, which `video_refresh()` cannot be — docs/03
 
 ## Obligations this creates for integrators
 
-* **Dynamic linking** (`libijkpp.so`, the default per Q10): you get LGPL-2.1
+* **Dynamic linking** (`libavbase.so`, the default per Q10): you get LGPL-2.1
   §6(b)'s "suitable shared library mechanism" path — no extra obligation beyond
   keeping this notice and the license text with the distribution.
 * **Static linking**: LGPL-2.1 §6(a) requires you to provide the object files
@@ -52,7 +52,7 @@ can be exhaustively unit tested, which `video_refresh()` cannot be — docs/03
   modified version of these six files.
 * Redistribution must include this directory's `LICENSE.LGPL-2.1` and the
   copyright notices. They are already in every file header.
-* ijkpp also links the **system FFmpeg**, whose own license (LGPL-2.1+ or
+* avbase also links the **system FFmpeg**, whose own license (LGPL-2.1+ or
   GPL-2+, depending on your distribution's build) further bounds what you may
   distribute. See root `LICENSE` §3.
 

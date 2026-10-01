@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Copyright 2026 The avbase Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Cross-checks every ported ffplay threshold against all of its sources.
@@ -20,7 +20,7 @@ script is that mitigation.
 
 It cross-checks up to three sources per constant:
 
-    ffplay source (#define)  <->  ijkpp code  <->  docs/05 table 7
+    ffplay source (#define)  <->  avbase code  <->  docs/05 table 7
 
 and exits non-zero on any disagreement, so a fat-fingered 0.04 -> 0.4, or a
 fork that genuinely uses a different DEFAULT_MIN_FRAMES, becomes a CI failure
@@ -32,7 +32,7 @@ ffplay is not self-consistent: AV_SYNC_THRESHOLD_MIN is 0.04 (seconds) while
 MAX_SLEEP is 1000000 (microseconds), and AV_NOSYNC_THRESHOLD is 10.0 -- an
 *integral* number of seconds, which no "is it a float?" heuristic can tell
 apart from 10 of something else. So each SPEC entry declares `source_unit`,
-the unit the ffplay/docs literal is written in. The ijkpp side needs no hint:
+the unit the ffplay/docs literal is written in. The avbase side needs no hint:
 `base::Seconds(10)` / `base::Milliseconds(40)` / `base::Microseconds(500)`
 carry their own unit, and a bare literal in media_constants.h is already in the
 canonical unit.
@@ -40,7 +40,7 @@ canonical unit.
 Usage
 -----
     # No ijkplayer checkout needed: validates the parser against a synthetic
-    # ffplay snippet and runs the ijkpp <-> docs/05 check. CI-safe.
+    # ffplay snippet and runs the avbase <-> docs/05 check. CI-safe.
     tools/extract_constants.py --selftest
 
     # Full three-way check against a real ijkplayer tree.
@@ -52,7 +52,7 @@ Usage
     # Emit the provenance block for media/base/media_constants.h (M13).
     tools/extract_constants.py --ijkplayer /path/to/ijkplayer --emit
 
-Deliberate deviations (Δ4) and ijkpp-only constants are declared in SPEC rather
+Deliberate deviations (Δ4) and avbase-only constants are declared in SPEC rather
 than silently skipped, so the report always accounts for every entry.
 """
 
@@ -95,7 +95,7 @@ CONSTEXPR_RE = re.compile(
 # "inline constexpr size_t kFoo" whose initialiser is on the same line but is
 # handled by CONSTEXPR_RE instead.
 # The type may be several tokens long and may carry an export macro
-# ("struct IJKPP_PLAYER_EXPORT BufferConfig" / "base::TimeDelta
+# ("struct AVBASE_PLAYER_EXPORT BufferConfig" / "base::TimeDelta
 # first_high_water_mark{...}"), so every token before the last is
 # swallowed as type-or-macro and only the last one is the field name.
 FIELD_RE = re.compile(
@@ -189,7 +189,7 @@ def resolve(macros: dict, name: str):
 
 
 # ---------------------------------------------------------------------------
-# ijkpp side
+# avbase side
 # ---------------------------------------------------------------------------
 
 def parse_time_or_number(body: str):
@@ -214,7 +214,7 @@ def scan_one_file(rel: str, text: str) -> dict:
     clean_lines = strip_comments(text).splitlines()
     scope = ""
     for raw, code in zip(text.splitlines(), clean_lines):
-        # "struct IJKPP_PLAYER_EXPORT BufferConfig {" -- the export macro is a
+        # "struct AVBASE_PLAYER_EXPORT BufferConfig {" -- the export macro is a
         # token, not the name, so skip every ALL-CAPS token after struct/class.
         m = STRUCT_RE.match(code)
         if m:
@@ -247,8 +247,8 @@ def scan_one_file(rel: str, text: str) -> dict:
     return found
 
 
-def scan_ijkpp(root: pathlib.Path, specs) -> dict:
-    wanted = {path for spec in specs for path, _ in spec.ijkpp}
+def scan_avbase(root: pathlib.Path, specs) -> dict:
+    wanted = {path for spec in specs for path, _ in spec.avbase}
     found: dict = {}
     for rel in sorted(wanted):
         path = root / rel
@@ -258,12 +258,12 @@ def scan_ijkpp(root: pathlib.Path, specs) -> dict:
     return found
 
 
-def lookup_ijkpp(found, spec):
+def lookup_avbase(found, spec):
     """Returns (canonical value or None, detail). Every declared location must
     agree -- media_constants.h and player_config.h holding different values for
     the same ported macro is exactly the drift this tool exists to catch."""
     values = []
-    for rel, symbol in spec.ijkpp:
+    for rel, symbol in spec.avbase:
         entry = found.get((rel, symbol))
         if entry is None and spec.macro:
             entry = found.get((rel, "@" + spec.macro))
@@ -274,9 +274,9 @@ def lookup_ijkpp(found, spec):
     known = [v for v in values if v is not None]
     if any(not compare(known[0], v, spec.unit) for v in known[1:]):
         detail = ", ".join(f"{sym}={fmt(v)}"
-                           for (_, sym), v in zip(spec.ijkpp, values))
+                           for (_, sym), v in zip(spec.avbase, values))
         return known[0], f"locations disagree: {detail}"
-    missing = [sym for (_, sym), v in zip(spec.ijkpp, values) if v is None]
+    missing = [sym for (_, sym), v in zip(spec.avbase, values) if v is None]
     return known[0], ("missing in " + ", ".join(missing)) if missing else ""
 
 
@@ -331,25 +331,25 @@ def compare(a, b, unit) -> bool:
 
 
 def check(root: pathlib.Path, ffplay_macros):
-    found = scan_ijkpp(root, SPEC)
+    found = scan_avbase(root, SPEC)
     docs = parse_docs(root)
     return [check_one(spec, found, docs, ffplay_macros) for spec in SPEC]
 
 
 def check_one(spec, found, docs, ffplay_macros):
-    row = {"macro": spec.macro or "(ijkpp-only)", "unit": spec.unit,
-           "ffplay": None, "ijkpp": None, "docs": None, "status": "OK",
-           "note": spec.note, "where": [s for _, s in spec.ijkpp]}
+    row = {"macro": spec.macro or "(avbase-only)", "unit": spec.unit,
+           "ffplay": None, "avbase": None, "docs": None, "status": "OK",
+           "note": spec.note, "where": [s for _, s in spec.avbase]}
     if spec.macro and ffplay_macros is not None:
         raw = resolve(ffplay_macros, spec.macro)
         if raw is None:
             row["status"] = "NOT_IN_FFP"
         else:
             row["ffplay"] = canonicalise(raw, "", spec.unit, spec.source_unit)
-    if spec.ijkpp:
-        row["ijkpp"], detail = lookup_ijkpp(found, spec)
-        if row["ijkpp"] is None:
-            row["status"] = "NOT_IN_IJKPP"
+    if spec.avbase:
+        row["avbase"], detail = lookup_avbase(found, spec)
+        if row["avbase"] is None:
+            row["status"] = "NOT_IN_AVBASE"
         elif detail.startswith("locations disagree"):
             row["status"] = "LOCATIONS_DISAGREE"
         if detail and not detail.startswith("locations disagree"):
@@ -357,10 +357,10 @@ def check_one(spec, found, docs, ffplay_macros):
     check_docs(row, spec, docs)
     if spec.deviation:
         row["status"] = f"DEVIATION {spec.deviation}"
-    elif not spec.ijkpp:
-        # Nothing on the ijkpp side to compare against yet. Distinct from OK so
+    elif not spec.avbase:
+        # Nothing on the avbase side to compare against yet. Distinct from OK so
         # the summary cannot claim a constant was verified when it was not.
-        row["status"] = "NO_IJKPP_SYMBOL"
+        row["status"] = "NO_AVBASE_SYMBOL"
     elif row["status"] == "OK":
         finalise(row, spec)
     return row
@@ -390,12 +390,12 @@ def check_docs(row, spec, docs):
 
 
 def finalise(row, spec):
-    if row["ffplay"] is not None and row["ijkpp"] is not None:
-        if not compare(row["ffplay"], row["ijkpp"], spec.unit):
+    if row["ffplay"] is not None and row["avbase"] is not None:
+        if not compare(row["ffplay"], row["avbase"], spec.unit):
             row["status"] = "MISMATCH"
-    elif row["ijkpp"] is not None and spec.docs is not None:
+    elif row["avbase"] is not None and spec.docs is not None:
         expected = canonicalise(float(spec.docs), "", spec.unit, spec.source_unit)
-        if not compare(expected, row["ijkpp"], spec.unit):
+        if not compare(expected, row["avbase"], spec.unit):
             row["status"] = "MISMATCH_VS_DOCS"
 
 
@@ -417,11 +417,11 @@ def fmt_list(values) -> str:
 
 def print_report(rows) -> int:
     width = max(len(r["macro"]) for r in rows)
-    print(f"{'macro':<{width}}  {'unit':>4}  {'ffplay':>12}  {'ijkpp':>12}  "
+    print(f"{'macro':<{width}}  {'unit':>4}  {'ffplay':>12}  {'avbase':>12}  "
           f"{'docs/05':>14}  status")
     for r in rows:
         print(f"{r['macro']:<{width}}  {r['unit']:>4}  {fmt(r['ffplay']):>12}  "
-              f"{fmt(r['ijkpp']):>12}  {fmt_list(r['docs']):>14}  {r['status']}")
+              f"{fmt(r['avbase']):>12}  {fmt_list(r['docs']):>14}  {r['status']}")
     notes = [r for r in rows if r["note"]]
     if notes:
         print()
@@ -436,12 +436,12 @@ def print_report(rows) -> int:
         return 1
     ok = sum(1 for r in rows if r["status"] == "OK")
     dev = sum(1 for r in rows if r["status"].startswith("DEVIATION"))
-    pending = sum(1 for r in rows if r["status"] == "NO_IJKPP_SYMBOL")
+    pending = sum(1 for r in rows if r["status"] == "NO_AVBASE_SYMBOL")
     uncheckable = len(rows) - ok - dev - pending
     mode = "three-way" if any(r["ffplay"] is not None for r in rows) \
         else "two-way (no --ijkplayer: ffplay side not read)"
     print(f"extract_constants: {ok} constant(s) agree [{mode}], "
-          f"{dev} declared deviation(s), {pending} with no ijkpp symbol yet, "
+          f"{dev} declared deviation(s), {pending} with no avbase symbol yet, "
           f"{uncheckable} unaccounted")
     return 0
 
@@ -452,10 +452,10 @@ def emit_block(rows) -> str:
            "// --ijkplayer. Regenerate instead of retyping (docs/08 risk R1,",
            "// mitigation 4: thresholds are extracted, never hand-copied)."]
     for r in rows:
-        if r["ijkpp"] is None:
+        if r["avbase"] is None:
             continue
         out.append(f"// {r['macro']} [{r['unit']}]: ffplay={fmt(r['ffplay'])} "
-                   f"ijkpp={fmt(r['ijkpp'])} docs/05={fmt_list(r['docs'])} "
+                   f"avbase={fmt(r['avbase'])} docs/05={fmt_list(r['docs'])} "
                    f"({', '.join(r['where'])}) [{r['status']}]")
     return "\n".join(out)
 
@@ -495,11 +495,11 @@ def load_ffplay_macros(ijkplayer_root: pathlib.Path):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--root", default=".", help="ijkpp repository root")
+    parser.add_argument("--root", default=".", help="avbase repository root")
     parser.add_argument("--ijkplayer", default=None,
                         help="path to an ijkplayer/ffplay source tree")
     parser.add_argument("--selftest", action="store_true",
-                        help="validate the parser, then run the ijkpp<->docs check")
+                        help="validate the parser, then run the avbase<->docs check")
     parser.add_argument("--json", action="store_true", help="machine readable")
     parser.add_argument("--emit", action="store_true",
                         help="print the generated provenance block")

@@ -1,10 +1,10 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "player/public/player_config.h"
 
-namespace ijkpp {
+namespace avbase {
 namespace {
 
 void Add(std::vector<ConfigIssue>* out, std::string field, std::string problem,
@@ -80,4 +80,4 @@ std::vector<ConfigIssue> ValidateConfig(const PlayerConfig& c) {
   return issues;
 }
 
-}  // namespace ijkpp
+}  // namespace avbase

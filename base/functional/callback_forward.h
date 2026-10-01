@@ -1,11 +1,11 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_BASE_FUNCTIONAL_CALLBACK_FORWARD_H_
-#define IJKPP_BASE_FUNCTIONAL_CALLBACK_FORWARD_H_
+#ifndef AVBASE_BASE_FUNCTIONAL_CALLBACK_FORWARD_H_
+#define AVBASE_BASE_FUNCTIONAL_CALLBACK_FORWARD_H_
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 template <typename Sig>
 class OnceCallback;
@@ -15,6 +15,6 @@ class RepeatingCallback;
 using OnceClosure = OnceCallback<void()>;
 using RepeatingClosure = RepeatingCallback<void()>;
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_FUNCTIONAL_CALLBACK_FORWARD_H_
+#endif  // AVBASE_BASE_FUNCTIONAL_CALLBACK_FORWARD_H_

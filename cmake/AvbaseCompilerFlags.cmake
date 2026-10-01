@@ -1,24 +1,24 @@
-# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Copyright 2026 The avbase Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 include(CheckCXXCompilerFlag)
 include(CheckCXXSourceCompiles)
 
-if(IJKPP_BUILD_SHARED)
+if(AVBASE_BUILD_SHARED)
   if(WIN32)
-    set(IJKPP_DLLEXPORT "__declspec(dllexport)")
-    set(IJKPP_DLLIMPORT "__declspec(dllimport)")
+    set(AVBASE_DLLEXPORT "__declspec(dllexport)")
+    set(AVBASE_DLLIMPORT "__declspec(dllimport)")
   else()
-    set(IJKPP_DLLEXPORT "__attribute__((visibility(\"default\")))")
-    set(IJKPP_DLLIMPORT "__attribute__((visibility(\"default\")))")
+    set(AVBASE_DLLEXPORT "__attribute__((visibility(\"default\")))")
+    set(AVBASE_DLLIMPORT "__attribute__((visibility(\"default\")))")
   endif()
 else()
-  set(IJKPP_DLLEXPORT "")
-  set(IJKPP_DLLIMPORT "")
+  set(AVBASE_DLLEXPORT "")
+  set(AVBASE_DLLIMPORT "")
 endif()
 
-set(IJKPP_WARNINGS_COMMON
+set(AVBASE_WARNINGS_COMMON
     -Wall -Wextra -Wpedantic
     -Wshadow -Wnon-virtual-dtor -Woverloaded-virtual -Wunused
     -Wcast-align -Wnull-dereference -Wdouble-promotion
@@ -26,24 +26,24 @@ set(IJKPP_WARNINGS_COMMON
     -Werror=return-type -Werror=uninitialized -Werror=parentheses
     -Werror=narrowing -Werror=delete-non-virtual-dtor -Werror=reorder
     -Wno-unknown-pragmas)
-set(IJKPP_WARNINGS_STRICT
+set(AVBASE_WARNINGS_STRICT
     -Wconversion -Wsign-conversion -Wold-style-cast
     -Wsuggest-override -Wzero-as-null-pointer-constant -Wextra-semi
     -Wpessimizing-move)
 # GCC-only. clang rejects -Wuseless-cast as an unknown option, which together
-# with IJKPP_WERROR makes the strict/debug preset -- the configuration
+# with AVBASE_WERROR makes the strict/debug preset -- the configuration
 # docs/BUILDING.md points reviewers at -- fail on the first translation unit
 # instead of compiling the tree. There is no clang equivalent to fall back to.
-set(IJKPP_WARNINGS_STRICT_GCC_ONLY
+set(AVBASE_WARNINGS_STRICT_GCC_ONLY
     -Wuseless-cast)
 
-function(ijkpp_configure_target target)
+function(avbase_configure_target target)
   target_compile_features(${target} PUBLIC cxx_std_20)
 
   # Google / Chromium: exceptions and RTTI are disabled project-wide.
   if(NOT MSVC)
     target_compile_options(${target} PRIVATE -fno-exceptions -fno-rtti)
-    target_compile_definitions(${target} PRIVATE IJKPP_NO_EXCEPTIONS=1)
+    target_compile_definitions(${target} PRIVATE AVBASE_NO_EXCEPTIONS=1)
   else()
     target_compile_options(${target} PRIVATE /GR- /EHs-c-)
     target_compile_definitions(${target} PRIVATE _HAS_EXCEPTIONS=0)
@@ -51,33 +51,33 @@ function(ijkpp_configure_target target)
 
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive- /Zc:__cplusplus
-        /wd4251 $<$<BOOL:${IJKPP_WERROR}>:/WX>)
+        /wd4251 $<$<BOOL:${AVBASE_WERROR}>:/WX>)
   else()
-    target_compile_options(${target} PRIVATE ${IJKPP_WARNINGS_COMMON}
-        $<$<BOOL:${IJKPP_STRICT_WARNINGS}>:${IJKPP_WARNINGS_STRICT}>
-        $<$<AND:$<BOOL:${IJKPP_STRICT_WARNINGS}>,$<CXX_COMPILER_ID:GNU>>:${IJKPP_WARNINGS_STRICT_GCC_ONLY}>
-        $<$<BOOL:${IJKPP_WERROR}>:-Werror>)
-    check_cxx_compiler_flag(-Wthread-safety IJKPP_HAS_THREAD_SAFETY)
-    if(IJKPP_HAS_THREAD_SAFETY)
+    target_compile_options(${target} PRIVATE ${AVBASE_WARNINGS_COMMON}
+        $<$<BOOL:${AVBASE_STRICT_WARNINGS}>:${AVBASE_WARNINGS_STRICT}>
+        $<$<AND:$<BOOL:${AVBASE_STRICT_WARNINGS}>,$<CXX_COMPILER_ID:GNU>>:${AVBASE_WARNINGS_STRICT_GCC_ONLY}>
+        $<$<BOOL:${AVBASE_WERROR}>:-Werror>)
+    check_cxx_compiler_flag(-Wthread-safety AVBASE_HAS_THREAD_SAFETY)
+    if(AVBASE_HAS_THREAD_SAFETY)
       target_compile_options(${target} PRIVATE -Wthread-safety)
-      target_compile_definitions(${target} PRIVATE IJKPP_THREAD_SAFETY_ANALYSIS=1)
+      target_compile_definitions(${target} PRIVATE AVBASE_THREAD_SAFETY_ANALYSIS=1)
     endif()
   endif()
 
   target_compile_definitions(${target} PRIVATE
-      $<$<BOOL:${IJKPP_ENABLE_DCHECK}>:IJKPP_ENABLE_DCHECK=1>
-      $<$<CONFIG:Debug>:IJKPP_DEBUG=1>)
+      $<$<BOOL:${AVBASE_ENABLE_DCHECK}>:AVBASE_ENABLE_DCHECK=1>
+      $<$<CONFIG:Debug>:AVBASE_DEBUG=1>)
 
-  if(IJKPP_SANITIZERS)
+  if(AVBASE_SANITIZERS)
     set(_sf "")
-    foreach(s IN LISTS IJKPP_SANITIZERS)
+    foreach(s IN LISTS AVBASE_SANITIZERS)
       list(APPEND _sf "-fsanitize=${s}")
     endforeach()
     target_compile_options(${target} PRIVATE ${_sf} -fno-omit-frame-pointer)
     target_link_options(${target} PRIVATE ${_sf})
   endif()
 
-  if(IJKPP_COVERAGE)
+  if(AVBASE_COVERAGE)
     target_compile_options(${target} PRIVATE --coverage -O0 -g)
     target_link_options(${target} PRIVATE --coverage)
   endif()
@@ -89,15 +89,15 @@ endfunction()
 check_cxx_source_compiles("
   #include <expected>
   int main() { std::expected<int, int> e{1}; return *e - 1; }"
-  IJKPP_HAVE_STD_EXPECTED)
+  AVBASE_HAVE_STD_EXPECTED)
 
-if(IJKPP_ENABLE_LTO)
+if(AVBASE_ENABLE_LTO)
   include(CheckIPOSupported)
-  check_ipo_supported(RESULT IJKPP_IPO_OK OUTPUT IJKPP_IPO_MSG)
-  if(IJKPP_IPO_OK)
+  check_ipo_supported(RESULT AVBASE_IPO_OK OUTPUT AVBASE_IPO_MSG)
+  if(AVBASE_IPO_OK)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
   else()
-    message(WARNING "LTO requested but unsupported: ${IJKPP_IPO_MSG}")
+    message(WARNING "LTO requested but unsupported: ${AVBASE_IPO_MSG}")
   endif()
 endif()

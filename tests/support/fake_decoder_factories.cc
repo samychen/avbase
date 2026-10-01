@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 #include "media/base/audio_parameters.h"
 #include "media/base/waiting.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 namespace {
 
 // 1024 frames of stereo f32, silent. Sizes match the local fake in
@@ -181,4 +181,4 @@ std::unique_ptr<VideoDecoder> FakeVideoDecoderFactory::CreateVideoDecoder(
   return std::make_unique<FakeVideoDecoder>(behaviour_, &counters_);
 }
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test

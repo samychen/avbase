@@ -1,11 +1,11 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `base/task/task_runner_util.h` (BSD-3-Clause).
 
-#ifndef IJKPP_BASE_TASK_TASK_RUNNER_UTIL_H_
-#define IJKPP_BASE_TASK_TASK_RUNNER_UTIL_H_
+#ifndef AVBASE_BASE_TASK_TASK_RUNNER_UTIL_H_
+#define AVBASE_BASE_TASK_TASK_RUNNER_UTIL_H_
 
 #include <type_traits>
 #include <utility>
@@ -13,7 +13,7 @@
 #include "base/functional/bind.h"
 #include "base/task/task_runner.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // Runs |task| on |task_runner| and delivers its return value to |reply| on the
 // calling sequence. This is how an async media API reports a result without the
@@ -61,6 +61,6 @@ bool PostTaskAndReplyWithResult(TaskRunner* task_runner,
   return task_runner->PostTask(from_here, std::move(done));
 }
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_TASK_TASK_RUNNER_UTIL_H_
+#endif  // AVBASE_BASE_TASK_TASK_RUNNER_UTIL_H_

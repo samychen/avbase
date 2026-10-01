@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 
 #include "gtest/gtest.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 const uint8_t kPayload[] = {1, 2, 3, 4, 5, 6, 7, 8};
@@ -133,4 +133,4 @@ TEST(MediaConstantsTest, NoTimestampIsTheMinimumDelta) {
 }
 
 }  // namespace
-}  // namespace ijkpp::media
+}  // namespace avbase::media

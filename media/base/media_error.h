@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -8,8 +8,8 @@
 // media::VideoDecoder both report through it and media/ must not depend on
 // player/ (docs/02 §2.1, invariant C22). player/public/error.h re-exports it.
 
-#ifndef IJKPP_MEDIA_BASE_MEDIA_ERROR_H_
-#define IJKPP_MEDIA_BASE_MEDIA_ERROR_H_
+#ifndef AVBASE_MEDIA_BASE_MEDIA_ERROR_H_
+#define AVBASE_MEDIA_BASE_MEDIA_ERROR_H_
 
 #include <stdint.h>
 
@@ -19,7 +19,7 @@
 #include "base/types/expected.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 enum class ErrorCode : uint16_t {
   kOk = 0,
@@ -39,17 +39,17 @@ enum class ErrorCode : uint16_t {
   kMediaUnseekable, kStreamNotFound, kTrackNotFound, kConfigInvalid, kEos,
 };
 
-IJKPP_MEDIA_EXPORT const char* GetErrorCodeName(ErrorCode code);
+AVBASE_MEDIA_EXPORT const char* GetErrorCodeName(ErrorCode code);
 
 // A three-part error, because "playback failed" is not actionable.
 //
-// Every error ijkpp produces fills all of:
+// Every error avbase produces fills all of:
 //   summary()    one line, <= 80 chars: what failed
 //   detail()     the actual values involved (uri, codec, resolution, timeout)
 //   suggestion() a concrete next step naming an API or a config field
 // tests/unit/player/error_messages_unittest.cc asserts this for every
 // ErrorCode, so the guarantee cannot silently rot. See docs/10 §4.
-class IJKPP_MEDIA_EXPORT MediaError {
+class AVBASE_MEDIA_EXPORT MediaError {
  public:
   MediaError() = default;
   MediaError(ErrorCode code, std::string summary, std::string detail,
@@ -111,6 +111,6 @@ inline base::unexpected<MediaError> Err(ErrorCode code, std::string summary,
 }
 
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_MEDIA_ERROR_H_
+#endif  // AVBASE_MEDIA_BASE_MEDIA_ERROR_H_

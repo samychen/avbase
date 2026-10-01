@@ -1,11 +1,11 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Replaces ijkplayer's pipeline/ffpipenode_ffplay_vdec.c.
 
-#ifndef IJKPP_MEDIA_FILTERS_FFMPEG_VIDEO_DECODER_H_
-#define IJKPP_MEDIA_FILTERS_FFMPEG_VIDEO_DECODER_H_
+#ifndef AVBASE_MEDIA_FILTERS_FFMPEG_VIDEO_DECODER_H_
+#define AVBASE_MEDIA_FILTERS_FFMPEG_VIDEO_DECODER_H_
 
 #include <deque>
 
@@ -15,7 +15,7 @@
 #include "media/base/video_decoder.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Software video decoding through libavcodec, with swscale conversion to the
 // requested output format.
@@ -25,7 +25,7 @@ namespace ijkpp::media {
 // are hidden behind avcodec_send_packet/receive_frame), so Decode() produces
 // every available frame before returning — but decode_cb is still posted, never
 // run inline, to honour the VideoDecoder contract.
-class IJKPP_MEDIA_EXPORT FFmpegVideoDecoder final : public VideoDecoder {
+class AVBASE_MEDIA_EXPORT FFmpegVideoDecoder final : public VideoDecoder {
  public:
   // |task_runner| is where decode_cb and init_cb are posted. Required.
   explicit FFmpegVideoDecoder(
@@ -84,6 +84,6 @@ class IJKPP_MEDIA_EXPORT FFmpegVideoDecoder final : public VideoDecoder {
   SEQUENCE_CHECKER(sequence_checker_);
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_FFMPEG_VIDEO_DECODER_H_
+#endif  // AVBASE_MEDIA_FILTERS_FFMPEG_VIDEO_DECODER_H_

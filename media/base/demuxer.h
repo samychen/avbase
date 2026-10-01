@@ -1,12 +1,12 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `media/base/demuxer.h` (BSD-3-Clause), minus the browser
 // specific parts (MediaResource, mojo, byte-range loaders).
 
-#ifndef IJKPP_MEDIA_BASE_DEMUXER_H_
-#define IJKPP_MEDIA_BASE_DEMUXER_H_
+#ifndef AVBASE_MEDIA_BASE_DEMUXER_H_
+#define AVBASE_MEDIA_BASE_DEMUXER_H_
 
 #include <stdint.h>
 
@@ -25,12 +25,12 @@
 #include "media/base/media_resource.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Everything a Demuxer needs from the player's configuration, expressed in
 // media-layer terms. player::PlayerConfig is mapped into this by PlayerImpl, so
 // media/ never has to know that PlayerConfig exists (invariant C22).
-struct IJKPP_MEDIA_EXPORT DemuxerOptions {
+struct AVBASE_MEDIA_EXPORT DemuxerOptions {
   int64_t probe_size{5 * 1024 * 1024};
   base::TimeDelta analyze_duration{base::Seconds(5)};
   bool find_stream_info{true};
@@ -48,7 +48,7 @@ struct IJKPP_MEDIA_EXPORT DemuxerOptions {
 };
 
 // Statistics a demuxer can report without blocking.
-struct IJKPP_MEDIA_EXPORT DemuxerStats {
+struct AVBASE_MEDIA_EXPORT DemuxerStats {
   int64_t bytes_read{0};
   int64_t physical_position{0};
   int64_t tcp_speed_bytes_per_sec{0};
@@ -58,7 +58,7 @@ struct IJKPP_MEDIA_EXPORT DemuxerStats {
   uint64_t interrupt_count{0};
 };
 
-class IJKPP_MEDIA_EXPORT Demuxer : public MediaResource {
+class AVBASE_MEDIA_EXPORT Demuxer : public MediaResource {
  public:
   // Receives duration updates (live streams) and buffering progress.
   class Host {
@@ -113,6 +113,6 @@ class IJKPP_MEDIA_EXPORT Demuxer : public MediaResource {
   Demuxer();
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_DEMUXER_H_
+#endif  // AVBASE_MEDIA_BASE_DEMUXER_H_

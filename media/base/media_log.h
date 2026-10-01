@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -9,8 +9,8 @@
 // first frame take" could only be answered by grepping timestamps by hand.
 // Events recorded here feed both base/logging and Player::DumpDiagnostics().
 
-#ifndef IJKPP_MEDIA_BASE_MEDIA_LOG_H_
-#define IJKPP_MEDIA_BASE_MEDIA_LOG_H_
+#ifndef AVBASE_MEDIA_BASE_MEDIA_LOG_H_
+#define AVBASE_MEDIA_BASE_MEDIA_LOG_H_
 
 #include <stdint.h>
 
@@ -30,12 +30,12 @@
 #include "media/base/media_constants.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // One structured media event. The (type, properties) shape is what makes the
 // first-frame breakdown and decoder-fallback history queryable instead of
 // buried in prose.
-struct IJKPP_MEDIA_EXPORT MediaLogEvent {
+struct AVBASE_MEDIA_EXPORT MediaLogEvent {
   enum class Level { kInfo, kWarning, kError };
   enum class Type {
     kOpenInput,
@@ -61,10 +61,13 @@ struct IJKPP_MEDIA_EXPORT MediaLogEvent {
   base::TimeTicks wall_time;
 };
 
-IJKPP_MEDIA_EXPORT const char* GetMediaLogEventTypeName(MediaLogEvent::Type type);
-IJKPP_MEDIA_EXPORT const char* GetMediaLogLevelName(MediaLogEvent::Level level);
+AVBASE_MEDIA_EXPORT const char* GetMediaLogEventTypeName(
+    MediaLogEvent::Type type);
+AVBASE_MEDIA_EXPORT const char* GetMediaLogLevelName(
+    MediaLogEvent::Level level);
 
-class IJKPP_MEDIA_EXPORT MediaLog : public base::RefCountedThreadSafe<MediaLog> {
+class AVBASE_MEDIA_EXPORT MediaLog
+    : public base::RefCountedThreadSafe<MediaLog> {
  public:
   REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
 
@@ -97,7 +100,7 @@ class IJKPP_MEDIA_EXPORT MediaLog : public base::RefCountedThreadSafe<MediaLog> 
 };
 
 // Streaming record helper, matching Chromium's MEDIA_LOG macro shape.
-class IJKPP_MEDIA_EXPORT MediaLogRecord {
+class AVBASE_MEDIA_EXPORT MediaLogRecord {
  public:
   MediaLogRecord(MediaLogEvent::Level level, MediaLogEvent::Type type,
                  MediaLog* log);
@@ -117,13 +120,13 @@ class IJKPP_MEDIA_EXPORT MediaLogRecord {
  private:
   MediaLogEvent::Level level_;
   MediaLogEvent::Type type_;
-  base::scoped_refptr<MediaLog> log_;   // Keeps the log alive across the record.
+  base::scoped_refptr<MediaLog> log_;  // Keeps the log alive across the record.
   std::map<std::string, std::string> properties_;
   std::ostringstream stream_;
 };
 
 // Discards the record when |log| is null, so call sites need no null check.
-class IJKPP_MEDIA_EXPORT NullMediaLogRecord {
+class AVBASE_MEDIA_EXPORT NullMediaLogRecord {
  public:
   template <typename T>
   NullMediaLogRecord& operator<<(const T&) { return *this; }
@@ -131,20 +134,20 @@ class IJKPP_MEDIA_EXPORT NullMediaLogRecord {
   NullMediaLogRecord& With(std::string, int64_t) { return *this; }
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
 #define MEDIA_LOG(level, log)                                          \
   !(log) ? (void)0                                                     \
-         : ::ijkpp::base::logging::LogMessageVoidify() &               \
-               ::ijkpp::media::MediaLogRecord(                         \
-                   ::ijkpp::media::MediaLogEvent::Level::k##level,     \
-                   ::ijkpp::media::MediaLogEvent::Type::kProperty, (log))
+         : ::avbase::base::logging::LogMessageVoidify() &               \
+               ::avbase::media::MediaLogRecord(                         \
+                   ::avbase::media::MediaLogEvent::Level::k##level,     \
+                   ::avbase::media::MediaLogEvent::Type::kProperty, (log))
 
 #define MEDIA_LOG_EVENT(level, type, log)                              \
   !(log) ? (void)0                                                     \
-         : ::ijkpp::base::logging::LogMessageVoidify() &               \
-               ::ijkpp::media::MediaLogRecord(                         \
-                   ::ijkpp::media::MediaLogEvent::Level::k##level,     \
-                   ::ijkpp::media::MediaLogEvent::Type::k##type, (log))
+         : ::avbase::base::logging::LogMessageVoidify() &               \
+               ::avbase::media::MediaLogRecord(                         \
+                   ::avbase::media::MediaLogEvent::Level::k##level,     \
+                   ::avbase::media::MediaLogEvent::Type::k##type, (log))
 
-#endif  // IJKPP_MEDIA_BASE_MEDIA_LOG_H_
+#endif  // AVBASE_MEDIA_BASE_MEDIA_LOG_H_

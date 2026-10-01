@@ -172,7 +172,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | `ffmpeg_demuxer.{h,cc}` | open 时安装 log bridge（否则 FFmpeg 失败原因不可见）；网络专用选项按 URI 协议门控（reconnect*/user_agent/headers 传给本地文件只会变成 Δ2 的"未消费选项"噪音） | |
 | `player/player.cc` | 改为纯转发到 PlayerImpl；RunUntilIdle/StepOnce/TakeSnapshot/UpdateConfig/SelectTrack/ReconnectNow 保持 kNotImplemented 并指明里程碑（M9+） | |
 | `base/synchronization/lock.h` | `Lock` 补 `CAPABILITY("mutex")`、`AutoLock` 补 `SCOPED_LOCKABLE` + `EXCLUSIVE_LOCK_FUNCTION`；新增 `EXCLUSIVE_LOCKS_REQUIRED` 宏 | 注解此前不成立：`GUARDED_BY` 从未真正生效，且每处 `GUARDED_BY` 自己又产生一条诊断 |
-| `cmake/IjkppCompilerFlags.cmake` | `-Wuseless-cast` 移入 GCC 专有列表 | clang 报 unknown warning option，`-Werror` 下 debug 预设无法编译 |
+| `cmake/AvbaseCompilerFlags.cmake` | `-Wuseless-cast` 移入 GCC 专有列表 | clang 报 unknown warning option，`-Werror` 下 debug 预设无法编译 |
 | 24 个文件的头注释 | 修复第十轮脚本把新段落插进旧句子中间留下的断句、重复的 `(promoted from DRAFT, tenth round)` 与重复空注释行 | 纯重排与合并，除重复片段外未改字面 |
 | `.github/workflows/ci.yml` · `CMakePresets.json` | 骨架 job 变真：新增 `ffmpeg`（发行版 FFmpeg，359 用例）、`e2e-headless`（5 个样本播到结束）、`sdl2-build`（Linux 上编译 SDL2 后端）；新增 `ffmpeg` 预设，`linux-sdl2` 补上 FFmpeg | 带 FFmpeg 的配置与端到端此前从未在 CI 跑过（`ffmpeg-matrix` / `e2e-linux` 一直是 `if: false`）；`linux-sdl2` 因缺 FFmpeg 连 `play_sdl2` 都建不出来 |
 | `base/synchronization/lock.cc` · `tests/unit/base/synchronization_unittest.cc` | `ObservedOrder()` 补 `thread_local`；新增 `LockTest.ConcurrentOrderRecordingIsRaceFree` | #44 |
@@ -180,7 +180,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | `tests/support/*` · 三个渲染器套件（`renderer_impl` · `video_renderer_impl` · `audio_renderer_impl`） | 渲染器直接单测：脚本化输入、可编排解码器、手动拉动的双 sink、记录型 renderer client（`renderer_client.h` 里点名"not written yet"的那个）。14 个用例覆盖启动契约（只报一次、绝不内联、视频 sink 在解码器就绪时开、音频设备在 StartPlayingFrom 才开）、结束契约（双流排空 + 尾帧必须发布）、暂停门控（视频不出新帧；音频报静音且不计 underrun）、以及 flush 后的串号隔离（两侧都不许放行旧 serial 的帧） | 第十轮的 12 个渲染器 bug 全靠端到端发现；这套件当场抓出 #47/#48/#49，三处产品修复随它一起进 |
 | `tests/unit/media_filters/pipeline_seek_unittest.cc` · `tests/support/{fake_sink_factories,fake_pipeline_client}.{h,cc}` | 管线级 seek 契约（docs/07 §5 首条）："SeekTo(5s) 后落地帧 ∈ 150–152"+"落地后旧世代不再出现"，`DefaultRendererFactory` 组装 + S1/S3/S4 三条真线程 + 手动泵双 sink，注入点就是 `Pipeline::Start()` 的 demuxer 参数（产品代码零改动） | 压力 100/100；连带抓出 #51/#52。等待全部有界单向、渲染只由泵驱动，是它和被撤回首版的全部差别 |
 | `tools/check_invariants.py` | 门禁收敛：17 条 → **7 条结构规则**（C1 文件规模 · C4/C5/C22 分层 · C23 列宽棘轮 · C24/C25 构建覆盖），删 10 条风格类（C18 抛异常/C20 命名空间失衡本就是编译器必报；C7/C9/C14/C17/C21 是 taste；C2 函数长度、C8 版本守卫、C11 目录配对按"违规即藏缺陷"标准不再保留）。**规则 ID 不重编**，历史可 grep | 文件 680 → 509 行；探针验证：被砍规则不再报、游离 `.cc` 仍被 C25 拒绝（exit 1）；docs/06 §9 与 docs/07 检查单同步 |
-| 10 个 `CMakeLists.txt` · `cmake/IjkppCheckInvariants.cmake` · `tools/check_invariants.py` | 源文件列举定成一条规则（docs/06 §7.6）：目录成员 == 目标成员处改用 `file(GLOB ... CONFIGURE_DEPENDS)`（`media/base` · `media/renderers` · `media/filters/legacy` · `player` · `platform/{ffmpeg,sdl2}` · `tools/inspect` · `tests/unit/{base,media_base,player}`），其余四处（`media/filters` · `tests/unit/media_filters` · `base` · `examples`）保持显式并在文件里写明理由。**新增门禁 C25**：每个 `.cc` 必须被某个目标覆盖（显式列表，或规则自己展开的 glob），否则非零退出 | 新增文件不必再改 CMake，Ninja 在构建时重跑 glob（`[0/N] Re-checking globbed directories...`）。C24 管"列出的文件存在"，C25 管"存在的文件被编译"——两个方向都不再静默。`aux_source_directory` 明确不用：不递归，且新增文件不触发 CMake 重配（CMake 官方文档警示的正是这一点）。实测 108 个 (target, source) 与改动前逐一相同 |
+| 10 个 `CMakeLists.txt` · `cmake/AvbaseCheckInvariants.cmake` · `tools/check_invariants.py` | 源文件列举定成一条规则（docs/06 §7.6）：目录成员 == 目标成员处改用 `file(GLOB ... CONFIGURE_DEPENDS)`（`media/base` · `media/renderers` · `media/filters/legacy` · `player` · `platform/{ffmpeg,sdl2}` · `tools/inspect` · `tests/unit/{base,media_base,player}`），其余四处（`media/filters` · `tests/unit/media_filters` · `base` · `examples`）保持显式并在文件里写明理由。**新增门禁 C25**：每个 `.cc` 必须被某个目标覆盖（显式列表，或规则自己展开的 glob），否则非零退出 | 新增文件不必再改 CMake，Ninja 在构建时重跑 glob（`[0/N] Re-checking globbed directories...`）。C24 管"列出的文件存在"，C25 管"存在的文件被编译"——两个方向都不再静默。`aux_source_directory` 明确不用：不递归，且新增文件不触发 CMake 重配（CMake 官方文档警示的正是这一点）。实测 108 个 (target, source) 与改动前逐一相同 |
 
 ### (3) 本轮抓到的 bug（接通播放 = 第一条真正跑全链路的路径，收获很大）
 
@@ -198,7 +198,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | 44 | 锁序检查器的"已观测顺序"表是**所有线程共享**的 `std::vector`（旁边那张 held 栈写了 `thread_local`，这张漏了），而记录发生在取锁之前 → 并发 `push_back` 直接踩坏堆。表现：`headless` 在 6 路并发下约 1/36 次**静默** `SIGABRT`/`SIGTRAP`（`libmalloc: pointer being freed was not allocated`，栈落 `TaskQueue::PostDelayedTaskImpl` → `AutoLock` → `AssertAcquiredInOrder`），播放本身看不出任何异常 | 🔴 数据竞争（**早于第十轮**，由"把 CI e2e 变成真 job"时的抖动调查发现） |
 | 44 | RendererImpl::Flush 完成回调从 S3 直达 PipelineImpl | 🔴 跨 sequence |
 | 45 | PipelineImpl 并行初始化 demuxer 和 renderer，后者拿到零条流报 kMissingDemuxerStreams（首跑的"StreamNotFound"假象） | 🔴 编排顺序 |
-| 46 | **macOS 移植四件**：根目录 `VERSION` 文件在大小写不敏感 FS 上遮蔽 libc++ 的 `<version>`（改名 VERSION.txt）；`pthread_setname_np` 平台差异（统一截断 15 字符）；FindFFmpeg 的 pkg-config 分支 include 目录经 `PkgConfig::` 中转后丢失（改为从 PC_* 变量直构）；`ijkpp-inspect` 因 FFmpeg PRIVATE 链接拿不到头（显式链接） | 🟠 平台 |
+| 46 | **macOS 移植四件**：根目录 `VERSION` 文件在大小写不敏感 FS 上遮蔽 libc++ 的 `<version>`（改名 VERSION.txt）；`pthread_setname_np` 平台差异（统一截断 15 字符）；FindFFmpeg 的 pkg-config 分支 include 目录经 `PkgConfig::` 中转后丢失（改为从 PC_* 变量直构）；`avbase-inspect` 因 FFmpeg PRIVATE 链接拿不到头（显式链接） | 🟠 平台 |
 | 50 | **seek 后新世代一帧都到不了显示**：`RendererImpl::Flush` 用 `av_sync_->master_serial()`（**seek 前**的音频时钟 serial）去 flush 视频解码流，而真实 demuxer 的队列在 seek 时会 bump serial（`DecoderBufferQueue::Flush()`，注释写明"这就是关键"）——于是解码流按上一代过滤，把新世代的包全部丢弃，seek 之后视频永久停摆。headless 端到端看不见：null sink 不数帧，kCompleted 只要求 EOS | 🔴 编排缺陷（合成源 + 管线级夹具发现；修法：子渲染器在 `StartPlayingFrom`（demuxer 已完成 seek）采纳新世代，走 `DecoderStream::AdoptSerial()`；先试过用 `Flush()` 采纳——它会以 kDecodingAborted 收掉在途读、泵不再被重新武装，真实 seek 3/4 挂） |
 | 47 | **init 回调内联**：`RendererImpl::Initialize` 的缺流错误路径直接 `std::move(init_cb).Run(...)`，违反 renderer.h 的"绝不内联、调用方可在回调里销毁状态"——调用方会在 `Initialize()` 还在栈上时被重入 | 🔴 契约违背（新单测发现；已改为与成功路径同一条 hop） |
 | 48 | **音频 EOS 尾帧永不发布**：`MarkEndOfStream()` 只翻标志不搬帧，而 `PreStretch()` 只在 `OnDecoderOutput` 与"恢复暂停"时调用。解码器一次输出的帧数大于设备周期时，EOS 到达那一刻环是满的 → 泵因背压停摆、此后无人搬运 → `buffered_frames()` 永不归零 → `CheckForEnded()` 永不报 `OnEnded`（"播完了但不结束"）。设备周期与解码粒度相同时不触发，这正是端到端一直没遇到它的原因 | 🔴 逻辑缺口（新单测发现；修法：`PumpDecoder()` 在 `ended_` 后仍搬运一次尾帧） |
@@ -225,7 +225,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
    连续循环）修 #51 前在第 68 轮 SEGV、修后完整跑完 **0 报告**；TSan 下
    `headless --seek 1.5` 连跑 **20 次全部 exit=0**
 ✅ 严格告警配置覆盖 FFmpeg 层：`debug`（Debug + 严格告警 + `-Werror` + FFmpeg）实测
-   **0 警告**；此前该预设沿用 `IJKPP_ENABLE_FFMPEG=OFF`，FFmpeg 适配层
+   **0 警告**；此前该预设沿用 `AVBASE_ENABLE_FFMPEG=OFF`，FFmpeg 适配层
    （`platform/ffmpeg/*` 与 `media/filters/ffmpeg_*.cc`）从未进过严格门禁。
    合成源是这条门禁扩宽后写下的第一批代码：同样 0 警告
 ✅ 合成源自测 6 例 + 合成解码器 4 例（348/348 · 383/383 内含），耗时 **0 ms**
@@ -290,7 +290,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
    `CreateDemuxer` 一处），以及 `FFmpegDemuxerStream::FulfilPendingReadLocked` 这类
    "约定持锁却没写注解"的助手。两件都已完成（该助手现在写着 `EXCLUSIVE_LOCKS_REQUIRED`）。
    **顺带查出一个门禁空洞并修掉**：严格告警 + `-Werror` 只在 `debug` 预设里，而它沿用
-   `IJKPP_ENABLE_FFMPEG` 的默认 OFF——FFmpeg 适配层从未被严格配置编过，所以"零警告"
+   `AVBASE_ENABLE_FFMPEG` 的默认 OFF——FFmpeg 适配层从未被严格配置编过，所以"零警告"
    只覆盖了不含 FFmpeg 的那半棵树，而那一层恰恰是 `-Wthread-safety` 最常说话的地方之一。
    `debug` 现在打开 FFmpeg（实测 Debug + 严格告警 + `-Werror` + FFmpeg：0 警告、
    373/373 通过），理由写进 BUILDING §3.3。**strict job 已进 CI**（`strict`，clang 编译，
@@ -320,12 +320,12 @@ in the LICENSE file"，而仓库里没有 LICENSE 文件**；同时 `video_frame
 |---|---|
 | 新增根 `LICENSE` | BSD-3-Clause 全文 + 4 节第三方/衍生说明（legacy LGPL · base/ 镜像 Chromium BSD-3 · platform/ffmpeg 适配层与系统 FFmpeg 的许可证边界 · testdata 为 lavfi 合成）+ 维护者注记（Q1 未决） |
 | 新建 `media/filters/legacy/` | `git mv` 三对文件（compositor / av_sync / clock，共 6 个），**保留 git 历史** |
-| 重写 6 个文件头 | LGPL-2.1-or-later 通知 + Zhang Rui / Bilibili / Fabrice Bellard / ijkpp Authors 四方版权 + **"为什么这个文件是 LGPL 而不是 BSD-3"** + 指回 `legacy/README.md`；原有 `ALGORITHM PROVENANCE` 段完整保留 |
+| 重写 6 个文件头 | LGPL-2.1-or-later 通知 + Zhang Rui / Bilibili / Fabrice Bellard / avbase Authors 四方版权 + **"为什么这个文件是 LGPL 而不是 BSD-3"** + 指回 `legacy/README.md`；原有 `ALGORITHM PROVENANCE` 段完整保留 |
 | 新增 `legacy/LICENSE.LGPL-2.1` | LGPL-2.1 全文 501 行（取自 gnu.org，§0–§16 齐全） |
 | 新增 `legacy/README.md` | 目录内清单 + **准入/禁入规则**（按"算法出处"而非"新旧/难度"判定）+ 动态链接与静态链接两种情形下集成方的义务 + 若必须纯 BSD 的应急路径（R8：重新独立推导，+2 周） |
 | 更新 `media/CMakeLists.txt` | 三个 .cc 改为 `filters/legacy/` 路径，并注明隔离原因 |
 | 更新 7 处 include | `legacy/*.cc`、`legacy/av_sync_controller.h`、2 个单测、`tools/inspect/inspect_sync.cc` |
-| 更新 3 个头文件卫士 | `IJKPP_MEDIA_FILTERS_*_H_` → `IJKPP_MEDIA_FILTERS_LEGACY_*_H_`（路径与卫士一致是既有约定） |
+| 更新 3 个头文件卫士 | `AVBASE_MEDIA_FILTERS_*_H_` → `AVBASE_MEDIA_FILTERS_LEGACY_*_H_`（路径与卫士一致是既有约定） |
 | 更新 `tools/check_invariants.py` | `LINE_LIMIT_ALLOWLIST` 的 compositor 键改为 legacy 路径，理由里补注隔离说明 |
 
 **验证**：`python3 tools/check_invariants.py --root .` → **all rules pass (166 files scanned)**。
@@ -348,15 +348,15 @@ by tools/extract_constants.py, never retyped by hand" —— 工具此前并不�
 本轮补齐，19 个常量的**三方交叉校验**：
 
 ```
-ffplay 源码 (#define)  ⟷  ijkpp 代码 (constexpr / 默认成员初始化器 / 尾注释)  ⟷  docs/05 表 7
+ffplay 源码 (#define)  ⟷  avbase 代码 (constexpr / 默认成员初始化器 / 尾注释)  ⟷  docs/05 表 7
 ```
 
 - `--ijkplayer <path>`：从 `ff_ffplay_def.h` / `ff_ffplay_options.h` / `ff_ffplay.c` /
   `ff_ffplay.h` 递归解析 `#define`（支持 `15*1024*1024` 这类乘积与宏引用宏），
-  再解析 ijkpp 侧三种写法，逐项比对，不一致即 **exit 1**
+  再解析 avbase 侧三种写法，逐项比对，不一致即 **exit 1**
 - `--selftest`：不需要 ijkplayer 源码树即可跑——用内嵌的合成 `#define` 片段验证
   解析器本身（递归展开、乘积、`_MS`/`_US` 单位换算、十六进制），并跑
-  "ijkpp ⟷ docs/05 表 7" 两方校验。**这是 CI 可以无条件启用的那一半**
+  "avbase ⟷ docs/05 表 7" 两方校验。**这是 CI 可以无条件启用的那一半**
 - `--json`：机器可读输出，供后续 `tools/golden_diff.py` 与 CI 消费
 - `--emit`：生成 `media_constants.h` 的常量块（M13 收口时用生成物替换手写值）
 
@@ -381,7 +381,7 @@ ffplay 源码 (#define)  ⟷  ijkpp 代码 (constexpr / 默认成员初始化器
 | 文件 | 行数 | 职责 |
 |---|---|---|
 | `tools/ported_constants.py` | 222 | **数据**：`Spec` 类 · 26 条 `SPEC` 表 · 单位常量与 `convert()`/`canonicalise()` · 自测用的合成 `#define` 与期望值 |
-| `tools/extract_constants.py` | 547 | **逻辑**：C `#define` 解析器 · ijkpp 三种写法的扫描器 · docs/05 表 7 解析 · 三方比对 · 报告 / `--json` / `--emit` · `--selftest` |
+| `tools/extract_constants.py` | 547 | **逻辑**：C `#define` 解析器 · avbase 三种写法的扫描器 · docs/05 表 7 解析 · 三方比对 · 报告 / `--json` / `--emit` · `--selftest` |
 
 拆分的理由写在 `ported_constants.py` 的头注释里：这张表是**每个里程碑都会长**的
 部分（M9 加缓冲常量、M12 加显示常量），而"审计 A/V 同步阈值是否仍是 ffplay 的原值"
@@ -395,7 +395,7 @@ ffplay 源码 (#define)  ⟷  ijkpp 代码 (constexpr / 默认成员初始化器
 | a | 单位换算比写反（`/ UNITS_PER_SECOND[to] * [from]`） | `base::Seconds(5)` 被算成 0.005 ms，所有时间常量全部 MISMATCH |
 | b | 用"是不是非整数浮点"猜源单位 | **`AV_NOSYNC_THRESHOLD 10.0` 是整数值的秒**，被当成 10 ms → 静默通过一个 1000× 的错误。这是本轮最重要的一次自我纠错：猜单位的启发式在 ffplay 上根本不成立，改为 `Spec.source_unit` 显式声明 |
 | c | 取字段初始化器时只匹配到第一个数字 | `size_t max_bytes{15 * 1024 * 1024}` 被读成 **15 字节**，而 `media_constants.h` 那一份是 15728640 → 两份不一致却被判为一致 |
-| d | 结构体作用域名把导出宏当成名字 | 全部记成 `IJKPP_PLAYER_EXPORT::first_high_water_mark`，`BufferConfig::*` 一个都查不到，6 项假性 NOT_IN_IJKPP |
+| d | 结构体作用域名把导出宏当成名字 | 全部记成 `AVBASE_PLAYER_EXPORT::first_high_water_mark`，`BufferConfig::*` 一个都查不到，6 项假性 NOT_IN_AVBASE |
 
 **验证**（正向 + 三种失败模式）：
 
@@ -403,13 +403,13 @@ ffplay 源码 (#define)  ⟷  ijkpp 代码 (constexpr / 默认成员初始化器
 $ tools/extract_constants.py --selftest
   → exit 0 · 24 项一致 · 1 项 Δ4 声明偏离 · 1 项待 M9（BUFFERING_CHECK_*）
 $ tools/extract_constants.py --ijkplayer <合成的 ffplay 源码树>
-  → exit 0 · 三方全部一致（ffplay ⟷ ijkpp ⟷ docs/05 表 7）
+  → exit 0 · 三方全部一致（ffplay ⟷ avbase ⟷ docs/05 表 7）
 # 负向 1：把 AV_SYNC_THRESHOLD_MIN 从 0.04 改成 0.4（最典型的手抄错）
-  → AV_SYNC_THRESHOLD_MIN  ms  ffplay=400  ijkpp=40  docs/05=40  MISMATCH · exit 1
+  → AV_SYNC_THRESHOLD_MIN  ms  ffplay=400  avbase=40  docs/05=40  MISMATCH · exit 1
 # 负向 2：删掉 MAX_SLEEP 宏
-  → MAX_SLEEP  us  ffplay=-  ijkpp=1e+06  NOT_IN_FFP · exit 1
+  → MAX_SLEEP  us  ffplay=-  avbase=1e+06  NOT_IN_FFP · exit 1
 # 负向 3：把 DEFAULT_MIN_FRAMES 改成 2（模拟 fork 差异）
-  → DEFAULT_MIN_FRAMES  n  ffplay=2  ijkpp=5  docs/05=5  MISMATCH · exit 1
+  → DEFAULT_MIN_FRAMES  n  ffplay=2  avbase=5  docs/05=5  MISMATCH · exit 1
 $ --json  → 26 行结构化输出（供 golden_diff.py / CI 注解消费）
 $ --emit  → 28 行带出处的注释块（M13 用它替换 media_constants.h 的手写值）
 ```
@@ -423,8 +423,8 @@ $ --emit  → 28 行带出处的注释块（M13 用它替换 media_constants.h �
   "macro absent from docs/05 table 7" 的 note 而不是失败。多宏共用一行（`3 / 2 / 16`）
   时判为"歧义行"，只记 note。宁可漏报也不误报，与 `check_invariants.py` 的
   保守取向一致。
-- 只认 3 种 ijkpp 写法（`inline constexpr` / 默认成员初始化器 / 尾注释标注宏名）。
-  若有人把阈值改成局部 `const double` 或函数参数默认值，工具会报 NOT_IN_IJKPP
+- 只认 3 种 avbase 写法（`inline constexpr` / 默认成员初始化器 / 尾注释标注宏名）。
+  若有人把阈值改成局部 `const double` 或函数参数默认值，工具会报 NOT_IN_AVBASE
   而不是静默通过——这是想要的行为。
 
 #### 顺带修的两处仓库卫生
@@ -576,14 +576,14 @@ protected。所以 `MakeRefCounted<DataSource>()` / `MakeRefCounted<MediaLog>()`
 建议：给 `ptr_util.h` 加 `WrapRefCounted`（约 5 行，与 `scoped_refptr` 的 adopt 语义配合），
 并把这个缺口记进 M9 的前置。
 
-**F4 · `player/public/version.h` include 了生成头 `ijkpp/Version.h`**
+**F4 · `player/public/version.h` include 了生成头 `avbase/Version.h`**
 
 源树里没有这个文件（`CMakeLists.txt:52` 用 `configure_file` 生成到
-`${CMAKE_BINARY_DIR}/generated/ijkpp/Version.h`），所以**公开头不是自包含的**：
+`${CMAKE_BINARY_DIR}/generated/avbase/Version.h`），所以**公开头不是自包含的**：
 `install` 之后必须把 generated 目录一起装并加进 include path，否则下游
-`find_package(ijkpp)` 后 `#include <ijkpp/player.h>` 会因 `global.h → version.h` 断链。
+`find_package(avbase)` 后 `#include <avbase/player.h>` 会因 `global.h → version.h` 断链。
 不是 bug（构建时成立），但是 **M8 DoD "install 后下游 find_package 可用" 的一个隐藏前置**，
-`cmake/IjkppInstall.cmake`（尚不存在）必须处理它。
+`cmake/AvbaseInstall.cmake`（尚不存在）必须处理它。
 
 #### 据此对七个 DRAFT 头做的修改（改自己的，不改 frozen 的）
 
@@ -682,8 +682,8 @@ constexpr scoped_refptr<T> WrapRefCounted(const scoped_refptr<T>& p);  // 免写
 
 ```cpp
 #define REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE()                  \
-  static_assert(sizeof(::ijkpp::base::subtle::AdoptionHelper) > 0, "");  \
-  friend class ::ijkpp::base::subtle::AdoptionHelper
+  static_assert(sizeof(::avbase::base::subtle::AdoptionHelper) > 0, "");  \
+  friend class ::avbase::base::subtle::AdoptionHelper
 ```
 
 - `static_assert(sizeof(...) > 0, "")` 是**恒真**的；
@@ -723,7 +723,7 @@ constexpr scoped_refptr<T> WrapRefCounted(const scoped_refptr<T>& p);  // 免写
 
 **标为 DRAFT 的理由**：本环境无编译器，**它从未被编译过**。已按第五轮的规矩
 登记进 `tests/CMakeLists.txt` 的 `base_unittests`（`no-ffmpeg` preset 就能跑，
-只依赖 `ijkpp::base` + GTest），但**不得计入 287/322 的用例总数**，
+只依赖 `avbase::base` + GTest），但**不得计入 287/322 的用例总数**，
 直到真实构建跑绿。文件头写明了"第一次 `ctest --preset no-ffmpeg` 跑绿后删掉这段横幅"。
 
 #### 人工复核这份测试时抓到我自己写的一个编译错误
@@ -764,8 +764,8 @@ STYLE.md 与 `.clang-format` 都规定 80 列，但 `base/memory/scoped_refptr.h
 | 检查 | 方法 | 结果 |
 |---|---|---|
 | CMakeLists 引用了不存在的源文件 | 解析全部 7 个 CMakeLists 的 `add_library`/`add_executable` 源列表 | **0 处** |
-| CMakePresets 引用了未声明的选项 | 提取 20 个 cacheVariable，与 `cmake/IjkppOptions.cmake` 的声明集比对 | **0 处**（`IJKPP_ENABLE_ANDROID`、`IJKPP_FFMPEG_ROOT` 等全部有声明） |
-| 无人引用的孤儿文件 | `tools/setup_ffmpeg.sh` 是唯一候选 | **不是死代码**：`cmake/FindFFmpeg.cmake` 在 3 处引用它（三级查找的第 3 级、错误提示、`IJKPP_FFMPEG_ROOT` 的来源），且 `linux-ffmpeg711` preset 依赖它 |
+| CMakePresets 引用了未声明的选项 | 提取 20 个 cacheVariable，与 `cmake/AvbaseOptions.cmake` 的声明集比对 | **0 处**（`AVBASE_ENABLE_ANDROID`、`AVBASE_FFMPEG_ROOT` 等全部有声明） |
+| 无人引用的孤儿文件 | `tools/setup_ffmpeg.sh` 是唯一候选 | **不是死代码**：`cmake/FindFFmpeg.cmake` 在 3 处引用它（三级查找的第 3 级、错误提示、`AVBASE_FFMPEG_ROOT` 的来源），且 `linux-ffmpeg711` preset 依赖它 |
 | 构建产物 / 临时文件 | `git status` + 全仓扫描 | 干净；`__pycache__` 已在第九轮加进 `.gitignore` |
 
 **结论：本轮不删任何文件**，并把审计方法记录在此，便于以后同样“先证后删”。
@@ -776,7 +776,7 @@ STYLE.md 与 `.clang-format` 都规定 80 列，但 `base/memory/scoped_refptr.h
 原 §8 标题是“仓库布局（**规划**）”，但树里 `examples/`（12 个示例）、
 `tools/gen_options.py`、`golden_record.py`、`media/renderers/`、`media/audio/`、
 `platform/null|sdl2|linux/`、`tests/contract|golden|fuzz|...`、`third_party/`、
-`.clang-tidy`、`.editorconfig`、`cmake/FindLinuxMediaDeps|IjkppInstall|ijkpp.map`
+`.clang-tidy`、`.editorconfig`、`cmake/FindLinuxMediaDeps|AvbaseInstall|avbase.map`
 **全部不存在**，而树里没有任何标记区分“已有”和“规划”。这与 README 别处声称的进度
 （“M0–M6 ✅”）叠在一起，读者会以为示例和后端已经有了。
 
@@ -823,11 +823,11 @@ STYLE.md 与 `.clang-format` 都规定 80 列，但 `base/memory/scoped_refptr.h
 | `media/filters/av_sync_controller.{h,cc}` | `media/filters/legacy/av_sync_controller.{h,cc}` |
 | `media/filters/clock.{h,cc}` | `media/filters/legacy/clock.{h,cc}` |
 | `media/filters/video_frame_queue.{h,cc}` | `media/base/video_frame_queue.{h,cc}`（**从来如此**，docs/05 笔误已修） |
-| 卫士 `IJKPP_MEDIA_FILTERS_{VIDEO_FRAME_COMPOSITOR,AV_SYNC_CONTROLLER,CLOCK}_H_` | 中间加 `_LEGACY` 段 |
+| 卫士 `AVBASE_MEDIA_FILTERS_{VIDEO_FRAME_COMPOSITOR,AV_SYNC_CONTROLLER,CLOCK}_H_` | 中间加 `_LEGACY` 段 |
 
 #### 关于“提交”：本环境无法 push
 
-`git remote -v` 显示 `origin https://github.com/samychen/ijkpp.git`，
+`git remote -v` 显示 `origin https://github.com/samychen/avbase.git`，
 但**沙箱里没有凭据**（`.git/config`、`.git-credentials`、`.netrc` 都在快照排除清单里，
 且网络出口不通：用 `urllib` 取 gnu.org 直接 `Network is unreachable`）。
 所以本轮全部工作**已 commit 到本地分支 `fill-gaps`，未 push**。
@@ -935,7 +935,7 @@ docs/05 表 4（规格，表头自称"已核对原文"）
 
 **当前结果**：`findings: 0`（63→66 个可发射 key 全部与两个权威一致）·
 **A10 = 9/66**（缺 54 个）· 13 个 `PlayerConfig` 字段无 legacy key（`shutdown_timeout`、
-`stats_interval`、`video.hdr_tone_mapping`、`data_source.cache_*` 等都是 ijkpp 新增，
+`stats_interval`、`video.hdr_tone_mapping`、`data_source.cache_*` 等都是 avbase 新增，
 本来就不该有）。
 
 #### 14 种 kind：迁移不是恒等映射
@@ -1035,7 +1035,7 @@ R1 应对④（"阈值用工具提取，禁止手抄"）适用于**任何**移�
 用抓取工具从 `chromium.googlesource.com`（`refs/heads/main`，2026-09-29）取回
 `media/filters/audio_renderer_algorithm.cc` 全文，逐条摘录并在代码里标注原标识符：
 
-| ijkpp 常量 | 值 | Chromium 原名 |
+| avbase 常量 | 值 | Chromium 原名 |
 |---|---|---|
 | `kOlaWindowSize` | 20 ms | `kOlaWindowSize` |
 | `kWsolaSearchInterval` | 30 ms | `kWsolaSearchInterval` |
@@ -1090,7 +1090,7 @@ R1 应对④（"阈值用工具提取，禁止手抄"）适用于**任何**移�
 | b | 注释重排脚本把 `wsola_internals.h` 的 **DRAFT 标记跨行拆开**（`STATUS:` 在行尾、`DRAFT` 在下一行），而 `check_invariants.py` 匹配的是字面子串 `"STATUS: DRAFT"` → **文件被静默取消 DRAFT 资格**，转而受风格/长度规则约束 | 人工核对 6 个文件的 DRAFT 计数时发现（`grep -c` 得 0） | 标记独立成行，并在该处写明"不得被重排进段落"。★这暴露了标记机制本身的脆弱性：**一次注释 reflow 就能悄悄改变一个文件的治理状态** |
 | c | 用了 `M_PI`，而 `M_PI` 是 POSIX 扩展不是标准 C++；本项目 `CMAKE_CXX_STANDARD 20` 且未关 `CXX_EXTENSIONS`，所以现在能用，但一旦设 `CXX_EXTENSIONS OFF` 或换严格工具链就编译不过 | 全仓 grep `M_PI` 发现**只有我的新文件在用**，无先例 | 自定义 `internal::kPi`（Chromium 也是定义 `base::kPiDouble` 而非用 `M_PI`）；测试文件同理 |
 | d | 测试里写了个**不存在的函数** `FillBufferModeExpectation()`；另有 `FillBuffer` 前断言 `last_fill_mode()` 的位置错误（`last_mode_` 默认就是 `kPassthrough`，**先断言等于永真**） | 人工复读 | 改为 `AudioRendererAlgorithm::FillBufferMode::kPassthrough` 并移到调用之后，注释说明为什么位置有关系 |
-| e | `RunOneWsolaIteration` 缺**输出缓冲余量检查**：Chromium 的调用方总是请求一整个设备缓冲，所以 `num_complete_frames_` 不会超过一个 hop；而 ijkpp 的 `FillBuffer()` 接受任意 `requested_frames`，**一个只请求几帧的调用方会让它无界增长并写越界** | 对着 Chromium 的调用假设逐条比对自己的接口 | 加了 `num_complete_frames_ + ola_window_size_ > wsola_output_->frames()` 就拒绝本次迭代（调用方这次少拿几帧、下次排空），并注释说明这是**比 Chromium 多的一道防线及其原因** |
+| e | `RunOneWsolaIteration` 缺**输出缓冲余量检查**：Chromium 的调用方总是请求一整个设备缓冲，所以 `num_complete_frames_` 不会超过一个 hop；而 avbase 的 `FillBuffer()` 接受任意 `requested_frames`，**一个只请求几帧的调用方会让它无界增长并写越界** | 对着 Chromium 的调用假设逐条比对自己的接口 | 加了 `num_complete_frames_ + ola_window_size_ > wsola_output_->frames()` 就拒绝本次迭代（调用方这次少拿几帧、下次排空），并注释说明这是**比 Chromium 多的一道防线及其原因** |
 
 #### 三处刻意偏离 Chromium（都写进了注释）
 
@@ -1104,7 +1104,7 @@ R1 应对④（"阈值用工具提取，禁止手抄"）适用于**任何**移�
 3. **EOS 尾部排空**：到流末尾时队列永远不会长到能再凑出一个完整窗口，
    于是把尾巴**原样发出**而不是丢掉。丢最后 ~20ms 听不出来，但每首都丢就是被截断的结尾。
 
-另外 `FillBufferMode::kResampler` **没有实现**（ijkpp 还没有 `MultiChannelResampler`），
+另外 `FillBufferMode::kResampler` **没有实现**（avbase 还没有 `MultiChannelResampler`），
 所以 `SetPreservesPitch(false)` 目前**记一次 `LOG(WARNING)` 后继续走 WSOLA**——
 时长对、音高错。选这个方向是因为"音高错但时长对"对 A/V 同步是两者中较安全的错误，
 且日志让它无法被误认为正常行为。已在头文件列为 gap 4：**M13 前必须要么实现要么明确拒绝**。
@@ -1142,7 +1142,7 @@ R1 应对④（"阈值用工具提取，禁止手抄"）适用于**任何**移�
 ```
 
 **离开 DRAFT 的前置条件**（按顺序）：编译 → 跑 17 个用例并按实测收紧容差 →
-对 `Similarity()` 与 Chromium 做 diff 并记录结论 → 接进 `ijkpp_media` 与
+对 `Similarity()` 与 Chromium 做 diff 并记录结论 → 接进 `avbase_media` 与
 `media_filters_unittests` → 摘掉 4 个文件里的 DRAFT 横幅 → 处理 555 行的 C1 问题。
 
 ### (3h) `AudioRendererImpl` —— 以及一个由算术揭穿的设计矛盾
@@ -1180,7 +1180,7 @@ FillBuffer(1024 帧) ≈ 1024/480 ≈ 2.1 次迭代 → ≈ 18 ms（按 2 GFLOP/
 #### 处置：S4 预拉伸 + 环形就绪块交接
 
 ```
-S4 ijkpp-audio（独占）        环形（handoff_lock_，只护 O(1) 索引）      S7 设备线程
+S4 avbase-audio（独占）        环形（handoff_lock_，只护 O(1) 索引）      S7 设备线程
 DecoderStream<Audio> ─┐
 AudioRendererAlgorithm ├─ FillBuffer() ─► [4 × frames_per_buffer] ─► 拷贝 + Scale
 （8–18ms 的 DSP 在这里）┘                                            + seqlock 写时钟
@@ -1275,15 +1275,15 @@ M7 的渲染三件套（`RendererImpl` / `VideoRendererImpl` / `AudioRendererImp
 
 #### ★一处对 docs/04 §1 线程表的刻意偏离（提出而非偷改）
 
-docs/04 的线程表把 **compositor 的写侧放在 S1**（`ijkpp-media`，`RendererImpl` 所在），
-S3（`ijkpp-video`，`VideoRendererImpl` 所在）只写"VideoFrameCompositor 的**部分读**"。
+docs/04 的线程表把 **compositor 的写侧放在 S1**（`avbase-media`，`RendererImpl` 所在），
+S3（`avbase-video`，`VideoRendererImpl` 所在）只写"VideoFrameCompositor 的**部分读**"。
 照字面执行意味着：S3 解出一帧 → PostTask 到 S1 → S1 调 `PutCurrentFrame()`。
 
 **本实现没有这样做**，解码泵与 `PutCurrentFrame()` 都在 S3。三条理由写在头文件里：
 
 1. **解码与发布是一个因果步骤**。拆开就在"解码器产出第 N 帧"与"compositor 可以显示第 N 帧"
    之间插入一个队列和一次任务跳转，而那个队列是**第二个**可能丢帧、乱序、seek 后滞留的地方。
-   ijkpp 已经有一个这样的队列（`VideoFrameQueue`）；为满足一行表格而加第二个隐式队列，
+   avbase 已经有一个这样的队列（`VideoFrameQueue`）；为满足一行表格而加第二个隐式队列，
    正是 ffplay 变成 `pictq` + `sampq` + refresh 线程三条路径的方式。
 2. compositor **内部有锁**，且它的读侧 `Render()` 本来就跑在 sink 的序列（S6）。
    所以把写侧从 S1 挪到 S3 **不产生数据竞争**，只是改变了"由哪个序列串行化"。
@@ -1480,7 +1480,7 @@ join 所有 sequence"。**但 `PipelineController` 是抽象类且不持有任�
 |---|---|
 | 标记转换 | 27 个文件的 `STATUS: DRAFT — NOT YET IN THE BUILD` → **`STATUS: IN THE BUILD (promoted from DRAFT, tenth round)`**，标记**独立成行**，并插入一段说明："下方任何'从未编译''不在任何构建目标'的措辞属**历史记录**，保留是为了让每条 gap 的推理仍可读；gap 清单本身除非另有说明仍然有效" |
 | `media/CMakeLists.txt` | **+11 个源文件**：`base/{pipeline,pipeline_controller,pipeline_status,renderer,renderer_client}.cc` · `filters/{audio_frame_queue,audio_renderer_algorithm,audio_renderer_impl,renderer_impl,video_renderer_impl,wsola_internals}.cc` |
-| `tests/CMakeLists.txt` | `base_unittests` += `refcount_ownership_unittest.cc` · `media_unittests` += `audio_renderer_algorithm_unittest.cc` · **新建 `player_unittests`** += `deps_ownership_unittest.cc`（`ijkpp_player` 已 PUBLIC 链接 `ijkpp::media`，故不必重复声明依赖） |
+| `tests/CMakeLists.txt` | `base_unittests` += `refcount_ownership_unittest.cc` · `media_unittests` += `audio_renderer_algorithm_unittest.cc` · **新建 `player_unittests`** += `deps_ownership_unittest.cc`（`avbase_player` 已 PUBLIC 链接 `avbase::media`，故不必重复声明依赖） |
 | **仍未转正** | `player/option_registry.inc`。接进去需要把 `option_registry.cc` 的 9 条手写 `e.push_back` 换成遍历 `kGeneratedOptions` + 调用 `ApplyGeneratedOption`，并实现 `ApplyHeaderBlob()`——那是**改动一个正在工作的文件**，盲改的风险高于收益 |
 
 #### ★棘轮门禁在转正的当下就抓到了 11 处
@@ -1620,7 +1620,7 @@ LICENSE / LGPL 隔离 ✅ · 七个管线接口头 DRAFT ✅ · R2 降级债登�
    剩下的是：`tests/unit/base/refcount_ownership_unittest.cc` 仍是 DRAFT，
    需要真实构建跑绿后摘掉横幅并计入用例总数。
 3. **在有编译器的机器上把 7 个 DRAFT 头转正**：`g++ -fsyntax-only -std=c++20
-   -fno-exceptions -fno-rtti -I.` 逐个过，然后加进 `ijkpp_media` 并写 10 个符号的
+   -fno-exceptions -fno-rtti -I.` 逐个过，然后加进 `avbase_media` 并写 10 个符号的
    `.cc`（清单已在各文件头）。**转正前它们对 M7/M8 只是纸面契约。**
 4. **`--ijkplayer` 真机跑一次**（需要 ijkplayer 源码树），把 docs/05 表 7 的
    "个别 fork 有差异"变成确定结论；有差异就登记 Δ 而不是悄悄改阈值。
@@ -1665,7 +1665,7 @@ LICENSE / LGPL 隔离 ✅ · 七个管线接口头 DRAFT ✅ · R2 降级债登�
 #### 失败 2：`RateTwoHalvesTheDuration`（实现 bug，已修）
 
 量出来：2x、1 s 输入，渲染 **26066** 帧，理想 24000，容差 1920 → 超 146 帧。
-根因是 ijkpp 自己加的、**Chromium 没有的**那段 EOS 尾部直排：
+根因是 avbase 自己加的、**Chromium 没有的**那段 EOS 尾部直排：
 `RunWsola()` 在 `!CanPerformWsola()` 时把队列里剩下的帧**原样**交给调用方，
 而"剩下的"正好是一整个搜索块（2399 帧）。原样直排意味着**这 53 ms 永远按 1x 播**，
 不管请求的倍速是多少。
@@ -1719,15 +1719,15 @@ chromium.googlesource.com 上返回 503，所以 `Similarity()` 是"教科书公
 `raw.githubusercontent.com/chromium/chromium/main/` 当天就能取到同一份文件。
 逐行比对的结果，三处**有意保留**的偏离已经写进那个 ★ 段落：
 
-| 偏离 | Chromium | ijkpp | 为什么保留 |
+| 偏离 | Chromium | avbase | 为什么保留 |
 |---|---|---|---|
 | 归一化 | 逐声道归一后**相加**（`kEpsilon=1e-12f` 在 sqrt 内） | 各声道能量**求和后**归一一次 | 各声道信号相同时两者选出的块完全一致（差一个 `channels` 倍数）；每候选省一次 sqrt。真实立体声下会有差异——**已记为待用真实素材+听感复测的项**，不盲改 |
 | `OptimalIndex` | 抽取搜索（步长 5）+ 二次插值 + 11 候选精搜，块能量 O(N) 滑窗复用 | 1440 候选全搜，精确最优 | 候选集相同、结果更精确；代价是约 **5 倍点积**。已量过：两种实现在两个激励上结果一致。**这是性能债不是正确性债**，移植是机械工作，已列为该文件的下一步 |
 | 排除区间 | `InInterval` 两端**闭** | 半开 `[begin, end)` | 1440 个候选差 1 个；半开与本文件其余区间写法一致 |
 
-另外 `GetPeriodicHanningWindow`（Chromium 名）↔ `FillPeriodicHanningWindow`（ijkpp 名）
+另外 `GetPeriodicHanningWindow`（Chromium 名）↔ `FillPeriodicHanningWindow`（avbase 名）
 公式一致：`0.5 * (1 - cos(2*pi*n/N))`，仅浮点精度不同（Chromium 用
-`std::numbers::pi_v<float>`，ijkpp 用 double 后转 float）。
+`std::numbers::pi_v<float>`，avbase 用 double 后转 float）。
 
 #### 元教训（第 3 次出现同一类）
 
@@ -1775,13 +1775,13 @@ python3 tools/extract_constants.py --root . --ijkplayer /path/to/ijkplayer  # �
 |---|---|
 | `no-ffmpeg`（RelWithDebInfo，无 FFmpeg/SDL2/X11） | ✅ **287/287** |
 | `linux-ffmpeg711`（FFmpeg **7.1.1** + 真实媒体测试） | ✅ **322/322** |
-| `debug`（Debug + `IJKPP_ENABLE_DCHECK` + `-Werror`） | ✅ **287/287** |
+| `debug`（Debug + `AVBASE_ENABLE_DCHECK` + `-Werror`） | ✅ **287/287** |
 | `asan`（AddressSanitizer + UBSan + **LeakSanitizer**） | ✅ **287/287，0 泄漏** |
 | `tsan`（ThreadSanitizer） | ✅ **287/287，0 data race** |
 | `check_invariants.py` | ✅ 14 条规则全通过（166 文件；含 **C22**：`media/`、`base/` 不得依赖 `player/`） |
 | **抗抖动**：并发/时钟类测试 `--repeat until-fail:25`（asan）/`:10`（tsan） | ✅ 0 失败 |
 | **`media_ffmpeg_unittests`（FFmpeg 7.1.1 + 真实媒体）** | ✅ **43/43**（M5 视频 + 本轮 M5 音频 8 个） |
-| **`ijkpp-inspect` CLI（probe / decode / sync）** | ✅ 3 个子命令在 5 个真实容器上跑通，含错误路径 |
+| **`avbase-inspect` CLI（probe / decode / sync）** | ✅ 3 个子命令在 5 个真实容器上跑通，含错误路径 |
 | `platform/ffmpeg/` 兼容层双版本编译 | ✅ **7.1.1 与 5.1.9 均通过**（4 个 .cc） |
 
 > 注 1：preset 名为 `debug`（非早期文档写的 `dev`）。`debug` 此前从未被完整构建过，本轮首次全量编译暴露出 8 处 `-Werror` 违规（均为既有代码，见"第八轮"）。
@@ -1795,7 +1795,7 @@ python3 tools/extract_constants.py --root . --ijkplayer /path/to/ijkplayer  # �
 
 ---
 
-## 第八轮（本轮）：音频链 · `DecoderStream` · `ijkpp-inspect` · 2 个真 bug
+## 第八轮（本轮）：音频链 · `DecoderStream` · `avbase-inspect` · 2 个真 bug
 
 用户要求的 4 项按序推进，前 3 项完成并验证，第 4 项（SDL2 出画）因依赖 M7/M8 未完成而顺延。
 
@@ -1809,7 +1809,7 @@ python3 tools/extract_constants.py --root . --ijkplayer /path/to/ijkplayer  # �
 | `media/filters/ffmpeg_audio_decoder.{h,cc}` | 移植自 `ff_ffplay.c` 的 `audio_decode_frame()` |
 | `DecodeSample()`（`audio_parameters.cc`） | u8/s16/s32/f32 + 三种 planar → float 的单一转换点 |
 
-**与 ijkplayer 的关键差异**：ffplay 在 `audio_decode_frame()` 里对每帧做 `swr_convert`，且发生在**音频回调线程**上。ijkpp 的解码器输出编解码器原生格式，把转换留给消费者（`AudioBuffer::ReadFrames`）。这样解码器不依赖任何音频设备，输出设备切换时也不必销毁重建 resampler。
+**与 ijkplayer 的关键差异**：ffplay 在 `audio_decode_frame()` 里对每帧做 `swr_convert`，且发生在**音频回调线程**上。avbase 的解码器输出编解码器原生格式，把转换留给消费者（`AudioBuffer::ReadFrames`）。这样解码器不依赖任何音频设备，输出设备切换时也不必销毁重建 resampler。
 
 **8 个端到端测试**（真实 AAC）：解码全流 / 采样率与声道正确 / pts 单调且覆盖 3 s 时长 / 转 float 不溢出且无 NaN / EOS 标记恰好一个 / 未初始化即 Decode 干净失败 / 未知编解码器给出**含编解码器名**的错误 / `kUnsupportedConfig` 与 `kUnsupportedCodec` 必须可区分（bug #28 的教训）。
 
@@ -1830,12 +1830,12 @@ VideoDecoderStreamTraits / AudioDecoderStreamTraits
 
 **9 个测试**全部用假件（无 FFmpeg、无线程），因此选择/回退/水位线/flush 都可确定性断言——这正是从 ffplay 两个手写线程迁移过来的收益：那些行为在原结构下无法测试。
 
-### (3) `ijkpp-inspect` CLI — ✅ 完成
+### (3) `avbase-inspect` CLI — ✅ 完成
 
 三个子命令，全部走**真实** demuxer + 解码器，无测试替身：
 
 ```
-$ ijkpp-inspect decode tests/testdata/small_h264_aac_3s.mp4
+$ avbase-inspect decode tests/testdata/small_h264_aac_3s.mp4
 video stream [0] codec=h264
   initialize  : ok (FFmpegVideoDecoder)
   frames      : 90                      ← 3 s × 30 fps，一帧不差
@@ -1897,7 +1897,7 @@ pts_drift + time - (time - last_updated) * (1.0 - speed)
 | `media/base/native_display.{h,cc}` | `-Wuseless-cast` | `X11WindowHandle::window` 由 `uint64_t` 改 `uintptr_t`——X11 的 `Window` 本就是 `XID`（`unsigned long`），原类型声明才是错的 |
 | `media/filters/clock.cc` | `-Wconversion` | 外推的 int64→double 显式化 |
 | `media/filters/video_frame_compositor.cc` | `-Wconversion` | 同上（播放速率缩放） |
-| `media/filters/decoder_stream.cc` | `-Werror=attributes` | 显式实例化**定义**上不能再带 `IJKPP_MEDIA_EXPORT`（属性属于头文件的 `extern template` 声明） |
+| `media/filters/decoder_stream.cc` | `-Werror=attributes` | 显式实例化**定义**上不能再带 `AVBASE_MEDIA_EXPORT`（属性属于头文件的 `extern template` 声明） |
 | `base/observer_list.h` | `-Wsign-conversion` | `std::count_if` 返回 `difference_type`，显式转 `size_t` |
 | 3 个测试文件 | `-Wunused-parameter` | 按 Google Style 省略未用形参名 |
 
@@ -1926,16 +1926,16 @@ tools/inspect/
 2. **M8**：`RendererImpl` 组合两者 → `Pipeline` → `Player` 装配
 3. **M11**：`platform/sdl2/` 的 `VideoRendererSink`（SDL_Renderer 贴 I420）+ `AudioRendererSink`（SDL_AudioDevice）
 
-**注意**：`platform/CMakeLists.txt` 里 `IJKPP_ENABLE_SDL2` 目前仍是有意的 `FATAL_ERROR "scheduled for milestone M11"`，需要一并解除。
+**注意**：`platform/CMakeLists.txt` 里 `AVBASE_ENABLE_SDL2` 目前仍是有意的 `FATAL_ERROR "scheduled for milestone M11"`，需要一并解除。
 
 若目标是**尽快看到画面**而非按里程碑推进，最短路径是先做 M7 的视频半边 + 一个只渲染视频、音频走 null sink 的 `RendererImpl`，即可用 SDL2 出画（无声）。这条路绕开 WSOLA，约需 `VideoRendererImpl` + `RendererImpl`(视频only) + `Pipeline`(视频only) + SDL2 sink 四件。
 
 ### 仍未完成
 
-- **`AudioRendererAlgorithm`（WSOLA）** —— 本轮 (1) 的剩余部分。`AvSyncController::ComputeAudioSampleAdjustment()` 已有真实调用方（`ijkpp-inspect sync` 会打印它），但还没有消费者去实际拉伸/压缩音频
+- **`AudioRendererAlgorithm`（WSOLA）** —— 本轮 (1) 的剩余部分。`AvSyncController::ComputeAudioSampleAdjustment()` 已有真实调用方（`avbase-inspect sync` 会打印它），但还没有消费者去实际拉伸/压缩音频
 - **M7 / M8 / M11** —— 见上
 - **`ijkio` 缓存（M18）、C ABI（M15）、Android/iOS 后端（M16/M17）** —— 按原计划顺延
-- 既有待办：`thread_unittest.cc` 里 `make_shared<atomic<int>>` 触发的 2 处 GCC `-Wnull-dereference` 误报（在 `shared_ptr_base.h` 内），发布构建启用 `IJKPP_WERROR` 前需处理
+- 既有待办：`thread_unittest.cc` 里 `make_shared<atomic<int>>` 触发的 2 处 GCC `-Wnull-dereference` 误报（在 `shared_ptr_base.h` 内），发布构建启用 `AVBASE_WERROR` 前需处理
 
 ---
 
@@ -1948,10 +1948,10 @@ tools/inspect/
 |---|---|
 | `CMakeLists.txt` + 4 个子目录 CMakeLists | ✅ |
 | `CMakePresets.json`（12 个 configure preset + 7 build + 4 test） | ✅ |
-| `cmake/IjkppOptions.cmake`（全部开关 + 互斥校验） | ✅ |
-| `cmake/IjkppCompilerFlags.cmake`（`-fno-exceptions -fno-rtti`、Google 警告集、`-Wthread-safety`、sanitizer、coverage、LTO） | ✅ |
-| `cmake/IjkppThirdParty.cmake`（GTest 探测，兼容 Debian 无 CMake package 的情况） | ✅ |
-| `cmake/IjkppCheckInvariants.cmake` → `check-invariants` target | ✅ |
+| `cmake/AvbaseOptions.cmake`（全部开关 + 互斥校验） | ✅ |
+| `cmake/AvbaseCompilerFlags.cmake`（`-fno-exceptions -fno-rtti`、Google 警告集、`-Wthread-safety`、sanitizer、coverage、LTO） | ✅ |
+| `cmake/AvbaseThirdParty.cmake`（GTest 探测，兼容 Debian 无 CMake package 的情况） | ✅ |
+| `cmake/AvbaseCheckInvariants.cmake` → `check-invariants` target | ✅ |
 | `cmake/BuildConfig.h.in` / `Version.h.in` | ✅ |
 | `.clang-format`（Google，80 列 2 空格）、`STYLE.md` | ✅ |
 | `.github/workflows/ci.yml`（quick + full 矩阵 + M4/M11 占位 job） | ✅ |
@@ -1995,13 +1995,13 @@ tools/inspect/
 | `base/location.h`（`FROM_HERE`，任务投递点可追溯） | ✅ | — |
 | `base/task/task_runner.{h,cc}` | ✅ | — |
 | `base/task/sequenced_task_runner.{h,cc}`（thread_local 当前默认 runner） | ✅ | 3 |
-| `base/task/task_queue.{h,cc}` ★**ijkpp 的消息循环** | ✅ | 11 |
+| `base/task/task_queue.{h,cc}` ★**avbase 的消息循环** | ✅ | 11 |
 | `base/task/task_runner_util.h`（`PostTaskAndReplyWithResult`） | ✅ | 1 |
 | `base/threading/thread.{h,cc}`（`Start`/`Stop`/`task_runner`/`GetThreadId`） | ✅ | 8 |
 | `base/threading/platform_thread_posix.{h,cc}`（线程命名 + 优先级） | ✅ | 含在上 |
 | `base/test/task_environment.{h,cc}`（`MOCK_TIME`/`RunUntilIdle`/`FastForwardBy`/`AdvanceClock`） | ✅ | 11 |
 
-**一处刻意的简化**：Chromium 把这块拆成 `MessageLoop` + `MessagePump` + `MessagePumpEpoll` + `TaskQueue` 四层。ijkpp 合并成单个 `TaskQueue`，因为核心层既不需要 fd 监听也不需要嵌套 `RunLoop` —— 平台层（Wayland/epoll）跑自己的 poll 循环（见 docs/04 §2.1 D3）。`task_queue.h` 的类注释里写明了将来需要 fd 监听时如何在**不改调用方**的前提下把 `MessagePump` 拆回去。
+**一处刻意的简化**：Chromium 把这块拆成 `MessageLoop` + `MessagePump` + `MessagePumpEpoll` + `TaskQueue` 四层。avbase 合并成单个 `TaskQueue`，因为核心层既不需要 fd 监听也不需要嵌套 `RunLoop` —— 平台层（Wayland/epoll）跑自己的 poll 循环（见 docs/04 §2.1 D3）。`task_queue.h` 的类注释里写明了将来需要 fd 监听时如何在**不改调用方**的前提下把 `MessagePump` 拆回去。
 
 **R2 风险（自研 `base/` 工期）已基本消除**：原评估里三个"大"项——`bind.h`、消息泵、`TaskEnvironment`——全部实现完毕并有测试。
 
@@ -2169,7 +2169,7 @@ tools/inspect/
 | ✅ M3 | `media/base/` 值类型与两个队列 + `AudioBuffer` + `decoder_config` | 完成 |
 | ⬜ M3 余项 | `AudioRendererAlgorithm`（WSOLA） | **单点阻塞 M7 的音频半边** |
 | ✅ M4 | `platform/ffmpeg/` + `FFmpegDemuxer` + `ffmpeg_glue` + 5 个测试媒体 | 完成，12 个端到端测试对真实媒体全绿 |
-| ⬜ M4 余项 | `DataSource` 后端的 `AVIOContext` 桥（内存 / fd / 自定义源） | ⬜（`ijkpp-inspect probe` 已在第八轮完成） |
+| ⬜ M4 余项 | `DataSource` 后端的 `AVIOContext` 桥（内存 / fd / 自定义源） | ⬜（`avbase-inspect probe` 已在第八轮完成） |
 | ✅ M5 | `DecoderStream<Traits>` + `FFmpegVideoDecoder` / `FFmpegAudioDecoder` + `DecoderSelector` | 完成 |
 | ✅ M6 | `AvSyncController`（seqlock）· `VideoFrameCompositor` · `Clock` | 完成（第九轮移入 `media/filters/legacy/`） |
 | ⬜ M6 余项 | `DisplayGeometry`（letterbox / SAR / DPI，docs/09 §4.4） | ⬜ M12 需要 |
@@ -2190,7 +2190,7 @@ tools/inspect/
 |---|---|
 | `tools/check_invariants.py` | ✅ 14 条规则，173 文件全通过；本轮更新 `LINE_LIMIT_ALLOWLIST` 的 legacy 路径 |
 | `tools/extract_constants.py` | ✅ **本轮新增**，26 个条目；`--selftest` 两方校验 24 项一致 + 1 项 Δ4 声明偏离 + 1 项待 M9；`--ijkplayer` 三方校验已用合成 ffplay 源码树验证（含 0.04→0.4 手抄错、宏缺失、fork 差异三种失败模式） |
-| `tools/inspect/`（`ijkpp-inspect`） | ✅ probe / decode / sync；⬜ doctor / play / dump / golden |
+| `tools/inspect/`（`avbase-inspect`） | ✅ probe / decode / sync；⬜ doctor / play / dump / golden |
 | `tools/gen_options.py` · `golden_record.py` · `golden_diff.py` · `verify_e2e.py` · `build_linux.sh` · `ijkplayer-recorder/` | ⬜ 全部未建 |
 | CI | ✅ quick + full 矩阵（本轮已把 `extract_constants --selftest` 加进两个 job）；⬜ `ffmpeg-matrix` 与 `e2e-linux` 仍是 `if: false`（前者注释写 "enabled at M4"，**M4 早已完成**）；⬜ coverage job 是 `lcov --summary \|\| true`，不会 fail；⬜ `check-format` / `check-cpplint` / `check-no-vendor-leak` |
 | 许可证 | ✅ **本轮落地**：根 `LICENSE`（BSD-3 + 4 节第三方说明）· `media/filters/legacy/`（LGPL-2.1 全文 + README 准入规则 + 6 个文件头重写）；⬜ **法务确认（Q1/R8）仍未做** |
@@ -2205,7 +2205,7 @@ tools/inspect/
 | 15 | `media/` 反向依赖 `player/public/`：`MediaError`、`MediaInfo`、`PlayerConfig`、`StageReachedPayload` 都住在 SDK 层，但 `media::Demuxer` 要用 | 🔴 **架构违规**（与上轮 `DataSourceDescriptor` 同类，说明这不是偶发而是系统性倾向） | 把 `MediaError`/`MediaInfo` 下沉到 `media/base/`，`player/public/` 改为转发头；`Demuxer::Initialize` 改用新的 `media::DemuxerOptions`；阶段埋点改走 `MediaLog` |
 | 16 | 上述违规**没有任何规则能自动发现** | 🟠 治理缺口 | **新增 invariant C22**：`base/`、`media/` 出现 `#include "player/` 即 fail。上线当天又抓到 5 处 |
 | 17 | `VideoFrameQueueTest.ConcurrentProducersAndConsumersLoseNoFrames` **偶发失败** | 🔴 **flaky 测试**，drain 循环 `Peek()` 后用**阻塞** `Pop()`；消费者抢走那一帧后主线程永久阻塞（`Abort()` 永远不会来）。低竞争侥幸通过，CPU 饥饿即挂 | 改为轮询 `size()`/`reserved_count()`，无竞争窗口。**连续 12 轮 0 失败**验证 |
-| 18 | `av_dict_iterate` 是 FFmpeg 6.0 才有 | 🔴 跨版本 | `IJKPP_FFMPEG_HAS_DICT_ITERATE` 分支，5.x 走 `av_dict_get(..., IGNORE_SUFFIX)`。**7.1.1 与 5.1.9 双版本编译验证** |
+| 18 | `av_dict_iterate` 是 FFmpeg 6.0 才有 | 🔴 跨版本 | `AVBASE_FFMPEG_HAS_DICT_ITERATE` 分支，5.x 走 `av_dict_get(..., IGNORE_SUFFIX)`。**7.1.1 与 5.1.9 双版本编译验证** |
 | 19 | `FindFFmpeg` 版本正则用小写组件名（实际宏是 `LIBAVCODEC_VERSION_MAJOR`）→ 版本解析为空 → **最低版本门禁形同虚设** | 🔴 静默失效 | `string(TOUPPER)`；现在正确输出 `libavcodec major 61` |
 | 20 | `RefCountedThreadSafe` 派生类析构规则，我写进 `ref_counted.h` 后自己又违反一次（`DataSource`） | 🟠 | 按规则改为 `virtual ~` + friend |
 | 21 | **测试数据本身是错的**：`sine` lavfi 源默认**单声道**，而测试断言 stereo；`truncated_tail.mp4` 截断了 MP4 尾部的 moov，导致连 `open` 都失败（而我想测的是"能打开但提前 EOF"） | 🟠 测试前提错误 | 用 `aformat=channel_layouts=stereo` + `-ac 2` 重造立体声文件；用 `-movflags +faststart` 把 moov 移到头部再截 70%，才是"能打开但 mdat 截断" |
@@ -2231,7 +2231,7 @@ tools/inspect/
 ### 关于 DRAFT 文件
 
 ~~`media/filters/ffmpeg_demuxer.{h,cc}`（924 行）本轮写了但没写完，且不能编译。~~
-**（第五轮已转正：DRAFT 标记移除，进入 `ijkpp_platform_ffmpeg` target，12 个端到端测试全绿。）**
+**（第五轮已转正：DRAFT 标记移除，进入 `avbase_platform_ffmpeg` target，12 个端到端测试全绿。）**
 当时的处理方式，作为流程记录保留：
 - 文件头显著标注 `STATUS: DRAFT — NOT YET IN THE BUILD`，并逐条列出 4 个缺口
 - **从所有 CMake target 排除** —— 不能编译的文件绝不可从构建可达
@@ -2296,5 +2296,5 @@ C++ 代码合计约 21900 行，其中测试 5772 行（26%）
 **五个配置全部通过，零警告，`check_invariants.py` 14 条规则全通过（166 文件）。**
 
 本轮净增：音频解码链（4 个新文件）、`DecoderStream<Traits>`（泛型化解码流）、
-`ijkpp-inspect` CLI（5 个文件）、29 个新测试用例，以及 3 个真 bug 的修复
+`avbase-inspect` CLI（5 个文件）、29 个新测试用例，以及 3 个真 bug 的修复
 （#32 主时钟 uptime 偏移、#33 水位线未生效、#34 并发测试启动竞态）。

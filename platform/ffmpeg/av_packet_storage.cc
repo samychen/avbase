@@ -1,10 +1,10 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "platform/ffmpeg/av_packet_storage.h"
 
-namespace ijkpp::platform::ffmpeg {
+namespace avbase::platform::ffmpeg {
 
 AvPacketStorage::~AvPacketStorage() = default;
 
@@ -41,4 +41,4 @@ std::span<const uint8_t> AvPacketStorage::data() const {
   return {packet_->data, static_cast<size_t>(packet_->size)};
 }
 
-}  // namespace ijkpp::platform::ffmpeg
+}  // namespace avbase::platform::ffmpeg

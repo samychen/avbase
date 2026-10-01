@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -15,7 +15,7 @@
 #include "media/base/audio_bus.h"
 #include "gtest/gtest.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 base::scoped_refptr<AudioBuffer> MakeInterleavedS16(int frames) {
@@ -186,4 +186,4 @@ TEST(AudioBufferTest, DecodeSampleCoversEveryFormat) {
 }
 
 }  // namespace
-}  // namespace ijkpp::media
+}  // namespace avbase::media

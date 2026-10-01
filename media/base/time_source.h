@@ -1,29 +1,29 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `media/base/time_source.h` and `wall_clock_time.h`
 // (BSD-3-Clause).
 
-#ifndef IJKPP_MEDIA_BASE_TIME_SOURCE_H_
-#define IJKPP_MEDIA_BASE_TIME_SOURCE_H_
+#ifndef AVBASE_MEDIA_BASE_TIME_SOURCE_H_
+#define AVBASE_MEDIA_BASE_TIME_SOURCE_H_
 
 #include <vector>
 
 #include "base/time/time.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // A media timestamp paired with the wall-clock instant it should be visible.
 // This is what lets a sink ask "which frame belongs in the refresh window that
 // ends at T?" instead of guessing (see VideoFrameCompositor::Render).
-struct IJKPP_MEDIA_EXPORT WallClockTime {
+struct AVBASE_MEDIA_EXPORT WallClockTime {
   base::TimeDelta media_time;
   base::TimeTicks wall_time;
 };
 
-class IJKPP_MEDIA_EXPORT TimeSource {
+class AVBASE_MEDIA_EXPORT TimeSource {
  public:
   TimeSource(const TimeSource&) = delete;
   TimeSource& operator=(const TimeSource&) = delete;
@@ -40,6 +40,6 @@ class IJKPP_MEDIA_EXPORT TimeSource {
   TimeSource() = default;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_TIME_SOURCE_H_
+#endif  // AVBASE_MEDIA_BASE_TIME_SOURCE_H_

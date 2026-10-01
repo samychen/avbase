@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_MEDIA_FILTERS_FFMPEG_DECODER_FACTORIES_H_
-#define IJKPP_MEDIA_FILTERS_FFMPEG_DECODER_FACTORIES_H_
+#ifndef AVBASE_MEDIA_FILTERS_FFMPEG_DECODER_FACTORIES_H_
+#define AVBASE_MEDIA_FILTERS_FFMPEG_DECODER_FACTORIES_H_
 
 #include "base/memory/scoped_refptr.h"
 #include "base/task/sequenced_task_runner.h"
@@ -11,7 +11,7 @@
 #include "media/base/video_decoder_factory.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Software-decoder factories backed by FFmpeg. They exist so that a platform
 // can inject hardware factories *ahead* of them (RendererFactory::
@@ -22,7 +22,7 @@ namespace ijkpp::media {
 // |task_runner| is where the decoder posts its callbacks; it must be the same
 // sequence the owning DecoderStream runs on (S3 for video, S4 for audio),
 // because DecoderStream's contract is that everything stays on one sequence.
-class IJKPP_MEDIA_EXPORT FFmpegVideoDecoderFactory final
+class AVBASE_MEDIA_EXPORT FFmpegVideoDecoderFactory final
     : public VideoDecoderFactory {
  public:
   explicit FFmpegVideoDecoderFactory(
@@ -44,7 +44,7 @@ class IJKPP_MEDIA_EXPORT FFmpegVideoDecoderFactory final
   base::scoped_refptr<base::SequencedTaskRunner> task_runner_;
 };
 
-class IJKPP_MEDIA_EXPORT FFmpegAudioDecoderFactory final
+class AVBASE_MEDIA_EXPORT FFmpegAudioDecoderFactory final
     : public AudioDecoderFactory {
  public:
   explicit FFmpegAudioDecoderFactory(
@@ -64,6 +64,6 @@ class IJKPP_MEDIA_EXPORT FFmpegAudioDecoderFactory final
   base::scoped_refptr<base::SequencedTaskRunner> task_runner_;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_FFMPEG_DECODER_FACTORIES_H_
+#endif  // AVBASE_MEDIA_FILTERS_FFMPEG_DECODER_FACTORIES_H_

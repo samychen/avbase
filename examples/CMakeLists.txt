@@ -4,14 +4,14 @@
 # 源文件保持逐个列出（docs/06 §7.6）：两个可执行文件同在一个目录、却在两个
 # 不同的开关下，目录成员 ≠ 目标成员，glob 表达不了。
 
-if(IJKPP_ENABLE_FFMPEG)
+if(AVBASE_ENABLE_FFMPEG)
   add_executable(headless headless.cc)
-  target_link_libraries(headless PRIVATE ijkpp::ijkpp)
-  ijkpp_configure_target(headless)
+  target_link_libraries(headless PRIVATE avbase::avbase)
+  avbase_configure_target(headless)
 endif()
 
-if(IJKPP_ENABLE_FFMPEG AND IJKPP_ENABLE_SDL2)
+if(AVBASE_ENABLE_FFMPEG AND AVBASE_ENABLE_SDL2)
   add_executable(play_sdl2 play_sdl2.cc)
-  target_link_libraries(play_sdl2 PRIVATE ijkpp::ijkpp ijkpp::platform_sdl2)
-  ijkpp_configure_target(play_sdl2)
+  target_link_libraries(play_sdl2 PRIVATE avbase::avbase avbase::platform_sdl2)
+  avbase_configure_target(play_sdl2)
 endif()

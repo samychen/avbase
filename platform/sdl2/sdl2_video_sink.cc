@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 #include "base/location.h"
 #include "platform/sdl2/surface.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 // Render cadence when the sink has no vsync source to wait on. With
@@ -54,7 +54,7 @@ void Sdl2VideoSink::Start() {
     const auto* surface = static_cast<const Sdl2Surface*>(display_->raw());
     renderer_ = surface->renderer;
   }
-  thread_ = std::make_unique<base::Thread>("ijkpp-sdl-video");
+  thread_ = std::make_unique<base::Thread>("avbase-sdl-video");
   thread_->Start();
   render_runner_ = thread_->task_runner();
   PresentOne();
@@ -209,4 +209,4 @@ std::unique_ptr<VideoRendererSink> Sdl2VideoSinkFactory::Create(
   return std::make_unique<Sdl2VideoSink>(std::move(display));
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

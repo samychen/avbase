@@ -1,4 +1,4 @@
-# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Copyright 2026 The avbase Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
@@ -14,7 +14,7 @@ if(Python3_Interpreter_FOUND)
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
       COMMENT "Checking structural invariants (C1, C4, C5, C22, C23, C24, C25)")
 
-  if(IJKPP_IS_TOP_LEVEL)
+  if(AVBASE_IS_TOP_LEVEL)
     add_custom_target(ci-quick DEPENDS check-invariants)
   endif()
 else()

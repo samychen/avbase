@@ -1,10 +1,10 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `base/test/task_environment.h` (BSD-3-Clause).
 //
-// This is what makes ijkpp's scheduling logic testable at all. ijkplayer's
+// This is what makes avbase's scheduling logic testable at all. ijkplayer's
 // video_refresh() reads av_gettime_relative() directly and mutates a
 // 200-field god struct, so the only way to exercise it is to play a real file
 // in real time and watch. Here a test constructs a TaskEnvironment with
@@ -12,8 +12,8 @@
 // sleep, no flakiness, and the whole media/filters suite runs in under a
 // second.
 
-#ifndef IJKPP_BASE_TEST_TASK_ENVIRONMENT_H_
-#define IJKPP_BASE_TEST_TASK_ENVIRONMENT_H_
+#ifndef AVBASE_BASE_TEST_TASK_ENVIRONMENT_H_
+#define AVBASE_BASE_TEST_TASK_ENVIRONMENT_H_
 
 #include <cstddef>
 #include <memory>
@@ -25,9 +25,9 @@
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
 
-namespace ijkpp::base::test {
+namespace avbase::base::test {
 
-class IJKPP_BASE_EXPORT TaskEnvironment {
+class AVBASE_BASE_EXPORT TaskEnvironment {
  public:
   enum class TimeSource {
     kMockTime,   // Default: time only moves when the test moves it.
@@ -74,6 +74,6 @@ class IJKPP_BASE_EXPORT TaskEnvironment {
   scoped_refptr<SequencedTaskRunner> previous_default_;
 };
 
-}  // namespace ijkpp::base::test
+}  // namespace avbase::base::test
 
-#endif  // IJKPP_BASE_TEST_TASK_ENVIRONMENT_H_
+#endif  // AVBASE_BASE_TEST_TASK_ENVIRONMENT_H_

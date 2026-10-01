@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_MEDIA_FILTERS_NULL_AUDIO_SINK_H_
-#define IJKPP_MEDIA_FILTERS_NULL_AUDIO_SINK_H_
+#ifndef AVBASE_MEDIA_FILTERS_NULL_AUDIO_SINK_H_
+#define AVBASE_MEDIA_FILTERS_NULL_AUDIO_SINK_H_
 
 #include <atomic>
 #include <memory>
@@ -18,7 +18,7 @@
 #include "media/base/audio_renderer_sink.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // An audio sink that consumes samples in real time and plays nothing.
 //
@@ -29,7 +29,7 @@ namespace ijkpp::media {
 // A/V master (Δ14), and a sink that faked consumption would stall it. Faking
 // the consumption instead of skipping it also keeps underrun statistics
 // meaningful in headless runs.
-class IJKPP_MEDIA_EXPORT NullAudioSink final : public AudioRendererSink {
+class AVBASE_MEDIA_EXPORT NullAudioSink final : public AudioRendererSink {
  public:
   NullAudioSink();
   NullAudioSink(const NullAudioSink&) = delete;
@@ -75,13 +75,13 @@ class IJKPP_MEDIA_EXPORT NullAudioSink final : public AudioRendererSink {
   AudioGlitchInfo glitch_info_ GUARDED_BY(glitch_lock_);
 };
 
-class IJKPP_MEDIA_EXPORT NullAudioSinkFactory final
+class AVBASE_MEDIA_EXPORT NullAudioSinkFactory final
     : public AudioRendererSinkFactory {
  public:
   base::scoped_refptr<AudioRendererSink> Create() override;
   const char* name() const override { return "null"; }
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_NULL_AUDIO_SINK_H_
+#endif  // AVBASE_MEDIA_FILTERS_NULL_AUDIO_SINK_H_

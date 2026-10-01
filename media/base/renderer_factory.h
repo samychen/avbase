@@ -1,10 +1,10 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `media/base/renderer_factory.h` (BSD-3-Clause) in role,
 // not in signature: Chromium's version is a selector over mojo/renderer types
-// for the browser process, whereas ijkpp's is the seam through which the SDK
+// for the browser process, whereas avbase's is the seam through which the SDK
 // facade injects platform backends. That difference is deliberate and is the
 // mechanism behind the "zero configuration works" requirement in docs/10 §2.
 //
@@ -52,8 +52,8 @@
 // needs no translation unit of its own; the sinks it returns are what owe .cc
 // files (platform/null at M10, platform/sdl2 at M11).
 
-#ifndef IJKPP_MEDIA_BASE_RENDERER_FACTORY_H_
-#define IJKPP_MEDIA_BASE_RENDERER_FACTORY_H_
+#ifndef AVBASE_MEDIA_BASE_RENDERER_FACTORY_H_
+#define AVBASE_MEDIA_BASE_RENDERER_FACTORY_H_
 
 #include <memory>
 
@@ -61,7 +61,7 @@
 #include "media/base/renderer.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Forward-declared rather than included, matching the convention already set by
 // media/base/video_decoder_factory.h (which forward-declares VideoDecoder and
@@ -89,7 +89,7 @@ class VideoRendererSink;
 // Threading: called on the media sequence. Implementations must not block --
 // backend probing (dlopen, X11/Wayland connection) belongs in the
 // platform's Detect() step, which runs once at Player construction, not here.
-class IJKPP_MEDIA_EXPORT RendererFactory {
+class AVBASE_MEDIA_EXPORT RendererFactory {
  public:
   RendererFactory(const RendererFactory&) = delete;
   RendererFactory& operator=(const RendererFactory&) = delete;
@@ -128,6 +128,6 @@ class IJKPP_MEDIA_EXPORT RendererFactory {
   virtual ~RendererFactory() = default;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_RENDERER_FACTORY_H_
+#endif  // AVBASE_MEDIA_BASE_RENDERER_FACTORY_H_

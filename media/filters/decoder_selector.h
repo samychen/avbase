@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -10,8 +10,8 @@
 // ff_ffplay.c. Here it is one pure function over a capability list, so the
 // ordering rule is testable without a device.
 
-#ifndef IJKPP_MEDIA_FILTERS_DECODER_SELECTOR_H_
-#define IJKPP_MEDIA_FILTERS_DECODER_SELECTOR_H_
+#ifndef AVBASE_MEDIA_FILTERS_DECODER_SELECTOR_H_
+#define AVBASE_MEDIA_FILTERS_DECODER_SELECTOR_H_
 
 #include <stdint.h>
 
@@ -24,7 +24,7 @@
 #include "media/media_export.h"
 
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Which decoder kind to prefer. Defined here rather than in player/public so
 // that media/ never depends on player/ (invariant C22); PlayerConfig's field of
@@ -58,7 +58,7 @@ using HwCodecMask = uint32_t;
 //
 // Deterministic and side-effect free so the ordering can be exhaustively unit
 // tested; see decoder_selector_unittest.cc.
-class IJKPP_MEDIA_EXPORT DecoderSelector {
+class AVBASE_MEDIA_EXPORT DecoderSelector {
  public:
   DecoderSelector(const DecoderSelector&) = delete;
   DecoderSelector& operator=(const DecoderSelector&) = delete;
@@ -78,6 +78,6 @@ class IJKPP_MEDIA_EXPORT DecoderSelector {
   DecoderSelector() = delete;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_DECODER_SELECTOR_H_
+#endif  // AVBASE_MEDIA_FILTERS_DECODER_SELECTOR_H_

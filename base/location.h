@@ -1,15 +1,15 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `base/location.h` (BSD-3-Clause).
 
-#ifndef IJKPP_BASE_LOCATION_H_
-#define IJKPP_BASE_LOCATION_H_
+#ifndef AVBASE_BASE_LOCATION_H_
+#define AVBASE_BASE_LOCATION_H_
 
 #include <string>
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // Capture site of a posted task. Carried all the way to the task queue so that
 // a "task ran after its target died" or "queue backed up" diagnostic can name
@@ -35,8 +35,8 @@ class Location {
   int line_{0};
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#define FROM_HERE ::ijkpp::base::Location(__FILE__, __LINE__)
+#define FROM_HERE ::avbase::base::Location(__FILE__, __LINE__)
 
-#endif  // IJKPP_BASE_LOCATION_H_
+#endif  // AVBASE_BASE_LOCATION_H_

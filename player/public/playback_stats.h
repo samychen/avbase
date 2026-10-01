@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_PLAYER_PUBLIC_PLAYBACK_STATS_H_
-#define IJKPP_PLAYER_PUBLIC_PLAYBACK_STATS_H_
+#ifndef AVBASE_PLAYER_PUBLIC_PLAYBACK_STATS_H_
+#define AVBASE_PLAYER_PUBLIC_PLAYBACK_STATS_H_
 
 #include <stdint.h>
 
@@ -14,24 +14,24 @@
 #include "media/base/media_types.h"
 #include "player/public/player_export.h"
 
-namespace ijkpp {
+namespace avbase {
 
 // Replaces the 30+ FFP_PROP_* integer properties that ijkplayer callers had to
 // poll one at a time, each taking a mutex. One call, one immutable snapshot.
 // See docs/05 table 6 for the field-by-field mapping.
-struct IJKPP_PLAYER_EXPORT BufferStats {
+struct AVBASE_PLAYER_EXPORT BufferStats {
   base::TimeDelta cached_duration;
   size_t cached_bytes{0};
   size_t cached_buffers{0};
 };
 
-struct IJKPP_PLAYER_EXPORT AsyncStats {
+struct AVBASE_PLAYER_EXPORT AsyncStats {
   base::TimeDelta buf_backwards;
   base::TimeDelta buf_forwards;
   base::TimeDelta buf_capacity;
 };
 
-struct IJKPP_PLAYER_EXPORT CacheStats {
+struct AVBASE_PLAYER_EXPORT CacheStats {
   int64_t physical_pos{0};
   int64_t file_forwards{0};
   int64_t file_pos{0};
@@ -39,7 +39,7 @@ struct IJKPP_PLAYER_EXPORT CacheStats {
   int64_t logical_file_size{0};
 };
 
-struct IJKPP_PLAYER_EXPORT BufferingStats {
+struct AVBASE_PLAYER_EXPORT BufferingStats {
   uint64_t buffering_count{0};
   base::TimeDelta total_buffering_time;
   base::TimeDelta last_buffering_time;
@@ -50,7 +50,7 @@ struct IJKPP_PLAYER_EXPORT BufferingStats {
 // First-frame latency decomposition. ijkplayer emitted FFP_MSG_OPEN_INPUT /
 // FIND_STREAM_INFO / COMPONENT_OPEN for exactly this purpose but left the
 // caller to stitch the timestamps together.
-struct IJKPP_PLAYER_EXPORT StageTimings {
+struct AVBASE_PLAYER_EXPORT StageTimings {
   base::TimeDelta prepare_to_open_input;
   base::TimeDelta open_input_to_stream_info;
   base::TimeDelta stream_info_to_decoder_open;
@@ -61,7 +61,7 @@ struct IJKPP_PLAYER_EXPORT StageTimings {
   base::TimeDelta audio_first_rendered;
 };
 
-struct IJKPP_PLAYER_EXPORT PlaybackStats {
+struct AVBASE_PLAYER_EXPORT PlaybackStats {
   double video_decode_fps{0.0};
   double video_output_fps{0.0};
   double playback_rate{1.0};
@@ -104,6 +104,6 @@ struct IJKPP_PLAYER_EXPORT PlaybackStats {
   std::string ToJson() const;
 };
 
-}  // namespace ijkpp
+}  // namespace avbase
 
-#endif  // IJKPP_PLAYER_PUBLIC_PLAYBACK_STATS_H_
+#endif  // AVBASE_PLAYER_PUBLIC_PLAYBACK_STATS_H_

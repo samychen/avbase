@@ -1,18 +1,18 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // API mirrors Chromium's `base/functional/callback_helpers.h` (BSD-3-Clause).
 
-#ifndef IJKPP_BASE_FUNCTIONAL_CALLBACK_HELPERS_H_
-#define IJKPP_BASE_FUNCTIONAL_CALLBACK_HELPERS_H_
+#ifndef AVBASE_BASE_FUNCTIONAL_CALLBACK_HELPERS_H_
+#define AVBASE_BASE_FUNCTIONAL_CALLBACK_HELPERS_H_
 
 #include <utility>
 
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // A closure that does nothing. Prefer this over binding an empty lambda so
 // that intent is explicit at the call site.
@@ -63,6 +63,6 @@ class ScopedClosureRunner {
   OnceClosure closure_;
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_FUNCTIONAL_CALLBACK_HELPERS_H_
+#endif  // AVBASE_BASE_FUNCTIONAL_CALLBACK_HELPERS_H_

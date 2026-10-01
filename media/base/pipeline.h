@@ -1,11 +1,11 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `media/base/pipeline.h` (BSD-3-Clause). Removed: the
 // MediaResource-based Start() overload set that Chromium accumulated for MSE,
 // the CDM/key-system plumbing, text-track client routing into blink, and
-// SetLatencyHint's optional wrapper (ijkpp always has a value or zero).
+// SetLatencyHint's optional wrapper (avbase always has a value or zero).
 //
 // STATUS: IN THE BUILD (promoted from DRAFT, tenth round)
 // PROMOTED into the build in the tenth round, after a full compile and test
@@ -49,8 +49,8 @@
 //   Pipeline::~Pipeline()        media/base/demuxer.cc
 // Pipeline::Client owes nothing (all pure virtual, dtor inline-defaulted).
 
-#ifndef IJKPP_MEDIA_BASE_PIPELINE_H_
-#define IJKPP_MEDIA_BASE_PIPELINE_H_
+#ifndef AVBASE_MEDIA_BASE_PIPELINE_H_
+#define AVBASE_MEDIA_BASE_PIPELINE_H_
 
 #include <memory>
 
@@ -66,7 +66,7 @@
 #include "media/base/waiting.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 class NativeDisplay;
 
@@ -85,7 +85,7 @@ class NativeDisplay;
 // stop has been *requested*, and Player::StopSync(timeout) is what waits, with
 // config.shutdown_timeout bounding the wait and detach-plus-LOG(ERROR) as the
 // escape hatch (Δ15: leak a thread rather than hang the caller).
-class IJKPP_MEDIA_EXPORT Pipeline {
+class AVBASE_MEDIA_EXPORT Pipeline {
  public:
   // Upward channel to the owner. Same threading rules as RendererClient; the
   // two are separate interfaces because the pipeline reports pipeline-level
@@ -200,6 +200,6 @@ class IJKPP_MEDIA_EXPORT Pipeline {
   Pipeline();
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_PIPELINE_H_
+#endif  // AVBASE_MEDIA_BASE_PIPELINE_H_

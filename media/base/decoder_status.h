@@ -1,19 +1,19 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `media/base/decoder_status.h` (BSD-3-Clause).
 
-#ifndef IJKPP_MEDIA_BASE_DECODER_STATUS_H_
-#define IJKPP_MEDIA_BASE_DECODER_STATUS_H_
+#ifndef AVBASE_MEDIA_BASE_DECODER_STATUS_H_
+#define AVBASE_MEDIA_BASE_DECODER_STATUS_H_
 
 #include <string>
 
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
-class IJKPP_MEDIA_EXPORT DecoderStatus {
+class AVBASE_MEDIA_EXPORT DecoderStatus {
  public:
   enum class Codes {
     kOk = 0,
@@ -41,8 +41,8 @@ class IJKPP_MEDIA_EXPORT DecoderStatus {
   std::string description_;
 };
 
-IJKPP_MEDIA_EXPORT const char* GetDecoderStatusCodeName(DecoderStatus::Codes code);
+AVBASE_MEDIA_EXPORT const char* GetDecoderStatusCodeName(DecoderStatus::Codes code);
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_DECODER_STATUS_H_
+#endif  // AVBASE_MEDIA_BASE_DECODER_STATUS_H_

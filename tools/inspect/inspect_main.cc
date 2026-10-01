@@ -1,8 +1,8 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// ijkpp-inspect: a diagnostic CLI over the real media stack.
+// avbase-inspect: a diagnostic CLI over the real media stack.
 //
 // Why this exists: ijkplayer's only window into its own behaviour is a wall of
 // LOGD lines from ff_ffplay.c, and several classes of bug -- a wrong time base, a
@@ -22,25 +22,25 @@
 #include "tools/inspect/inspect_common.h"
 
 int main(int argc, char** argv) {
-  ijkpp::Options opts;
-  if (!ijkpp::ParseArgs(argc, argv, &opts)) {
+  avbase::Options opts;
+  if (!avbase::ParseArgs(argc, argv, &opts)) {
     return 1;
   }
-  // Route FFmpeg's own logging through ijkpp's so a single --verbose controls
+  // Route FFmpeg's own logging through avbase's so a single --verbose controls
   // both. Without this, libavformat's warnings go to stderr unformatted and
   // interleave with the report.
-  ijkpp::platform::ffmpeg::InstallLogBridge();
+  avbase::platform::ffmpeg::InstallLogBridge();
 
   if (opts.subcommand == "probe") {
-    return ijkpp::RunProbe(opts);
+    return avbase::RunProbe(opts);
   }
   if (opts.subcommand == "decode") {
-    return ijkpp::RunDecode(opts);
+    return avbase::RunDecode(opts);
   }
   if (opts.subcommand == "sync") {
-    return ijkpp::RunSync(opts);
+    return avbase::RunSync(opts);
   }
   fprintf(stderr, "error: unknown subcommand '%s'\n", opts.subcommand.c_str());
-  ijkpp::Usage();
+  avbase::Usage();
   return 1;
 }

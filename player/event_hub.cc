@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,9 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 
-namespace ijkpp {
+namespace avbase {
 
-EventHub::EventHub() : thread_("ijkpp-event") {
+EventHub::EventHub() : thread_("avbase-event") {
   thread_.Start();
 }
 
@@ -111,4 +111,4 @@ void EventHub::Shutdown(base::TimeDelta timeout) {
   thread_.Stop();
 }
 
-}  // namespace ijkpp
+}  // namespace avbase

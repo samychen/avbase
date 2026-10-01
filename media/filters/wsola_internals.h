@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -72,8 +72,8 @@
 // *quotes* the marker also counts as a marker, so this paragraph deliberately
 // describes it instead of spelling it out.
 
-#ifndef IJKPP_MEDIA_FILTERS_WSOLA_INTERNALS_H_
-#define IJKPP_MEDIA_FILTERS_WSOLA_INTERNALS_H_
+#ifndef AVBASE_MEDIA_FILTERS_WSOLA_INTERNALS_H_
+#define AVBASE_MEDIA_FILTERS_WSOLA_INTERNALS_H_
 
 #include <vector>
 
@@ -81,11 +81,11 @@
 #include "media/base/audio_bus.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // The `internal` namespace matches Chromium's, so a reader moving between the
 // two codebases finds the same names in the same place. Nothing here is part of
-// ijkpp's API surface and none of it is exported.
+// avbase's API surface and none of it is exported.
 namespace internal {
 
 // Pi, spelled out rather than taken from <cmath>'s M_PI. M_PI is a POSIX
@@ -100,7 +100,7 @@ inline constexpr double kPi = 3.14159265358979323846;
 // keeps ola_window_size_ from coming out one frame short at rates such as 44100
 // Hz, which would shift every subsequent window and make the overlap-add
 // asymmetric.
-IJKPP_MEDIA_EXPORT int TimeToFrames(base::TimeDelta time,
+AVBASE_MEDIA_EXPORT int TimeToFrames(base::TimeDelta time,
                                     int samples_per_second);
 
 // Periodic Hanning window: w[n] = 0.5 * (1 - cos(2*pi*n / N)), n in [0, N).
@@ -108,14 +108,14 @@ IJKPP_MEDIA_EXPORT int TimeToFrames(base::TimeDelta time,
 // two consecutive windows sum to a constant during overlap-add -- the property
 // that keeps output amplitude flat instead of pulsing at the hop rate.
 // Chromium: internal::GetPeriodicHanningWindow.
-IJKPP_MEDIA_EXPORT void FillPeriodicHanningWindow(std::vector<float>* out);
+AVBASE_MEDIA_EXPORT void FillPeriodicHanningWindow(std::vector<float>* out);
 
 // Normalised cross-correlation between |target| and |search| at |offset|,
 // summed over channels, in [-1, 1]. A value of 1 means the two windows are
 // proportional, which is the "same place in the same waveform" condition WSOLA
 // needs in order to splice one window onto another without an audible seam. See
 // the provenance gap at the top of this file.
-IJKPP_MEDIA_EXPORT float Similarity(const AudioBus* search, int offset,
+AVBASE_MEDIA_EXPORT float Similarity(const AudioBus* search, int offset,
                                     const AudioBus* target);
 
 // Index of the candidate block inside |search| that is most similar to
@@ -129,11 +129,11 @@ IJKPP_MEDIA_EXPORT float Similarity(const AudioBus* search, int offset,
 // Similarity(), which beats every negative candidate and would splice in a
 // block chosen for matching nothing. See
 // AudioRendererAlgorithm::EffectiveSearchBlockFrames().
-IJKPP_MEDIA_EXPORT int OptimalIndex(const AudioBus* search,
+AVBASE_MEDIA_EXPORT int OptimalIndex(const AudioBus* search,
                                     const AudioBus* target, int exclude_begin,
                                     int exclude_end, int search_frames = 0);
 
 }  // namespace internal
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_WSOLA_INTERNALS_H_
+#endif  // AVBASE_MEDIA_FILTERS_WSOLA_INTERNALS_H_

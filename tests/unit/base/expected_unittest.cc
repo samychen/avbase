@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #include "base/expected_macros.h"
 #include "gtest/gtest.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 namespace {
 
 struct Error {
@@ -75,7 +75,7 @@ TEST(ExpectedTest, MacrosPropagateErrors) {
 TEST(ExpectedTest, ExplicitConstructionAvoidsBoolAmbiguity) {
   // expected<bool, long> would silently accept 123L as a *value* under the
   // standard's implicit conversion rules. Constructing explicitly from the
-  // intended type is the guard, since ijkpp does not ship base::ok (see the
+  // intended type is the guard, since avbase does not ship base::ok (see the
   // note in base/types/expected.h).
   // A named bool rather than static_cast<bool>(true): the literal `true` is
   // already a bool, so that cast is a no-op that -Wuseless-cast (debug preset,
@@ -96,4 +96,4 @@ TEST(ExpectedTest, MoveSemantics) {
 }
 
 }  // namespace
-}  // namespace ijkpp::base
+}  // namespace avbase::base

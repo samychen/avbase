@@ -1,15 +1,15 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // API mirrors Chromium's `base/check.h` and `base/check_op.h`
 // (BSD-3-Clause, Copyright The Chromium Authors).
 //
-// ijkpp is built with -fno-exceptions, so a failed check aborts the process
+// avbase is built with -fno-exceptions, so a failed check aborts the process
 // after logging, exactly like Chromium.
 
-#ifndef IJKPP_BASE_CHECK_H_
-#define IJKPP_BASE_CHECK_H_
+#ifndef AVBASE_BASE_CHECK_H_
+#define AVBASE_BASE_CHECK_H_
 
 #include <cstdlib>
 #include <sstream>
@@ -20,7 +20,7 @@
 // must never be false, including on untrusted input that has already been
 // validated by an earlier layer.
 #define CHECK(condition)                                        \
-  ::ijkpp::base::internal::CheckOpStreamHelper(!!(condition))    \
+  ::avbase::base::internal::CheckOpStreamHelper(!!(condition))    \
       << "Check failed: " #condition ". "
 
 #define CHECK_EQ(a, b) CHECK((a) == (b))
@@ -30,8 +30,8 @@
 #define CHECK_GT(a, b) CHECK((a) > (b))
 #define CHECK_GE(a, b) CHECK((a) >= (b))
 
-// DCHECK() is only active when IJKPP_ENABLE_DCHECK is defined.
-#if defined(IJKPP_ENABLE_DCHECK)
+// DCHECK() is only active when AVBASE_ENABLE_DCHECK is defined.
+#if defined(AVBASE_ENABLE_DCHECK)
 #define DCHECK(condition) CHECK(condition)
 #define DCHECK_EQ(a, b) CHECK_EQ(a, b)
 #define DCHECK_NE(a, b) CHECK_NE(a, b)
@@ -41,7 +41,7 @@
 #define DCHECK_GE(a, b) CHECK_GE(a, b)
 #else
 #define DCHECK(condition) \
-  ::ijkpp::base::internal::NullCheckStream()
+  ::avbase::base::internal::NullCheckStream()
 #define DCHECK_EQ(a, b) DCHECK(true)
 #define DCHECK_NE(a, b) DCHECK(true)
 #define DCHECK_LT(a, b) DCHECK(true)
@@ -51,10 +51,10 @@
 #endif
 
 #define NOTREACHED()                                          \
-  ::ijkpp::base::internal::CheckOpStreamHelper(false)          \
+  ::avbase::base::internal::CheckOpStreamHelper(false)          \
       << "NOTREACHED() hit at " << __FILE__ << ":" << __LINE__ << ". "
 
-namespace ijkpp {
+namespace avbase {
 namespace base {
 namespace internal {
 
@@ -90,6 +90,6 @@ class NullCheckStream {
 
 }  // namespace internal
 }  // namespace base
-}  // namespace ijkpp
+}  // namespace avbase
 
-#endif  // IJKPP_BASE_CHECK_H_
+#endif  // AVBASE_BASE_CHECK_H_

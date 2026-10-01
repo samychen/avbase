@@ -1,11 +1,11 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `base/task/task_runner.h` (BSD-3-Clause).
 
-#ifndef IJKPP_BASE_TASK_TASK_RUNNER_H_
-#define IJKPP_BASE_TASK_TASK_RUNNER_H_
+#ifndef AVBASE_BASE_TASK_TASK_RUNNER_H_
+#define AVBASE_BASE_TASK_TASK_RUNNER_H_
 
 #include <cstddef>
 
@@ -16,17 +16,17 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // A destination for posted tasks.
 //
 // Posting is the ONLY sanctioned way to touch an object owned by another
-// sequence in ijkpp. Combined with base::WeakPtr it structurally eliminates
+// sequence in avbase. Combined with base::WeakPtr it structurally eliminates
 // the "player released while a callback is in flight" crash class that
 // ijkplayer cannot prevent (docs/04 §7 R11).
 //
 // PostTask never blocks and never runs the task inline.
-class IJKPP_BASE_EXPORT TaskRunner : public RefCountedThreadSafe<TaskRunner> {
+class AVBASE_BASE_EXPORT TaskRunner : public RefCountedThreadSafe<TaskRunner> {
  public:
   TaskRunner(const TaskRunner&) = delete;
   TaskRunner& operator=(const TaskRunner&) = delete;
@@ -57,6 +57,6 @@ class IJKPP_BASE_EXPORT TaskRunner : public RefCountedThreadSafe<TaskRunner> {
   friend class RefCountedThreadSafe<TaskRunner>;
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_TASK_TASK_RUNNER_H_
+#endif  // AVBASE_BASE_TASK_TASK_RUNNER_H_

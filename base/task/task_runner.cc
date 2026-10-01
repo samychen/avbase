@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 
 #include <utility>
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 TaskRunner::TaskRunner() = default;
 TaskRunner::~TaskRunner() = default;
@@ -26,4 +26,4 @@ bool TaskRunner::PostDelayedTask(const Location& from_here, OnceClosure task,
                              delay.is_negative() ? TimeDelta() : delay);
 }
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base

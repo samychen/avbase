@@ -15,8 +15,8 @@
 | **只跑 Python 工具** | 仅 Python 3 —— **不需要编译器、不需要 FFmpeg** | 见 §5 |
 | 真实媒体测试 | 系统 FFmpeg 开发包（4.4 ~ 7.x 均可，**不需要打 patch**） | `pkg-config --modversion libavformat` |
 | FFmpeg 版本锁定 | `tools/setup_ffmpeg.sh`（从源码编一个固定版本到 prefix） | — |
-| SDL2 后端 | ✅ 已实现（M11 的代码提前落地）：`-DIJKPP_ENABLE_SDL2=ON`，另需 SDL2 开发包 | 见 §4 |
-| 原生 Linux 后端（X11/Wayland） | ❌ **尚未实现**（M12）。打开 `IJKPP_ENABLE_LINUX_NATIVE` 会直接 `FATAL_ERROR` | 见 §4 |
+| SDL2 后端 | ✅ 已实现（M11 的代码提前落地）：`-DAVBASE_ENABLE_SDL2=ON`，另需 SDL2 开发包 | 见 §4 |
+| 原生 Linux 后端（X11/Wayland） | ❌ **尚未实现**（M12）。打开 `AVBASE_ENABLE_LINUX_NATIVE` 会直接 `FATAL_ERROR` | 见 §4 |
 
 Debian/Ubuntu 一次装齐（不含 FFmpeg）：
 
@@ -32,7 +32,7 @@ sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev \
 ## 2. 取代码
 
 ```bash
-git clone https://github.com/samychen/ijkpp.git && cd ijkpp
+git clone https://github.com/samychen/avbase.git && cd avbase
 git checkout fill-gaps        # ← 本轮全部工作在这个分支，main 还是首次提交
 ```
 
@@ -56,17 +56,17 @@ ctest --preset no-ffmpeg --output-on-failure
 ### 3.2 带真实媒体的完整测试
 
 ```bash
-cmake --preset linux-ffmpeg711      # 需要先 export IJKPP_FFMPEG_ROOT
+cmake --preset linux-ffmpeg711      # 需要先 export AVBASE_FFMPEG_ROOT
 cmake --build --preset linux-ffmpeg711
 ctest --test-dir build/linux-ffmpeg711 --output-on-failure
 ```
 
-预期 **359 = 324 + 35** 全绿。`IJKPP_FFMPEG_ROOT` 指向一个 FFmpeg 安装前缀；
+预期 **359 = 324 + 35** 全绿。`AVBASE_FFMPEG_ROOT` 指向一个 FFmpeg 安装前缀；
 用 `tools/setup_ffmpeg.sh` 生成一个版本锁定的：
 
 ```bash
 tools/setup_ffmpeg.sh 7.1.1                    # 装到 /opt/ffmpeg-7.1.1
-export IJKPP_FFMPEG_ROOT=/opt/ffmpeg-7.1.1
+export AVBASE_FFMPEG_ROOT=/opt/ffmpeg-7.1.1
 ```
 
 也可以直接用发行版 FFmpeg（这正是设计目标之一，验收标准 A14）：
@@ -81,7 +81,7 @@ cmake --build build/linux-sdl2        # 唯一能建出 play_sdl2 的 preset
 ```
 
 `ffmpeg` 与 `linux-sdl2` 都只需要发行版/Homebrew 的 FFmpeg，不需要
-`IJKPP_FFMPEG_ROOT`；`linux-sdl2` 也是 CI 里用来验证 SDL2 后端能在 Linux 上编译的那份配置。
+`AVBASE_FFMPEG_ROOT`；`linux-sdl2` 也是 CI 里用来验证 SDL2 后端能在 Linux 上编译的那份配置。
 
 ### 3.3 Debug + `-Werror`（第一次构建应该跑这个）
 
@@ -90,13 +90,13 @@ cmake --preset debug && cmake --build build/debug
 (cd build/debug && ctest --output-on-failure)
 ```
 
-`debug` 打开 `IJKPP_STRICT_WARNINGS` + `IJKPP_WERROR` + `IJKPP_ENABLE_DCHECK`。
+`debug` 打开 `AVBASE_STRICT_WARNINGS` + `AVBASE_WERROR` + `AVBASE_ENABLE_DCHECK`。
 警告集包含 `-Wshadow` `-Wnon-virtual-dtor` `-Woverloaded-virtual` `-Wcast-align`
 `-Wnull-dereference` `-Wdouble-promotion` `-Wimplicit-fallthrough` `-Wformat=2`
 以及 `-Werror=return-type/uninitialized/narrowing/delete-non-virtual-dtor/reorder`。
 **新代码第一次编译就应该在这里过，而不是在 `no-ffmpeg` 里过。**
 
-`debug` 同时打开 `IJKPP_ENABLE_FFMPEG`（严格告警必须覆盖全部目标）。在此之前它
+`debug` 同时打开 `AVBASE_ENABLE_FFMPEG`（严格告警必须覆盖全部目标）。在此之前它
 沿用默认值 OFF，于是 `platform/ffmpeg/*` 与 `media/filters/ffmpeg_*.cc` 只被非严格的
 `ffmpeg` / `linux-sdl2` 预设编过——"零警告"实际只覆盖了不含 FFmpeg 的那半棵树，
 而 FFmpeg 适配层正好是 `-Wthread-safety` 最容易说话的地方之一。
@@ -120,10 +120,10 @@ cmake --preset coverage && cmake --build build/coverage
 ### 3.5 诊断 CLI
 
 ```bash
-cmake --build --preset linux-ffmpeg711          # 或任何 IJKPP_ENABLE_FFMPEG=ON 的配置
-./build/linux-ffmpeg711/tools/inspect/ijkpp-inspect probe  tests/testdata/small_h264_aac_3s.mp4
-./build/linux-ffmpeg711/tools/inspect/ijkpp-inspect decode tests/testdata/small_h264_aac_3s.mp4
-./build/linux-ffmpeg711/tools/inspect/ijkpp-inspect sync   tests/testdata/small_h264_aac_3s.mp4
+cmake --build --preset linux-ffmpeg711          # 或任何 AVBASE_ENABLE_FFMPEG=ON 的配置
+./build/linux-ffmpeg711/tools/inspect/avbase-inspect probe  tests/testdata/small_h264_aac_3s.mp4
+./build/linux-ffmpeg711/tools/inspect/avbase-inspect decode tests/testdata/small_h264_aac_3s.mp4
+./build/linux-ffmpeg711/tools/inspect/avbase-inspect sync   tests/testdata/small_h264_aac_3s.mp4
 ```
 
 `decode` 会打印帧数、pts 单调性、音频样本数；`sync` 用真实时间戳逐步驱动
@@ -141,7 +141,7 @@ cmake --build --preset linux-ffmpeg711          # 或任何 IJKPP_ENABLE_FFMPEG=
 #   → "completed at media time 2.99s"，退出码 0
 #   可选 --seek 1.5 / --rate 2.0 / --timeout n
 
-# SDL2 真窗口（需 IJKPP_ENABLE_SDL2=ON 配置；宿主创建窗口，嵌入模式见
+# SDL2 真窗口（需 AVBASE_ENABLE_SDL2=ON 配置；宿主创建窗口，嵌入模式见
 # platform/sdl2/surface.h）：
 ./build/<cfg>/bin/play_sdl2 --url tests/testdata/small_h264_aac_3s.mp4
 ```
@@ -173,7 +173,7 @@ SDL2 双通道验证过）；精确 seek、golden 对齐和原生 GL 后端仍�
 # 架构与风格不变量（14 条规则），并列出所有 DRAFT 文件防止被遗忘
 python3 tools/check_invariants.py --root .
 
-# 移植常量三方交叉校验：ffplay #define ⟷ ijkpp 代码 ⟷ docs/05 表 7
+# 移植常量三方交叉校验：ffplay #define ⟷ avbase 代码 ⟷ docs/05 表 7
 python3 tools/extract_constants.py --root . --selftest            # 不需要 ijkplayer 源码
 python3 tools/extract_constants.py --root . --ijkplayer /path/to/ijkplayer   # 三方
 python3 tools/extract_constants.py --root . --selftest --json     # 机器可读
@@ -237,7 +237,7 @@ done
 | 80 列 / 命名 / `-Wshadow` | 列宽已由 C23 棘轮守着（基线 310 行），`-Wshadow` 与其余编译告警由 `debug` preset 的 `-Werror` 全量守（该预设现已含 FFmpeg 层，见 §3.3）；但**命名规则没有任何门禁**——`.clang-tidy` 已落盘却未接线，`check-format` / `check-cpplint` 两个 job 也刻意没开（见 §7 末） |
 
 ```bash
-# 第 2 步：语法过了再进构建。media/base 的 7 个头加入 ijkpp_media
+# 第 2 步：语法过了再进构建。media/base 的 7 个头加入 avbase_media
 #         （它们只有声明，除 pipeline_status/renderer_client/renderer/
 #           pipeline/pipeline_controller 各自欠一个 .cc，见各文件头的
 #           ".cc owed by this header" 清单，共 10 个符号）
@@ -275,12 +275,12 @@ grep -rln "STATUS: DRAFT" --include='*.h' --include='*.cc' .
 
 | 症状 | 原因与处置 |
 |---|---|
-| `IJKPP_ENABLE_LINUX_NATIVE is scheduled for milestone M12` | 不是 bug，是有意的 `FATAL_ERROR`：原生 GL 后端还没写。SDL2 后端已经可用，见 §4 |
+| `AVBASE_ENABLE_LINUX_NATIVE is scheduled for milestone M12` | 不是 bug，是有意的 `FATAL_ERROR`：原生 GL 后端还没写。SDL2 后端已经可用，见 §4 |
 | `FindFFmpeg` 报版本为空 / 门禁形同虚设 | 第四轮修过一个：版本正则用小写组件名而实际宏是 `LIBAVCODEC_VERSION_MAJOR`。若再现，检查 `cmake/FindFFmpeg.cmake` 的 `string(TOUPPER)` |
-| `av_dict_iterate` 未声明 | 那是 FFmpeg 6.0 才有的；5.x 走 `IJKPP_FFMPEG_HAS_DICT_ITERATE` 分支。兼容层已在 7.1.1 与 5.1.9 双版本验证过 |
+| `av_dict_iterate` 未声明 | 那是 FFmpeg 6.0 才有的；5.x 走 `AVBASE_FFMPEG_HAS_DICT_ITERATE` 分支。兼容层已在 7.1.1 与 5.1.9 双版本验证过 |
 | 工具跑出来的结果与源码不符 | `__pycache__` 陈旧字节码，见 §5 的警告 |
 | `check_invariants` 报 C1 超长 | DRAFT 文件豁免；非 DRAFT 文件要么拆，要么在 `LINE_LIMIT_ALLOWLIST` 登记**带理由**的豁免（每条豁免要关联 issue，见 R12） |
-| 构建产物里出现 `libSDL2` | 应然：`IJKPP_ENABLE_SDL2=ON` 时 `platform_sdl2` 是唯一链接 SDL2 的 target。`libGL` 则仍不可能（原生后端不存在）；M12 之后应由 dlopen 弱依赖保证 `ldd libijkpp.so` 只有 libc/libstdc++/libm/libdl/libpthread |
+| 构建产物里出现 `libSDL2` | 应然：`AVBASE_ENABLE_SDL2=ON` 时 `platform_sdl2` 是唯一链接 SDL2 的 target。`libGL` 则仍不可能（原生后端不存在）；M12 之后应由 dlopen 弱依赖保证 `ldd libavbase.so` 只有 libc/libstdc++/libm/libdl/libpthread |
 
 ---
 

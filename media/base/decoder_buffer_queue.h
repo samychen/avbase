@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_MEDIA_BASE_DECODER_BUFFER_QUEUE_H_
-#define IJKPP_MEDIA_BASE_DECODER_BUFFER_QUEUE_H_
+#ifndef AVBASE_MEDIA_BASE_DECODER_BUFFER_QUEUE_H_
+#define AVBASE_MEDIA_BASE_DECODER_BUFFER_QUEUE_H_
 
 #include <stdint.h>
 
@@ -23,7 +23,7 @@
 #include "media/base/media_log.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Bounded, serial-aware queue of compressed samples between a demuxer and a
 // decoder.
@@ -42,7 +42,7 @@ namespace ijkpp::media {
 //  3. BOUNDED SHUTDOWN. Abort() wakes every waiter immediately and makes all
 //     further operations fail fast, so ~Player() cannot hang on a producer
 //     blocked against a full queue (docs/04 §5.4, Δ15).
-class IJKPP_MEDIA_EXPORT DecoderBufferQueue {
+class AVBASE_MEDIA_EXPORT DecoderBufferQueue {
  public:
   enum class PopStatus {
     kOk,            // |out| holds a buffer.
@@ -132,8 +132,8 @@ class IJKPP_MEDIA_EXPORT DecoderBufferQueue {
   std::atomic<uint64_t> pop_waits_{0};
 };
 
-IJKPP_MEDIA_EXPORT const char* GetPopStatusName(DecoderBufferQueue::PopStatus s);
+AVBASE_MEDIA_EXPORT const char* GetPopStatusName(DecoderBufferQueue::PopStatus s);
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_DECODER_BUFFER_QUEUE_H_
+#endif  // AVBASE_MEDIA_BASE_DECODER_BUFFER_QUEUE_H_

@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -39,7 +39,7 @@
 #include "tests/support/fake_demuxer_stream.h"
 #include "tests/support/fake_renderer_sinks.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 // One 30 fps interval, the cadence the fake decoder's frames are stamped with.
@@ -218,4 +218,4 @@ TEST_F(VideoRendererImplTest, FlushDropsFramesFromThePreviousSerial) {
 }
 
 }  // namespace
-}  // namespace ijkpp::media
+}  // namespace avbase::media

@@ -1,12 +1,12 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Every FFmpeg version difference in ijkpp is absorbed here. Code outside
+// Every FFmpeg version difference in avbase is absorbed here. Code outside
 // platform/ffmpeg/ uses only these wrappers and never sees an `#if LIBAV*`.
 
-#ifndef IJKPP_PLATFORM_FFMPEG_COMPAT_H_
-#define IJKPP_PLATFORM_FFMPEG_COMPAT_H_
+#ifndef AVBASE_PLATFORM_FFMPEG_COMPAT_H_
+#define AVBASE_PLATFORM_FFMPEG_COMPAT_H_
 
 #include <map>
 #include <memory>
@@ -19,7 +19,7 @@
 #include "player/public/error.h"
 #include "platform/ffmpeg/av_includes.h"
 
-namespace ijkpp::platform::ffmpeg {
+namespace avbase::platform::ffmpeg {
 
 // ---- RAII wrappers ---------------------------------------------------------
 // These replace the 50+ `goto fail` ladders in ijkplayer's ff_ffplay.c: with a
@@ -58,12 +58,12 @@ SwrPtr MakeSwrContext(AVSampleFormat out_format, uint64_t out_layout, int out_ra
 
 // ---- Timestamps -------------------------------------------------------------
 // AV_NOPTS_VALUE becomes media::kNoTimestamp; no magic INT64_MIN ever escapes
-// into ijkpp's own code.
+// into avbase's own code.
 base::TimeDelta ToTimeDelta(int64_t ts, AVRational time_base);
 int64_t FromTimeDelta(base::TimeDelta t, AVRational time_base);
 
 // ---- Errors -----------------------------------------------------------------
-// Translates an AVERROR into ijkpp's three-part MediaError (docs/10 §4), using
+// Translates an AVERROR into avbase's three-part MediaError (docs/10 §4), using
 // av_strerror for the human-readable text.
 MediaError ToMediaError(int av_error, std::string_view context);
 MediaError ToMediaError(int av_error, std::string_view context,
@@ -81,6 +81,6 @@ std::vector<std::string> UnconsumedOptions(const AVDictionary* dict);
 std::string AvErrorString(int av_error);
 int64_t PacketDuration(const AVPacket* packet);
 
-}  // namespace ijkpp::platform::ffmpeg
+}  // namespace avbase::platform::ffmpeg
 
-#endif  // IJKPP_PLATFORM_FFMPEG_COMPAT_H_
+#endif  // AVBASE_PLATFORM_FFMPEG_COMPAT_H_

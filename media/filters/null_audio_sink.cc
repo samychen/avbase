@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 #include "base/location.h"
 #include "base/synchronization/lock.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 // How long the idle loop waits when the sink is not playing. Short enough
@@ -40,7 +40,7 @@ void NullAudioSink::Start() {
   if (started_.exchange(true)) {
     return;
   }
-  thread_ = std::make_unique<base::Thread>("ijkpp-null-audio");
+  thread_ = std::make_unique<base::Thread>("avbase-null-audio");
   thread_->Start();
   audio_runner_ = thread_->task_runner();
   audio_runner_->PostTask(FROM_HERE,
@@ -129,4 +129,4 @@ base::scoped_refptr<AudioRendererSink> NullAudioSinkFactory::Create() {
   return base::MakeRefCounted<NullAudioSink>();
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

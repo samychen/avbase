@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -23,7 +23,7 @@
 
 #include "gtest/gtest.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 namespace {
 
 // A ref-counted probe that reports its own liveness, so a test can assert both
@@ -116,7 +116,7 @@ TEST(WrapRefCountedTest, OverloadAcceptsAnExistingScopedRefptr) {
 
 TEST(AdoptRefTest, TakesOverAnExistingReferenceWithoutAddingOne) {
   // This test asserted the wrong thing in its first version: it did
-  // `AdoptRef(new Probe())` and expected a count of 1. But in ijkpp a freshly
+  // `AdoptRef(new Probe())` and expected a count of 1. But in avbase a freshly
   // newed ref-counted object has count 0, MakeRefCounted reaches 1 by way of
   // the *adding* constructor, and ~RefCountedBase DCHECKs the count is back to
   // 0. AdoptRef therefore means "take over a reference someone already holds",
@@ -193,4 +193,4 @@ TEST(OwnershipVocabularyTest, ProtectedCtorTypeIsReachableThroughDerived) {
 }
 
 }  // namespace
-}  // namespace ijkpp::base
+}  // namespace avbase::base

@@ -1,8 +1,8 @@
 # ASan/LSan suppressions for third-party code only.
 #
-# Policy (docs/07 §9.1): a sanitizer report originating in ijkpp's own code is
+# Policy (docs/07 §9.1): a sanitizer report originating in avbase's own code is
 # a release blocker and must be fixed, never suppressed. Only vendor libraries
-# that ijkpp cannot modify may appear here, and each entry needs a reason.
+# that avbase cannot modify may appear here, and each entry needs a reason.
 
 # FFmpeg's swscale/swresample use hand-written assembly and long-lived caches
 # that LSan cannot see through. Not a leak in practice.

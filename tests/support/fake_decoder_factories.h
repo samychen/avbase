@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -14,8 +14,8 @@
 // keeps its own copy (its behaviour knobs drive decoder selection, not the
 // renderer), and the two are meant to stay comparable.
 
-#ifndef IJKPP_TESTS_SUPPORT_FAKE_DECODER_FACTORIES_H_
-#define IJKPP_TESTS_SUPPORT_FAKE_DECODER_FACTORIES_H_
+#ifndef AVBASE_TESTS_SUPPORT_FAKE_DECODER_FACTORIES_H_
+#define AVBASE_TESTS_SUPPORT_FAKE_DECODER_FACTORIES_H_
 
 #include <atomic>
 #include <cstdint>
@@ -35,7 +35,7 @@
 #include "media/base/video_decoder_factory.h"
 #include "media/base/video_frame.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 
 // Call counts live in the factory, which the test holds; the decoders it
 // creates get a pointer to them. Without this a test could not see whether the
@@ -163,6 +163,6 @@ class FakeVideoDecoderFactory final : public VideoDecoderFactory {
   FakeDecoderCounters counters_;
 };
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test
 
-#endif  // IJKPP_TESTS_SUPPORT_FAKE_DECODER_FACTORIES_H_
+#endif  // AVBASE_TESTS_SUPPORT_FAKE_DECODER_FACTORIES_H_

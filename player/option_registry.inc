@@ -17,8 +17,8 @@
 // reconciled by --check, so this file cannot silently disagree with
 // either authority (invariant C13).
 
-#ifndef IJKPP_PLAYER_OPTION_REGISTRY_INC_
-#define IJKPP_PLAYER_OPTION_REGISTRY_INC_
+#ifndef AVBASE_PLAYER_OPTION_REGISTRY_INC_
+#define AVBASE_PLAYER_OPTION_REGISTRY_INC_
 
 // One id per PlayerConfig field the table writes.
 enum class GeneratedField : uint16_t {
@@ -290,7 +290,7 @@ inline const GeneratedOption kGeneratedOptions[kGeneratedOptionCount] = {
       0, true, "bytes to probe when identifying streams"},
     {"analyzeduration", OptionCategory::kFormat, OptionDescriptor::Type::kInt64,
       GeneratedField::kDemuxAnalyzeDuration, GeneratedKind::kMsToTimeDelta,
-      0, 0, true, "microseconds in legacy; ijkpp takes milliseconds"},
+      0, 0, true, "microseconds in legacy; avbase takes milliseconds"},
     {"timeout", OptionCategory::kFormat, OptionDescriptor::Type::kInt64,
       GeneratedField::kDemuxTimeout, GeneratedKind::kMsToTimeDelta,
       0, 0, true, "socket I/O timeout in milliseconds"},
@@ -364,7 +364,7 @@ inline Status ApplyGeneratedOption(PlayerConfig* c, std::string_view key,
         if (!i) return TypeMismatch("volume", "an integer");
         if (*i < 0 || *i > 100) return OutOfRange("volume", std::to_string(*i),
           "[0, 100]");
-                // Δ6: the legacy range is 0..100, ijkpp's is 0.0..1.0.
+                // Δ6: the legacy range is 0..100, avbase's is 0.0..1.0.
         c->audio.startup_volume = static_cast<double>(*i) / 100.0;
         return OkStatus(); }
       break;
@@ -727,4 +727,4 @@ inline Status ApplyGeneratedOption(PlayerConfig* c, std::string_view key,
                "run tools/gen_options.py --emit");
 }
 
-#endif  // IJKPP_PLAYER_OPTION_REGISTRY_INC_
+#endif  // AVBASE_PLAYER_OPTION_REGISTRY_INC_

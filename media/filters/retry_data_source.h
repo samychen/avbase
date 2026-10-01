@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_MEDIA_FILTERS_RETRY_DATA_SOURCE_H_
-#define IJKPP_MEDIA_FILTERS_RETRY_DATA_SOURCE_H_
+#ifndef AVBASE_MEDIA_FILTERS_RETRY_DATA_SOURCE_H_
+#define AVBASE_MEDIA_FILTERS_RETRY_DATA_SOURCE_H_
 
 #include <atomic>
 #include <deque>
@@ -19,7 +19,7 @@
 #include "media/base/media_error.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // A DataSource decorator that retries a failed inner read instead of
 // reporting it upward -- the M9 answer to "the network died mid-stream"
@@ -38,7 +38,7 @@ namespace ijkpp::media {
 // runs on a private worker and posts its result to |task_runner| -- never
 // inline (the DataSource contract). Abort() stops both paths promptly and
 // forwards to the inner source.
-class IJKPP_MEDIA_EXPORT RetryDataSource final : public DataSource {
+class AVBASE_MEDIA_EXPORT RetryDataSource final : public DataSource {
  public:
   struct Config {
     int max_retries{3};
@@ -88,6 +88,6 @@ class IJKPP_MEDIA_EXPORT RetryDataSource final : public DataSource {
   bool stopped_ GUARDED_BY(pending_lock_) = false;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_RETRY_DATA_SOURCE_H_
+#endif  // AVBASE_MEDIA_FILTERS_RETRY_DATA_SOURCE_H_

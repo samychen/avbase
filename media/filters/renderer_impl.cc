@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -25,7 +25,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "media/base/media_constants.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 // How often the master clock is pushed from S1 to S3. 10 ms is a third of a
@@ -304,7 +304,7 @@ void RendererImpl::MaybeReportInitialized() {
     return;
   }
   initialized_ = true;
-  LOG(INFO) << "ijkpp.pipeline: renderer ready (video=" << has_video_
+  LOG(INFO) << "avbase.pipeline: renderer ready (video=" << has_video_
             << " audio=" << has_audio_ << ")";
   if (pending_init_cb_) {
     CompleteInitialization(PipelineStatus::kOk);
@@ -537,4 +537,4 @@ void RendererImpl::OnEnded() {
   client_->OnEnded();
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

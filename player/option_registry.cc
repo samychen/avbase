@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -13,7 +13,7 @@
 #include <functional>
 #include <utility>
 
-namespace ijkpp {
+namespace avbase {
 namespace {
 
 // Edit distance used for the "did you mean" hint. ijkplayer silently ignores
@@ -300,4 +300,4 @@ std::string OptionRegistry::SuggestNearestKey(std::string_view key) const {
   return best_distance <= 3 ? best : std::string();
 }
 
-}  // namespace ijkpp
+}  // namespace avbase

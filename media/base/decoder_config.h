@@ -1,14 +1,14 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's media/base/video_decoder_config.h and
 // audio_decoder_config.h (BSD-3-Clause), merged into one header because they
-// share most of their shape and ijkpp does not need Chromium's per-field
+// share most of their shape and avbase does not need Chromium's per-field
 // change tracking yet.
 
-#ifndef IJKPP_MEDIA_BASE_DECODER_CONFIG_H_
-#define IJKPP_MEDIA_BASE_DECODER_CONFIG_H_
+#ifndef AVBASE_MEDIA_BASE_DECODER_CONFIG_H_
+#define AVBASE_MEDIA_BASE_DECODER_CONFIG_H_
 
 #include <stdint.h>
 
@@ -21,7 +21,7 @@
 #include "media/base/video_frame.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Fallback when the container reports no time base. Kept here rather than
 // including libavutil (invariant C4).
@@ -37,12 +37,12 @@ enum class AudioCodec {
   kUnknown = 0, kAac, kMp3, kOpus, kVorbis, kFlac, kPcmS16Le, kAc3, kEac3,
 };
 
-IJKPP_MEDIA_EXPORT const char* GetVideoCodecName(VideoCodec codec);
-IJKPP_MEDIA_EXPORT const char* GetAudioCodecName(AudioCodec codec);
-IJKPP_MEDIA_EXPORT VideoCodec VideoCodecFromName(std::string_view name);
-IJKPP_MEDIA_EXPORT AudioCodec AudioCodecFromName(std::string_view name);
+AVBASE_MEDIA_EXPORT const char* GetVideoCodecName(VideoCodec codec);
+AVBASE_MEDIA_EXPORT const char* GetAudioCodecName(AudioCodec codec);
+AVBASE_MEDIA_EXPORT VideoCodec VideoCodecFromName(std::string_view name);
+AVBASE_MEDIA_EXPORT AudioCodec AudioCodecFromName(std::string_view name);
 
-struct IJKPP_MEDIA_EXPORT VideoDecoderConfig {
+struct AVBASE_MEDIA_EXPORT VideoDecoderConfig {
   VideoCodec codec{VideoCodec::kUnknown};
   std::string codec_name;              // FFmpeg's name, e.g. "h264".
   std::string profile;
@@ -66,7 +66,7 @@ struct IJKPP_MEDIA_EXPORT VideoDecoderConfig {
   }
 };
 
-struct IJKPP_MEDIA_EXPORT AudioDecoderConfig {
+struct AVBASE_MEDIA_EXPORT AudioDecoderConfig {
   AudioCodec codec{AudioCodec::kUnknown};
   std::string codec_name;
   std::string profile;
@@ -85,6 +85,6 @@ struct IJKPP_MEDIA_EXPORT AudioDecoderConfig {
   }
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_DECODER_CONFIG_H_
+#endif  // AVBASE_MEDIA_BASE_DECODER_CONFIG_H_

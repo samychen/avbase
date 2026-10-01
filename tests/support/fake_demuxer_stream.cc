@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 
 AudioDecoderConfig MakeValidAudioConfig() {
   AudioDecoderConfig config;
@@ -97,4 +97,4 @@ DemuxerStream* FakeMediaResource::GetStream(DemuxerStreamType type) {
   return nullptr;
 }
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test

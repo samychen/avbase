@@ -34,7 +34,7 @@
 
 **E1 · 零配置可用（Batteries Included）**
 ```cpp
-ijkpp::Player player;                                  // 自动探测平台后端
+avbase::Player player;                                  // 自动探测平台后端
 player.SetDataSource("video.mp4");                     // 就这样
 player.PrepareAsync();
 ```
@@ -62,21 +62,21 @@ ijkplayer 的 `ijkmp_seek_to(mp, msec)` 与内部 `pts`（µs）、`audio_clock`
 
 **E7 · 事件用强类型 + 便捷访问器，不强迫用户写 `std::visit`**
 ```cpp
-player.SetEventHandler([](const ijkpp::PlayerEvent& e) {
+player.SetEventHandler([](const avbase::PlayerEvent& e) {
   // 方式一：switch（最简单）
   switch (e.type) {
-    case ijkpp::EventType::kPrepared: player.Start(); break;
-    case ijkpp::EventType::kError:
-      LOG(ERROR) << ijkpp::AsError(e)->error.ToString();
+    case avbase::EventType::kPrepared: player.Start(); break;
+    case avbase::EventType::kError:
+      LOG(ERROR) << avbase::AsError(e)->error.ToString();
       break;
     default: break;
   }
 });
 // 方式二：只关心某几种（编译期过滤）
-player.Observe<ijkpp::ErrorEvent, ijkpp::CompletedEvent>(
+player.Observe<avbase::ErrorEvent, avbase::CompletedEvent>(
     [](const auto& ev) { ... });
 // 方式三：观察者接口（大项目推荐）
-class MyObserver : public ijkpp::PlayerObserver {
+class MyObserver : public avbase::PlayerObserver {
   void OnPrepared(const PreparedPayload&) override { ... }
 };
 ```
@@ -87,7 +87,7 @@ class MyObserver : public ijkpp::PlayerObserver {
 
 **E9 · 析构安全，不需要用户显式 `Release()`**
 ```cpp
-{ ijkpp::Player p; ... }        // 出作用域自动停止，有超时兜底，绝不卡死
+{ avbase::Player p; ... }        // 出作用域自动停止，有超时兜底，绝不卡死
 ```
 不需要 `ijkmp_dec_ref` / `ijkmp_shutdown` 的成对调用。
 
@@ -113,10 +113,10 @@ Level 4  + Deps 注入自定义 VideoRendererSink / VideoDecoder / DataSource  /
 #include <cstdio>
 
 int main() {
-  ijkpp::Player player;
-  player.SetEventHandler([&player](const ijkpp::PlayerEvent& e) {
-    if (e.type == ijkpp::EventType::kPrepared) player.Start();
-    if (e.type == ijkpp::EventType::kCompleted) player.Stop();
+  avbase::Player player;
+  player.SetEventHandler([&player](const avbase::PlayerEvent& e) {
+    if (e.type == avbase::EventType::kPrepared) player.Start();
+    if (e.type == avbase::EventType::kCompleted) player.Stop();
   });
   if (auto r = player.SetDataSource("video.mp4"); !r) {
     std::fprintf(stderr, "%s\n", r.error().ToString().c_str());
@@ -134,7 +134,7 @@ int main() {
 编译：
 ```bash
 g++ -std=c++20 -fno-exceptions -fno-rtti quickstart.cc \
-    $(pkg-config --cflags --libs ijkpp) -o quickstart
+    $(pkg-config --cflags --libs avbase) -o quickstart
 ./quickstart
 ```
 
@@ -153,21 +153,21 @@ int main() {
   XMapWindow(dpy, win);
   XFlush(dpy);
 
-  ijkpp::Player player;
-  player.SetVideoSurface(ijkpp::NativeDisplay::FromX11Window({dpy, win}));
-  player.SetEventHandler([&](const ijkpp::PlayerEvent& e) {
+  avbase::Player player;
+  player.SetVideoSurface(avbase::NativeDisplay::FromX11Window({dpy, win}));
+  player.SetEventHandler([&](const avbase::PlayerEvent& e) {
     switch (e.type) {
-      case ijkpp::EventType::kPrepared:   player.Start(); break;
-      case ijkpp::EventType::kError:      HandleError(*ijkpp::AsError(e)); break;
-      case ijkpp::EventType::kCompleted:  Quit(); break;
+      case avbase::EventType::kPrepared:   player.Start(); break;
+      case avbase::EventType::kError:      HandleError(*avbase::AsError(e)); break;
+      case avbase::EventType::kCompleted:  Quit(); break;
       default: break;
     }
   });
 
-  IJKPP_RETURN_IF_ERROR(player.SetDataSource("video.mp4"));
-  IJKPP_RETURN_IF_ERROR(player.PrepareAsync());
+  AVBASE_RETURN_IF_ERROR(player.SetDataSource("video.mp4"));
+  AVBASE_RETURN_IF_ERROR(player.PrepareAsync());
 
-  // 你自己的事件循环；ijkpp 不碰你的 Display（见 docs/09 §3.1 铁律）
+  // 你自己的事件循环；avbase 不碰你的 Display（见 docs/09 §3.1 铁律）
   XEvent ev;
   while (!ShouldQuit()) {
     while (XPending(dpy)) { XNextEvent(dpy, &ev); HandleEvent(ev); }
@@ -181,22 +181,22 @@ int main() {
 ### Level 2 — 调参
 
 ```cpp
-ijkpp::PlayerConfig config;
+avbase::PlayerConfig config;
 config.buffer.max_bytes            = 8 * 1024 * 1024;
 config.buffer.max_cached_duration  = base::Seconds(10);
-config.video.decoder_preference    = ijkpp::DecoderPreference::kHardwareFirst;
+config.video.decoder_preference    = avbase::DecoderPreference::kHardwareFirst;
 config.video.max_frame_drop        = 8;
 config.seek.accurate               = true;
-config.render.linux_backend        = ijkpp::LinuxVideoBackend::kGl;
-config.audio.backend               = ijkpp::AudioBackend::kPulse;
+config.render.linux_backend        = avbase::LinuxVideoBackend::kGl;
+config.audio.backend               = avbase::AudioBackend::kPulse;
 
-ijkpp::Player player(config);
+avbase::Player player(config);
 ```
 
 ### Level 3 — 从 ijkplayer 配置迁移（字符串选项）
 
 ```cpp
-ijkpp::PlayerBuilder builder;
+avbase::PlayerBuilder builder;
 // 你原来的 ijkmp_set_option_int 调用可以几乎原样搬过来
 for (const auto& [cat, key, value] : legacy_options) {
   auto r = builder.SetOption(cat, key, value);
@@ -208,7 +208,7 @@ auto player = std::move(builder.Build().value());
 ### Level 4 — 注入自定义后端
 
 ```cpp
-auto deps = std::make_unique<ijkpp::Deps>();
+auto deps = std::make_unique<avbase::Deps>();
 deps->video_renderer_sink_factory = base::MakeRefCounted<MyOpenGLSinkFactory>();
 deps->audio_renderer_sink_factory = base::MakeRefCounted<MyAudioSinkFactory>();
 deps->video_decoder_factories.push_back(std::make_unique<MyVaapiDecoderFactory>());
@@ -216,7 +216,7 @@ deps->data_source_factory = std::make_shared<MyEncryptedDataSourceFactory>();
 deps->logging_delegate = std::make_unique<MyLogger>();
 deps->event_dispatcher = MyUiThreadDispatcher::Create();
 
-ijkpp::Player player(config, std::move(deps));
+avbase::Player player(config, std::move(deps));
 ```
 
 ---
@@ -229,11 +229,11 @@ ijkpp::Player player(config, std::move(deps));
 
 ```cpp
 // player/public/error.h
-namespace ijkpp {
+namespace avbase {
 
 enum class ErrorCode : uint16_t { /* 见 03 §2.1 */ };
 
-class IJKPP_PLAYER_EXPORT MediaError {
+class AVBASE_PLAYER_EXPORT MediaError {
  public:
   MediaError() = default;
   MediaError(ErrorCode code, std::string summary, std::string detail,
@@ -256,7 +256,7 @@ class IJKPP_PLAYER_EXPORT MediaError {
   static MediaError Ok();
 };
 
-}  // namespace ijkpp
+}  // namespace avbase
 ```
 
 ### 4.2 三段式格式（强制）
@@ -269,7 +269,7 @@ class IJKPP_PLAYER_EXPORT MediaError {
 ```
 
 **规范**：
-- `summary` ≤ 80 字符，不含换行，主语是"ijkpp 做了什么失败了"而非"你错了"
+- `summary` ≤ 80 字符，不含换行，主语是"avbase 做了什么失败了"而非"你错了"
 - `detail` 必须含**实际值**（文件路径、分辨率、codec 名、超时时长），不能只说"失败"
 - `suggestion` 必须是**可执行动作**，指明具体的 API / 配置项 / 命令
 - `native_code` 附上原始错误码并翻译（`av_strerror` / `strerror`）
@@ -427,7 +427,7 @@ DecoderHwFallback: hardware decoding failed, falling back to software
 Timeout: shutdown did not complete in time
   context: Player::~Player
   detail:  timeout = 500 ms (config.shutdown_timeout)
-           still running: ijkpp-demux (blocked in av_read_frame)
+           still running: avbase-demux (blocked in av_read_frame)
            diagnostics: { "state": "kStopping", "seek": {"phase":"kWaitingDemux"}, ... }
   hint:    the demuxer thread was blocked in network IO and did not honour the
            interrupt callback in time. Increase config.shutdown_timeout, or
@@ -523,7 +523,7 @@ void SeekTo(base::TimeDelta position, SeekMode mode, SeekCB cb);
 | `examples/custom_decoder` | 4 | 包装一个假的 `VideoDecoder`（演示接口） | ≤ 200 |
 | `examples/custom_data_source` | 4 | 从内存/自定义下载器播放 | ≤ 200 |
 | `examples/snapshot` | 1 | `TakeSnapshot()` 抽帧 | ≤ 80 |
-| `examples/ijkpp_inspect` | 2 | 诊断 CLI（dump / play / golden） | ≤ 600 |
+| `examples/avbase_inspect` | 2 | 诊断 CLI（dump / play / golden） | ≤ 600 |
 
 **每个 example 都有 `--help` 和 `README` 段落**，且都在 CI 里编译（`play_native` / `play_embed` 在 xvfb 下实跑）。
 
@@ -555,7 +555,7 @@ void SeekTo(base::TimeDelta position, SeekMode mode, SeekCB cb);
 | 18 | 直播追帧 | `config.net.live_max_latency` |
 | 19 | 强制软解 / 强制硬解 | `config.video.decoder_preference` + 监听 `kDecoderFallback` |
 | 20 | 把日志接到自己的日志系统 | `Deps::logging_delegate` |
-| 21 | 线上问题排查 | `DumpDiagnostics()` + `ijkpp-inspect dump` |
+| 21 | 线上问题排查 | `DumpDiagnostics()` + `avbase-inspect dump` |
 | 22 | 从 ijkplayer 迁移配置 | `PlayerBuilder::SetOption(cat, key, value)` |
 
 每条格式：**问题描述 → 完整可编译代码 → 注意事项 → 相关配置项**。
@@ -566,12 +566,12 @@ void SeekTo(base::TimeDelta position, SeekMode mode, SeekCB cb);
 
 | 方式 | 支持 | 说明 |
 |---|---|---|
-| **CMake `find_package`** | ✅ 首选 | `find_package(ijkpp 0.1 REQUIRED)` + `target_link_libraries(app PRIVATE ijkpp::ijkpp)` |
-| **pkg-config** | ✅ | `pkg-config --cflags --libs ijkpp`（非 CMake 项目） |
+| **CMake `find_package`** | ✅ 首选 | `find_package(avbase 0.1 REQUIRED)` + `target_link_libraries(app PRIVATE avbase::avbase)` |
+| **pkg-config** | ✅ | `pkg-config --cflags --libs avbase`（非 CMake 项目） |
 | **vcpkg** | ✅ M13 | 提交 portfile 到 vcpkg 官方 registry |
 | **conan** | ✅ M13 | `conanfile.py` + conancenter 提交 |
 | **系统包**（deb/rpm） | 🔧 提供 `cpack` 配置 | `cpack -G DEB` / `-G RPM` |
-| **手工拷贝** | ✅ | `libijkpp.so` + `include/ijkpp/`，`ldd` 只有 libc/libstdc++（dlopen 模式） |
+| **手工拷贝** | ✅ | `libavbase.so` + `include/avbase/`，`ldd` 只有 libc/libstdc++（dlopen 模式） |
 | **源码内嵌**（`add_subdirectory`） | ✅ | 所有 option 默认值在作为子项目时自动关闭 tests/examples/install |
 | **单头文件** | ❌ 不提供 | 有 FFmpeg 与 GL 依赖，单头不现实；但公开头只有 ~60 个且分层清晰 |
 
@@ -589,28 +589,28 @@ void SeekTo(base::TimeDelta position, SeekMode mode, SeekCB cb);
 见 [07 §11.3](07-测试策略与可观测性.md) 的完整样例。SDK 使用者遇到问题的标准动作：
 
 ```cpp
-LOG(ERROR) << "ijkpp diagnostics:\n" << player.DumpDiagnostics();
+LOG(ERROR) << "avbase diagnostics:\n" << player.DumpDiagnostics();
 ```
 
 粘贴这份 JSON 到 issue 里，维护者不需要复现就能定位大部分问题。
 
-### 10.2 `ijkpp-inspect` CLI
+### 10.2 `avbase-inspect` CLI
 
 ```bash
-ijkpp-inspect probe   video.mp4                       # 打印 MediaInfo（不播放）
-ijkpp-inspect play    video.mp4 --stats 1s            # 播放 + 每秒打印 stats
-ijkpp-inspect play    video.mp4 --trace sync,sched    # 打开热路径 trace
-ijkpp-inspect play    video.mp4 --backend gl --log debug
-ijkpp-inspect dump    --url video.mp4 --duration 30s  # headless 跑 30s 后输出 diagnostics
-ijkpp-inspect doctor                                  # ★环境自检
-ijkpp-inspect golden record video.mp4 -o out.jsonl
-ijkpp-inspect golden diff golden/x.jsonl actual/x.jsonl
+avbase-inspect probe   video.mp4                       # 打印 MediaInfo（不播放）
+avbase-inspect play    video.mp4 --stats 1s            # 播放 + 每秒打印 stats
+avbase-inspect play    video.mp4 --trace sync,sched    # 打开热路径 trace
+avbase-inspect play    video.mp4 --backend gl --log debug
+avbase-inspect dump    --url video.mp4 --duration 30s  # headless 跑 30s 后输出 diagnostics
+avbase-inspect doctor                                  # ★环境自检
+avbase-inspect golden record video.mp4 -o out.jsonl
+avbase-inspect golden diff golden/x.jsonl actual/x.jsonl
 ```
 
 `doctor` 子命令输出（**集成失败时的第一站**）：
 
 ```
-ijkpp 0.1.0 doctor
+avbase 0.1.0 doctor
 ──────────────────────────────────────────────────────────
 build            : release, shared, C++20, exceptions=OFF rtti=OFF
 ffmpeg           : 7.1 (libavcodec 61.13.100) ............. OK
@@ -631,7 +631,7 @@ display          : 1920x1080 @ 60.00 Hz  scale 1.0
 permissions      : /dev/dri/renderD128 rw ✓   audio group ✓
 issues           : none
 
-Try: ijkpp-inspect play <file> --backend auto --log debug
+Try: avbase-inspect play <file> --backend auto --log debug
 ```
 
 ### 10.3 `docs/TROUBLESHOOTING.md` 结构
@@ -639,7 +639,7 @@ Try: ijkpp-inspect play <file> --backend auto --log debug
 | 症状 | 一键诊断 | 常见原因 | 修复 |
 |---|---|---|---|
 | 黑屏但有声音 | `stats().frames_presented == 0`？`DumpDiagnostics().sink.video` | 没调 `SetVideoSurface` / Surface 已销毁 / GL context 丢失 | Cookbook #5/#6；错误 `SinkNotAttached` |
-| 有画面无声音 | `stats().audio.cached_buffers` 增长但 `audio_glitches` 全是 underrun | 音频后端探测失败降级到 Null | `ijkpp-inspect doctor`；`config.audio.backend` |
+| 有画面无声音 | `stats().audio.cached_buffers` 增长但 `audio_glitches` 全是 underrun | 音频后端探测失败降级到 Null | `avbase-inspect doctor`；`config.audio.backend` |
 | 音画不同步 | `stats().av_diff` | 音频延迟未上报（sink 未实现 `hardwareLatency`） | 用官方后端；或检查自定义 sink 的 delay 参数 |
 | seek 后卡住几秒 | `DumpDiagnostics().seek.phase` | serial 处理问题 | 报 bug，附 diagnostics |
 | 首帧慢 | `stats().stages` | `analyze_duration` 太大 / 网络慢 | `config.demux.*` |
@@ -647,7 +647,7 @@ Try: ijkpp-inspect play <file> --backend auto --log debug
 | 停止时卡住 | 日志里的 "shutdown did not complete" | `demux.timeout` 太大 | 调小 timeout 或调大 `shutdown_timeout` |
 | CPU 占用高 | `stats().video_decode_fps` vs `video_output_fps` | 软解 4K / 无零拷贝 | 开硬解；`prefer_dmabuf_zero_copy` |
 | 内存持续增长 | `stats().heap_bytes_estimate` 趋势 | 自定义 sink 持有 `VideoFrame` 不放 | `EXTENDING.md` 的帧生命周期章节 |
-| 符号冲突（与自带 FFmpeg 的 App） | `nm -D libijkpp.so \| grep ' T av'` | 用了非隐藏符号的构建 | 用 release preset（含 `--exclude-libs,ALL`） |
+| 符号冲突（与自带 FFmpeg 的 App） | `nm -D libavbase.so \| grep ' T av'` | 用了非隐藏符号的构建 | 用 release preset（含 `--exclude-libs,ALL`） |
 
 ---
 
@@ -661,9 +661,9 @@ Try: ijkpp-inspect play <file> --backend auto --log debug
 | `PlayerConfig` 字段 | minor 只增不改不删；新增字段必须有默认值且放在结构体尾部 |
 | `EventType` / `PlayerEvent` | 只增不减；用户的 `switch` 必须有 `default`（文档明确要求，且编译期 `-Wswitch` 提示新增枚举） |
 | `ErrorCode` | 只增不减 |
-| CMake target 名 `ijkpp::*` | 稳定 |
+| CMake target 名 `avbase::*` | 稳定 |
 
-**破坏性变更流程**：先加 deprecated 版本（`IJKPP_DEPRECATED("use SeekTo(TimeDelta, SeekMode, SeekCB)")`）保留 2 个 minor 版本，再删。
+**破坏性变更流程**：先加 deprecated 版本（`AVBASE_DEPRECATED("use SeekTo(TimeDelta, SeekMode, SeekCB)")`）保留 2 个 minor 版本，再删。
 
 ---
 
@@ -674,7 +674,7 @@ Try: ijkpp-inspect play <file> --backend auto --log debug
 ```
 [  ] V1  新人冷启动 ≤ 15 分钟（找 3 个未参与项目的人实测，记录用时与卡点）
 [  ] V2  README 每个代码块由 CI 编译（examples/doc_snippets/）
-[  ] V3  最小集成只需 FFmpeg；ldd libijkpp.so 无 SDL2/GL/X11/ALSA（dlopen 模式）
+[  ] V3  最小集成只需 FFmpeg；ldd libavbase.so 无 SDL2/GL/X11/ALSA（dlopen 模式）
 [  ] V4  CMake / pkg-config / 手工拷贝 三种集成方式各有 CI job 验证
 [  ] V5  每个 ErrorCode 都有 summary + detail + suggestion，单测断言三段非空
 [  ] V6  player/public/*.h 中 grep 'AV[A-Z]' 结果为空
@@ -684,7 +684,7 @@ Try: ijkpp-inspect play <file> --backend auto --log debug
 [  ] V10 API diff 工具（abi-compliance-checker）在 minor 版本间无破坏
 [  ] examples/play_sdl2/main.cc ≤ 300 行
 [  ] examples/play_embed/main.cc ≤ 350 行
-[  ] ijkpp-inspect doctor 在干净 Ubuntu 24.04 容器里输出可读的诊断
+[  ] avbase-inspect doctor 在干净 Ubuntu 24.04 容器里输出可读的诊断
 [  ] TROUBLESHOOTING.md 覆盖 ≥ 10 个常见症状
 [  ] MIGRATION.md 覆盖 05 文档的全部 Δ 项
 [  ] API.md（Doxygen）无 warning 生成

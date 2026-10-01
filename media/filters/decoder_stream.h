@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -10,8 +10,8 @@
 // differences are exactly what a Traits type can carry, so one implementation
 // serves both.
 
-#ifndef IJKPP_MEDIA_FILTERS_DECODER_STREAM_H_
-#define IJKPP_MEDIA_FILTERS_DECODER_STREAM_H_
+#ifndef AVBASE_MEDIA_FILTERS_DECODER_STREAM_H_
+#define AVBASE_MEDIA_FILTERS_DECODER_STREAM_H_
 
 #include <stdint.h>
 
@@ -40,7 +40,7 @@
 #include "media/base/waiting.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Reported when a DecoderStream has to abandon a decoder mid-stream. ijkplayer
 // surfaced several of these as hard errors; here they are recoverable and
@@ -55,9 +55,9 @@ enum class DecoderStreamEvent {
   kNoDecoderAvailable,
 };
 
-IJKPP_MEDIA_EXPORT const char* GetDecoderStreamEventName(DecoderStreamEvent e);
+AVBASE_MEDIA_EXPORT const char* GetDecoderStreamEventName(DecoderStreamEvent e);
 
-struct IJKPP_MEDIA_EXPORT VideoDecoderStreamTraits {
+struct AVBASE_MEDIA_EXPORT VideoDecoderStreamTraits {
   using DecoderType = VideoDecoder;
   using OutputType = VideoFrame;
   using ConfigType = VideoDecoderConfig;
@@ -89,7 +89,7 @@ struct IJKPP_MEDIA_EXPORT VideoDecoderStreamTraits {
   }
 };
 
-struct IJKPP_MEDIA_EXPORT AudioDecoderStreamTraits {
+struct AVBASE_MEDIA_EXPORT AudioDecoderStreamTraits {
   using DecoderType = AudioDecoder;
   using OutputType = AudioBuffer;
   using ConfigType = AudioDecoderConfig;
@@ -130,7 +130,7 @@ struct IJKPP_MEDIA_EXPORT AudioDecoderStreamTraits {
 //
 // Not thread-safe: every method must run on |task_runner_|.
 template <typename Traits>
-class IJKPP_MEDIA_EXPORT DecoderStream {
+class AVBASE_MEDIA_EXPORT DecoderStream {
  public:
   using DecoderType = typename Traits::DecoderType;
   using OutputType = typename Traits::OutputType;
@@ -144,7 +144,7 @@ class IJKPP_MEDIA_EXPORT DecoderStream {
   using EventCB = base::RepeatingCallback<void(DecoderStreamEvent)>;
 
   // Watermarks, in output units. ffplay hardcodes these as
-  // VIDEO_PICTURE_QUEUE_SIZE (16) and SAMPLE_QUEUE_SIZE (9). ijkpp keeps the
+  // VIDEO_PICTURE_QUEUE_SIZE (16) and SAMPLE_QUEUE_SIZE (9). avbase keeps the
   // same relationship: stop asking the demuxer at |kDecodeWatermark|, start
   // again once the queue drops to |kPreloadWatermark|. Extracted rather than
   // retyped so the correspondence stays checkable.
@@ -253,11 +253,11 @@ class IJKPP_MEDIA_EXPORT DecoderStream {
 
 // Explicit instantiations only: keeping the definitions in the .cc means a
 // compile error in the template surfaces once, not in every translation unit.
-extern template class IJKPP_MEDIA_EXPORT DecoderStream<VideoDecoderStreamTraits>;
-extern template class IJKPP_MEDIA_EXPORT DecoderStream<AudioDecoderStreamTraits>;
+extern template class AVBASE_MEDIA_EXPORT DecoderStream<VideoDecoderStreamTraits>;
+extern template class AVBASE_MEDIA_EXPORT DecoderStream<AudioDecoderStreamTraits>;
 using VideoDecoderStream = DecoderStream<VideoDecoderStreamTraits>;
 using AudioDecoderStream = DecoderStream<AudioDecoderStreamTraits>;
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_DECODER_STREAM_H_
+#endif  // AVBASE_MEDIA_FILTERS_DECODER_STREAM_H_

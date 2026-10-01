@@ -1,12 +1,12 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Lives in media/base: media::Demuxer produces it. player/public/media_info.h
 // re-exports it (invariant C22).
 
-#ifndef IJKPP_MEDIA_BASE_MEDIA_INFO_H_
-#define IJKPP_MEDIA_BASE_MEDIA_INFO_H_
+#ifndef AVBASE_MEDIA_BASE_MEDIA_INFO_H_
+#define AVBASE_MEDIA_BASE_MEDIA_INFO_H_
 
 #include <stdint.h>
 
@@ -20,11 +20,11 @@
 #include "media/base/video_frame.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 enum class StreamKind { kUnknown, kAudio, kVideo, kText };
 
-struct IJKPP_MEDIA_EXPORT StreamInfo {
+struct AVBASE_MEDIA_EXPORT StreamInfo {
   int index{-1};
   StreamKind kind{StreamKind::kUnknown};
   std::string codec_name;        // "h264", "hevc", "aac", "opus", "subrip"...
@@ -56,7 +56,7 @@ struct IJKPP_MEDIA_EXPORT StreamInfo {
 
 // Everything the container told us, as one immutable snapshot. Replaces
 // ijkplayer's ijkmeta.c plus a dozen ijkmp_get_* accessors.
-struct IJKPP_MEDIA_EXPORT MediaInfo {
+struct AVBASE_MEDIA_EXPORT MediaInfo {
   base::TimeDelta duration;
   // Live streams report a zero duration; use |is_live| rather than testing it.
   bool is_live{false};
@@ -78,6 +78,6 @@ struct IJKPP_MEDIA_EXPORT MediaInfo {
 };
 
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_MEDIA_INFO_H_
+#endif  // AVBASE_MEDIA_BASE_MEDIA_INFO_H_

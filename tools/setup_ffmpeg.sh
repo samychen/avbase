@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Copyright 2026 The avbase Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
 # Builds a pinned FFmpeg from source into a prefix, so that every developer and
 # every CI job compiles against the SAME version. Distro packages drift
-# (Debian 12 ships 5.1, Ubuntu 24.04 ships 6.1), and ijkpp's compat layer is
+# (Debian 12 ships 5.1, Ubuntu 24.04 ships 6.1), and avbase's compat layer is
 # only meaningful if the version under test is known.
 #
 # Usage:
 #   tools/setup_ffmpeg.sh [version] [prefix] [jobs]
-#   export IJKPP_FFMPEG_ROOT=/opt/ffmpeg-7.1.1
+#   export AVBASE_FFMPEG_ROOT=/opt/ffmpeg-7.1.1
 #   cmake --preset linux-ffmpeg711
 #
 # The component list below is deliberately minimal: it covers everything the
@@ -75,4 +75,4 @@ echo "==> Installed:"
 ls "${PREFIX}/lib" | grep -E '\.so\.[0-9]+$' || true
 grep -m1 LIBAVCODEC_VERSION_MAJOR "${PREFIX}/include/libavcodec/version_major.h"
 echo
-echo "Now run:  cmake --preset linux-ffmpeg711   (or -DIJKPP_FFMPEG_ROOT=${PREFIX})"
+echo "Now run:  cmake --preset linux-ffmpeg711   (or -DAVBASE_FFMPEG_ROOT=${PREFIX})"

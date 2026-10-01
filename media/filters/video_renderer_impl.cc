@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -23,7 +23,7 @@
 #include "media/base/media_constants.h"
 #include "media/base/renderer_client.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 VideoRendererImpl::VideoRendererImpl(
     base::scoped_refptr<base::SequencedTaskRunner> task_runner,
@@ -75,14 +75,14 @@ void VideoRendererImpl::Initialize(DemuxerStream* stream,
 void VideoRendererImpl::OnDecoderInitialized(InitializeCB cb,
                                             DecoderStatus status) {
   if (!status.is_ok()) {
-    LOG(ERROR) << "ijkpp.vdec: video decoder failed to initialize: "
+    LOG(ERROR) << "avbase.vdec: video decoder failed to initialize: "
                << decoder_stream_.GetDisplayName() << " ("
                << status.AsDebugString() << ")";
     std::move(cb).Run(PipelineStatus::kVideoRendererInitializationError);
     return;
   }
   initialized_ = true;
-  LOG(INFO) << "ijkpp.vdec: video decoder ready ("
+  LOG(INFO) << "avbase.vdec: video decoder ready ("
             << decoder_stream_.GetDisplayName() << ")";
   // The sink is initialised here but not started: starting it before the first
   // frame exists would make it call Render() into an empty compositor, which is
@@ -242,7 +242,7 @@ void VideoRendererImpl::OnDecoderOutput(
     if (status.code() == DecoderStatus::Codes::kDecodingAborted) {
       return;                       // a flush is in progress; not an error
     }
-    LOG(ERROR) << "ijkpp.vdec: decode failed ("
+    LOG(ERROR) << "avbase.vdec: decode failed ("
                << status.AsDebugString() << ")";
     ended_ = true;
     compositor_.SetEndOfStream();
@@ -276,13 +276,13 @@ void VideoRendererImpl::ReportEndedOnce() {
 
 void VideoRendererImpl::OnDecoderStreamEvent(DecoderStreamEvent event) {
   if (event == DecoderStreamEvent::kNoDecoderAvailable) {
-    LOG(ERROR) << "ijkpp.vdec: every video decoder candidate failed";
+    LOG(ERROR) << "avbase.vdec: every video decoder candidate failed";
   } else {
     // Δ12: a hardware-to-software fallback is a recovery, not an error, but it
     // must be visible -- it is the difference between "4K is smooth" and
     // "4K is smooth until the driver resets".
-    LOG(WARNING) << "ijkpp.vdec: " << GetDecoderStreamEventName(event) << " -> "
-                 << decoder_stream_.GetDisplayName();
+    LOG(WARNING) << "avbase.vdec: " << GetDecoderStreamEventName(event)
+                 << " -> " << decoder_stream_.GetDisplayName();
   }
 }
 
@@ -326,8 +326,8 @@ void VideoRendererImpl::OnFrameSubmitFailure() {
   // long as the surface is broken.
   const uint64_t n = submit_failures_.fetch_add(1) + 1;
   if (n == 1 || n % 100 == 0) {
-    LOG(WARNING) << "ijkpp.vout: frame submit failed (" << n << " times)";
+    LOG(WARNING) << "avbase.vout: frame submit failed (" << n << " times)";
   }
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

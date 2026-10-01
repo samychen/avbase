@@ -1,14 +1,14 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_PLATFORM_FFMPEG_INTERRUPT_CALLBACK_H_
-#define IJKPP_PLATFORM_FFMPEG_INTERRUPT_CALLBACK_H_
+#ifndef AVBASE_PLATFORM_FFMPEG_INTERRUPT_CALLBACK_H_
+#define AVBASE_PLATFORM_FFMPEG_INTERRUPT_CALLBACK_H_
 
 #include "base/synchronization/atomic_flag.h"
 #include "platform/ffmpeg/av_includes.h"
 
-namespace ijkpp::platform::ffmpeg {
+namespace avbase::platform::ffmpeg {
 
 // Makes a blocking av_read_frame() / avformat_open_input() abortable.
 //
@@ -37,6 +37,6 @@ class InterruptCallback {
   base::AtomicFlag flag_;
 };
 
-}  // namespace ijkpp::platform::ffmpeg
+}  // namespace avbase::platform::ffmpeg
 
-#endif  // IJKPP_PLATFORM_FFMPEG_INTERRUPT_CALLBACK_H_
+#endif  // AVBASE_PLATFORM_FFMPEG_INTERRUPT_CALLBACK_H_

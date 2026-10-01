@@ -1,12 +1,12 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Signature mirrors Chromium's `media/base/demuxer_stream.h` (BSD-3-Clause),
 // including the Read(count, ReadCB) shape and the Status enum.
 
-#ifndef IJKPP_MEDIA_BASE_DEMUXER_STREAM_H_
-#define IJKPP_MEDIA_BASE_DEMUXER_STREAM_H_
+#ifndef AVBASE_MEDIA_BASE_DEMUXER_STREAM_H_
+#define AVBASE_MEDIA_BASE_DEMUXER_STREAM_H_
 
 #include <stdint.h>
 
@@ -19,17 +19,17 @@
 #include "media/base/decoder_config.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 enum class StreamLiveness { kUnknown = 0, kRecorded, kLive };
-IJKPP_MEDIA_EXPORT const char* GetStreamLivenessName(StreamLiveness liveness);
+AVBASE_MEDIA_EXPORT const char* GetStreamLivenessName(StreamLiveness liveness);
 
 // One elementary stream inside a container.
 //
 // Read() is asynchronous and never runs its callback inline: the result is
 // posted to the sequence that created the stream. Callers request up to |count|
 // buffers and may receive 1..count back; the last one may be the EOS marker.
-class IJKPP_MEDIA_EXPORT DemuxerStream {
+class AVBASE_MEDIA_EXPORT DemuxerStream {
  public:
   // Status returned in the Read() callback.
   //  kOk            : |buffers| holds 1..count buffers, the last may be EOS.
@@ -71,6 +71,6 @@ class IJKPP_MEDIA_EXPORT DemuxerStream {
   virtual ~DemuxerStream() = default;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_DEMUXER_STREAM_H_
+#endif  // AVBASE_MEDIA_BASE_DEMUXER_STREAM_H_

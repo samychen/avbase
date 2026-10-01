@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -6,8 +6,8 @@
 // (BSD-3-Clause), including the Render(delay, delay_timestamp, glitch_info,
 // AudioBus*) pull contract.
 
-#ifndef IJKPP_MEDIA_BASE_AUDIO_RENDERER_SINK_H_
-#define IJKPP_MEDIA_BASE_AUDIO_RENDERER_SINK_H_
+#ifndef AVBASE_MEDIA_BASE_AUDIO_RENDERER_SINK_H_
+#define AVBASE_MEDIA_BASE_AUDIO_RENDERER_SINK_H_
 
 #include <stdint.h>
 
@@ -20,17 +20,17 @@
 #include "media/base/audio_parameters.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Underrun accounting. Exposed through PlaybackStats so that audio glitches
 // stop being a "sometimes it crackles" bug report and become a metric.
-struct IJKPP_MEDIA_EXPORT AudioGlitchInfo {
+struct AVBASE_MEDIA_EXPORT AudioGlitchInfo {
   uint64_t total_glitches{0};
   base::TimeDelta total_glitch_duration;
   uint64_t xruns{0};   // Device-level xruns (ALSA EPIPE, PulseAudio overrun).
 };
 
-class IJKPP_MEDIA_EXPORT AudioRendererSink
+class AVBASE_MEDIA_EXPORT AudioRendererSink
     : public base::RefCountedThreadSafe<AudioRendererSink> {
  public:
   REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
@@ -81,12 +81,12 @@ class IJKPP_MEDIA_EXPORT AudioRendererSink
 };
 
 // A sink that can be Initialize()d and Start()ed again after Stop().
-class IJKPP_MEDIA_EXPORT RestartableAudioRendererSink : public AudioRendererSink {
+class AVBASE_MEDIA_EXPORT RestartableAudioRendererSink : public AudioRendererSink {
  protected:
   ~RestartableAudioRendererSink() override = default;
 };
 
-class IJKPP_MEDIA_EXPORT AudioRendererSinkFactory {
+class AVBASE_MEDIA_EXPORT AudioRendererSinkFactory {
  public:
   AudioRendererSinkFactory(const AudioRendererSinkFactory&) = delete;
   AudioRendererSinkFactory& operator=(const AudioRendererSinkFactory&) = delete;
@@ -99,6 +99,6 @@ class IJKPP_MEDIA_EXPORT AudioRendererSinkFactory {
   virtual ~AudioRendererSinkFactory() = default;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_AUDIO_RENDERER_SINK_H_
+#endif  // AVBASE_MEDIA_BASE_AUDIO_RENDERER_SINK_H_

@@ -1,8 +1,8 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// `ijkpp-inspect probe`: container and per-stream information.
+// `avbase-inspect probe`: container and per-stream information.
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -13,7 +13,7 @@
 #include "media/base/media_log.h"
 #include "tools/inspect/inspect_common.h"
 
-namespace ijkpp {
+namespace avbase {
 
 namespace {
 
@@ -103,4 +103,4 @@ int RunProbe(const Options& opts) {
   return host.errors().empty() ? 0 : 2;
 }
 
-}  // namespace ijkpp
+}  // namespace avbase

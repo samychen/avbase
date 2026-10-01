@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_PLATFORM_SDL2_SDL2_VIDEO_SINK_H_
-#define IJKPP_PLATFORM_SDL2_SDL2_VIDEO_SINK_H_
+#ifndef AVBASE_PLATFORM_SDL2_SDL2_VIDEO_SINK_H_
+#define AVBASE_PLATFORM_SDL2_SDL2_VIDEO_SINK_H_
 
 #include <atomic>
 #include <memory>
@@ -17,7 +17,7 @@
 #include "media/base/video_renderer_sink.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // The SDL2 video output endpoint: SDL_Renderer + SDL_Texture, driven from a
 // dedicated render thread at the display cadence.
@@ -32,7 +32,7 @@ namespace ijkpp::media {
 // puts the sink in discard mode: Render() is still driven (the compositor
 // needs the cadence and the video clock needs the presents) but nothing is
 // uploaded.
-class IJKPP_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
+class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
  public:
   explicit Sdl2VideoSink(base::scoped_refptr<NativeDisplay> display);
   Sdl2VideoSink(const Sdl2VideoSink&) = delete;
@@ -80,7 +80,7 @@ class IJKPP_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
   std::atomic<uint64_t> submit_failures_{0};
 };
 
-class IJKPP_MEDIA_EXPORT Sdl2VideoSinkFactory final
+class AVBASE_MEDIA_EXPORT Sdl2VideoSinkFactory final
     : public VideoRendererSinkFactory {
  public:
   std::unique_ptr<VideoRendererSink> Create(
@@ -88,6 +88,6 @@ class IJKPP_MEDIA_EXPORT Sdl2VideoSinkFactory final
   const char* name() const override { return "sdl2"; }
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_PLATFORM_SDL2_SDL2_VIDEO_SINK_H_
+#endif  // AVBASE_PLATFORM_SDL2_SDL2_VIDEO_SINK_H_

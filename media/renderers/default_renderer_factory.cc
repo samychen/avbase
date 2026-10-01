@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
 #include "media/filters/renderer_impl.h"
 #include "media/filters/video_renderer_impl.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 DefaultRendererFactory::DefaultRendererFactory(Deps deps)
     : deps_(std::move(deps)) {
@@ -80,4 +80,4 @@ AudioDecoderFactory* DefaultRendererFactory::GetAudioDecoderFactory() {
              : deps_.audio_decoder_factories.front().get();
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

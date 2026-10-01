@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,14 +10,14 @@
 #include "platform/ffmpeg/av_includes.h"
 #include "platform/ffmpeg/log_bridge.h"
 
-namespace ijkpp::media::ffmpeg {
+namespace avbase::media::ffmpeg {
 namespace {
 
 std::once_flag g_once;
 std::atomic<bool> g_initialized{false};
 
 void DoInitialize() {
-#if IJKPP_FFMPEG_NEEDS_REGISTER_ALL
+#if AVBASE_FFMPEG_NEEDS_REGISTER_ALL
   av_register_all();
 #endif
   platform::ffmpeg::InstallLogBridge();
@@ -62,4 +62,4 @@ std::string GetFFmpegConfigurationSummary() {
   return out;
 }
 
-}  // namespace ijkpp::media::ffmpeg
+}  // namespace avbase::media::ffmpeg

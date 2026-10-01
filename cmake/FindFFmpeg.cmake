@@ -1,4 +1,4 @@
-# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Copyright 2026 The avbase Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
@@ -6,11 +6,11 @@
 # ----------
 # Imported targets: FFmpeg::avformat / avcodec / avutil / swscale / swresample
 # Result variables: FFmpeg_FOUND, FFmpeg_<comp>_FOUND, FFmpeg_<comp>_VERSION_MAJOR,
-#                   FFmpeg_INCLUDE_DIRS, FFmpeg_LIBRARIES, IJKPP_FFMPEG_MAJOR
+#                   FFmpeg_INCLUDE_DIRS, FFmpeg_LIBRARIES, AVBASE_FFMPEG_MAJOR
 #
 # Three strategies, in order:
 #   1. CMake config package (vcpkg, some distros)
-#   2. pkg-config           (distro packages; skipped when IJKPP_FFMPEG_ROOT is
+#   2. pkg-config           (distro packages; skipped when AVBASE_FFMPEG_ROOT is
 #                            set, so a pinned build always wins over whatever
 #                            the system happens to have)
 #   3. Manual find_path/find_library (NDK, xcframework, tools/setup_ffmpeg.sh)
@@ -19,15 +19,15 @@ if(NOT FFmpeg_FIND_COMPONENTS)
   set(FFmpeg_FIND_COMPONENTS avformat avcodec avutil swscale swresample)
 endif()
 
-set(_ijkpp_ff_hints "")
-if(IJKPP_FFMPEG_ROOT)
-  list(APPEND _ijkpp_ff_hints "${IJKPP_FFMPEG_ROOT}")
+set(_avbase_ff_hints "")
+if(AVBASE_FFMPEG_ROOT)
+  list(APPEND _avbase_ff_hints "${AVBASE_FFMPEG_ROOT}")
 elseif(DEFINED ENV{FFMPEG_ROOT})
-  list(APPEND _ijkpp_ff_hints "$ENV{FFMPEG_ROOT}")
+  list(APPEND _avbase_ff_hints "$ENV{FFMPEG_ROOT}")
 endif()
 
 # ---- 1. CMake config package ------------------------------------------------
-find_package(FFMPEG CONFIG QUIET HINTS ${_ijkpp_ff_hints})
+find_package(FFMPEG CONFIG QUIET HINTS ${_avbase_ff_hints})
 if(FFMPEG_FOUND)
   foreach(_comp IN LISTS FFmpeg_FIND_COMPONENTS)
     if(TARGET FFMPEG::${_comp} AND NOT TARGET FFmpeg::${_comp})
@@ -40,7 +40,7 @@ endif()
 
 # ---- 2. pkg-config ----------------------------------------------------------
 find_package(PkgConfig QUIET)
-if(PKG_CONFIG_FOUND AND NOT _ijkpp_ff_hints AND NOT ANDROID AND NOT IOS)
+if(PKG_CONFIG_FOUND AND NOT _avbase_ff_hints AND NOT ANDROID AND NOT IOS)
   foreach(_comp IN LISTS FFmpeg_FIND_COMPONENTS)
     if(TARGET FFmpeg::${_comp})
       continue()
@@ -77,11 +77,11 @@ foreach(_comp IN LISTS FFmpeg_FIND_COMPONENTS)
   endif()
   find_path(FFmpeg_${_comp}_INCLUDE_DIR
       NAMES "lib${_comp}/${_comp}.h"
-      HINTS ${_ijkpp_ff_hints}
+      HINTS ${_avbase_ff_hints}
       PATH_SUFFIXES include)
   find_library(FFmpeg_${_comp}_LIBRARY
       NAMES ${_comp} lib${_comp}
-      HINTS ${_ijkpp_ff_hints}
+      HINTS ${_avbase_ff_hints}
       PATH_SUFFIXES lib lib64 lib/x86_64-linux-gnu)
   if(FFmpeg_${_comp}_INCLUDE_DIR AND FFmpeg_${_comp}_LIBRARY)
     set(FFmpeg_${_comp}_FOUND TRUE)
@@ -130,17 +130,17 @@ if(FFmpeg_FOUND)
   list(REMOVE_DUPLICATES FFmpeg_INCLUDE_DIRS)
   set(FFmpeg_LIBRARIES   "${FFmpeg_LIBRARIES}"   CACHE INTERNAL "")
   set(FFmpeg_INCLUDE_DIRS "${FFmpeg_INCLUDE_DIRS}" CACHE INTERNAL "")
-  set(IJKPP_FFMPEG_MAJOR "${FFmpeg_avcodec_VERSION_MAJOR}" CACHE INTERNAL "")
+  set(AVBASE_FFMPEG_MAJOR "${FFmpeg_avcodec_VERSION_MAJOR}" CACHE INTERNAL "")
   set(FFmpeg_VERSION_STRING "${FFmpeg_avformat_VERSION}" CACHE INTERNAL "")
 
   # Minimum supported version. Below this the compat layer would need branches
   # for APIs that predate AVPacket's int64 timestamps; not worth carrying.
-  if(IJKPP_FFMPEG_MAJOR LESS 58)
+  if(AVBASE_FFMPEG_MAJOR LESS 58)
     message(FATAL_ERROR
-        "ijkpp requires FFmpeg >= 4.4 (libavcodec >= 58); found libavcodec "
-        "${IJKPP_FFMPEG_MAJOR}. Point IJKPP_FFMPEG_ROOT at a newer build, or "
+        "avbase requires FFmpeg >= 4.4 (libavcodec >= 58); found libavcodec "
+        "${AVBASE_FFMPEG_MAJOR}. Point AVBASE_FFMPEG_ROOT at a newer build, or "
         "run tools/setup_ffmpeg.sh. See docs/06 §5 for the support matrix.")
   endif()
-  message(STATUS "FindFFmpeg: libavcodec major ${IJKPP_FFMPEG_MAJOR}"
+  message(STATUS "FindFFmpeg: libavcodec major ${AVBASE_FFMPEG_MAJOR}"
                  " (avformat ${FFmpeg_avformat_VERSION}) at ${FFmpeg_INCLUDE_DIRS}")
 endif()

@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "media/base/audio_parameters.h"
 #include "media/base/video_frame.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 namespace {
 
 // Timestamps are computed from the index in integer microseconds, never by
@@ -345,4 +345,4 @@ base::TimeDelta SyntheticDemuxer::AudioStream::buffered_duration() const {
   return base::Microseconds(frames * 1000000LL / owner_->spec_.sample_rate);
 }
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test

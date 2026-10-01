@@ -1,11 +1,11 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // API mirrors Chromium's `base/memory/ref_counted.h` (BSD-3-Clause).
 
-#ifndef IJKPP_BASE_MEMORY_REF_COUNTED_H_
-#define IJKPP_BASE_MEMORY_REF_COUNTED_H_
+#ifndef AVBASE_BASE_MEMORY_REF_COUNTED_H_
+#define AVBASE_BASE_MEMORY_REF_COUNTED_H_
 
 #include <atomic>
 #include <utility>
@@ -13,14 +13,14 @@
 #include "base/check.h"
 #include "base/memory/scoped_refptr.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // Declaring this inside a class forbids accidental construction on the stack
 // or via `new T` without adoption by a scoped_refptr. Mirrors Chromium's
 // REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE().
 #define REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE()                  \
-  static_assert(sizeof(::ijkpp::base::subtle::AdoptionHelper) > 0, "");  \
-  friend class ::ijkpp::base::subtle::AdoptionHelper
+  static_assert(sizeof(::avbase::base::subtle::AdoptionHelper) > 0, "");  \
+  friend class ::avbase::base::subtle::AdoptionHelper
 
 namespace subtle {
 
@@ -97,7 +97,7 @@ class RefCounted : public subtle::RefCountedBase {
 };
 
 // Thread-safe ref counting. Use for objects that cross sequences, which in
-// ijkpp means every media::DecoderBuffer and media::VideoFrame.
+// avbase means every media::DecoderBuffer and media::VideoFrame.
 //
 // RULE: the destructor here is deliberately NON-virtual, matching Chromium.
 // Release() does `delete static_cast<const T*>(this)`, where T is the complete
@@ -125,6 +125,6 @@ class RefCountedThreadSafe : public subtle::RefCountedThreadSafeBase {
   ~RefCountedThreadSafe() = default;
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_MEMORY_REF_COUNTED_H_
+#endif  // AVBASE_BASE_MEMORY_REF_COUNTED_H_

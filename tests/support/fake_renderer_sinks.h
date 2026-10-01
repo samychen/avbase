@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -15,8 +15,8 @@
 // reported the plain fields as data races. The frame vector is test-thread only
 // and stays a plain container.
 
-#ifndef IJKPP_TESTS_SUPPORT_FAKE_RENDERER_SINKS_H_
-#define IJKPP_TESTS_SUPPORT_FAKE_RENDERER_SINKS_H_
+#ifndef AVBASE_TESTS_SUPPORT_FAKE_RENDERER_SINKS_H_
+#define AVBASE_TESTS_SUPPORT_FAKE_RENDERER_SINKS_H_
 
 #include <atomic>
 #include <cstdint>
@@ -32,7 +32,7 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 
 class FakeVideoSink final : public VideoRendererSink {
  public:
@@ -148,6 +148,6 @@ class FakeAudioSink final : public AudioRendererSink {
   std::atomic<double> volume_{1.0};
 };
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test
 
-#endif  // IJKPP_TESTS_SUPPORT_FAKE_RENDERER_SINKS_H_
+#endif  // AVBASE_TESTS_SUPPORT_FAKE_RENDERER_SINKS_H_

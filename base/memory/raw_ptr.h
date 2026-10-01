@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -7,13 +7,13 @@
 // marks "non-owning" intent, and leaves room to swap in BackupRefPtr later
 // without touching call sites.
 
-#ifndef IJKPP_BASE_MEMORY_RAW_PTR_H_
-#define IJKPP_BASE_MEMORY_RAW_PTR_H_
+#ifndef AVBASE_BASE_MEMORY_RAW_PTR_H_
+#define AVBASE_BASE_MEMORY_RAW_PTR_H_
 
 #include <memory>
 #include <type_traits>
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 template <typename T>
 class raw_ptr {
@@ -70,6 +70,6 @@ class raw_ref {
   T* ptr_;
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_MEMORY_RAW_PTR_H_
+#endif  // AVBASE_BASE_MEMORY_RAW_PTR_H_

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Copyright 2026 The avbase Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Enforces the structural invariants from docs/02 §2.1 and docs/06 §9.
@@ -72,6 +72,13 @@ LINE_LIMIT_ALLOWLIST = {
              "this file's stated reason to exist, and the measured "
              "before/after numbers live in the comment on CanPerformWsola(). "
              "See the LENGTH note in the file header."),
+    "media/filters/renderer_impl.cc": (
+        600, "Sub-renderer lifecycle plumbing: initialize/flush/ended fan-out "
+             "across the video and audio halves plus the buffering-verdict "
+             "wiring from M9's starvation work. The two halves mirror each "
+             "other call for call; splitting video from audio would duplicate "
+             "the state machine instead of naming a seam. Revisit when M9 "
+             "BufferController absorbs CheckBufferingTransitions()."),
 }
 
 # Layers that must never see a vendor or platform header (invariants C4, C5).
@@ -221,7 +228,7 @@ def load_column_baseline(root: pathlib.Path) -> dict:
     return out
 
 
-# Target names may contain hyphens (ijkpp-inspect), and a source path may not
+# Target names may contain hyphens (avbase-inspect), and a source path may not
 # contain whitespace -- the first version of this rule allowed spaces in the
 # path character class, so it captured the indentation along with the filename
 # and reported every source in the tree as missing. A rule that reports
@@ -344,7 +351,7 @@ def check_sources_in_a_target(root: pathlib.Path, report: Report) -> None:
                       cm.read_text(encoding="utf-8", errors="replace"))
         covered.update(globbed_sources(cm, text))
         # Whole-file, not "inside add_library": the test suites pass their
-        # sources through the ijkpp_add_unittest() helper, so the only
+        # sources through the avbase_add_unittest() helper, so the only
         # add_executable in tests/CMakeLists.txt is the one inside the function
         # body with ${T_SOURCES} -- a target-body-only scan reported all seven
         # files listed there as uncompiled. What the rule needs to know is

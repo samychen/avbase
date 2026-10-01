@@ -1,20 +1,20 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // API mirrors Chromium's `base/test/simple_test_tick_clock.h` (BSD-3-Clause).
 
-#ifndef IJKPP_BASE_TIME_SIMPLE_TEST_TICK_CLOCK_H_
-#define IJKPP_BASE_TIME_SIMPLE_TEST_TICK_CLOCK_H_
+#ifndef AVBASE_BASE_TIME_SIMPLE_TEST_TICK_CLOCK_H_
+#define AVBASE_BASE_TIME_SIMPLE_TEST_TICK_CLOCK_H_
 
 #include <atomic>
 
 #include "base/time/tick_clock.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // A TickClock whose time only moves when the test moves it. Every scheduling
-// test in media/filters/ uses this, which is why ijkpp can exhaustively test
+// test in media/filters/ uses this, which is why avbase can exhaustively test
 // logic that ijkplayer cannot test at all (it reads av_gettime() directly).
 class SimpleTestTickClock final : public TickClock {
  public:
@@ -41,6 +41,6 @@ class SimpleTestTickClock final : public TickClock {
   std::atomic<int64_t> now_micros_{0};
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_TIME_SIMPLE_TEST_TICK_CLOCK_H_
+#endif  // AVBASE_BASE_TIME_SIMPLE_TEST_TICK_CLOCK_H_

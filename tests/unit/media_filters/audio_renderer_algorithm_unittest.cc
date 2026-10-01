@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -19,7 +19,7 @@
 // first time it compiles, and delete this banner at the same moment.
 //
 // This is the checklist from docs/07 §3.9, which is also behaviour difference
-// Δ17's acceptance test: ijkpp replaces ijkplayer's SoundTouch dependency with
+// Δ17's acceptance test: avbase replaces ijkplayer's SoundTouch dependency with
 // its own WSOLA, and the only thing that proves the substitution did not change
 // how 2x playback sounds is the pitch assertion below. Item 7 of that checklist
 // (diff against Chromium's output at -40 dB) is NOT implemented: it needs
@@ -49,7 +49,7 @@
 
 #include "gtest/gtest.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 constexpr int kSampleRate = 48000;
@@ -270,7 +270,7 @@ TEST_F(AudioRendererAlgorithmTest, RateTwoHalvesTheDuration) {
   // the slack is no longer unknown -- this has been run. At 48 kHz stereo with
   // 1 s in, the rendered count overshoots the ideal by 1199 frames at 2x and
   // 239 at 0.5x, i.e. 1.25 and 0.25 of a 960-frame window. Essentially all of
-  // it is the end-of-stream raw tail in RunWsola(), which ijkpp has and
+  // it is the end-of-stream raw tail in RunWsola(), which avbase has and
   // Chromium does not: Chromium drops the last search block instead. Two
   // windows is therefore a bound that reflects a deliberate design choice, not
   // a guess left over from writing the test without a compiler. Do not tighten
@@ -297,7 +297,7 @@ TEST_F(AudioRendererAlgorithmTest, RateHalfDoublesTheDuration) {
 // ---- docs/07 §3.9 item 4: pitch is unchanged (Δ17's acceptance) -----------
 
 // This is Δ17's acceptance test: the only thing that proves replacing
-// ijkplayer's SoundTouch with ijkpp's own WSOLA did not change how 2x playback
+// ijkplayer's SoundTouch with avbase's own WSOLA did not change how 2x playback
 // sounds. The stimulus choice below is load-bearing, so the measurement that
 // settled it is recorded rather than asserted.
 TEST_F(AudioRendererAlgorithmTest, PitchIsPreservedAtTwoX) {
@@ -323,7 +323,7 @@ TEST_F(AudioRendererAlgorithmTest, PitchIsPreservedAtTwoX) {
   // Similarity() peaks at every offset in the search block that is a whole
   // number of 109-frame periods away -- about 13 of them -- OptimalIndex()
   // resolves those near-ties on floating-point noise, and the splices land
-  // off-phase. Chromium behaves identically: swapping ijkpp's exhaustive
+  // off-phase. Chromium behaves identically: swapping avbase's exhaustive
   // OptimalIndex() for a port of Chromium's decimated search plus quadratic
   // interpolation (media/filters/wsola_internals.cc, fetched 2026-09-29) still
   // gives 452 Hz on the sine and 440.0 Hz on this tone. Real audio has many
@@ -541,4 +541,4 @@ TEST(AudioFrameQueueTest, EndOfStreamMarkerIsRejected) {
 }
 
 }  // namespace
-}  // namespace ijkpp::media
+}  // namespace avbase::media

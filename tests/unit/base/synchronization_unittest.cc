@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@
 #include "base/sequence_checker.h"
 #include "gtest/gtest.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 namespace {
 
 TEST(LockTest, AutoLockGuardsCriticalSection) {
@@ -245,4 +245,4 @@ TEST(SequenceCheckerTest, DetachAllowsRebinding) {
 }
 
 }  // namespace
-}  // namespace ijkpp::base
+}  // namespace avbase::base

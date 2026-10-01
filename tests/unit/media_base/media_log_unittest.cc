@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 #include "base/logging.h"
 #include "gtest/gtest.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 // Captures events instead of letting them reach base/logging, so the tests are
@@ -133,4 +133,4 @@ TEST_F(MediaLogTest, ThreadSafeUnderConcurrentWriters) {
 }
 
 }  // namespace
-}  // namespace ijkpp::media
+}  // namespace avbase::media

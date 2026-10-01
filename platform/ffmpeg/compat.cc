@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,10 +10,10 @@
 #include "base/check.h"
 #include "media/base/media_constants.h"
 
-namespace ijkpp::platform::ffmpeg {
+namespace avbase::platform::ffmpeg {
 
 int ChannelCount(const AVCodecContext* ctx) {
-#if IJKPP_FFMPEG_HAS_CHANNEL_LAYOUT
+#if AVBASE_FFMPEG_HAS_CHANNEL_LAYOUT
   return ctx->ch_layout.nb_channels;
 #else
   return ctx->channels;
@@ -21,7 +21,7 @@ int ChannelCount(const AVCodecContext* ctx) {
 }
 
 uint64_t ChannelLayoutMask(const AVCodecContext* ctx) {
-#if IJKPP_FFMPEG_HAS_CHANNEL_LAYOUT
+#if AVBASE_FFMPEG_HAS_CHANNEL_LAYOUT
   uint64_t mask = 0;
   if (ctx->ch_layout.order == AV_CHANNEL_ORDER_NATIVE) {
     mask = ctx->ch_layout.u.mask;
@@ -43,7 +43,7 @@ uint64_t ChannelLayoutMask(const AVCodecContext* ctx) {
 }
 
 void SetChannelLayout(AVCodecContext* ctx, uint64_t mask, int channels) {
-#if IJKPP_FFMPEG_HAS_CHANNEL_LAYOUT
+#if AVBASE_FFMPEG_HAS_CHANNEL_LAYOUT
   if (mask) {
     av_channel_layout_from_mask(&ctx->ch_layout, mask);
   } else {
@@ -56,7 +56,7 @@ void SetChannelLayout(AVCodecContext* ctx, uint64_t mask, int channels) {
 }
 
 int ChannelCount(const AVCodecParameters* par) {
-#if IJKPP_FFMPEG_HAS_CHANNEL_LAYOUT
+#if AVBASE_FFMPEG_HAS_CHANNEL_LAYOUT
   return par->ch_layout.nb_channels;
 #else
   return par->channels;
@@ -64,7 +64,7 @@ int ChannelCount(const AVCodecParameters* par) {
 }
 
 uint64_t ChannelLayoutMask(const AVCodecParameters* par) {
-#if IJKPP_FFMPEG_HAS_CHANNEL_LAYOUT
+#if AVBASE_FFMPEG_HAS_CHANNEL_LAYOUT
   if (par->ch_layout.order == AV_CHANNEL_ORDER_NATIVE) {
     return par->ch_layout.u.mask;
   }
@@ -77,7 +77,7 @@ uint64_t ChannelLayoutMask(const AVCodecParameters* par) {
 SwrPtr MakeSwrContext(AVSampleFormat out_format, uint64_t out_layout,
                       int out_rate, AVSampleFormat in_format, uint64_t in_layout,
                       int in_rate) {
-#if IJKPP_FFMPEG_HAS_CHANNEL_LAYOUT
+#if AVBASE_FFMPEG_HAS_CHANNEL_LAYOUT
   SwrContext* ctx = nullptr;
   AVChannelLayout ol{};
   AVChannelLayout il{};
@@ -248,7 +248,7 @@ DictPtr ToAvDict(const std::map<std::string, std::string>& options) {
 std::map<std::string, std::string> FromAvDict(const AVDictionary* dict) {
   std::map<std::string, std::string> out;
   const AVDictionaryEntry* entry = nullptr;
-#if IJKPP_FFMPEG_HAS_DICT_ITERATE
+#if AVBASE_FFMPEG_HAS_DICT_ITERATE
   while ((entry = av_dict_iterate(dict, entry)) != nullptr) {
     out[entry->key] = entry->value ? entry->value : "";
   }
@@ -271,11 +271,11 @@ std::vector<std::string> UnconsumedOptions(const AVDictionary* dict) {
 }
 
 int64_t PacketDuration(const AVPacket* packet) {
-#if IJKPP_FFMPEG_PACKET_INT64
+#if AVBASE_FFMPEG_PACKET_INT64
   return packet->duration;
 #else
   return static_cast<int64_t>(packet->duration);
 #endif
 }
 
-}  // namespace ijkpp::platform::ffmpeg
+}  // namespace avbase::platform::ffmpeg

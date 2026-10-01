@@ -1,17 +1,17 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // API mirrors Chromium's `base/memory/weak_ptr.h` (BSD-3-Clause).
 //
-// WeakPtr is the single most important safety mechanism in ijkpp: every
+// WeakPtr is the single most important safety mechanism in avbase: every
 // cross-sequence callback binds a WeakPtr, so a task that outlives its target
 // becomes a no-op instead of a use-after-free. This structurally removes the
 // whole class of "player released while a callback is in flight" crashes that
 // ijkplayer cannot prevent (docs/04 §7 R11).
 
-#ifndef IJKPP_BASE_MEMORY_WEAK_PTR_H_
-#define IJKPP_BASE_MEMORY_WEAK_PTR_H_
+#ifndef AVBASE_BASE_MEMORY_WEAK_PTR_H_
+#define AVBASE_BASE_MEMORY_WEAK_PTR_H_
 
 #include <atomic>
 #include <memory>
@@ -24,7 +24,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 namespace internal {
 
 // Shared liveness flag. The factory clears it on destruction; every WeakPtr
@@ -123,7 +123,7 @@ class WeakPtr {
 
   void CheckValid() const {
     CHECK(MaybeValid()) << "WeakPtr used after its target was destroyed";
-#if defined(IJKPP_ENABLE_DCHECK)
+#if defined(AVBASE_ENABLE_DCHECK)
     DCHECK(flag_->CheckSequenceAffinity())
         << "WeakPtr dereferenced on a different sequence than it was bound to";
 #endif
@@ -168,6 +168,6 @@ class WeakPtrFactory {
   raw_ptr<T> instance_;
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_MEMORY_WEAK_PTR_H_
+#endif  // AVBASE_BASE_MEMORY_WEAK_PTR_H_

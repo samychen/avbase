@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -15,8 +15,8 @@
 // which nothing here does — shipping it without that semantics would silently
 // leak), Passed(), IgnoreResult() as a binder, generic (auto-parameter) lambdas.
 
-#ifndef IJKPP_BASE_FUNCTIONAL_BIND_H_
-#define IJKPP_BASE_FUNCTIONAL_BIND_H_
+#ifndef AVBASE_BASE_FUNCTIONAL_BIND_H_
+#define AVBASE_BASE_FUNCTIONAL_BIND_H_
 
 #include <cstddef>
 #include <memory>
@@ -29,7 +29,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // Wrappers that change how a bound argument is treated at invoke time.
 template <typename T>
@@ -274,6 +274,6 @@ auto BindRepeating(Functor&& functor, BoundArgs&&... bound) {
 // DoNothing() and DoNothingRepeating() live in
 // base/functional/callback_helpers.h, matching Chromium's split.
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_FUNCTIONAL_BIND_H_
+#endif  // AVBASE_BASE_FUNCTIONAL_BIND_H_

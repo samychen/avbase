@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -35,7 +35,7 @@
 #include "tests/support/fake_sink_factories.h"
 #include "tests/support/throttled_data_source.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 constexpr auto kWaitTimeout = std::chrono::seconds(45);
@@ -43,7 +43,7 @@ constexpr int kFramesPerBuffer = 256;
 constexpr int kAudioChannels = 2;
 
 std::vector<uint8_t> ReadFileBytes(const char* name) {
-  const std::string path = std::string(IJKPP_TESTDATA_DIR) + "/" + name;
+  const std::string path = std::string(AVBASE_TESTDATA_DIR) + "/" + name;
   std::FILE* f = std::fopen(path.c_str(), "rb");
   std::vector<uint8_t> bytes;
   if (f) {
@@ -63,8 +63,8 @@ class PipelineThrottleTest : public ::testing::Test {
  protected:
   PipelineThrottleTest()
       : env_(base::test::TaskEnvironment::TimeSource::kRealTime),
-        video_thread_("ijkpp-thr-S3"),
-        audio_thread_("ijkpp-thr-S4") {}
+        video_thread_("avbase-thr-S3"),
+        audio_thread_("avbase-thr-S4") {}
 
   void SetUp() override {
     ASSERT_TRUE(video_thread_.Start());
@@ -180,7 +180,8 @@ class PipelineThrottleTest : public ::testing::Test {
 // the 10 ms sampler in ~3/8 runs. The proper design is per-stream starved
 // flags published by the sub-renderers themselves (they know their own dry
 // state exactly); that refactor is the next M9 item.
-TEST_F(PipelineThrottleTest, DISABLED_ThrottledSourceProducesAStallRecoverCycle) {
+TEST_F(PipelineThrottleTest,
+       DISABLED_ThrottledSourceProducesAStallRecoverCycle) {
   const std::vector<uint8_t> bytes =
       ReadFileBytes("small_h264_aac_3s.mp4");
   ASSERT_GT(bytes.size(), 100000u);
@@ -216,4 +217,4 @@ TEST_F(PipelineThrottleTest, DISABLED_ThrottledSourceProducesAStallRecoverCycle)
       << client_.error().ToString() << "\n" << client_.EventLog();
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

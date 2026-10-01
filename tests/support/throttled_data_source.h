@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_TESTS_SUPPORT_THROTTLED_DATA_SOURCE_H_
-#define IJKPP_TESTS_SUPPORT_THROTTLED_DATA_SOURCE_H_
+#ifndef AVBASE_TESTS_SUPPORT_THROTTLED_DATA_SOURCE_H_
+#define AVBASE_TESTS_SUPPORT_THROTTLED_DATA_SOURCE_H_
 
 #include <stdint.h>
 
@@ -15,7 +15,7 @@
 #include "media/base/data_source.h"
 #include "media/base/media_error.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 
 // A DataSource that serves its inner source at a capped rate, with fault
 // injection. This is the M9 test rig (docs/08): the three-tier HWM can only
@@ -103,6 +103,6 @@ class ThrottledDataSource final : public DataSource {
   int stalls_ = 0;
 };
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test
 
-#endif  // IJKPP_TESTS_SUPPORT_THROTTLED_DATA_SOURCE_H_
+#endif  // AVBASE_TESTS_SUPPORT_THROTTLED_DATA_SOURCE_H_

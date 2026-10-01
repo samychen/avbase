@@ -1,7 +1,7 @@
-# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Copyright 2026 The avbase Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""The ported-constant table: what ijkpp inherited from ffplay, and where each
+"""The ported-constant table: what avbase inherited from ffplay, and where each
 value lives.
 
 Data for tools/extract_constants.py, kept in its own module for two reasons:
@@ -29,7 +29,7 @@ import re
 import sys
 
 # Canonical units. Every value is converted to its spec's unit before
-# comparison, so 0.04 s in ffplay, base::Milliseconds(40) in ijkpp and 0.04 in
+# comparison, so 0.04 s in ffplay, base::Milliseconds(40) in avbase and 0.04 in
 # docs/05 all meet as 40:
 #   s -> seconds   ms -> milliseconds   us -> microseconds
 #   b -> bytes     n -> count           r -> raw float (ratio / coefficient)
@@ -37,7 +37,7 @@ UNITS_PER_SECOND = {"s": 1.0, "ms": 1000.0, "us": 1_000_000.0}
 TIME_UNITS = frozenset(UNITS_PER_SECOND)
 BASE_TIME_KINDS = {"Seconds": "s", "Milliseconds": "ms", "Microseconds": "us"}
 
-FATAL = ("MISMATCH", "MISMATCH_VS_DOCS", "LOCATIONS_DISAGREE", "NOT_IN_IJKPP",
+FATAL = ("MISMATCH", "MISMATCH_VS_DOCS", "LOCATIONS_DISAGREE", "NOT_IN_AVBASE",
          "NOT_IN_FFP", "DOCS_MISMATCH")
 
 
@@ -45,11 +45,11 @@ FATAL = ("MISMATCH", "MISMATCH_VS_DOCS", "LOCATIONS_DISAGREE", "NOT_IN_IJKPP",
 class Spec:
     """One ported constant and where each of its values lives."""
 
-    def __init__(self, macro, unit, ijkpp=(), docs=None, source_unit=None,
+    def __init__(self, macro, unit, avbase=(), docs=None, source_unit=None,
                  deviation=None, note=""):
-        self.macro = macro        # ffplay #define name, or None if ijkpp-only
+        self.macro = macro        # ffplay #define name, or None if avbase-only
         self.unit = unit          # canonical unit
-        self.ijkpp = ijkpp        # tuple of (path, symbol); all must agree
+        self.avbase = avbase        # tuple of (path, symbol); all must agree
         self.docs = docs          # expected value, written in source_unit
         self.source_unit = source_unit or unit
         self.deviation = deviation
@@ -93,9 +93,9 @@ SPEC: list[Spec] = [
     Spec("BUFFERING_CHECK_PER_MILLISECONDS", "ms", (), 500,
          note="consumer is player/buffer_controller.cc, not written yet (M9)"),
     Spec("BUFFERING_UPDATE_PER_MILLISECONDS", "ms", (), None, deviation="Δ4",
-         note="ijkpp emits progress every 200ms; ffplay's 1000ms is the "
+         note="avbase emits progress every 200ms; ffplay's 1000ms is the "
               "baseline the deviation is measured against, so there is "
-              "deliberately no ijkpp symbol to compare"),
+              "deliberately no avbase symbol to compare"),
     Spec("MAX_ACCURATE_SEEK_TIMEOUT", "ms",
          ((PC, "SeekConfig::accurate_timeout"),), 5000),
     # ---- A/V sync: the R1 thresholds. source_unit="s" because ffplay spells
@@ -118,12 +118,12 @@ SPEC: list[Spec] = [
     Spec("SAMPLE_CORRECTION_PERCENT_MAX", "n",
          ((ASC, "Thresholds::sample_correction_percent_max"),), 10),
     Spec("MAX_SLEEP", "us", ((VFC, "Thresholds::max_sleep"),), 1_000_000),
-    # ---- ijkpp-only: no ffplay counterpart, so nothing to cross-check.
+    # ---- avbase-only: no ffplay counterpart, so nothing to cross-check.
     # Listed so that "every threshold is accounted for" stays true.
     Spec(None, "us", ((VFC, "Thresholds::min_sleep"),), None,
-         note="ijkpp addition (docs/05 table 7, marked 🆕)"),
+         note="avbase addition (docs/05 table 7, marked 🆕)"),
     Spec(None, "ms", ((VFC, "Thresholds::max_sane_frame_duration"),), None,
-         note="ijkpp addition; ffplay hardcodes 10.0 inline instead"),
+         note="avbase addition; ffplay hardcodes 10.0 inline instead"),
 ]
 
 FFPLAY_FILES = ("ff_ffplay_def.h", "ff_ffplay_options.h", "ff_ffplay.c",
@@ -209,7 +209,7 @@ def convert(value, from_unit: str, to_unit: str):
 def canonicalise(value, kind: str, unit: str, source_unit: str | None = None):
     """Normalises a literal to the spec's canonical unit.
 
-    |kind| is the base:: helper an ijkpp literal used ("Seconds",
+    |kind| is the base:: helper an avbase literal used ("Seconds",
     "Milliseconds", "Microseconds"), which is authoritative. Otherwise
     |source_unit| says what unit the literal was written in -- required, because
     ffplay mixes seconds (0.04, 10.0) and microseconds (MAX_SLEEP 1000000) and

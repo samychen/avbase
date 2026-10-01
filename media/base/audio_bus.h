@@ -1,21 +1,21 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `media/base/audio_bus.h` (BSD-3-Clause): deinterleaved
 // float32 audio, which is the format AudioRendererSink::RenderCallback fills.
 
-#ifndef IJKPP_MEDIA_BASE_AUDIO_BUS_H_
-#define IJKPP_MEDIA_BASE_AUDIO_BUS_H_
+#ifndef AVBASE_MEDIA_BASE_AUDIO_BUS_H_
+#define AVBASE_MEDIA_BASE_AUDIO_BUS_H_
 
 #include <memory>
 #include <vector>
 
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
-class IJKPP_MEDIA_EXPORT AudioBus {
+class AVBASE_MEDIA_EXPORT AudioBus {
  public:
   AudioBus(const AudioBus&) = delete;
   AudioBus& operator=(const AudioBus&) = delete;
@@ -45,6 +45,6 @@ class IJKPP_MEDIA_EXPORT AudioBus {
   std::vector<std::vector<float>> data_;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_AUDIO_BUS_H_
+#endif  // AVBASE_MEDIA_BASE_AUDIO_BUS_H_

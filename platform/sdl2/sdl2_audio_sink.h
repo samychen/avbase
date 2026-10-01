@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_PLATFORM_SDL2_SDL2_AUDIO_SINK_H_
-#define IJKPP_PLATFORM_SDL2_SDL2_AUDIO_SINK_H_
+#ifndef AVBASE_PLATFORM_SDL2_SDL2_AUDIO_SINK_H_
+#define AVBASE_PLATFORM_SDL2_SDL2_AUDIO_SINK_H_
 
 #include <atomic>
 #include <cstdint>
@@ -19,13 +19,13 @@
 #include "media/base/audio_renderer_sink.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // The SDL2 audio output endpoint: SDL_OpenAudioDevice in callback mode. SDL's
 // audio thread is S7 -- it pulls Render() once per device period, converts the
 // planar AudioBus to interleaved float for SDL, and nothing else (Δ13: no DSP
 // here, the WSOLA work happened on S4).
-class IJKPP_MEDIA_EXPORT Sdl2AudioSink final : public AudioRendererSink {
+class AVBASE_MEDIA_EXPORT Sdl2AudioSink final : public AudioRendererSink {
  public:
   Sdl2AudioSink();
   Sdl2AudioSink(const Sdl2AudioSink&) = delete;
@@ -71,13 +71,13 @@ class IJKPP_MEDIA_EXPORT Sdl2AudioSink final : public AudioRendererSink {
   AudioGlitchInfo glitch_info_ GUARDED_BY(glitch_lock_);
 };
 
-class IJKPP_MEDIA_EXPORT Sdl2AudioSinkFactory final
+class AVBASE_MEDIA_EXPORT Sdl2AudioSinkFactory final
     : public AudioRendererSinkFactory {
  public:
   base::scoped_refptr<AudioRendererSink> Create() override;
   const char* name() const override { return "sdl2"; }
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_PLATFORM_SDL2_SDL2_AUDIO_SINK_H_
+#endif  // AVBASE_PLATFORM_SDL2_SDL2_AUDIO_SINK_H_

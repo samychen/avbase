@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -18,7 +18,7 @@
 #include "base/functional/bind.h"
 #include "media/base/media_constants.h"
 
-namespace ijkpp {
+namespace avbase {
 
 void PlayerImpl::OnMediaSeekDone(int64_t request_id,
                                  base::TimeDelta requested) {
@@ -352,7 +352,7 @@ void PlayerImpl::EndAccurateWaitOnMedia() {
       accurate_seek_targets_.erase(at);
     }
   }
-  LOG(INFO) << "ijkpp: accurate seek superseded by a newer seek request";
+  LOG(INFO) << "avbase: accurate seek superseded by a newer seek request";
   SeekCompletedPayload payload;
   payload.request_id = id;
   payload.requested = requested;
@@ -456,4 +456,4 @@ void PlayerImpl::CompleteAccurateSeek(bool reached) {
   }
 }
 
-}  // namespace ijkpp
+}  // namespace avbase

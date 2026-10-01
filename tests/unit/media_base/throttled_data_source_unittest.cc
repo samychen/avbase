@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@
 #include "media/base/data_source.h"
 #include "media/base/media_error.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 namespace {
 
 constexpr size_t kFileSize = 20000;
@@ -166,4 +166,4 @@ TEST(ThrottledDataSourceTest, DelegationMatchesTheInnerSource) {
 }
 
 }  // namespace
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test

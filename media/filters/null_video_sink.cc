@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 // Presentation cadence for a sink with no display. 60 Hz is the most common
@@ -32,7 +32,7 @@ void NullVideoSink::Initialize(RenderCallback* callback) {
 
 void NullVideoSink::Start() {
   if (!thread_) {
-    thread_ = std::make_unique<base::Thread>("ijkpp-null-video");
+    thread_ = std::make_unique<base::Thread>("avbase-null-video");
     thread_->Start();
     render_runner_ = thread_->task_runner();
   }
@@ -119,4 +119,4 @@ std::unique_ptr<VideoRendererSink> NullVideoSinkFactory::Create(
   return sink;
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

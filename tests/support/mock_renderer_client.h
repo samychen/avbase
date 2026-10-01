@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -12,8 +12,8 @@
 // the tenth round's init-callback bug was an ordering bug, and "OnEnded was
 // called" would not have caught it.
 
-#ifndef IJKPP_TESTS_SUPPORT_MOCK_RENDERER_CLIENT_H_
-#define IJKPP_TESTS_SUPPORT_MOCK_RENDERER_CLIENT_H_
+#ifndef AVBASE_TESTS_SUPPORT_MOCK_RENDERER_CLIENT_H_
+#define AVBASE_TESTS_SUPPORT_MOCK_RENDERER_CLIENT_H_
 
 #include <string>
 #include <string_view>
@@ -26,7 +26,7 @@
 #include "media/base/media_error.h"
 #include "media/base/renderer_client.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 
 class FakeRendererClient final : public RendererClient {
  public:
@@ -86,6 +86,6 @@ class FakeRendererClient final : public RendererClient {
   int overlay_runner_calls_ = 0;
 };
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test
 
-#endif  // IJKPP_TESTS_SUPPORT_MOCK_RENDERER_CLIENT_H_
+#endif  // AVBASE_TESTS_SUPPORT_MOCK_RENDERER_CLIENT_H_

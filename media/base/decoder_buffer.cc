@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 
 #include "base/check.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 DecoderBuffer::DecoderBuffer() = default;
 
@@ -88,4 +88,4 @@ OwnedBufferStorage::OwnedBufferStorage(const uint8_t* data, size_t size) {
 
 OwnedBufferStorage::~OwnedBufferStorage() = default;
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

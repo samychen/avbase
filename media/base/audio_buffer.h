@@ -1,11 +1,11 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `media/base/audio_buffer.h` (BSD-3-Clause).
 
-#ifndef IJKPP_MEDIA_BASE_AUDIO_BUFFER_H_
-#define IJKPP_MEDIA_BASE_AUDIO_BUFFER_H_
+#ifndef AVBASE_MEDIA_BASE_AUDIO_BUFFER_H_
+#define AVBASE_MEDIA_BASE_AUDIO_BUFFER_H_
 
 #include <stdint.h>
 
@@ -22,7 +22,7 @@
 #include "media/base/media_constants.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Decoded audio: one buffer of interleaved or planar samples.
 //
@@ -30,7 +30,7 @@ namespace ijkpp::media {
 // audio_decode_frame(), where the frame's layout (planar vs interleaved, sample
 // format, channel count) has to be re-derived at every use site. Here the
 // layout is described once, at construction.
-class IJKPP_MEDIA_EXPORT AudioBuffer
+class AVBASE_MEDIA_EXPORT AudioBuffer
     : public base::RefCountedThreadSafe<AudioBuffer> {
  public:
   REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
@@ -89,6 +89,6 @@ class IJKPP_MEDIA_EXPORT AudioBuffer
   std::vector<uint8_t> data_;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_AUDIO_BUFFER_H_
+#endif  // AVBASE_MEDIA_BASE_AUDIO_BUFFER_H_

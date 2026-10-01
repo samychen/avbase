@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/time/default_tick_clock.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 constexpr base::TimeDelta kAbortSleepSlice = base::Milliseconds(10);
@@ -23,7 +23,7 @@ RetryDataSource::RetryDataSource(base::scoped_refptr<DataSource> inner,
                                  Config config)
     : inner_(std::move(inner)),
       config_(config),
-      worker_("ijkpp-retry-src"),
+      worker_("avbase-retry-src"),
       pending_cv_(&pending_lock_) {
   CHECK(inner_);
   worker_.Start();
@@ -138,4 +138,4 @@ void RetryDataSource::WorkerMain() {
   }
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@
 #include "base/logging.h"
 #include "media/base/data_source_descriptor.h"
 
-namespace ijkpp {
+namespace avbase {
 
 const char* StreamKindName(media::StreamKind kind) {
   switch (kind) {
@@ -28,24 +28,24 @@ const char* StreamKindName(media::StreamKind kind) {
 
 void Usage() {
   printf(
-      "ijkpp-inspect -- diagnostics over the real ijkpp media stack\n"
+      "avbase-inspect -- diagnostics over the real avbase media stack\n"
       "\n"
       "usage:\n"
-      "  ijkpp-inspect probe  <file>\n"
+      "  avbase-inspect probe  <file>\n"
       "      Print container and per-stream information.\n"
       "\n"
-      "  ijkpp-inspect decode <file> [--video|--audio] [--limit N]\n"
+      "  avbase-inspect decode <file> [--video|--audio] [--limit N]\n"
       "      Demux and decode, then report per-stream frame counts,\n"
       "      timestamp range and monotonicity.\n"
       "\n"
-      "  ijkpp-inspect sync   <file> [--limit N]\n"
+      "  avbase-inspect sync   <file> [--limit N]\n"
       "      Decode both streams and drive AvSyncController with the\n"
       "      real timestamps, printing the resolved master clock and\n"
       "      the audio sample correction at each step.\n"
       "\n"
       "options:\n"
       "  --limit N   Stop after N decoded outputs per stream (default 100000).\n"
-      "  --verbose   Enable ijkpp INFO logging.\n"
+      "  --verbose   Enable avbase INFO logging.\n"
       "  -h, --help  This text.\n");
 }
 
@@ -119,4 +119,4 @@ bool OpenDemuxer(media::FFmpegDemuxer* demuxer, const std::string& path,
   return true;
 }
 
-}  // namespace ijkpp
+}  // namespace avbase

@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 
 #include "gtest/gtest.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 namespace {
 
 struct Observer {
@@ -88,7 +88,7 @@ TEST(ObserverListTest, RemoveSelfDuringIterationIsSafe) {
 }
 
 // Chromium's default ObserverListPolicy::kAll notifies observers added during
-// iteration. ijkpp matches that, because player::EventHub dispatches
+// iteration. avbase matches that, because player::EventHub dispatches
 // StateChanged and a handler may legitimately subscribe to further events.
 TEST(ObserverListTest, AddDuringIterationIsVisitedThisPass) {
   ObserverList<Observer> list;
@@ -156,4 +156,4 @@ TEST(ObserverListTest, Clear) {
 }
 
 }  // namespace
-}  // namespace ijkpp::base
+}  // namespace avbase::base

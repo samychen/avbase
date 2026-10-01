@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -39,14 +39,14 @@
 //       every entry needs summary/detail/suggestion text that satisfies
 //       docs/10 §4.3, which ErrorMessagesTest asserts verbatim
 
-#ifndef IJKPP_MEDIA_BASE_PIPELINE_STATUS_H_
-#define IJKPP_MEDIA_BASE_PIPELINE_STATUS_H_
+#ifndef AVBASE_MEDIA_BASE_PIPELINE_STATUS_H_
+#define AVBASE_MEDIA_BASE_PIPELINE_STATUS_H_
 
 #include "base/functional/callback.h"
 #include "media/base/media_error.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Outcome of an asynchronous pipeline stage. Ordered: anything other than
 // kOk is a failure, and the ordering groups the failures by which stage
@@ -78,19 +78,20 @@ enum class PipelineStatus {
   kMaxValue = kFailedToCreatePipeline,
 };
 
-IJKPP_MEDIA_EXPORT const char* PipelineStatusToString(PipelineStatus status);
+AVBASE_MEDIA_EXPORT const char* PipelineStatusToString(PipelineStatus status);
 
 // Every status has a MediaError equivalent, because the SDK surface reports
 // MediaError and never PipelineStatus (player/public/error.h re-exports
 // MediaError, not this header). The mapping is total: no status may fall
 // through to a generic "playback failed", which is exactly the failure mode
 // docs/10 §4 exists to prevent.
-IJKPP_MEDIA_EXPORT MediaError PipelineStatusToMediaError(PipelineStatus status);
+AVBASE_MEDIA_EXPORT MediaError PipelineStatusToMediaError(
+    PipelineStatus status);
 
 // Runs on the media sequence. Never run inline by the callee: an initialising
 // pipeline holds locks that a synchronous callback would re-enter.
 using PipelineStatusCallback = base::OnceCallback<void(PipelineStatus)>;
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_PIPELINE_STATUS_H_
+#endif  // AVBASE_MEDIA_BASE_PIPELINE_STATUS_H_

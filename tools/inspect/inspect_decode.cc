@@ -1,8 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// `ijkpp-inspect decode`: demux and decode, then report what actually came out.
+// `avbase-inspect decode`: demux and decode, then report what actually
+// came out.
 //
 // The interesting output is not the frame count -- it is the timestamp
 // monotonicity check. A decoder that returns frames with non-monotonic pts is
@@ -30,7 +31,7 @@
 #include "media/filters/ffmpeg_video_decoder.h"
 #include "tools/inspect/inspect_common.h"
 
-namespace ijkpp {
+namespace avbase {
 
 namespace {
 
@@ -80,7 +81,8 @@ bool PumpDecoder(DemuxerStream* stream, Decoder* decoder, Pump* pump,
       bool done = false;
       decoder->Decode(
           buffer,
-          base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; }, &done));
+          base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; },
+                         &done));
       pump->Until([&done] { return done; });
     }
   }
@@ -160,7 +162,8 @@ int DecodeVideo(DemuxerStream* stream, Pump* pump,
            frames.front()->natural_size().width,
            frames.front()->natural_size().height,
            media::GetVideoFormatName(frames.front()->format()));
-    printf("  first pts   : %.6f s\n", frames.front()->timestamp().InSecondsF());
+    printf("  first pts   : %.6f s\n",
+           frames.front()->timestamp().InSecondsF());
     printf("  last pts    : %.6f s\n", frames.back()->timestamp().InSecondsF());
   }
   printf("  non-monotonic pts: %zu%s\n", non_monotonic,
@@ -274,4 +277,4 @@ int RunDecode(const Options& opts) {
   return exit_code;
 }
 
-}  // namespace ijkpp
+}  // namespace avbase

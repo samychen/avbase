@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -7,7 +7,7 @@
 // AudioBuffers, which is what a time-stretching renderer needs because WSOLA
 // reads the same frames several times (once as the target block, once inside
 // the search block) before consuming them. DELIBERATE DEVIATION: Chromium puts
-// this in media/base. ijkpp puts it in media/filters because media/base is the
+// this in media/base. avbase puts it in media/filters because media/base is the
 // frozen interface layer and its headers are reviewed as an API surface
 // (docs/03 §11), whereas this class has exactly one consumer --
 // AudioRendererAlgorithm. Promoting it to media/base later costs a move and an
@@ -24,8 +24,8 @@
 // NOT YET IN THE BUILD. Never compiled; see the gap list in
 // audio_renderer_algorithm.h.
 
-#ifndef IJKPP_MEDIA_FILTERS_AUDIO_FRAME_QUEUE_H_
-#define IJKPP_MEDIA_FILTERS_AUDIO_FRAME_QUEUE_H_
+#ifndef AVBASE_MEDIA_FILTERS_AUDIO_FRAME_QUEUE_H_
+#define AVBASE_MEDIA_FILTERS_AUDIO_FRAME_QUEUE_H_
 
 #include <atomic>
 #include <deque>
@@ -37,7 +37,7 @@
 #include "media/base/audio_bus.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // A FIFO of AudioBuffers addressed by frame index rather than by buffer.
 //
@@ -52,7 +52,7 @@ namespace ijkpp::media {
 // queue that only offered "take the next N frames" would force the algorithm to
 // buffer copies of what it had already taken, which is how ffplay ended up with
 // both a packet queue and a frame queue.
-class IJKPP_MEDIA_EXPORT AudioFrameQueue {
+class AVBASE_MEDIA_EXPORT AudioFrameQueue {
  public:
   AudioFrameQueue();
   AudioFrameQueue(const AudioFrameQueue&) = delete;
@@ -80,7 +80,7 @@ class IJKPP_MEDIA_EXPORT AudioFrameQueue {
   // Note this is the timestamp of the whole buffer, not of the first
   // unconsumed frame within it, so it lags by up to one buffer after a partial
   // read. Chromium has the same approximation; AudioTimestampHelper is what
-  // makes it exact, and ijkpp does not have that class yet.
+  // makes it exact, and avbase does not have that class yet.
   std::optional<base::TimeDelta> FrontTimestamp() const;
 
   // Drops everything, releasing the buffers.
@@ -96,7 +96,7 @@ class IJKPP_MEDIA_EXPORT AudioFrameQueue {
   // Returns the number of frames actually available. |scratch| must hold at
   // least |num_frames| and have the same channel count as |dest|; it exists
   // because AudioBuffer::ReadFrames() always writes from frame 0 of its
-  // destination, and ijkpp's AudioBus has no partial-offset copy (gap 6 in
+  // destination, and avbase's AudioBus has no partial-offset copy (gap 6 in
   // audio_renderer_algorithm.h).
   int PeekFrames(int num_frames, int read_offset, int write_offset,
                  AudioBus* dest, AudioBus* scratch) const;
@@ -111,6 +111,6 @@ class IJKPP_MEDIA_EXPORT AudioFrameQueue {
   std::atomic<int> frames_{0};  // cached total, so frames() stays O(1)
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_AUDIO_FRAME_QUEUE_H_
+#endif  // AVBASE_MEDIA_FILTERS_AUDIO_FRAME_QUEUE_H_

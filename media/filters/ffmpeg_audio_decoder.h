@@ -1,12 +1,12 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Ported from ijkplayer's ff_ffplay.c audio_decode_frame() (LGPL-2.1-or-later),
 // restructured behind Chromium's asynchronous AudioDecoder interface.
 
-#ifndef IJKPP_MEDIA_FILTERS_FFMPEG_AUDIO_DECODER_H_
-#define IJKPP_MEDIA_FILTERS_FFMPEG_AUDIO_DECODER_H_
+#ifndef AVBASE_MEDIA_FILTERS_FFMPEG_AUDIO_DECODER_H_
+#define AVBASE_MEDIA_FILTERS_FFMPEG_AUDIO_DECODER_H_
 
 #include <cstdint>
 #include <memory>
@@ -18,7 +18,7 @@
 #include "media/base/decoder_config.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // libavcodec-backed audio decoder producing AudioBuffer.
 //
@@ -31,7 +31,7 @@ namespace ijkpp::media {
 //
 // All FFmpeg handles live in an opaque Context so this header never includes
 // libav*.h (invariant C4).
-class IJKPP_MEDIA_EXPORT FFmpegAudioDecoder final : public AudioDecoder {
+class AVBASE_MEDIA_EXPORT FFmpegAudioDecoder final : public AudioDecoder {
  public:
   FFmpegAudioDecoder();
   ~FFmpegAudioDecoder() override;
@@ -75,6 +75,6 @@ class IJKPP_MEDIA_EXPORT FFmpegAudioDecoder final : public AudioDecoder {
   int sample_rate_{0};
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_FFMPEG_AUDIO_DECODER_H_
+#endif  // AVBASE_MEDIA_FILTERS_FFMPEG_AUDIO_DECODER_H_

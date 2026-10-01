@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -6,28 +6,28 @@
 //
 // When the toolchain provides <expected> (C++23), base::expected *is*
 // std::expected. Otherwise a minimal in-house implementation with the same
-// subset of the interface is used, so ijkpp builds on GCC 10-12 / Clang 14.
+// subset of the interface is used, so avbase builds on GCC 10-12 / Clang 14.
 //
-// IMPORTANT: ijkpp is built with -fno-exceptions. As in Chromium, calling
+// IMPORTANT: avbase is built with -fno-exceptions. As in Chromium, calling
 // value() on an unexpected value terminates the program instead of throwing
 // std::bad_expected_access. Callers must branch on has_value().
 
-#ifndef IJKPP_BASE_TYPES_EXPECTED_H_
-#define IJKPP_BASE_TYPES_EXPECTED_H_
+#ifndef AVBASE_BASE_TYPES_EXPECTED_H_
+#define AVBASE_BASE_TYPES_EXPECTED_H_
 
 #include <type_traits>
 #include <utility>
 
 #if defined(__has_include)
 #if __has_include(<expected>) && defined(__cpp_lib_expected)
-#define IJKPP_HAVE_STD_EXPECTED 1
+#define AVBASE_HAVE_STD_EXPECTED 1
 #include <expected>
 #endif
 #endif
 
-namespace ijkpp::base {
+namespace avbase::base {
 
-#if defined(IJKPP_HAVE_STD_EXPECTED)
+#if defined(AVBASE_HAVE_STD_EXPECTED)
 
 template <class T, class E>
 using expected = std::expected<T, E>;
@@ -149,7 +149,8 @@ class expected {
 
   template <class U>
   constexpr T value_or(U&& default_value) const& {
-    return has_value_ ? storage_.value : static_cast<T>(std::forward<U>(default_value));
+    return has_value_ ? storage_.value
+                      : static_cast<T>(std::forward<U>(default_value));
   }
 
  private:
@@ -181,7 +182,8 @@ class expected<void, E> {
   constexpr expected(const expected&) = default;
   constexpr expected(expected&&) = default;
   template <class G>
-  constexpr expected(const unexpected<G>& e) : has_value_(false), error_(e.value()) {}
+  constexpr expected(const unexpected<G>& e)
+      : has_value_(false), error_(e.value()) {}
   template <class G>
   constexpr expected(unexpected<G>&& e)
       : has_value_(false), error_(std::move(e.value())) {}
@@ -199,14 +201,14 @@ class expected<void, E> {
   E error_{};
 };
 
-#endif  // IJKPP_HAVE_STD_EXPECTED
+#endif  // AVBASE_HAVE_STD_EXPECTED
 
 // NOTE: Chromium also provides base::ok<T> for the cases where the implicit
 // T -> expected<T, E> conversion is ambiguous. That helper needs a constructor
 // inside expected itself, which is not available when base::expected aliases
-// std::expected. Nothing in ijkpp needs it, so it is deliberately not provided;
-// construct with an explicit expected<T, E>(value) instead.
+// std::expected. Nothing in avbase needs it, so it is deliberately not
+// provided; construct with an explicit expected<T, E>(value) instead.
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_TYPES_EXPECTED_H_
+#endif  // AVBASE_BASE_TYPES_EXPECTED_H_

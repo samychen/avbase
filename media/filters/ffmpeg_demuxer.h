@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -8,8 +8,8 @@
 // blocking thread instead of on the media sequence.
 
 
-#ifndef IJKPP_MEDIA_FILTERS_FFMPEG_DEMUXER_H_
-#define IJKPP_MEDIA_FILTERS_FFMPEG_DEMUXER_H_
+#ifndef AVBASE_MEDIA_FILTERS_FFMPEG_DEMUXER_H_
+#define AVBASE_MEDIA_FILTERS_FFMPEG_DEMUXER_H_
 
 #include <stdint.h>
 
@@ -37,10 +37,10 @@
 #include "media/filters/ffmpeg_glue.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // One elementary stream. Owns the DecoderBufferQueue the demux thread fills.
-class IJKPP_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
+class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
  public:
   FFmpegDemuxerStream(DemuxerStreamType type, int32_t index,
                       base::scoped_refptr<MediaLog> media_log,
@@ -96,7 +96,7 @@ class IJKPP_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
   bool aborted_ GUARDED_BY(lock_){false};
 };
 
-class IJKPP_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
+class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
  public:
   explicit FFmpegDemuxer(base::scoped_refptr<MediaLog> media_log);
   FFmpegDemuxer(const FFmpegDemuxer&) = delete;
@@ -130,7 +130,7 @@ class IJKPP_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
     int64_t request_id{0};
   };
 
-  // ---- demux thread ("ijkpp-demux") ----
+  // ---- demux thread ("avbase-demux") ----
   Status OpenOnDemuxThread(const DataSourceDescriptor& source,
                            const DemuxerOptions& options);
   // Builds the AVDictionary that avformat_open_input receives. Split out of
@@ -209,6 +209,6 @@ class IJKPP_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   SEQUENCE_CHECKER(media_sequence_checker_);
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_FFMPEG_DEMUXER_H_
+#endif  // AVBASE_MEDIA_FILTERS_FFMPEG_DEMUXER_H_

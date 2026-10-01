@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,9 +13,9 @@
 #include "platform/ffmpeg/av_packet_storage.h"
 #include "platform/ffmpeg/compat.h"
 
-namespace ff = ::ijkpp::platform::ffmpeg;
+namespace ff = ::avbase::platform::ffmpeg;
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 struct FFmpegAudioDecoder::Context {
   ~Context() = default;
@@ -314,4 +314,4 @@ void FFmpegAudioDecoder::Reset(base::OnceClosure closure) {
   std::move(closure).Run();
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -6,10 +6,10 @@
 //
 // OnceCallback is move-only and can be Run() exactly once; RepeatingCallback
 // is copyable and can be Run() many times. Neither allocates on Run().
-// Neither throws: ijkpp is built with -fno-exceptions.
+// Neither throws: avbase is built with -fno-exceptions.
 
-#ifndef IJKPP_BASE_FUNCTIONAL_CALLBACK_H_
-#define IJKPP_BASE_FUNCTIONAL_CALLBACK_H_
+#ifndef AVBASE_BASE_FUNCTIONAL_CALLBACK_H_
+#define AVBASE_BASE_FUNCTIONAL_CALLBACK_H_
 
 #include <memory>
 #include <utility>
@@ -17,7 +17,7 @@
 #include "base/check.h"
 #include "base/functional/callback_forward.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 namespace internal {
 
 // Type-erased single-shot invocable.
@@ -175,6 +175,6 @@ class RepeatingCallback<R(Args...)> {
   std::shared_ptr<Invoker> invoker_;
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_FUNCTIONAL_CALLBACK_H_
+#endif  // AVBASE_BASE_FUNCTIONAL_CALLBACK_H_

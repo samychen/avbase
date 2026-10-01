@@ -1,4 +1,4 @@
-# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Copyright 2026 The avbase Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """The legacy-option map: every ijkplayer option key and the PlayerConfig field
@@ -145,7 +145,7 @@ OPTIONS: list[Opt] = [
     Opt("overlay-format", "video.overlay_format", KIND_ENUM, T_ENUM,
         default="kRgb32", doc="output overlay pixel format (FourCC in legacy)",
         # docs/05 §4.2, in the same order: SDL_FCC__GLES2 / I420 / YV12 /
-        # RV16 / RV24 / RV32. kNV12 and kP010 are ijkpp additions with no
+        # RV16 / RV24 / RV32. kNV12 and kP010 are avbase additions with no
         # legacy FourCC, so they are reachable only through the typed field.
         enum={fcc("_es2"): "kNative", fcc("I420"): "kI420",
               fcc("YV12"): "kYv12", fcc("RV16"): "kRgb16",
@@ -270,7 +270,7 @@ OPTIONS += [
         doc="bytes to probe when identifying streams"),
     Opt("analyzeduration", "demux.analyze_duration", KIND_MS_TO_TIMEDELTA,
         T_INT64, lo=0, default=5000, category=FORMAT,
-        doc="microseconds in legacy; ijkpp takes milliseconds"),
+        doc="microseconds in legacy; avbase takes milliseconds"),
     Opt("timeout", "demux.timeout", KIND_MS_TO_TIMEDELTA, T_INT64, lo=0,
         default=0, category=FORMAT, doc="socket I/O timeout in milliseconds"),
     Opt("dns_cache_clear", "net.dns_cache_clear", KIND_BOOL, T_BOOL, *BOOL01,

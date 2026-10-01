@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 #include "base/functional/bind.h"
 #include "base/time/time.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 
 namespace {
 // How long one budget-wait slice sleeps before re-checking budget and the
@@ -177,4 +177,4 @@ bool ThrottledDataSource::IsSeekable() const {
   return inner_->IsSeekable();
 }
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test

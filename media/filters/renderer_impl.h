@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -61,8 +61,8 @@
 // does not exist, and this class needs a MockRendererClient on top of
 // everything they need.
 
-#ifndef IJKPP_MEDIA_FILTERS_RENDERER_IMPL_H_
-#define IJKPP_MEDIA_FILTERS_RENDERER_IMPL_H_
+#ifndef AVBASE_MEDIA_FILTERS_RENDERER_IMPL_H_
+#define AVBASE_MEDIA_FILTERS_RENDERER_IMPL_H_
 
 #include <stdint.h>
 
@@ -88,7 +88,7 @@
 #include "media/filters/video_renderer_impl.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Owns the two sub-renderers and the clock; implements media::Renderer.
 //
@@ -98,7 +98,7 @@ namespace ijkpp::media {
 // crosses sequences by value is the master clock, pushed periodically -- which
 // is deliberate: a clock that any thread may read at any time is what ffplay
 // has, and it is why Δ14 exists.
-class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
+class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
  public:
   // Everything the composition root needs, gathered so that adding a component
   // (TextRenderer at M7, VAAPI at M14) does not change this constructor's
@@ -283,6 +283,6 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   base::WeakPtrFactory<RendererImpl> weak_factory_{this};
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_RENDERER_IMPL_H_
+#endif  // AVBASE_MEDIA_FILTERS_RENDERER_IMPL_H_

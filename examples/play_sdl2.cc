@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // SDL2 playback: the M11 acceptance example. The host owns the window and
-// renderer (embedding is the core mode, docs/09 §2), ijkpp renders into them,
+// renderer (embedding is the core mode, docs/09 §2), avbase renders into them,
 // and the main thread's only jobs are SDL_PollEvent and quitting.
 //
 //   ./play_sdl2 --url video.mp4 [--max-seconds n]
@@ -64,15 +64,15 @@ bool ParseOptions(int argc, char** argv, Options* out) {
   return true;
 }
 
-void OnPlayerEvent(const ijkpp::PlayerEvent& e) {
-  if (e.type == ijkpp::EventType::kError) {
-    if (const auto* payload = ijkpp::AsError(e)) {
+void OnPlayerEvent(const avbase::PlayerEvent& e) {
+  if (e.type == avbase::EventType::kError) {
+    if (const auto* payload = avbase::AsError(e)) {
       std::fprintf(stderr, "error: %s\n", payload->error.ToString().c_str());
     }
     g_error.store(true);
-  } else if (e.type == ijkpp::EventType::kCompleted) {
+  } else if (e.type == avbase::EventType::kCompleted) {
     g_completed.store(true);
-  } else if (e.type == ijkpp::EventType::kStats) {
+  } else if (e.type == avbase::EventType::kStats) {
     std::printf("position %s / %s\n", e.media_time.ToString().c_str(), "--");
   }
 }
@@ -85,7 +85,7 @@ bool CreateSdlWindow(SDL_Window** window, SDL_Renderer** renderer) {
     std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
     return false;
   }
-  *window = SDL_CreateWindow("ijkpp", SDL_WINDOWPOS_CENTERED,
+  *window = SDL_CreateWindow("avbase", SDL_WINDOWPOS_CENTERED,
                              SDL_WINDOWPOS_CENTERED, kWindowWidth,
                              kWindowHeight,
                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
@@ -140,23 +140,23 @@ int main(int argc, char** argv) {
   Sdl2Surface surface;
   surface.window = window;
   surface.renderer = renderer;
-  auto display = ijkpp::media::NativeDisplay::FromSdl2Window(&surface);
+  auto display = avbase::media::NativeDisplay::FromSdl2Window(&surface);
 
-  auto deps = std::make_unique<ijkpp::Deps>();
+  auto deps = std::make_unique<avbase::Deps>();
   deps->video_sink_factory =
-      std::make_shared<ijkpp::media::Sdl2VideoSinkFactory>();
+      std::make_shared<avbase::media::Sdl2VideoSinkFactory>();
   deps->audio_sink_factory =
-      std::make_shared<ijkpp::media::Sdl2AudioSinkFactory>();
+      std::make_shared<avbase::media::Sdl2AudioSinkFactory>();
 
-  ijkpp::Player player(ijkpp::PlayerConfig(), std::move(deps));
-  player.SetEventHandler(ijkpp::base::BindRepeating(&OnPlayerEvent));
+  avbase::Player player(avbase::PlayerConfig(), std::move(deps));
+  player.SetEventHandler(avbase::base::BindRepeating(&OnPlayerEvent));
   player.SetVideoSurface(display);
-  if (const ijkpp::Status s = player.SetDataSource(options.url); !s) {
+  if (const avbase::Status s = player.SetDataSource(options.url); !s) {
     std::fprintf(stderr, "SetDataSource failed: %s\n",
                  s.error().ToString().c_str());
     return 1;
   }
-  if (const ijkpp::Status s = player.PrepareAsync(); !s) {
+  if (const avbase::Status s = player.PrepareAsync(); !s) {
     std::fprintf(stderr, "PrepareAsync failed: %s\n",
                  s.error().ToString().c_str());
     return 1;

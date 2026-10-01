@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -17,7 +17,7 @@
 
 #include "media/base/pipeline_controller.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 const char* PipelineControllerStateToString(PipelineController::State state) {
   switch (state) {
@@ -45,4 +45,4 @@ PipelineController::PipelineController() = default;
 // conclusion from the header.
 PipelineController::~PipelineController() = default;
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

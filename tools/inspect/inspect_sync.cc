@@ -1,15 +1,16 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// `ijkpp-inspect sync`: decode both streams and drive AvSyncController with the
-// real timestamps.
+// `avbase-inspect sync`: decode both streams and drive AvSyncController with
+// the real timestamps.
 //
 // This is the subcommand that caught bug #32. The unit tests for the sync
 // controller were extensive -- 28 of them, including a seqlock tear detector --
 // and every one passed while `Clock::Get()` returned a master clock offset by
-// negative uptime, because they all drove a SimpleTestTickClock starting at zero.
-// Against a real file on a real host the master read -33185 s, which would have
+// negative uptime, because they all drove a SimpleTestTickClock starting at
+// zero. Against a real file on a real host the master read -33185 s, which
+// would have
 // marked every video frame as infinitely late and dropped the entire stream.
 
 #include <stdio.h>
@@ -31,7 +32,7 @@
 #include "media/filters/ffmpeg_audio_decoder.h"
 #include "tools/inspect/inspect_common.h"
 
-namespace ijkpp {
+namespace avbase {
 
 namespace {
 
@@ -208,8 +209,9 @@ int RunSync(const Options& opts) {
     return 1;
   }
 
-  // Default thresholds: they are ported from ffplay's constants and the point of
-  // this subcommand is to observe the shipped behaviour, not a tuned one.
+  // Default thresholds: they are ported from ffplay's constants and the
+  // point of this subcommand is to observe the shipped behaviour, not a
+  // tuned one.
   AvSyncController controller(MasterType::kAudio,
                               base::DefaultTickClock::GetInstance(),
                               AvSyncController::Thresholds{});
@@ -235,4 +237,4 @@ int RunSync(const Options& opts) {
   return step > 0 ? 0 : 2;
 }
 
-}  // namespace ijkpp
+}  // namespace avbase

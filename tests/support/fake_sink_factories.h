@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -9,8 +9,8 @@
 // that assembly, because Create() runs on the media sequence while the
 // pipeline is starting.
 
-#ifndef IJKPP_TESTS_SUPPORT_FAKE_SINK_FACTORIES_H_
-#define IJKPP_TESTS_SUPPORT_FAKE_SINK_FACTORIES_H_
+#ifndef AVBASE_TESTS_SUPPORT_FAKE_SINK_FACTORIES_H_
+#define AVBASE_TESTS_SUPPORT_FAKE_SINK_FACTORIES_H_
 
 #include <memory>
 #include <mutex>
@@ -20,7 +20,7 @@
 #include "media/base/video_renderer_sink.h"
 #include "tests/support/fake_renderer_sinks.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 
 class FakeVideoSinkFactory final : public VideoRendererSinkFactory {
  public:
@@ -56,6 +56,6 @@ class FakeAudioSinkFactory final : public AudioRendererSinkFactory {
   FakeAudioSink* last_ = nullptr;
 };
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test
 
-#endif  // IJKPP_TESTS_SUPPORT_FAKE_SINK_FACTORIES_H_
+#endif  // AVBASE_TESTS_SUPPORT_FAKE_SINK_FACTORIES_H_

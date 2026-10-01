@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_MEDIA_BASE_AUDIO_DECODER_FACTORY_H_
-#define IJKPP_MEDIA_BASE_AUDIO_DECODER_FACTORY_H_
+#ifndef AVBASE_MEDIA_BASE_AUDIO_DECODER_FACTORY_H_
+#define AVBASE_MEDIA_BASE_AUDIO_DECODER_FACTORY_H_
 
 #include <memory>
 
@@ -11,12 +11,12 @@
 #include "media/base/media_types.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 class AudioDecoder;
 struct AudioDecoderConfig;
 
-class IJKPP_MEDIA_EXPORT AudioDecoderFactory
+class AVBASE_MEDIA_EXPORT AudioDecoderFactory
     : public base::RefCountedThreadSafe<AudioDecoderFactory> {
  public:
   REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
@@ -34,6 +34,6 @@ class IJKPP_MEDIA_EXPORT AudioDecoderFactory
   virtual ~AudioDecoderFactory() = default;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_AUDIO_DECODER_FACTORY_H_
+#endif  // AVBASE_MEDIA_BASE_AUDIO_DECODER_FACTORY_H_

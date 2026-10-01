@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -8,8 +8,8 @@
 // media/base/audio_decoder.h is that Decode() takes a DecodeCB rather than an
 // OutputCB -- see the comment on Decode() below.
 
-#ifndef IJKPP_MEDIA_BASE_AUDIO_DECODER_H_
-#define IJKPP_MEDIA_BASE_AUDIO_DECODER_H_
+#ifndef AVBASE_MEDIA_BASE_AUDIO_DECODER_H_
+#define AVBASE_MEDIA_BASE_AUDIO_DECODER_H_
 
 #include <cstdint>
 #include <string>
@@ -23,11 +23,11 @@
 #include "media/base/waiting.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Asynchronous audio decoder contract. Not thread-safe: every method must be
 // called on the sequence that owns it.
-class IJKPP_MEDIA_EXPORT AudioDecoder {
+class AVBASE_MEDIA_EXPORT AudioDecoder {
  public:
   using InitCB = base::OnceCallback<void(DecoderStatus)>;
   using DecodeCB = base::OnceCallback<void(DecoderStatus)>;
@@ -71,6 +71,6 @@ class IJKPP_MEDIA_EXPORT AudioDecoder {
   AudioDecoder();
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_AUDIO_DECODER_H_
+#endif  // AVBASE_MEDIA_BASE_AUDIO_DECODER_H_

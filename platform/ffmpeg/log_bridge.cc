@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,12 +9,12 @@
 #include <cstdio>
 #include <mutex>
 
-namespace ijkpp::platform::ffmpeg {
+namespace avbase::platform::ffmpeg {
 namespace {
 
 // av_log's callback receives a partial line at a time and expects the callee to
 // buffer until a newline arrives; without this, one FFmpeg message would be
-// split across several ijkpp log lines.
+// split across several avbase log lines.
 thread_local std::string g_line_buffer;
 thread_local int g_pending_level = AV_LOG_INFO;
 
@@ -86,7 +86,7 @@ base::logging::LogSeverity MapAvLogLevel(int av_level) {
 void InstallLogBridge() {
   std::call_once(g_install_once, []() {
     av_log_set_callback(&AvLogCallback);
-    // FFmpeg is chatty at info level by default; ijkpp re-emits its own
+    // FFmpeg is chatty at info level by default; avbase re-emits its own
     // structured milestones, so push FFmpeg down to warning and let VLOG(1)
     // surface the rest when explicitly asked for.
     av_log_set_level(AV_LOG_WARNING);
@@ -97,4 +97,4 @@ std::string GetFFmpegVersionString() {
   return std::string(LIBAVFORMAT_IDENT) + " / " + LIBAVCODEC_IDENT;
 }
 
-}  // namespace ijkpp::platform::ffmpeg
+}  // namespace avbase::platform::ffmpeg

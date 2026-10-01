@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 
 #include "gtest/gtest.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 const uint8_t kByte = 0x42;
@@ -291,4 +291,4 @@ TEST_F(DecoderBufferQueueTest, PopStatusNames) {
 }
 
 }  // namespace
-}  // namespace ijkpp::media
+}  // namespace avbase::media

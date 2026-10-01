@@ -15,7 +15,7 @@
 |---|---|
 | G-L1 在 X11 与 Wayland 桌面上流畅播放 1080p30 H.264/H.265 | `examples/play_sdl2` 与 `examples/play_native` 人工 + `tools/verify_e2e.py` 自动 |
 | G-L2 支持**嵌入模式**：渲染到调用方给的 `Window`(X11) / `wl_surface`(Wayland) | `examples/play_embed --wid 0x...` |
-| G-L3 零第三方也能出画（原生后端只依赖 GL/EGL/X11/Wayland/ALSA，且全部 dlopen） | `ldd libijkpp.so` 不含 `libSDL2` `libGL` `libasound` |
+| G-L3 零第三方也能出画（原生后端只依赖 GL/EGL/X11/Wayland/ALSA，且全部 dlopen） | `ldd libavbase.so` 不含 `libSDL2` `libGL` `libasound` |
 | G-L4 CI 无显卡也能验证（xvfb + llvmpipe） | GitHub Actions `e2e-linux` job |
 | G-L5 音画同步 av_diff 稳态 < 20ms | `verify_e2e.py --max-av-diff-ms 20` |
 | G-L6 硬解（VAAPI）输出零拷贝送显 | dmabuf 路径 + `stats().zero_copy_frames == total` |
@@ -80,13 +80,13 @@ scoped_refptr<PlatformBackend> LinuxBackend::Detect(const PlayerConfig& config) 
 
 ```cpp
 // player/public/native_display.h
-namespace ijkpp {
+namespace avbase {
 
 enum class NativeDisplayKind {
   kNone,
   kX11Window,          // 载荷：X11WindowHandle{Display*, Window}
   kWaylandSurface,     // 载荷：WaylandSurfaceHandle{wl_display*, wl_surface*}
-  kWaylandSurfaceWithDisplay,  // 同上 + 由 ijkpp 拥有 wl_display（自建窗口）
+  kWaylandSurfaceWithDisplay,  // 同上 + 由 avbase 拥有 wl_display（自建窗口）
   kSdl2Window,         // 载荷：SDL_Window*
   kDrmMaster,          // 载荷：gbm_device* + drm fd（kiosk 模式）
   kGbmDevice,
@@ -96,19 +96,19 @@ enum class NativeDisplayKind {
 };
 
 struct X11WindowHandle {
-  void* display{nullptr};      // Display*，调用方拥有；nullptr 表示让 ijkpp 自己 XOpenDisplay
+  void* display{nullptr};      // Display*，调用方拥有；nullptr 表示让 avbase 自己 XOpenDisplay
   uint64_t window{0};          // Window
-  bool ijkpp_owns_display{false};
+  bool avbase_owns_display{false};
 };
 
 struct WaylandSurfaceHandle {
   void* display{nullptr};      // wl_display*
   void* surface{nullptr};      // wl_surface*
-  bool ijkpp_owns_display{false};
+  bool avbase_owns_display{false};
   int32_t width{0}, height{0}; // Wayland 无法查询 surface 尺寸，必须由调用方给
 };
 
-class IJKPP_PLAYER_EXPORT NativeDisplay {
+class AVBASE_PLAYER_EXPORT NativeDisplay {
  public:
   static scoped_refptr<NativeDisplay> FromX11Window(X11WindowHandle handle);
   static scoped_refptr<NativeDisplay> FromWaylandSurface(WaylandSurfaceHandle handle);
@@ -125,20 +125,20 @@ class IJKPP_PLAYER_EXPORT NativeDisplay {
   std::string AsDebugString() const;
 };
 
-}  // namespace ijkpp
+}  // namespace avbase
 ```
 
 ### 3.1 嵌入模式的三条铁律
 
 | # | 规则 | 理由 |
 |---|---|---|
-| E1 | ijkpp **绝不拥有**调用方的 `wl_display` / `Display`，除非 `ijkpp_owns_display == true` | 避免双重 `wl_display_disconnect` 崩溃 |
-| E2 | ijkpp **绝不**创建自己的事件循环去 poll 调用方的 display fd；它只在 render sequence 上按需 `wl_display_dispatch_queue_pending(queue)`（用自己独立的 `wl_event_queue`） | 与宿主事件循环共存的关键 |
+| E1 | avbase **绝不拥有**调用方的 `wl_display` / `Display`，除非 `avbase_owns_display == true` | 避免双重 `wl_display_disconnect` 崩溃 |
+| E2 | avbase **绝不**创建自己的事件循环去 poll 调用方的 display fd；它只在 render sequence 上按需 `wl_display_dispatch_queue_pending(queue)`（用自己独立的 `wl_event_queue`） | 与宿主事件循环共存的关键 |
 | E3 | 所有窗口系统调用都在 sink 的 render sequence 上执行，`SetOutputTarget()` 通过 `PostTask` 转发 | 避免 X11/Wayland 客户端库的线程限制（`wl_proxy` 不是线程安全的） |
 
-**Wayland 嵌入的实现要点**：为 ijkpp 创建独立的 `wl_event_queue`（`wl_display_create_queue`），把 ijkpp 用到的所有 proxy（`wl_surface`、`xdg_surface`、`wp_viewport`、`zwp_linux_dmabuf_v1`…）用 `wl_proxy_set_queue` 绑到这个队列，然后 render sequence 上循环 `wl_display_dispatch_queue_pending(display, queue)`。这样宿主 App 的事件循环与 ijkpp 完全不干扰 —— 这是 Wayland 嵌入最容易做错的地方。
+**Wayland 嵌入的实现要点**：为 avbase 创建独立的 `wl_event_queue`（`wl_display_create_queue`），把 avbase 用到的所有 proxy（`wl_surface`、`xdg_surface`、`wp_viewport`、`zwp_linux_dmabuf_v1`…）用 `wl_proxy_set_queue` 绑到这个队列，然后 render sequence 上循环 `wl_display_dispatch_queue_pending(display, queue)`。这样宿主 App 的事件循环与 avbase 完全不干扰 —— 这是 Wayland 嵌入最容易做错的地方。
 
-**X11 嵌入的实现要点**：如果 `display` 是调用方的，X11 客户端库默认非线程安全，必须 `XInitThreads()`（且要在**任何** X11 调用之前，只能由调用方或 `GlobalInit()` 调）。ijkpp 提供 `player::GlobalInit()` 里调 `XInitThreads()`，并在文档明确要求"若你自己也用 X11，请确保 `GlobalInit()` 先于你的第一次 X 调用"。
+**X11 嵌入的实现要点**：如果 `display` 是调用方的，X11 客户端库默认非线程安全，必须 `XInitThreads()`（且要在**任何** X11 调用之前，只能由调用方或 `GlobalInit()` 调）。avbase 提供 `player::GlobalInit()` 里调 `XInitThreads()`，并在文档明确要求"若你自己也用 X11，请确保 `GlobalInit()` 先于你的第一次 X 调用"。
 
 ---
 
@@ -289,7 +289,7 @@ class AlsaAudioRendererSink final : public RestartableAudioRendererSink {
  public:
   // AudioRendererSink:
   void Initialize(const AudioParameters& params, RenderCallback* callback) override;
-  void Start() override;      // 启动 "ijkpp-alsa" 线程
+  void Start() override;      // 启动 "avbase-alsa" 线程
   void Stop() override;       // join，保证返回后不再调 Render()（Chromium 契约 R13）
   void Pause() override;      // snd_pcm_pause
   void Play() override;
@@ -307,7 +307,7 @@ class AlsaAudioRendererSink final : public RestartableAudioRendererSink {
   snd_pcm_t* pcm_{nullptr};
   AudioParameters params_;
   raw_ptr<RenderCallback> callback_;              // 非拥有
-  base::Thread render_thread_{"ijkpp-alsa"};
+  base::Thread render_thread_{"avbase-alsa"};
   base::AtomicFlag stop_flag_;
   // ...
 };
@@ -334,7 +334,7 @@ void AlsaAudioRendererSink::RenderThread() {
 }
 ```
 
-**关键点**：`Render()` 回调在 `ijkpp-alsa` 线程上执行，`AudioRendererImpl` 的实现只做 `AudioRendererAlgorithm::FillBuffer` + `Scale`（见 [04 §6.3](04-线程模型与数据流.md)），预算 < 100µs。契约测试 `AudioSinkContract.RenderCallbackBudget` 会实测并断言。
+**关键点**：`Render()` 回调在 `avbase-alsa` 线程上执行，`AudioRendererImpl` 的实现只做 `AudioRendererAlgorithm::FillBuffer` + `Scale`（见 [04 §6.3](04-线程模型与数据流.md)），预算 < 100µs。契约测试 `AudioSinkContract.RenderCallbackBudget` 会实测并断言。
 
 ### 5.3 采样率协商
 
@@ -377,13 +377,13 @@ bool LoadGl() {
 对每个平台库都做同样处理：`libEGL.so.1`、`libX11.so.6`、`libXext.so.6`、`libXpresent.so.1`、`libwayland-client.so.0`、`libwayland-egl.so.1`、`libxkbcommon.so.0`、`libasound.so.2`、`libpulse-simple.so.0`、`libpulse.so.0`、`libSDL2-2.0.so.0`。
 
 **收益**：
-- 单个 `libijkpp.so` 在 minimal 容器（无 X11）里也能加载运行（headless 模式），不会因 `cannot open shared object file` 直接挂掉
+- 单个 `libavbase.so` 在 minimal 容器（无 X11）里也能加载运行（headless 模式），不会因 `cannot open shared object file` 直接挂掉
 - SDK 分发时不需要声明一堆 `Depends:`
-- `ldd libijkpp.so` 只剩 `libc / libstdc++ / libm / libdl / libpthread`（+ 若静态链 FFmpeg 则无 FFmpeg）
+- `ldd libavbase.so` 只剩 `libc / libstdc++ / libm / libdl / libpthread`（+ 若静态链 FFmpeg 则无 FFmpeg）
 
 **代价**：约 600 行 loader 样板代码 + 每个函数调用多一次间接跳转（可忽略，且都是冷路径）。
 
-`IJKPP_LINUX_LINK_RUNTIME=OFF` 时改为直接链接，适合发行版打包（依赖明确、启动稍快）。
+`AVBASE_LINUX_LINK_RUNTIME=OFF` 时改为直接链接，适合发行版打包（依赖明确、启动稍快）。
 
 ---
 
@@ -446,11 +446,11 @@ VAAPI 解码（可选，M14+）
 ```
 
 `main.cc` 里演示了三种宿主形态：
-1. 纯 C 宿主（`extern "C"` 调 ijkpp，验证头文件在 C++ 之外不炸 —— 实际是 `--wid` 传入，ijkpp 只当句柄用）
+1. 纯 C 宿主（`extern "C"` 调 avbase，验证头文件在 C++ 之外不炸 —— 实际是 `--wid` 传入，avbase 只当句柄用）
 2. 宿主自己有 X11 事件循环（验证 E1/E2/E3 铁律）
 3. 宿主是 Qt/GTK（用一个最小 GTK4 窗口演示，可选编译）
 
-### 8.4 `examples/headless/` + `examples/stats_dump/` + `examples/ijkpp_inspect/`
+### 8.4 `examples/headless/` + `examples/stats_dump/` + `examples/avbase_inspect/`
 
 见 [07 §11.3](07-测试策略与可观测性.md) 与 [10 §7](10-SDK易用性设计.md)。
 
@@ -500,7 +500,7 @@ llvmpipe 软渲染下阈值放宽（`--min-frames 100`、`--max-av-diff-ms 60`�
 | L2 | Wayland `wl_proxy` 不是线程安全 | §3.1 E2：独立 `wl_event_queue` |
 | L3 | NVIDIA 专有驱动的 GLX 与 Mesa 行为差异（`glXSwapIntervalEXT` vs `MESA_swap_control`） | 用 `GLX_EXT_swap_control` → `GLX_MESA_swap_control` → `GLX_SGI_swap_control` 三级回退 |
 | L4 | dmabuf modifier 各家不同（Intel/Igalia/NVIDIA） | `eglQueryDmaBufModifiersEXT` 枚举，不硬编码；无 modifier 扩展时用 `DRM_FORMAT_MOD_INVALID` |
-| L5 | PipeWire 通过 Pulse 兼容层时延迟查询不准（多一跳） | 检测 `XDG_SESSION_TYPE` + `pipewire --version`；若走 pw-pulse 则额外补偿 ~10ms，或直接用 PipeWire 原生 API（`IJKPP_LINUX_USE_PIPEWIRE`） |
+| L5 | PipeWire 通过 Pulse 兼容层时延迟查询不准（多一跳） | 检测 `XDG_SESSION_TYPE` + `pipewire --version`；若走 pw-pulse 则额外补偿 ~10ms，或直接用 PipeWire 原生 API（`AVBASE_LINUX_USE_PIPEWIRE`） |
 | L6 | ALSA `snd_pcm_writei` 返回 `-EPIPE`（xrun） | `snd_pcm_prepare()` 重开 + 计入 `glitch_info_.xruns` + 通知 `AvSyncController` 重置音频时钟 |
 | L7 | 显示器刷新率变化（省电模式 60→30Hz、多显示器不同刷新率） | 监听 X11 `RRScreenChangeNotify` / Wayland `wl_output.mode`，更新 `GetDisplayInterval()` 并通知 compositor |
 | L8 | DPI 缩放（X11 分数缩放不存在、Wayland fractional-scale） | `DisplayGeometry` 用像素坐标；Wayland 用 `wp_fractional_scale_v1`，X11 用 `Xft.dpi` 资源提示（仅影响内建窗口的初始大小） |

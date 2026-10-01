@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_PLAYER_EVENT_HUB_H_
-#define IJKPP_PLAYER_EVENT_HUB_H_
+#ifndef AVBASE_PLAYER_EVENT_HUB_H_
+#define AVBASE_PLAYER_EVENT_HUB_H_
 
 #include <stdint.h>
 
@@ -17,7 +17,7 @@
 #include "player/public/player_event.h"
 #include "player/public/player_export.h"
 
-namespace ijkpp {
+namespace avbase {
 
 // The S8 sequence of docs/04 §1: one FIFO thread that runs the user's event
 // handler and every PlayerObserver callback.
@@ -33,7 +33,7 @@ namespace ijkpp {
 // stopped and the media sequence is joined, so every event handler observes a
 // quiescent player. Flush() runs the already-queued events (the final
 // StateChanged{to=kStopped} must still reach the host) and then joins.
-class IJKPP_PLAYER_EXPORT EventHub {
+class AVBASE_PLAYER_EXPORT EventHub {
  public:
   EventHub();
   EventHub(const EventHub&) = delete;
@@ -85,6 +85,6 @@ class IJKPP_PLAYER_EXPORT EventHub {
   base::WaitableEvent drained_;
 };
 
-}  // namespace ijkpp
+}  // namespace avbase
 
-#endif  // IJKPP_PLAYER_EVENT_HUB_H_
+#endif  // AVBASE_PLAYER_EVENT_HUB_H_

@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 
 #include "base/logging.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 Sdl2AudioSink::Sdl2AudioSink() = default;
 
@@ -56,7 +56,7 @@ void Sdl2AudioSink::Start() {
   SDL_AudioDeviceID device =
       SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
   if (device == 0) {
-    LOG(ERROR) << "ijkpp.aout: SDL_OpenAudioDevice failed: "
+    LOG(ERROR) << "avbase.aout: SDL_OpenAudioDevice failed: "
                << SDL_GetError();
     started_.store(false);
     return;
@@ -179,4 +179,4 @@ base::scoped_refptr<AudioRendererSink> Sdl2AudioSinkFactory::Create() {
   return base::MakeRefCounted<Sdl2AudioSink>();
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

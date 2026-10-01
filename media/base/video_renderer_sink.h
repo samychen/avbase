@@ -1,11 +1,11 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `media/base/video_renderer_sink.h` (BSD-3-Clause).
 
-#ifndef IJKPP_MEDIA_BASE_VIDEO_RENDERER_SINK_H_
-#define IJKPP_MEDIA_BASE_VIDEO_RENDERER_SINK_H_
+#ifndef AVBASE_MEDIA_BASE_VIDEO_RENDERER_SINK_H_
+#define AVBASE_MEDIA_BASE_VIDEO_RENDERER_SINK_H_
 
 #include <stdint.h>
 
@@ -17,9 +17,9 @@
 #include "media/base/video_frame.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
-struct IJKPP_MEDIA_EXPORT VideoSinkStats {
+struct AVBASE_MEDIA_EXPORT VideoSinkStats {
   uint64_t frames_presented{0};
   uint64_t frames_dropped{0};
   uint64_t submit_failures{0};
@@ -33,7 +33,7 @@ struct IJKPP_MEDIA_EXPORT VideoSinkStats {
 // refresh window. This is Chromium's model and it is what makes vsync-accurate
 // presentation possible on X11 (Present extension) and Wayland
 // (wp_presentation_feedback). See docs/04 §1.1 and behaviour difference Δ18.
-class IJKPP_MEDIA_EXPORT VideoRendererSink {
+class AVBASE_MEDIA_EXPORT VideoRendererSink {
  public:
   class RenderCallback {
    public:
@@ -88,7 +88,7 @@ class IJKPP_MEDIA_EXPORT VideoRendererSink {
   VideoRendererSink() = default;
 };
 
-class IJKPP_MEDIA_EXPORT VideoRendererSinkFactory {
+class AVBASE_MEDIA_EXPORT VideoRendererSinkFactory {
  public:
   VideoRendererSinkFactory(const VideoRendererSinkFactory&) = delete;
   VideoRendererSinkFactory& operator=(const VideoRendererSinkFactory&) = delete;
@@ -102,6 +102,6 @@ class IJKPP_MEDIA_EXPORT VideoRendererSinkFactory {
   virtual ~VideoRendererSinkFactory() = default;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_VIDEO_RENDERER_SINK_H_
+#endif  // AVBASE_MEDIA_BASE_VIDEO_RENDERER_SINK_H_

@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -9,8 +9,8 @@
 // surfaces). Chromium never needed the second one because VideoFrame carries
 // a StorageType; see docs/02 §9 D2.
 
-#ifndef IJKPP_MEDIA_BASE_VIDEO_FRAME_H_
-#define IJKPP_MEDIA_BASE_VIDEO_FRAME_H_
+#ifndef AVBASE_MEDIA_BASE_VIDEO_FRAME_H_
+#define AVBASE_MEDIA_BASE_VIDEO_FRAME_H_
 
 #include <stdint.h>
 
@@ -24,9 +24,9 @@
 #include "base/time/time.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
-struct IJKPP_MEDIA_EXPORT Rational {
+struct AVBASE_MEDIA_EXPORT Rational {
   int num{1};
   int den{1};
   constexpr bool is_zero() const noexcept { return num == 0; }
@@ -36,7 +36,7 @@ struct IJKPP_MEDIA_EXPORT Rational {
   constexpr friend bool operator==(const Rational&, const Rational&) = default;
 };
 
-struct IJKPP_MEDIA_EXPORT Size {
+struct AVBASE_MEDIA_EXPORT Size {
   int width{0};
   int height{0};
   constexpr int GetArea() const noexcept { return width * height; }
@@ -58,21 +58,21 @@ enum class VideoFormat {
   kP010,
 };
 
-IJKPP_MEDIA_EXPORT const char* GetVideoFormatName(VideoFormat format);
-IJKPP_MEDIA_EXPORT int VideoFormatPlaneCount(VideoFormat format);
+AVBASE_MEDIA_EXPORT const char* GetVideoFormatName(VideoFormat format);
+AVBASE_MEDIA_EXPORT int VideoFormatPlaneCount(VideoFormat format);
 
 // A decoded video frame.
 //
 // All instances are reference-counted and must be held through
 // scoped_refptr<VideoFrame>. Passing a frame to a sink therefore costs one
 // atomic increment, never a pixel copy.
-class IJKPP_MEDIA_EXPORT VideoFrame
+class AVBASE_MEDIA_EXPORT VideoFrame
     : public base::RefCountedThreadSafe<VideoFrame> {
  public:
   REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
 
   enum class StorageType {
-    kStorageOwned = 0,       // CPU memory allocated by ijkpp; planes readable.
+    kStorageOwned = 0,       // CPU memory allocated by avbase; planes readable.
     kStorageDmaBufs,         // Linux dmabuf; zero-copy into EGL, planes unreadable.
     kStorageGpuMemoryBuffer,
     kStorageOpaque,          // Platform-private handle (MediaCodec Surface,
@@ -143,6 +143,6 @@ class IJKPP_MEDIA_EXPORT VideoFrame
   void* allocation_{nullptr};   // Owned backing store when storage is owned.
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_VIDEO_FRAME_H_
+#endif  // AVBASE_MEDIA_BASE_VIDEO_FRAME_H_

@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@
 #include "media/base/data_source.h"
 #include "media/base/video_decoder_factory.h"
 
-namespace ijkpp {
+namespace avbase {
 
 // Out-of-line special members: Deps holds scoped_refptrs to forward-declared
 // interfaces, and releasing one needs the complete type. Keeping them here
@@ -40,4 +40,4 @@ Deps Deps::CreateDefault() {
   return deps;
 }
 
-}  // namespace ijkpp
+}  // namespace avbase

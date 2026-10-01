@@ -1,4 +1,4 @@
-# ijkpp — ijkplayer 核心播放器的 C++20 重构
+# avbase — ijkplayer 核心播放器的 C++20 重构
 
 **风格**：Google C++ Style Guide + Chromium 工程约定（`base/` · `media/` 分层、`DCHECK`、sequence 模型、`base::BindOnce`/`WeakPtr`/`scoped_refptr`）
 **目标平台**：Linux（X11 / Wayland），SDL2 后端 + 原生 OpenGL 后端双实现
@@ -55,7 +55,7 @@
 | 02 | [总体架构与模块划分](docs/02-总体架构与模块划分.md) | **Chromium 式四层架构**（base/media/player/platform）、完整目录树（镜像 `media/base` + `media/filters`）、CMake target 拓扑、依赖方向铁律 |
 | 03 | [核心类与接口设计](docs/03-核心类与接口设计.md) | 头文件级 C++20 声明，**命名与签名对齐 Chromium**：`DecoderBuffer` / `VideoFrame` / `AudioBus` / `DemuxerStream` / `VideoDecoder` / `Renderer` / `Pipeline` / `VideoFrameCompositor` / `AudioRendererSink` / `MediaLog` / `Player` |
 | 04 | [线程模型与数据流](docs/04-线程模型与数据流.md) | **Task Runner / Sequence 模型**、6 个线程与 sequence 归属、`PostTask` + `WeakPtr` 通信、`serial` 语义、seek/flush/stop 时序、锁与无锁边界、竞态清单 |
-| 05 | [迁移对照表](docs/05-迁移对照表.md) | **三方对照**（ijkplayer ↔ ijkpp ↔ Chromium media）：文件级 / API 级 / 函数级 / 选项级 / 消息级 / 属性级 / 常量级 / 字段级 + 16 条故意差异 |
+| 05 | [迁移对照表](docs/05-迁移对照表.md) | **三方对照**（ijkplayer ↔ avbase ↔ Chromium media）：文件级 / API 级 / 函数级 / 选项级 / 消息级 / 属性级 / 常量级 / 字段级 + 16 条故意差异 |
 | 06 | [CMake 工程与构建体系](docs/06-CMake工程与构建体系.md) | `.cc` + Google flags + `-fno-exceptions`、`FindFFmpeg`（三级查找）、FFmpeg 4.4~7.x 兼容层、**Linux 依赖探测**（SDL2/OpenGL/EGL/X11/Wayland/ALSA/Pulse）、install/export、CI 矩阵、符号隐藏 |
 | 07 | [测试策略与可观测性](docs/07-测试策略与可观测性.md) | **`base::test::TaskEnvironment`** 单测模型、Chromium 式 Mock（`MockVideoDecoder`/`MockDemuxerStream`）、合成数据源、Golden Test、Fuzz、Sanitizer、覆盖率门禁 |
 | 08 | [实施路线图与风险](docs/08-实施路线图与风险.md) | M0–M12 里程碑与 DoD、双人并行方案、工作量估算、砍掉/后置清单、**16 条风险登记册**、"平替"验收标准 A1–A16 |
@@ -165,13 +165,13 @@
 #include "player/public/player.h"
 
 int main() {
-  ijkpp::Player player;                                  // 默认依赖：FFmpeg + SDL2
+  avbase::Player player;                                  // 默认依赖：FFmpeg + SDL2
   player.SetVideoSurface(window.native_handle());        // 嵌入模式：给个 X11 Window 就行
-  player.SetEventHandler([](const ijkpp::PlayerEvent& e) {
-    if (e.type == ijkpp::EventType::kPrepared) player_ref->Start();
+  player.SetEventHandler([](const avbase::PlayerEvent& e) {
+    if (e.type == avbase::EventType::kPrepared) player_ref->Start();
   });
-  IJKPP_RETURN_IF_ERROR(player.SetDataSource("video.mp4"));
-  IJKPP_RETURN_IF_ERROR(player.PrepareAsync());
+  AVBASE_RETURN_IF_ERROR(player.SetDataSource("video.mp4"));
+  AVBASE_RETURN_IF_ERROR(player.PrepareAsync());
   return 0;
 }
 ```
@@ -179,7 +179,7 @@ int main() {
 对比原版 ijkplayer 需要 20+ 行（`ijkmp_create` → 若干 `ijkmp_set_option_int` → `set_data_source` → `set_native_window` → `prepare_async` → 起一个线程轮询 `ijkmp_get_msg`）。详见 [docs/10](docs/10-SDK易用性设计.md)。
 
 **SDK 易用性的硬性要求**（进 CI/评审清单）：
-- 零配置可用：`ijkpp::Player p; p.SetDataSource(url); p.PrepareAsync();` 就能出画出声（自动探测平台后端）
+- 零配置可用：`avbase::Player p; p.SetDataSource(url); p.PrepareAsync();` 就能出画出声（自动探测平台后端）
 - 错误信息可操作：不只说"失败了"，要说**为什么 + 怎么办**
 - 头文件自解释：每个 public 方法有"在哪个线程调、会不会阻塞、失败时怎样"的注释
 - 无需理解 FFmpeg：公开头文件不出现任何 `AV*` 类型
@@ -201,14 +201,14 @@ int main() {
 | D7 | `ijkio` 边下边播缓存 | **后置**（M12），首期只留 `DataSource` 装饰器接口 | 08 §4 |
 | D8 | DRM / CDM | **不实现**，`CdmContext` 位置留空接口 | 08 §4 |
 | D9 | 是否首期提供 C ABI 兼容层 | **不提供**（已选现代 C++ API），预留 `player/public/c/` 目录与符号清单 | 08 §4 |
-| D10 | 许可证 | ijkpp 用 **BSD-3-Clause**（与 Chromium base 兼容），移植自 ijkplayer 的算法文件保留 **LGPL-2.1** 声明并单独归入 `media/filters/legacy/` | 08 §5 R8 ⚠️需法务确认 |
-| D11 | FFmpeg 的 include 隔离强度 | **链接隔离 + 目录隔离，放弃 include 隔离**：`media/filters/ffmpeg_*.cc` 可 include `platform/ffmpeg/av_includes.h`，但只有 `ijkpp_platform_ffmpeg` 这个 target 链接 FFmpeg。更严格（include 也隔离）成本约 +15% | 02 §8 |
+| D10 | 许可证 | avbase 用 **BSD-3-Clause**（与 Chromium base 兼容），移植自 ijkplayer 的算法文件保留 **LGPL-2.1** 声明并单独归入 `media/filters/legacy/` | 08 §5 R8 ⚠️需法务确认 |
+| D11 | FFmpeg 的 include 隔离强度 | **链接隔离 + 目录隔离，放弃 include 隔离**：`media/filters/ffmpeg_*.cc` 可 include `platform/ffmpeg/av_includes.h`，但只有 `avbase_platform_ffmpeg` 这个 target 链接 FFmpeg。更严格（include 也隔离）成本约 +15% | 02 §8 |
 
 ---
 
 ## 6. 新旧对照（速览）
 
-| ijkplayer | ijkpp（Chromium 对齐） |
+| ijkplayer | avbase（Chromium 对齐） |
 |---|---|
 | `ff_ffplay.c` 5400 行 | 拆成 `media/filters/` 下 9 个文件，最大 ~700 行 |
 | `VideoState` ~200 字段上帝结构体 | `RendererImpl` + `VideoRendererImpl` + `AudioRendererImpl` + `VideoFrameCompositor`，各自 ≤ 15 私有字段 |
@@ -256,17 +256,17 @@ int main() {
 规划树并列，实测树里 ⬜ 表示规划中但不存在。
 
 ```
-ijkpp/
+avbase/
 ├── LICENSE                  ✅ BSD-3-Clause + 4 节第三方/衍生说明（第九轮补）
 ├── .clang-format            ✅   .gitignore ✅（第九轮补 __pycache__/ *.pyc）
 ├── .clang-tidy              ⬜ STYLE.md §8 有完整配置内容，文件本身不存在
 ├── .editorconfig            ⬜
 ├── STYLE.md · VERSION.txt(0.1.0) · CMakeLists.txt · CMakePresets.json ✅
 ├── .github/workflows/ci.yml ✅ quick + full 矩阵；ffmpeg-matrix 与 e2e-linux 仍是 if:false
-├── cmake/                   ✅ 8 个：IjkppOptions · IjkppCompilerFlags · IjkppThirdParty
-│                               FindFFmpeg · FindSDL2 · IjkppCheckInvariants
+├── cmake/                   ✅ 8 个：AvbaseOptions · AvbaseCompilerFlags · AvbaseThirdParty
+│                               FindFFmpeg · FindSDL2 · AvbaseCheckInvariants
 │                               BuildConfig.h.in · Version.h.in
-│                            ⬜ FindLinuxMediaDeps(M12) · IjkppInstall(M8) · ijkpp.map(R18)
+│                            ⬜ FindLinuxMediaDeps(M12) · AvbaseInstall(M8) · avbase.map(R18)
 ├── base/                    ✅ 44 文件 / 3,799 行
 │   ├── functional/ memory/ time/ synchronization/ task/ threading/ types/ test/
 │   └── ⬜ containers/ files/ strings/ trace_event/ · feature_list.h
@@ -303,7 +303,7 @@ ijkpp/
 ├── tools/                   ✅ check_invariants.py(604，16 条规则/220 文件)
 │                               extract_constants.py(547) + ported_constants.py(222)
 │                               gen_options.py(820) · option_map.py(327) · sim_wsola.py(704)
-│                               inspect/ → ijkpp-inspect（probe · decode · sync）
+│                               inspect/ → avbase-inspect（probe · decode · sync）
 │                               setup_ffmpeg.sh（FindFFmpeg.cmake 引用，非死代码）
 │                            ⬜ golden_record.py · golden_diff.py · verify_e2e.py
 │                               ijkplayer-recorder/ · build_linux.sh
@@ -323,11 +323,11 @@ C++ **32,154 行**（实现 25,381 / 测试 6,773）、`tools/*.py` **3,224 行*
 ### 8.2 规划（目标布局，docs/02 §2 的完整版）
 
 ```
-ijkpp/
+avbase/
 ├── .clang-format  .clang-tidy  .editorconfig  STYLE.md  VERSION  LICENSE
 ├── CMakeLists.txt  CMakePresets.json
-├── cmake/            IjkppOptions · CompilerFlags · FindFFmpeg · FindLinuxMediaDeps
-│                     IjkppInstall · IjkppCheckInvariants · ijkpp.map
+├── cmake/            AvbaseOptions · CompilerFlags · FindFFmpeg · FindLinuxMediaDeps
+│                     AvbaseInstall · AvbaseCheckInvariants · avbase.map
 ├── base/             ← Chromium base/ 同名同语义子集（~28 文件）
 │   ├── functional/ memory/ time/ synchronization/ task/ threading/
 │   ├── containers/ files/ types/ trace_event/ test/
@@ -343,7 +343,7 @@ ijkpp/
 ├── platform/
 │   ├── null/  sdl2/  linux/  ffmpeg/
 │   └── (android/ ios/ 预留)
-├── examples/         play_sdl2 · play_native · play_embed · headless · ijkpp_inspect
+├── examples/         play_sdl2 · play_native · play_embed · headless · avbase_inspect
 ├── tests/            unit/ contract/ integration/ golden/ stress/ fuzz/ bench/ testdata/
 ├── tools/            check_invariants.py · extract_constants.py · gen_options.py
 │                     golden_record.py · golden_diff.py · verify_e2e.py · build_linux.sh

@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_MEDIA_FILTERS_NULL_VIDEO_SINK_H_
-#define IJKPP_MEDIA_FILTERS_NULL_VIDEO_SINK_H_
+#ifndef AVBASE_MEDIA_FILTERS_NULL_VIDEO_SINK_H_
+#define AVBASE_MEDIA_FILTERS_NULL_VIDEO_SINK_H_
 
 #include <atomic>
 #include <memory>
@@ -17,7 +17,7 @@
 #include "media/base/video_renderer_sink.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // A video sink that renders nowhere but still drives the presentation cadence.
 //
@@ -35,7 +35,7 @@ namespace ijkpp::media {
 // (Δ18: the sink drives frame selection; the compositor decides). It reports
 // no vsync interval (GetDisplayInterval() is false), so the compositor falls
 // back to container-timestamp-driven cadence.
-class IJKPP_MEDIA_EXPORT NullVideoSink final : public VideoRendererSink {
+class AVBASE_MEDIA_EXPORT NullVideoSink final : public VideoRendererSink {
  public:
   NullVideoSink();
   NullVideoSink(const NullVideoSink&) = delete;
@@ -72,7 +72,7 @@ class IJKPP_MEDIA_EXPORT NullVideoSink final : public VideoRendererSink {
   std::atomic<uint64_t> submit_failures_{0};
 };
 
-class IJKPP_MEDIA_EXPORT NullVideoSinkFactory final
+class AVBASE_MEDIA_EXPORT NullVideoSinkFactory final
     : public VideoRendererSinkFactory {
  public:
   std::unique_ptr<VideoRendererSink> Create(
@@ -80,6 +80,6 @@ class IJKPP_MEDIA_EXPORT NullVideoSinkFactory final
   const char* name() const override { return "null"; }
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_NULL_VIDEO_SINK_H_
+#endif  // AVBASE_MEDIA_FILTERS_NULL_VIDEO_SINK_H_

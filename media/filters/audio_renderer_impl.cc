@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -22,7 +22,7 @@
 #include "base/logging.h"
 #include "media/base/media_constants.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 // Applies gain to the first |written| frames and zeroes the rest. Split out of
@@ -103,14 +103,14 @@ void AudioRendererImpl::Initialize(DemuxerStream* stream,
 void AudioRendererImpl::OnDecoderInitialized(InitializeCB cb,
                                             DecoderStatus status) {
   if (!status.is_ok()) {
-    LOG(ERROR) << "ijkpp.adec: audio decoder failed to initialize: "
+    LOG(ERROR) << "avbase.adec: audio decoder failed to initialize: "
                << decoder_stream_.GetDisplayName() << " ("
                << status.AsDebugString() << ")";
     std::move(cb).Run(PipelineStatus::kAudioRendererInitializationError);
     return;
   }
   initialized_ = true;
-  LOG(INFO) << "ijkpp.adec: audio decoder ready ("
+  LOG(INFO) << "avbase.adec: audio decoder ready ("
             << decoder_stream_.GetDisplayName() << ")";
   std::move(cb).Run(PipelineStatus::kOk);
 }
@@ -319,7 +319,7 @@ void AudioRendererImpl::OnDecoderOutput(
       // the video side has the same tolerance for the same reason.
       return;
     }
-    LOG(ERROR) << "ijkpp.adec: decode failed (" << status.AsDebugString()
+    LOG(ERROR) << "avbase.adec: decode failed (" << status.AsDebugString()
                << "), reporting to the pipeline";
     // DecoderStream has already run its fallback chain by the time it reports a
     // non-ok status here, so this is terminal rather than recoverable.
@@ -345,11 +345,11 @@ void AudioRendererImpl::OnDecoderOutput(
 
 void AudioRendererImpl::OnDecoderStreamEvent(DecoderStreamEvent event) {
   if (event == DecoderStreamEvent::kNoDecoderAvailable) {
-    LOG(ERROR) << "ijkpp.adec: every audio decoder candidate failed";
+    LOG(ERROR) << "avbase.adec: every audio decoder candidate failed";
   } else {
     // Δ12: a fallback is not an error, but it must be observable.
-    LOG(WARNING) << "ijkpp.adec: " << GetDecoderStreamEventName(event) << " -> "
-                 << decoder_stream_.GetDisplayName();
+    LOG(WARNING) << "avbase.adec: " << GetDecoderStreamEventName(event)
+                 << " -> " << decoder_stream_.GetDisplayName();
   }
 }
 
@@ -423,8 +423,8 @@ void AudioRendererImpl::OnRenderError() {
   // reporting it, and a callback that logs on every period would flood the log
   // at ~50 lines/second. RendererImpl decides whether to reopen the device.
   if (!render_error_.exchange(true)) {
-    LOG(ERROR) << "ijkpp.aout: audio device reported a render error";
+    LOG(ERROR) << "avbase.aout: audio device reported a render error";
   }
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

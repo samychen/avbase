@@ -1,11 +1,11 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `media/base/video_decoder_factory.h` (BSD-3-Clause).
 
-#ifndef IJKPP_MEDIA_BASE_VIDEO_DECODER_FACTORY_H_
-#define IJKPP_MEDIA_BASE_VIDEO_DECODER_FACTORY_H_
+#ifndef AVBASE_MEDIA_BASE_VIDEO_DECODER_FACTORY_H_
+#define AVBASE_MEDIA_BASE_VIDEO_DECODER_FACTORY_H_
 
 #include <memory>
 
@@ -14,7 +14,7 @@
 #include "media/base/media_types.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 class VideoDecoder;
 struct VideoDecoderConfig;
@@ -22,7 +22,7 @@ struct VideoDecoderConfig;
 // What a factory can actually decode. DecoderSelector ranks candidates using
 // this, which replaces ijkplayer's pile of booleans (`mediacodec`,
 // `mediacodec-avc`, `mediacodec-hevc`, `mediacodec-mpeg2`, ...).
-struct IJKPP_MEDIA_EXPORT VideoDecoderCapability {
+struct AVBASE_MEDIA_EXPORT VideoDecoderCapability {
   bool hardware{false};
   bool outputs_opaque_surface{false};   // MediaCodec-into-Surface, VideoToolbox.
   bool handles_resolution_change{false};
@@ -34,7 +34,7 @@ struct IJKPP_MEDIA_EXPORT VideoDecoderCapability {
 // Ref-counted because factories are shared between players and outlive any
 // single pipeline: Deps holds them, and a running DecoderStream keeps its own
 // reference. Matches Chromium's VideoDecoderFactory.
-class IJKPP_MEDIA_EXPORT VideoDecoderFactory
+class AVBASE_MEDIA_EXPORT VideoDecoderFactory
     : public base::RefCountedThreadSafe<VideoDecoderFactory> {
  public:
   REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
@@ -57,6 +57,6 @@ class IJKPP_MEDIA_EXPORT VideoDecoderFactory
   virtual ~VideoDecoderFactory() = default;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_VIDEO_DECODER_FACTORY_H_
+#endif  // AVBASE_MEDIA_BASE_VIDEO_DECODER_FACTORY_H_

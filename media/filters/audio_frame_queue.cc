@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -17,7 +17,7 @@
 
 #include "base/check.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 AudioFrameQueue::AudioFrameQueue() = default;
 AudioFrameQueue::~AudioFrameQueue() = default;
@@ -141,4 +141,4 @@ int AudioFrameQueue::ReadFrames(int num_frames, int write_offset,
   return got;
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

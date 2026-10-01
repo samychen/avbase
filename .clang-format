@@ -1,4 +1,4 @@
-# ijkpp 采用 Google C++ Style Guide，并叠加 Chromium 的工程约定。
+# avbase 采用 Google C++ Style Guide，并叠加 Chromium 的工程约定。
 # 本文件是唯一的格式真相源；CI 用 `git clang-format` 校验，禁止手工偏离。
 #
 # 参考：
@@ -67,7 +67,7 @@ SpacesInSquareBrackets: false
 Standard: c++20
 FixNamespaceComments: true
 ForEachMacros:
-  - IJKPP_OBSERVE
+  - AVBASE_OBSERVE
 PenaltyBreakAssignment: 2
 PenaltyBreakBeforeFirstCallParameter: 19
 PenaltyBreakComment: 300

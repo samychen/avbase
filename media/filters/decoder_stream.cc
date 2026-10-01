@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@
 #include "media/base/audio_decoder_factory.h"
 #include "media/base/video_decoder_factory.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 const char* GetDecoderStreamEventName(DecoderStreamEvent e) {
   switch (e) {
@@ -477,11 +477,11 @@ void DecoderStream<Traits>::OnResetDone(FlushCB closure) {
   std::move(closure).Run();
 }
 
-// No IJKPP_MEDIA_EXPORT here: the attribute belongs on the `extern template`
+// No AVBASE_MEDIA_EXPORT here: the attribute belongs on the `extern template`
 // declarations in the header, where the type is still being introduced. Repeating
 // it on an instantiation definition is ignored by GCC and rejected under
 // -Werror=attributes.
 template class DecoderStream<VideoDecoderStreamTraits>;
 template class DecoderStream<AudioDecoderStreamTraits>;
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

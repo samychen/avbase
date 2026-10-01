@@ -1,11 +1,11 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // API mirrors Chromium's `base/observer_list.h` (BSD-3-Clause).
 
-#ifndef IJKPP_BASE_OBSERVER_LIST_H_
-#define IJKPP_BASE_OBSERVER_LIST_H_
+#ifndef AVBASE_BASE_OBSERVER_LIST_H_
+#define AVBASE_BASE_OBSERVER_LIST_H_
 
 #include <algorithm>
 #include <cstddef>
@@ -13,7 +13,7 @@
 
 #include "base/check.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // A list of non-owning observer pointers that tolerates modification during
 // iteration, matching Chromium's default ObserverListPolicy::kAll:
@@ -24,7 +24,7 @@ namespace ijkpp::base {
 // is never mutated underneath an active index.
 //
 // Not thread-safe by design; guard it with a Lock at the call site or confine
-// it to one sequence (ijkpp does the latter for player::EventHub).
+// it to one sequence (avbase does the latter for player::EventHub).
 template <typename ObserverType>
 class ObserverList {
  public:
@@ -116,6 +116,6 @@ class ObserverList {
   int iteration_depth_ = 0;
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_OBSERVER_LIST_H_
+#endif  // AVBASE_BASE_OBSERVER_LIST_H_

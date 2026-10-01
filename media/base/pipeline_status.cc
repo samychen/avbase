@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -19,7 +19,7 @@
 
 #include <string>
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 const char* PipelineStatusToString(PipelineStatus status) {
   // Exhaustive on purpose: no `default`, so adding an enumerator to the header
@@ -119,7 +119,7 @@ MediaError PipelineStatusToMediaError(PipelineStatus status) {
           "a decoder that initialised successfully returned a fatal error",
           "the stream may be corrupt or may change format mid-play; retry, "
           "and if it reproduces, capture Player::DumpDiagnostics() and the "
-          "output of ijkpp-inspect decode \"<uri>\"");
+          "output of avbase-inspect decode \"<uri>\"");
 
     case PipelineStatus::kVideoDecoderDoesNotSupportHardwareProtection:
       return MediaError(
@@ -136,7 +136,7 @@ MediaError PipelineStatusToMediaError(PipelineStatus status) {
           "the audio renderer or its sink rejected the stream's parameters",
           "set config.audio.backend to a specific backend (kAlsa, kPulse, "
           "kSdl2) to rule out auto-detection, or config.audio.disabled = "
-          "true to play video only; ijkpp-inspect doctor reports which audio "
+          "true to play video only; avbase-inspect doctor reports which audio "
           "services are reachable");
 
     case PipelineStatus::kVideoRendererInitializationError:
@@ -197,4 +197,4 @@ MediaError PipelineStatusToMediaError(PipelineStatus status) {
       "PipelineStatusToString()");
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

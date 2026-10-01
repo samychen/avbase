@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -12,8 +12,8 @@
 // VAAPI) are inherently asynchronous, and a synchronous interface would force
 // each of them to spawn a thread just to look synchronous.
 
-#ifndef IJKPP_MEDIA_BASE_VIDEO_DECODER_H_
-#define IJKPP_MEDIA_BASE_VIDEO_DECODER_H_
+#ifndef AVBASE_MEDIA_BASE_VIDEO_DECODER_H_
+#define AVBASE_MEDIA_BASE_VIDEO_DECODER_H_
 
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
@@ -26,14 +26,14 @@
 #include "media/base/waiting.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 class CdmContext;   // DRM placeholder; not implemented (docs/08 §4).
 
 // WaitingReason/WaitingCB live in media/base/waiting.h so AudioDecoder can
 // share them without depending on this header.
 
-class IJKPP_MEDIA_EXPORT VideoDecoder {
+class AVBASE_MEDIA_EXPORT VideoDecoder {
  public:
   using InitCB = base::OnceCallback<void(DecoderStatus)>;
   // Called for each decoded frame. Must be invoked as soon as the frame is
@@ -83,6 +83,6 @@ class IJKPP_MEDIA_EXPORT VideoDecoder {
   VideoDecoder();
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_VIDEO_DECODER_H_
+#endif  // AVBASE_MEDIA_BASE_VIDEO_DECODER_H_

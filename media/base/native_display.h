@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_MEDIA_BASE_NATIVE_DISPLAY_H_
-#define IJKPP_MEDIA_BASE_NATIVE_DISPLAY_H_
+#ifndef AVBASE_MEDIA_BASE_NATIVE_DISPLAY_H_
+#define AVBASE_MEDIA_BASE_NATIVE_DISPLAY_H_
 
 #include <stdint.h>
 
@@ -15,13 +15,13 @@
 #include "base/memory/scoped_refptr.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // A type-erased window-system handle.
 //
 // The media layer must never include X11/Wayland/SDL headers, so the handle is
 // carried as an opaque pointer plus a kind tag, with a release callback for
-// handles ijkpp was asked to own. See docs/09 §3 for the embedding rules that
+// handles avbase was asked to own. See docs/09 §3 for the embedding rules that
 // govern who owns what.
 enum class NativeDisplayKind {
   kNone = 0,
@@ -37,33 +37,35 @@ enum class NativeDisplayKind {
   kHwnd,
 };
 
-IJKPP_MEDIA_EXPORT const char* GetNativeDisplayKindName(NativeDisplayKind kind);
+AVBASE_MEDIA_EXPORT const char* GetNativeDisplayKindName(
+    NativeDisplayKind kind);
 
-struct IJKPP_MEDIA_EXPORT X11WindowHandle {
+struct AVBASE_MEDIA_EXPORT X11WindowHandle {
   void* display{nullptr};      // X11 `Display*`, caller-owned unless noted.
   // X11's `Window` is an XID, i.e. `unsigned long` -- pointer-width on every
   // platform X11 runs on. Declaring it uintptr_t rather than uint64_t keeps the
   // void* round-trip in FromX11Window() cast-free (and -Wuseless-cast quiet on
   // LP64, where the two are the same type).
   uintptr_t window{0};
-  bool ijkpp_owns_display{false};
+  bool avbase_owns_display{false};
 };
 
-struct IJKPP_MEDIA_EXPORT WaylandSurfaceHandle {
+struct AVBASE_MEDIA_EXPORT WaylandSurfaceHandle {
   void* display{nullptr};      // `wl_display*`.
   void* surface{nullptr};      // `wl_surface*`.
-  bool ijkpp_owns_display{false};
+  bool avbase_owns_display{false};
   // Wayland cannot report a surface size, so the embedder must supply one.
   int32_t width{0};
   int32_t height{0};
 };
 
-class IJKPP_MEDIA_EXPORT NativeDisplay
+class AVBASE_MEDIA_EXPORT NativeDisplay
     : public base::RefCountedThreadSafe<NativeDisplay> {
  public:
   REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
 
-  static base::scoped_refptr<NativeDisplay> FromX11Window(X11WindowHandle handle);
+  static base::scoped_refptr<NativeDisplay> FromX11Window(
+      X11WindowHandle handle);
   static base::scoped_refptr<NativeDisplay> FromWaylandSurface(
       WaylandSurfaceHandle handle);
   static base::scoped_refptr<NativeDisplay> FromSdl2Window(void* sdl_window);
@@ -72,7 +74,8 @@ class IJKPP_MEDIA_EXPORT NativeDisplay
   // Escape hatch for embedders with their own window abstraction. |release| is
   // run on the sink's render sequence when the last reference goes away.
   static base::scoped_refptr<NativeDisplay> Wrap(
-      void* raw, NativeDisplayKind kind, base::OnceCallback<void(void*)> release);
+      void* raw, NativeDisplayKind kind,
+      base::OnceCallback<void(void*)> release);
   // A valid "render nowhere" target; the sink enters discard mode.
   static base::scoped_refptr<NativeDisplay> None();
 
@@ -101,6 +104,6 @@ class IJKPP_MEDIA_EXPORT NativeDisplay
   base::OnceCallback<void(void*)> release_;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_NATIVE_DISPLAY_H_
+#endif  // AVBASE_MEDIA_BASE_NATIVE_DISPLAY_H_

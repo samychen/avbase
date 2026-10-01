@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -38,9 +38,10 @@
 // 2 GFLOP/s -- about **177x the 100 us budget**, and the "5 us under lock"
 // figure is smaller still.
 //
-// So this class pre-stretches. S4 (the `ijkpp-audio` sequence) owns the decoder
-// stream and the algorithm, runs FillBuffer() there, and publishes finished
-// chunks into a small ring. S7 (the device thread) only pops a chunk, copies
+// So this class pre-stretches. S4 (the `avbase-audio` sequence) owns the
+// decoder stream and the algorithm, runs FillBuffer() there, and publishes
+// finished chunks into a small ring. S7 (the device thread) only pops a
+// chunk, copies
 // it, scales it and advances the clock. That is: * within the 100 us budget
 // with room to spare (the copy is ~2k floats); * consistent with Δ13, whose
 // complaint about ffplay is precisely that `sdl_audio_callback` did
@@ -62,7 +63,7 @@
 // arithmetic, not measurement; `BM_AudioRenderCallback` (docs/07 §10) is what
 // settles it. 2. Media time is tracked by counting frames from the first
 // buffer's timestamp. Chromium uses AudioTimestampHelper, which stays exact
-// across priming padding and rounding; ijkpp has no equivalent, so this drifts
+// across priming padding and rounding; avbase has no equivalent, so this drifts
 // by up to a frame per buffer. Fine for the audio clock (AvSyncController
 // re-anchors on every call), not fine for anything that reports position. 3.
 // Preroll is not modelled. Chromium distinguishes "decoded enough to start"
@@ -77,8 +78,8 @@
 // one either (its gap 5). 6. Depends on the DRAFT media/base/pipeline_status.h
 // for PipelineStatus, so the two must leave DRAFT together.
 
-#ifndef IJKPP_MEDIA_FILTERS_AUDIO_RENDERER_IMPL_H_
-#define IJKPP_MEDIA_FILTERS_AUDIO_RENDERER_IMPL_H_
+#ifndef AVBASE_MEDIA_FILTERS_AUDIO_RENDERER_IMPL_H_
+#define AVBASE_MEDIA_FILTERS_AUDIO_RENDERER_IMPL_H_
 
 #include <stdint.h>
 
@@ -104,7 +105,7 @@
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Turns decoded audio into samples at the device, and keeps the audio clock.
 //
@@ -113,14 +114,15 @@ namespace ijkpp::media {
 // sample queue under a mutex, update `is->audio_clock` with no synchronisation
 // at all, and do it on the device thread. Here the decode pump and the device
 // callback are separate sequences with one bounded ring between them, and the
-// clock goes through AvSyncController's seqlock (Δ14) instead of a bare double.
-// THREADING. Two sequences touch this object: S4 `ijkpp-audio`  -- everything
+// clock goes through AvSyncController's seqlock (Δ14) instead of a bare
+// double.
+// THREADING. Two sequences touch this object: S4 `avbase-audio`  -- everything
 // except Render(): Initialize, the decoder pump, FillBuffer, StartPlayingFrom,
 // Flush, Stop. S7 device thread  -- Render() and OnRenderError() only.
 // Cross-sequence state is exactly: the ready ring (under handoff_lock_), and
 // the four std::atomics below. Everything else is S4-exclusive and needs no
 // lock.
-class IJKPP_MEDIA_EXPORT AudioRendererImpl final
+class AVBASE_MEDIA_EXPORT AudioRendererImpl final
     : public AudioRendererSink::RenderCallback {
  public:
   using InitializeCB = base::OnceCallback<void(PipelineStatus)>;
@@ -292,6 +294,6 @@ class IJKPP_MEDIA_EXPORT AudioRendererImpl final
   std::unique_ptr<AudioBus> stretch_bus_;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_AUDIO_RENDERER_IMPL_H_
+#endif  // AVBASE_MEDIA_FILTERS_AUDIO_RENDERER_IMPL_H_

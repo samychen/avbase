@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -7,8 +7,8 @@
 // the event log is under a mutex and the accessors return snapshots rather
 // than references.
 
-#ifndef IJKPP_TESTS_SUPPORT_FAKE_PIPELINE_CLIENT_H_
-#define IJKPP_TESTS_SUPPORT_FAKE_PIPELINE_CLIENT_H_
+#ifndef AVBASE_TESTS_SUPPORT_FAKE_PIPELINE_CLIENT_H_
+#define AVBASE_TESTS_SUPPORT_FAKE_PIPELINE_CLIENT_H_
 
 #include <mutex>
 #include <string>
@@ -19,7 +19,7 @@
 #include "media/base/pipeline.h"
 #include "media/base/renderer_client.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 
 class FakePipelineClient final : public Pipeline::Client {
  public:
@@ -98,6 +98,6 @@ class FakePipelineClient final : public Pipeline::Client {
   int waiting_count_ = 0;
 };
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test
 
-#endif  // IJKPP_TESTS_SUPPORT_FAKE_PIPELINE_CLIENT_H_
+#endif  // AVBASE_TESTS_SUPPORT_FAKE_PIPELINE_CLIENT_H_

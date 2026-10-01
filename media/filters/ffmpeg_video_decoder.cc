@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,12 +20,12 @@
 #include "platform/ffmpeg/av_packet_storage.h"
 #include "platform/ffmpeg/compat.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
-namespace ff = ::ijkpp::platform::ffmpeg;
+namespace ff = ::avbase::platform::ffmpeg;
 
-// Maps an ijkpp VideoFormat onto an FFmpeg pixel format.
+// Maps an avbase VideoFormat onto an FFmpeg pixel format.
 AVPixelFormat ToAvPixelFormat(VideoFormat format) {
   switch (format) {
     case VideoFormat::kI420:  return AV_PIX_FMT_YUV420P;
@@ -397,4 +397,4 @@ void FFmpegVideoDecoder::RunAllDecodeCallbacks(DecoderStatus status) {
   }
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

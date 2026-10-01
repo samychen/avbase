@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -18,7 +18,7 @@
 #include "base/time/default_tick_clock.h"
 #include "media/base/native_display.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 PipelineImpl::PipelineImpl() = default;
 
@@ -169,7 +169,7 @@ void PipelineImpl::DoPlay() {
 void PipelineImpl::OnDemuxerStarted(Status status) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!status) {
-    LOG(WARNING) << "ijkpp.pipeline: demuxer start reported "
+    LOG(WARNING) << "avbase.pipeline: demuxer start reported "
                  << status.error().summary();
   }
   if (state_ == State::kReady && renderer_) {
@@ -297,7 +297,7 @@ void PipelineImpl::OnRendererFlushed() {
 void PipelineImpl::OnSeekDemuxerDone(Status status, base::TimeDelta actual) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!status) {
-    LOG(WARNING) << "ijkpp.pipeline: seek reported "
+    LOG(WARNING) << "avbase.pipeline: seek reported "
                  << status.error().summary() << " at "
                  << actual.InSecondsF() << "s";
   }
@@ -446,4 +446,4 @@ bool PipelineImpl::CanSeekBackward() const {
   return seekable_.load();
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

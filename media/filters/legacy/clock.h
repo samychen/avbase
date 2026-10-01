@@ -1,16 +1,16 @@
 // Copyright (c) 2013-2026 Zhang Rui <bbcallen@gmail.com>
 // Copyright (c) 2013-2026 Bilibili
 // Copyright (c) 2003-2013 Fabrice Bellard (ffplay.c)
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 //
-// This file is part of ijkpp.
+// This file is part of avbase.
 //
-// ijkpp is free software; you can redistribute it and/or modify it under the
+// avbase is free software; you can redistribute it and/or modify it under the
 // terms of the GNU Lesser General Public License as published by the Free
 // Software Foundation; either version 2.1 of the License, or (at your option)
 // any later version.
 //
-// ijkpp is distributed in the hope that it will be useful, but WITHOUT ANY
+// avbase is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
 // details.
@@ -25,7 +25,7 @@
 // WHY THIS FILE IS LGPL AND NOT BSD-3 (decision D10, risk R8, docs/08 §4/§5):
 // this is a port of ffplay's `struct Clock` (get_clock / set_clock /
 // set_clock_at), i.e. a derivative work of ijkplayer (LGPL-2.1). The seqlock
-// read path is original to ijkpp (behaviour difference Δ14) but it implements
+// read path is original to avbase (behaviour difference Δ14) but it implements
 // the same quantity, so the file stays under the ported licence. See
 // media/filters/legacy/README.md for the boundary rules.
 //
@@ -40,8 +40,8 @@
 // load, no mutex, no allocation) with a well-defined result: readers retry
 // while a write is in flight. This is behaviour difference Δ14.
 
-#ifndef IJKPP_MEDIA_FILTERS_LEGACY_CLOCK_H_
-#define IJKPP_MEDIA_FILTERS_LEGACY_CLOCK_H_
+#ifndef AVBASE_MEDIA_FILTERS_LEGACY_CLOCK_H_
+#define AVBASE_MEDIA_FILTERS_LEGACY_CLOCK_H_
 
 #include <stdint.h>
 
@@ -53,7 +53,7 @@
 #include "media/base/media_constants.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // A media clock: a media timestamp anchored to a wall-clock instant, plus a
 // playback speed. Reading it extrapolates forward by the elapsed wall time, so
@@ -63,7 +63,7 @@ namespace ijkpp::media {
 // Single writer, multiple readers. The writer must be confined to one
 // sequence (the audio clock to the audio sequence, the video clock to the
 // compositor sequence); readers may be anywhere.
-class IJKPP_MEDIA_EXPORT Clock {
+class AVBASE_MEDIA_EXPORT Clock {
  public:
   struct Snapshot {
     base::TimeDelta pts{media::kNoTimestamp};
@@ -117,6 +117,6 @@ class IJKPP_MEDIA_EXPORT Clock {
   base::raw_ptr<const base::TickClock> wall_;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_LEGACY_CLOCK_H_
+#endif  // AVBASE_MEDIA_FILTERS_LEGACY_CLOCK_H_

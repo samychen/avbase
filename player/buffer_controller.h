@@ -1,13 +1,13 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_PLAYER_BUFFER_CONTROLLER_H_
-#define IJKPP_PLAYER_BUFFER_CONTROLLER_H_
+#ifndef AVBASE_PLAYER_BUFFER_CONTROLLER_H_
+#define AVBASE_PLAYER_BUFFER_CONTROLLER_H_
 
 #include "base/time/time.h"
 
-namespace ijkpp::player {
+namespace avbase::player {
 
 // The three-tier high-water-mark policy behind PlayerState::kBuffering.
 //
@@ -80,6 +80,6 @@ class BufferController {
   bool buffering_ = false;
 };
 
-}  // namespace ijkpp::player
+}  // namespace avbase::player
 
-#endif  // IJKPP_PLAYER_BUFFER_CONTROLLER_H_
+#endif  // AVBASE_PLAYER_BUFFER_CONTROLLER_H_

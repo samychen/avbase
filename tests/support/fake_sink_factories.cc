@@ -1,10 +1,10 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "tests/support/fake_sink_factories.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 
 FakeVideoSink* FakeVideoSinkFactory::last_sink() const {
   std::scoped_lock scoped(lock_);
@@ -33,4 +33,4 @@ base::scoped_refptr<AudioRendererSink> FakeAudioSinkFactory::Create() {
   return sink;
 }
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test

@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -29,8 +29,8 @@
 // fires
 // is how a double starts drifting away from the thing it stands in for.
 
-#ifndef IJKPP_TESTS_SUPPORT_SYNTHETIC_DEMUXER_H_
-#define IJKPP_TESTS_SUPPORT_SYNTHETIC_DEMUXER_H_
+#ifndef AVBASE_TESTS_SUPPORT_SYNTHETIC_DEMUXER_H_
+#define AVBASE_TESTS_SUPPORT_SYNTHETIC_DEMUXER_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -46,7 +46,7 @@
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_info.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 
 // One video frame per 1/fps seconds, one audio packet per
 // |audio_frames_per_packet| audio frames, a keyframe every
@@ -223,6 +223,6 @@ class SyntheticDemuxer final : public Demuxer {
   int64_t packets_read_ = 0;
 };
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test
 
-#endif  // IJKPP_TESTS_SUPPORT_SYNTHETIC_DEMUXER_H_
+#endif  // AVBASE_TESTS_SUPPORT_SYNTHETIC_DEMUXER_H_

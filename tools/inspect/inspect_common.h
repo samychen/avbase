@@ -1,11 +1,11 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Shared plumbing for the ijkpp-inspect subcommands.
+// Shared plumbing for the avbase-inspect subcommands.
 
-#ifndef IJKPP_TOOLS_INSPECT_INSPECT_COMMON_H_
-#define IJKPP_TOOLS_INSPECT_INSPECT_COMMON_H_
+#ifndef AVBASE_TOOLS_INSPECT_INSPECT_COMMON_H_
+#define AVBASE_TOOLS_INSPECT_INSPECT_COMMON_H_
 
 #include <stdio.h>
 
@@ -25,7 +25,7 @@
 #include "media/base/media_info.h"
 #include "media/filters/ffmpeg_demuxer.h"
 
-namespace ijkpp {
+namespace avbase {
 
 // Parsed command line. Shared by every subcommand.
 struct Options {
@@ -100,6 +100,6 @@ int RunProbe(const Options& opts);
 int RunDecode(const Options& opts);
 int RunSync(const Options& opts);
 
-}  // namespace ijkpp
+}  // namespace avbase
 
-#endif  // IJKPP_TOOLS_INSPECT_INSPECT_COMMON_H_
+#endif  // AVBASE_TOOLS_INSPECT_INSPECT_COMMON_H_

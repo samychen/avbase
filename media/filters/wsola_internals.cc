@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -17,7 +17,7 @@
 #include <algorithm>   // std::min in Similarity()
 #include <cmath>
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace internal {
 
 int TimeToFrames(base::TimeDelta time, int samples_per_second) {
@@ -103,4 +103,4 @@ int OptimalIndex(const AudioBus* search, const AudioBus* target,
 }
 
 }  // namespace internal
-}  // namespace ijkpp::media
+}  // namespace avbase::media

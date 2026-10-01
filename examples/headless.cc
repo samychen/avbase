@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -55,39 +55,39 @@ bool ParseOptions(int argc, char** argv, Options* out) {
   return true;
 }
 
-void ReportErrorEvent(const ijkpp::PlayerEvent& e) {
-  if (e.type != ijkpp::EventType::kError) {
+void ReportErrorEvent(const avbase::PlayerEvent& e) {
+  if (e.type != avbase::EventType::kError) {
     return;
   }
-  if (const auto* payload = ijkpp::AsError(e)) {
+  if (const auto* payload = avbase::AsError(e)) {
     std::fprintf(stderr, "error event: %s\n",
                  payload->error.ToString().c_str());
   }
 }
 
-void PrintMediaInfo(ijkpp::Player& player) {
+void PrintMediaInfo(avbase::Player& player) {
   if (auto info = player.media_info()) {
     std::printf("container: %s, duration: %s, streams: %zu\n",
                 info->format_name.c_str(),
                 info->duration.ToString().c_str(), info->streams.size());
   }
-  const ijkpp::media::Size natural = player.video_natural_size();
+  const avbase::media::Size natural = player.video_natural_size();
   std::printf("video: %dx%d\n", natural.width, natural.height);
 }
 
 // Polls until the player reports kCompleted or kError, printing a position line
 // once per media second. Returns the process exit code.
-int WaitForEnd(ijkpp::Player& player, const Options& options) {
+int WaitForEnd(avbase::Player& player, const Options& options) {
   const auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::seconds(options.timeout_seconds);
   int last_printed_second = -1;
   while (std::chrono::steady_clock::now() < deadline) {
-    if (player.state() == ijkpp::PlayerState::kCompleted) {
+    if (player.state() == avbase::PlayerState::kCompleted) {
       std::printf("\ncompleted at media time %s\n",
                   player.GetMediaTime().ToString().c_str());
       return 0;
     }
-    if (player.state() == ijkpp::PlayerState::kError) {
+    if (player.state() == avbase::PlayerState::kError) {
       std::fprintf(stderr, "\nplayer entered kError\n");
       return 1;
     }
@@ -107,18 +107,18 @@ int WaitForEnd(ijkpp::Player& player, const Options& options) {
 }
 
 // Starts playback, honors --seek and --rate, then waits for the end.
-int StartAndWait(ijkpp::Player& player, const Options& options) {
+int StartAndWait(avbase::Player& player, const Options& options) {
   if (options.rate != 1.0) {
     player.SetPlaybackRate(options.rate);
   }
-  if (player.state() != ijkpp::PlayerState::kStarted) {
+  if (player.state() != avbase::PlayerState::kStarted) {
     player.Start();
   }
   if (options.seek_to >= 0.0) {
     const auto result =
-        player.SeekTo(ijkpp::base::SecondsD(options.seek_to),
-                      ijkpp::SeekMode::kPreviousKeyframe,
-                      ijkpp::Player::SeekCB());
+        player.SeekTo(avbase::base::SecondsD(options.seek_to),
+                      avbase::SeekMode::kPreviousKeyframe,
+                      avbase::Player::SeekCB());
     if (!result) {
       std::fprintf(stderr, "SeekTo failed: %s\n",
                    result.error().ToString().c_str());
@@ -138,14 +138,15 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  ijkpp::Player player;
-  player.SetEventHandler(ijkpp::base::BindRepeating(&ReportErrorEvent));
-  if (const ijkpp::Status source = player.SetDataSource(options.url); !source) {
+  avbase::Player player;
+  player.SetEventHandler(avbase::base::BindRepeating(&ReportErrorEvent));
+  if (const avbase::Status source = player.SetDataSource(options.url);
+      !source) {
     std::fprintf(stderr, "SetDataSource failed: %s\n",
                  source.error().ToString().c_str());
     return 1;
   }
-  const ijkpp::Status prepared = player.PrepareSync(ijkpp::base::Seconds(15));
+  const avbase::Status prepared = player.PrepareSync(avbase::base::Seconds(15));
   if (!prepared) {
     std::fprintf(stderr, "prepare failed: %s\n",
                  prepared.error().ToString().c_str());

@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,12 +6,12 @@
 
 #include <utility>
 
-namespace ijkpp::base {
+namespace avbase::base {
 namespace {
 
 // One default runner per thread. The slot is a plain thread_local rather than a
 // heap-allocated leak (Chromium's choice) so that LeakSanitizer stays clean;
-// ijkpp never touches the current default runner from an exit handler, and
+// avbase never touches the current default runner from an exit handler, and
 // base::Thread clears it before its sequence ends.
 scoped_refptr<SequencedTaskRunner>& CurrentDefaultSlot() {
   static thread_local scoped_refptr<SequencedTaskRunner> slot;
@@ -39,4 +39,4 @@ bool SequencedTaskRunner::HasCurrentDefault() {
   return static_cast<bool>(CurrentDefaultSlot());
 }
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base

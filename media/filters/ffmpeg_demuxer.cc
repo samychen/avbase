@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -30,10 +30,10 @@ extern "C" {
 #include "platform/ffmpeg/data_source_io.h"
 #include "platform/ffmpeg/log_bridge.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
-namespace ff = ::ijkpp::platform::ffmpeg;
+namespace ff = ::avbase::platform::ffmpeg;
 
 AVFormatContext* Ctx(void* raw) { return static_cast<AVFormatContext*>(raw); }
 
@@ -72,7 +72,7 @@ VideoDecoderConfig MakeVideoConfig(const AVStream* stream) {
   // Rotation lives in a display-matrix side-data entry, not in the codec
   // parameters. ijkplayer reads it in three separate places.
   size_t matrix_size = 0;
-  const uint8_t* matrix = ijkpp_stream_side_data(
+  const uint8_t* matrix = avbase_stream_side_data(
       stream, AV_PKT_DATA_DISPLAYMATRIX, &matrix_size);
   if (matrix && matrix_size >= 9 * sizeof(int32_t)) {
     const double rotation =
@@ -316,7 +316,8 @@ FFmpegDemuxer::~FFmpegDemuxer() {
   if (data_source_io_raw_) {
     // AVFMT_FLAG_CUSTOM_IO means avformat_close_input left our context
     // alone; flush and free it before the source reference goes.
-    auto* io = static_cast<platform::ffmpeg::DataSourceIO*>(data_source_io_raw_);
+    auto* io =
+        static_cast<platform::ffmpeg::DataSourceIO*>(data_source_io_raw_);
     io->Detach();
     delete io;
     data_source_io_raw_ = nullptr;
@@ -326,7 +327,8 @@ FFmpegDemuxer::~FFmpegDemuxer() {
 }
 
 void FFmpegDemuxer::Initialize(
-    const DataSourceDescriptor& source, const DemuxerOptions& options, Host* host,
+    const DataSourceDescriptor& source, const DemuxerOptions& options,
+    Host* host,
     base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
     InitializeCB init_cb) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(media_sequence_checker_);
@@ -338,9 +340,9 @@ void FFmpegDemuxer::Initialize(
   interrupt_flag_.Reset();
   stop_flag_.Reset();
 
-  demux_thread_ = std::make_unique<base::Thread>("ijkpp-demux");
+  demux_thread_ = std::make_unique<base::Thread>("avbase-demux");
   base::Thread::Options thread_options;
-  thread_options.name = "ijkpp-demux";
+  thread_options.name = "avbase-demux";
   // Demuxing is I/O bound and tolerates latency; it must not compete with the
   // audio render thread for CPU.
   thread_options.priority = base::ThreadPriority::kBackground;
@@ -475,7 +477,8 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
   ctx->interrupt_callback.opaque = this;
 
   if (data_source_) {
-    auto* io = new platform::ffmpeg::DataSourceIO(data_source_, &interrupt_flag_);
+    auto* io =
+        new platform::ffmpeg::DataSourceIO(data_source_, &interrupt_flag_);
     MediaError io_error;
     if (!io->Attach(ctx, &io_error)) {
       delete io;
@@ -497,7 +500,8 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
   if (ret < 0 && data_source_io_raw_) {
     // The bridge outlives a failed open only long enough to detach: close
     // the context we custom-fed, free the bridge, release the source.
-    auto* io = static_cast<platform::ffmpeg::DataSourceIO*>(data_source_io_raw_);
+    auto* io =
+        static_cast<platform::ffmpeg::DataSourceIO*>(data_source_io_raw_);
     io->Detach();
     delete io;
     data_source_io_raw_ = nullptr;
@@ -554,9 +558,11 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
     media_log_->AddEvent(MediaLogEvent::Level::kInfo,
                          MediaLogEvent::Type::kOpenInput,
                          {{"format", media_info_.format_name},
-                          {"streams", std::to_string(media_info_.streams.size())},
+                          {"streams",
+                           std::to_string(media_info_.streams.size())},
                           {"duration_ms",
-                           std::to_string(media_info_.duration.InMilliseconds())}},
+                           std::to_string(
+                               media_info_.duration.InMilliseconds())}},
                          "opened " + media_info_.format_name);
   }
   return OkStatus();
@@ -645,8 +651,8 @@ void FFmpegDemuxer::BuildMediaInfo() {
   media_info_.metadata = ff::FromAvDict(ctx->metadata);
 
   streams_.clear();
-  const StreamLiveness liveness = media_info_.is_live ? StreamLiveness::kLive
-                                                      : StreamLiveness::kRecorded;
+  const StreamLiveness liveness =
+      media_info_.is_live ? StreamLiveness::kLive : StreamLiveness::kRecorded;
   for (uint32_t i = 0; i < ctx->nb_streams; ++i) {
     AddStream(ctx->streams[i], i, liveness);
   }
@@ -684,11 +690,13 @@ bool FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw, void* packet_raw) {
                media_runner_) {
       media_runner_->PostTask(
           FROM_HERE,
-          base::BindOnce(&Demuxer::Host::OnDemuxerError, base::Unretained(host_.get()),
+          base::BindOnce(&Demuxer::Host::OnDemuxerError,
+                         base::Unretained(host_.get()),
                          ff::ToMediaError(ret, "FFmpegDemuxer::DemuxLoop",
                                           "uri = \"" + media_info_.uri + "\"",
                                           "for a network source raise "
-                                          "config.net.reconnect_max_retries, or "
+                                          "config.net.reconnect_max_retries, "
+                                          "or "
                                           "call ReconnectNow()")));
     }
     return false;   // Exit the loop.
@@ -713,7 +721,8 @@ bool FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw, void* packet_raw) {
                                            index);
   AVStream* av_stream = ctx->streams[index];
   buffer->set_timestamp(ff::ToTimeDelta(packet->pts, av_stream->time_base));
-  buffer->set_decode_timestamp(ff::ToTimeDelta(packet->dts, av_stream->time_base));
+  buffer->set_decode_timestamp(
+      ff::ToTimeDelta(packet->dts, av_stream->time_base));
   buffer->set_duration(
       ff::ToTimeDelta(ff::PacketDuration(packet), av_stream->time_base));
   buffer->set_offset(packet->pos);
@@ -742,7 +751,7 @@ bool FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw, void* packet_raw) {
 }
 
 void FFmpegDemuxer::DemuxLoop() {
-  // Runs on "ijkpp-demux": the only sequence allowed to block on I/O
+  // Runs on "avbase-demux": the only sequence allowed to block on I/O
   // (docs/04 §2.1, decision D3).
   AVFormatContext* ctx = Ctx(format_ctx_raw_);
   if (!ctx) {
@@ -753,7 +762,8 @@ void FFmpegDemuxer::DemuxLoop() {
     if (host_ && media_runner_) {
       media_runner_->PostTask(
           FROM_HERE,
-          base::BindOnce(&Demuxer::Host::OnDemuxerError, base::Unretained(host_.get()),
+          base::BindOnce(&Demuxer::Host::OnDemuxerError,
+                         base::Unretained(host_.get()),
                          MediaError(ErrorCode::kOutOfMemory,
                                     "av_packet_alloc failed", {},
                                     "reduce config.buffer.max_bytes")));
@@ -812,7 +822,8 @@ void FFmpegDemuxer::HandleSeekRequestOnDemuxThread(const SeekRequest& request) {
     CompleteSeek(request.request_id,
                  base::unexpected(ff::ToMediaError(
                      ret, "FFmpegDemuxer::Seek",
-                     "target = " + std::to_string(request.target.InMilliseconds()) +
+                     "target = " +
+                     std::to_string(request.target.InMilliseconds()) +
                          " ms",
                      "this source may not be seekable; check "
                      "media_info().seekable and is_live()")),
@@ -848,7 +859,7 @@ void FFmpegDemuxer::CompleteSeek(int64_t request_id, Status status,
     base::AutoLock scoped(seek_cb_lock_);
     auto it = pending_seek_cbs_.find(request_id);
     if (it == pending_seek_cbs_.end()) {
-      return;   // Superseded by a newer seek; its callback was already answered.
+      return;  // Superseded by a newer seek; its callback was already answered.
     }
     cb = std::move(it->second);
     pending_seek_cbs_.erase(it);
@@ -1015,4 +1026,4 @@ void FFmpegDemuxer::EmitStage(MediaLogEvent::Type stage,
       GetMediaLogEventTypeName(stage));
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

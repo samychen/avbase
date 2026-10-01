@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_MEDIA_RENDERERS_DEFAULT_RENDERER_FACTORY_H_
-#define IJKPP_MEDIA_RENDERERS_DEFAULT_RENDERER_FACTORY_H_
+#ifndef AVBASE_MEDIA_RENDERERS_DEFAULT_RENDERER_FACTORY_H_
+#define AVBASE_MEDIA_RENDERERS_DEFAULT_RENDERER_FACTORY_H_
 
 #include <memory>
 #include <vector>
@@ -20,7 +20,7 @@
 #include "media/filters/legacy/video_frame_compositor.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // The production RendererFactory: assembles RendererImpl from the sink and
 // decoder factories it was constructed with, and falls back to the null sinks
@@ -38,7 +38,8 @@ namespace ijkpp::media {
 // the S3/S4 runners at construction from whoever owns the threads (Player::
 // Impl), and passes them into every RendererImpl it builds -- RendererImpl
 // borrows the runners and must be destroyed before they are.
-class IJKPP_MEDIA_EXPORT DefaultRendererFactory final : public RendererFactory {
+class AVBASE_MEDIA_EXPORT DefaultRendererFactory final
+    : public RendererFactory {
  public:
   struct Deps {
     // S3 / S4 in docs/04 §1. Borrowed; must outlive every renderer created.
@@ -95,6 +96,6 @@ class IJKPP_MEDIA_EXPORT DefaultRendererFactory final : public RendererFactory {
   base::scoped_refptr<NativeDisplay> display_;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_RENDERERS_DEFAULT_RENDERER_FACTORY_H_
+#endif  // AVBASE_MEDIA_RENDERERS_DEFAULT_RENDERER_FACTORY_H_

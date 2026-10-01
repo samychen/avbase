@@ -13,8 +13,8 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "IJKPP_BUILD_TESTS": "ON",
-        "IJKPP_BUILD_EXAMPLES": "ON"
+        "AVBASE_BUILD_TESTS": "ON",
+        "AVBASE_BUILD_EXAMPLES": "ON"
       }
     },
     {
@@ -29,9 +29,9 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "IJKPP_ENABLE_FFMPEG": "ON",
-        "IJKPP_STRICT_WARNINGS": "ON",
-        "IJKPP_WERROR": "ON"
+        "AVBASE_ENABLE_FFMPEG": "ON",
+        "AVBASE_STRICT_WARNINGS": "ON",
+        "AVBASE_WERROR": "ON"
       }
     },
     {
@@ -39,10 +39,10 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "IJKPP_ENABLE_LTO": "ON",
-        "IJKPP_ENABLE_DCHECK": "OFF",
-        "IJKPP_BUILD_TESTS": "OFF",
-        "IJKPP_BUILD_SHARED": "ON"
+        "AVBASE_ENABLE_LTO": "ON",
+        "AVBASE_ENABLE_DCHECK": "OFF",
+        "AVBASE_BUILD_TESTS": "OFF",
+        "AVBASE_BUILD_SHARED": "ON"
       }
     },
     {
@@ -50,7 +50,7 @@
       "inherits": "base",
       "displayName": "Core only - no FFmpeg needed",
       "cacheVariables": {
-        "IJKPP_ENABLE_FFMPEG": "OFF"
+        "AVBASE_ENABLE_FFMPEG": "OFF"
       }
     },
     {
@@ -58,64 +58,64 @@
       "inherits": "default",
       "displayName": "System FFmpeg (distro packages), no window system",
       "cacheVariables": {
-        "IJKPP_ENABLE_FFMPEG": "ON"
+        "AVBASE_ENABLE_FFMPEG": "ON"
       }
     },
     {
       "name": "linux-sdl2",
       "inherits": "default",
       "cacheVariables": {
-        "IJKPP_ENABLE_FFMPEG": "ON",
-        "IJKPP_ENABLE_SDL2": "ON",
-        "IJKPP_ENABLE_LINUX_NATIVE": "OFF"
+        "AVBASE_ENABLE_FFMPEG": "ON",
+        "AVBASE_ENABLE_SDL2": "ON",
+        "AVBASE_ENABLE_LINUX_NATIVE": "OFF"
       }
     },
     {
       "name": "linux-native",
       "inherits": "default",
       "cacheVariables": {
-        "IJKPP_ENABLE_LINUX_NATIVE": "ON",
-        "IJKPP_ENABLE_SDL2": "OFF"
+        "AVBASE_ENABLE_LINUX_NATIVE": "ON",
+        "AVBASE_ENABLE_SDL2": "OFF"
       }
     },
     {
       "name": "linux-all",
       "inherits": "default",
       "cacheVariables": {
-        "IJKPP_ENABLE_LINUX_NATIVE": "ON",
-        "IJKPP_ENABLE_SDL2": "ON"
+        "AVBASE_ENABLE_LINUX_NATIVE": "ON",
+        "AVBASE_ENABLE_SDL2": "ON"
       }
     },
     {
       "name": "asan",
       "inherits": "debug",
       "cacheVariables": {
-        "IJKPP_SANITIZERS": "address;undefined",
-        "IJKPP_WERROR": "OFF"
+        "AVBASE_SANITIZERS": "address;undefined",
+        "AVBASE_WERROR": "OFF"
       }
     },
     {
       "name": "tsan",
       "inherits": "debug",
       "cacheVariables": {
-        "IJKPP_SANITIZERS": "thread",
-        "IJKPP_WERROR": "OFF"
+        "AVBASE_SANITIZERS": "thread",
+        "AVBASE_WERROR": "OFF"
       }
     },
     {
       "name": "ubsan",
       "inherits": "debug",
       "cacheVariables": {
-        "IJKPP_SANITIZERS": "undefined",
-        "IJKPP_WERROR": "OFF"
+        "AVBASE_SANITIZERS": "undefined",
+        "AVBASE_WERROR": "OFF"
       }
     },
     {
       "name": "coverage",
       "inherits": "debug",
       "cacheVariables": {
-        "IJKPP_COVERAGE": "ON",
-        "IJKPP_WERROR": "OFF"
+        "AVBASE_COVERAGE": "ON",
+        "AVBASE_WERROR": "OFF"
       }
     },
     {
@@ -126,20 +126,20 @@
         "ANDROID_ABI": "arm64-v8a",
         "ANDROID_PLATFORM": "android-21",
         "ANDROID_STL": "c++_shared",
-        "IJKPP_ENABLE_ANDROID": "ON",
-        "IJKPP_ENABLE_FFMPEG": "ON",
-        "IJKPP_FFMPEG_ROOT": "${sourceDir}/prebuilt/ffmpeg/android/arm64-v8a",
-        "IJKPP_BUILD_TESTS": "OFF",
-        "IJKPP_BUILD_EXAMPLES": "OFF"
+        "AVBASE_ENABLE_ANDROID": "ON",
+        "AVBASE_ENABLE_FFMPEG": "ON",
+        "AVBASE_FFMPEG_ROOT": "${sourceDir}/prebuilt/ffmpeg/android/arm64-v8a",
+        "AVBASE_BUILD_TESTS": "OFF",
+        "AVBASE_BUILD_EXAMPLES": "OFF"
       }
     },
     {
       "name": "linux-ffmpeg711",
       "inherits": "default",
-      "displayName": "FFmpeg 7.1.1 pinned via IJKPP_FFMPEG_ROOT",
+      "displayName": "FFmpeg 7.1.1 pinned via AVBASE_FFMPEG_ROOT",
       "cacheVariables": {
-        "IJKPP_ENABLE_FFMPEG": "ON",
-        "IJKPP_FFMPEG_ROOT": "$env{IJKPP_FFMPEG_ROOT}"
+        "AVBASE_ENABLE_FFMPEG": "ON",
+        "AVBASE_FFMPEG_ROOT": "$env{AVBASE_FFMPEG_ROOT}"
       }
     }
   ],

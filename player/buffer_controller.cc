@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-namespace ijkpp::player {
+namespace avbase::player {
 
 BufferController::BufferController() : BufferController(Thresholds{}) {}
 
@@ -79,4 +79,4 @@ base::TimeDelta BufferController::current_mark() const {
   return thresholds_.last;
 }
 
-}  // namespace ijkpp::player
+}  // namespace avbase::player

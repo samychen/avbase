@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_BASE_SYNCHRONIZATION_CONDITION_VARIABLE_H_
-#define IJKPP_BASE_SYNCHRONIZATION_CONDITION_VARIABLE_H_
+#ifndef AVBASE_BASE_SYNCHRONIZATION_CONDITION_VARIABLE_H_
+#define AVBASE_BASE_SYNCHRONIZATION_CONDITION_VARIABLE_H_
 
 #include <condition_variable>
 
@@ -11,7 +11,7 @@
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // ConditionVariable pairs with a base::Lock, not a raw std::mutex, so the
 // lock-order checker still sees it.
@@ -48,6 +48,6 @@ class ConditionVariable {
   raw_ptr<Lock> lock_;
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_SYNCHRONIZATION_CONDITION_VARIABLE_H_
+#endif  // AVBASE_BASE_SYNCHRONIZATION_CONDITION_VARIABLE_H_

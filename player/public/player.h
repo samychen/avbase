@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_PLAYER_PUBLIC_PLAYER_H_
-#define IJKPP_PLAYER_PUBLIC_PLAYER_H_
+#ifndef AVBASE_PLAYER_PUBLIC_PLAYER_H_
+#define AVBASE_PLAYER_PUBLIC_PLAYER_H_
 
 #include <map>
 #include <memory>
@@ -25,7 +25,7 @@
 #include "player/public/player_event.h"
 #include "player/public/player_export.h"
 
-namespace ijkpp {
+namespace avbase {
 namespace media {
 class DataSource;
 }  // namespace media
@@ -33,7 +33,7 @@ class DataSource;
 
 
 // Re-exported from media/base so that SDK callers can spell it
-// ijkpp::DataSourceDescriptor without reaching into the media layer. The type
+// avbase::DataSourceDescriptor without reaching into the media layer. The type
 // lives there because media::Demuxer takes it and media/ must not depend on
 // player/ (docs/02 §2.1).
 using media::DataSourceDescriptor;
@@ -48,18 +48,18 @@ using media::DataSourceDescriptor;
 //
 // Minimal use:
 //
-//   ijkpp::Player player;
-//   player.SetEventHandler([&player](const ijkpp::PlayerEvent& e) {
-//     if (e.type == ijkpp::EventType::kPrepared) player.Start();
+//   avbase::Player player;
+//   player.SetEventHandler([&player](const avbase::PlayerEvent& e) {
+//     if (e.type == avbase::EventType::kPrepared) player.Start();
 //   });
-//   IJKPP_RETURN_IF_ERROR(player.SetDataSource("video.mp4"));
-//   IJKPP_RETURN_IF_ERROR(player.PrepareAsync());
+//   AVBASE_RETURN_IF_ERROR(player.SetDataSource("video.mp4"));
+//   AVBASE_RETURN_IF_ERROR(player.PrepareAsync());
 //
 // The event handler runs on the event dispatch sequence, never on a pipeline
 // sequence, and it is safe to call any Player method from inside it — including
 // Stop() and Reset(). That fixes a real deadlock in ijkplayer, whose
 // message_loop dispatches while holding the player mutex.
-class IJKPP_PLAYER_EXPORT Player {
+class AVBASE_PLAYER_EXPORT Player {
  public:
   // Uses auto-detected platform backends. Inject custom ones via the
   // Deps overload or PlayerBuilder.
@@ -130,7 +130,7 @@ class IJKPP_PLAYER_EXPORT Player {
   void SetEventHandler(EventHandler handler);
 
   // RAII subscription handle: unsubscribes on destruction.
-  class IJKPP_PLAYER_EXPORT Subscription {
+  class AVBASE_PLAYER_EXPORT Subscription {
    public:
     Subscription();
     Subscription(Subscription&&) noexcept;
@@ -161,7 +161,7 @@ class IJKPP_PLAYER_EXPORT Player {
 };
 
 // Builder form, for injecting custom backends and for migrating string options.
-class IJKPP_PLAYER_EXPORT PlayerBuilder {
+class AVBASE_PLAYER_EXPORT PlayerBuilder {
  public:
   PlayerBuilder();
   PlayerBuilder(const PlayerBuilder&) = delete;
@@ -181,6 +181,6 @@ class IJKPP_PLAYER_EXPORT PlayerBuilder {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace ijkpp
+}  // namespace avbase
 
-#endif  // IJKPP_PLAYER_PUBLIC_PLAYER_H_
+#endif  // AVBASE_PLAYER_PUBLIC_PLAYER_H_

@@ -37,7 +37,7 @@ Two simplifications, both exact for the tests it reproduces:
 (`media/filters/wsola_internals.cc`: moving block energies, a decimated search
 at stride 5 with quadratic interpolation of each local maximum, then an
 11-candidate full search, and a per-channel similarity measure summed across
-channels). That variant exists to answer one question -- whether ijkpp's
+channels). That variant exists to answer one question -- whether avbase's
 exhaustive search is responsible for the pure-sine pitch error -- and the answer
 it gives is no: both report 452 Hz on a sine at 2x and 440.0 Hz on the
 four-partial tone. See `--check`.
@@ -142,13 +142,13 @@ class FrameQueue:
 
 
 # ---------------------------------------------------------------------------
-# wsola_internals: ijkpp's exhaustive variant
+# wsola_internals: avbase's exhaustive variant
 # ---------------------------------------------------------------------------
 
 def similarity(search, offset, target):
     """Normalised cross-correlation over one channel (see the module docstring).
 
-    ijkpp normalises once over the summed energies; Chromium normalises per
+    avbase normalises once over the summed energies; Chromium normalises per
     channel and sums. Identical ranking when all channels carry one signal.
     """
     cross = 0.0
@@ -167,7 +167,7 @@ def similarity(search, offset, target):
 
 
 def optimal_index(search, target, exclude_begin, exclude_end, search_frames=0):
-    """ijkpp's OptimalIndex: exhaustive, exact, ~5x Chromium's dot products."""
+    """avbase's OptimalIndex: exhaustive, exact, ~5x Chromium's dot products."""
     available = (min(search_frames, len(search))
                  if search_frames > 0 else len(search))
     last = available - len(target)
@@ -188,7 +188,7 @@ def optimal_index(search, target, exclude_begin, exclude_end, search_frames=0):
 # ---------------------------------------------------------------------------
 
 def _in_interval(n, interval):
-    """Chromium's InInterval is closed at both ends; ijkpp's is half-open."""
+    """Chromium's InInterval is closed at both ends; avbase's is half-open."""
     return interval[0] <= n <= interval[1]
 
 
@@ -431,7 +431,7 @@ class Algorithm:
     def run_one_wsola_iteration(self, playback_rate):
         if not self.can_perform_wsola():
             return False
-        # The room check ijkpp has and Chromium does not: FillBuffer() accepts
+        # The room check avbase has and Chromium does not: FillBuffer() accepts
         # an arbitrary requested_frames, so num_complete_frames_ can otherwise
         # grow past wsola_output_.
         if self.num_complete_frames + OLA_WINDOW > WSOLA_OUTPUT_FRAMES:
@@ -470,7 +470,7 @@ class Algorithm:
                 break
             if not self.run_one_wsola_iteration(playback_rate):
                 break
-        # The end-of-stream tail drain: ijkpp's, not Chromium's. Bounded to
+        # The end-of-stream tail drain: avbase's, not Chromium's. Bounded to
         # under one window by effective_search_block_frames().
         if (self.reached_end_of_stream and
                 len(collected) < requested_frames and
@@ -622,7 +622,7 @@ def run_check(use_chromium_search):
     generators = {"sine": sine, "tone": tone}
     failures = 0
     print(f"OptimalIndex: "
-          f"{'Chromium decimated' if use_chromium_search else 'ijkpp exhaustive'}")
+          f"{'Chromium decimated' if use_chromium_search else 'avbase exhaustive'}")
     print()
     for name, rate, seconds, want_rendered, want_peak, note in RECORDED:
         got = measure(generators[name], rate, seconds, use_chromium_search)
@@ -689,7 +689,7 @@ def main(argv):
                         help="re-derive the four recorded numbers and compare")
     parser.add_argument("--chromium", action="store_true",
                         help="use Chromium's decimated OptimalIndex instead of "
-                             "ijkpp's exhaustive one")
+                             "avbase's exhaustive one")
     parser.add_argument("--rate", type=float, default=2.0)
     parser.add_argument("--seconds", type=float, default=1.0)
     parser.add_argument("--stimulus", choices=("sine", "tone"), default="tone")

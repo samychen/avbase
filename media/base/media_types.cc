@@ -1,10 +1,10 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "media/base/media_types.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 const char* GetDemuxerStreamTypeName(DemuxerStreamType type) {
   switch (type) {
@@ -42,4 +42,4 @@ const char* GetAudioDecoderTypeName(AudioDecoderType type) {
   return "invalid";
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

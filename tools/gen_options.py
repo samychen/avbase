@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Copyright 2026 The avbase Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Generates the OptionRegistry table, and checks it against both authorities.
@@ -82,7 +82,7 @@ ENUM_FIELD_TYPES = {"DecoderPreference", "HwCodecMask", "OverlayFormat",
                     "HdrToneMapping"}
 
 STRUCT_RE = re.compile(
-    r"^\s*(?:struct|class)\s+(?:IJKPP_PLAYER_EXPORT\s+)?(\w+)[^{;]*\{")
+    r"^\s*(?:struct|class)\s+(?:AVBASE_PLAYER_EXPORT\s+)?(\w+)[^{;]*\{")
 # The initialiser group is optional on purpose: a std::string or a
 # base::TimeDelta member is often declared bare ("std::string filter_graph;"),
 # and requiring an initialiser silently drops every such field -- which then
@@ -206,7 +206,7 @@ def doc_keys_all_sections(root: pathlib.Path) -> set:
         if candidate.startswith(("config.", "render.", "audio.", "video.",
                                  "net.", "buffer.", "demux.", "seek.")):
             continue                      # a field path, not an option key
-        if candidate in ("ijkpp", "ffplay", "kAll", "kAuto", "kSdl2", "kGl",
+        if candidate in ("avbase", "ffplay", "kAll", "kAuto", "kSdl2", "kGl",
                          "kAlsa", "kPulse", "kPipeWire", "kHardwareFirst",
                          "kOpenSLES", "kAudio", "kVideo", "kExternal"):
             continue
@@ -357,8 +357,8 @@ def emit(root: pathlib.Path) -> str:
         "// reconciled by --check, so this file cannot silently disagree with",
         "// either authority (invariant C13).",
         "",
-        "#ifndef IJKPP_PLAYER_OPTION_REGISTRY_INC_",
-        "#define IJKPP_PLAYER_OPTION_REGISTRY_INC_",
+        "#ifndef AVBASE_PLAYER_OPTION_REGISTRY_INC_",
+        "#define AVBASE_PLAYER_OPTION_REGISTRY_INC_",
         "",
         "// One id per PlayerConfig field the table writes.",
         "enum class GeneratedField : uint16_t {",
@@ -445,7 +445,7 @@ def emit(root: pathlib.Path) -> str:
         '               "run tools/gen_options.py --emit");',
         "}",
         "",
-        "#endif  // IJKPP_PLAYER_OPTION_REGISTRY_INC_",
+        "#endif  // AVBASE_PLAYER_OPTION_REGISTRY_INC_",
         "",
     ]
     return wrap_emitted("\n".join(out))
@@ -502,7 +502,7 @@ def emit_one_case(opt, ctype, shared_field) -> list:
         return [f"{guard}{{ const int64_t* i = std::get_if<int64_t>(&v);",
                 f'        if (!i) return TypeMismatch({key}, "an integer");',
                 f"        {range_check(opt, key)}"
-                "        // Δ6: the legacy range is 0..100, ijkpp's is 0.0..1.0.\n"
+                "        // Δ6: the legacy range is 0..100, avbase's is 0.0..1.0.\n"
                 f"        c->{opt.field} = static_cast<double>(*i) / 100.0;",
                 f"        return OkStatus(); }}{tail}"]
     if kind == KIND_DOUBLE:
@@ -514,7 +514,7 @@ def emit_one_case(opt, ctype, shared_field) -> list:
                 f'        if (!s) return TypeMismatch({key}, "a string");',
                 f"        c->{opt.field} = *s; return OkStatus(); }}{tail}"]
     if kind == KIND_STRING_MAP:
-        # The legacy value is one blob of "Name: value" lines; ijkpp keeps a
+        # The legacy value is one blob of "Name: value" lines; avbase keeps a
         # parsed map. The splitting itself is NOT generated -- a generator
         # should emit data and mechanical dispatch, not string algorithms, and
         # the one non-mechanical piece belongs in hand-written code where it can
@@ -701,13 +701,13 @@ def escape(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 SELFTEST_CONFIG = """
-namespace ijkpp {
-struct IJKPP_PLAYER_EXPORT BufferConfig {
+namespace avbase {
+struct AVBASE_PLAYER_EXPORT BufferConfig {
   bool enabled{true};
   size_t max_bytes{15 * 1024 * 1024};
   base::TimeDelta first_high_water_mark{base::Milliseconds(100)};
 };
-struct IJKPP_PLAYER_EXPORT PlayerConfig {
+struct AVBASE_PLAYER_EXPORT PlayerConfig {
   BufferConfig buffer;
   bool fast{false};
   int loop_count{1};

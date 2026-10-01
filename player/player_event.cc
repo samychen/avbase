@@ -1,10 +1,10 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "player/public/player_event.h"
 
-namespace ijkpp {
+namespace avbase {
 
 const char* GetPlayerStateName(PlayerState state) {
   switch (state) {
@@ -68,28 +68,28 @@ const T* PayloadIf(const PlayerEvent& event, EventType expected) {
 
 }  // namespace
 
-#define IJKPP_DEFINE_EVENT_ACCESSOR(Name, Type, Kind)                     \
+#define AVBASE_DEFINE_EVENT_ACCESSOR(Name, Type, Kind)                     \
   const Type* Name(const PlayerEvent& event) {                            \
     return PayloadIf<Type>(event, EventType::Kind);                       \
   }
 
-IJKPP_DEFINE_EVENT_ACCESSOR(AsPrepared, PreparedPayload, kPrepared)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsError, ErrorPayload, kError)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsStateChanged, StateChangedPayload, kStateChanged)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsVideoSizeChanged, VideoSizeChangedPayload, kVideoSizeChanged)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsRotationChanged, RotationChangedPayload, kRotationChanged)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsRenderingStarted, RenderingStartedPayload, kRenderingStarted)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsDecodingStarted, DecodingStartedPayload, kDecodingStarted)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsStageReached, StageReachedPayload, kStageReached)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsBufferingProgress, BufferingProgressPayload, kBufferingProgress)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsBufferedUpdate, BufferedUpdatePayload, kBufferedTimeUpdate)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsSeekCompleted, SeekCompletedPayload, kSeekCompleted)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsAccurateSeekCompleted, AccurateSeekCompletedPayload, kAccurateSeekCompleted)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsTimedText, TimedTextPayload, kTimedText)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsTrackChanged, TrackChangedPayload, kTrackChanged)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsSnapshotCompleted, SnapshotCompletedPayload, kSnapshotCompleted)
-IJKPP_DEFINE_EVENT_ACCESSOR(AsStats, StatsPayload, kStats)
-#undef IJKPP_DEFINE_EVENT_ACCESSOR
+AVBASE_DEFINE_EVENT_ACCESSOR(AsPrepared, PreparedPayload, kPrepared)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsError, ErrorPayload, kError)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsStateChanged, StateChangedPayload, kStateChanged)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsVideoSizeChanged, VideoSizeChangedPayload, kVideoSizeChanged)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsRotationChanged, RotationChangedPayload, kRotationChanged)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsRenderingStarted, RenderingStartedPayload, kRenderingStarted)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsDecodingStarted, DecodingStartedPayload, kDecodingStarted)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsStageReached, StageReachedPayload, kStageReached)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsBufferingProgress, BufferingProgressPayload, kBufferingProgress)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsBufferedUpdate, BufferedUpdatePayload, kBufferedTimeUpdate)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsSeekCompleted, SeekCompletedPayload, kSeekCompleted)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsAccurateSeekCompleted, AccurateSeekCompletedPayload, kAccurateSeekCompleted)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsTimedText, TimedTextPayload, kTimedText)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsTrackChanged, TrackChangedPayload, kTrackChanged)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsSnapshotCompleted, SnapshotCompletedPayload, kSnapshotCompleted)
+AVBASE_DEFINE_EVENT_ACCESSOR(AsStats, StatsPayload, kStats)
+#undef AVBASE_DEFINE_EVENT_ACCESSOR
 
 bool ToLegacyEvent(const PlayerEvent& event, LegacyEvent* out) {
   if (!out) {
@@ -190,7 +190,7 @@ bool ToLegacyEvent(const PlayerEvent& event, LegacyEvent* out) {
       }
       return false;
     case EventType::kDecoderOpened:      out->what = 10001; return true;
-    // New in ijkpp; no ijkplayer equivalent.
+    // New in avbase; no ijkplayer equivalent.
     case EventType::kDecoderFallback:
     case EventType::kWaiting:
     case EventType::kBufferedBytesUpdate:
@@ -204,4 +204,4 @@ bool ToLegacyEvent(const PlayerEvent& event, LegacyEvent* out) {
   return false;
 }
 
-}  // namespace ijkpp
+}  // namespace avbase

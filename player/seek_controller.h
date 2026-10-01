@@ -1,14 +1,14 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_PLAYER_SEEK_CONTROLLER_H_
-#define IJKPP_PLAYER_SEEK_CONTROLLER_H_
+#ifndef AVBASE_PLAYER_SEEK_CONTROLLER_H_
+#define AVBASE_PLAYER_SEEK_CONTROLLER_H_
 
 #include "base/time/time.h"
 #include "player/public/player_export.h"
 
-namespace ijkpp {
+namespace avbase {
 namespace player {
 
 // The accurate-seek policy (docs/08 M9 DoD: ±1 frame), split the same way as
@@ -31,7 +31,7 @@ namespace player {
 //
 // Threading: all state lives on the media sequence (PlayerImpl drives it
 // from there); Evaluate() is static and pure, so tests need no threads.
-class IJKPP_PLAYER_EXPORT SeekController {
+class AVBASE_PLAYER_EXPORT SeekController {
  public:
   enum class Outcome { kPending, kReached, kExpired };
 
@@ -65,7 +65,7 @@ class IJKPP_PLAYER_EXPORT SeekController {
   base::TimeTicks deadline_;
 };
 
-}  // namespace ijkpp::player
-}  // namespace ijkpp
+}  // namespace avbase::player
+}  // namespace avbase
 
-#endif  // IJKPP_PLAYER_SEEK_CONTROLLER_H_
+#endif  // AVBASE_PLAYER_SEEK_CONTROLLER_H_

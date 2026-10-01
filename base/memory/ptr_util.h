@@ -1,14 +1,14 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_BASE_MEMORY_PTR_UTIL_H_
-#define IJKPP_BASE_MEMORY_PTR_UTIL_H_
+#ifndef AVBASE_BASE_MEMORY_PTR_UTIL_H_
+#define AVBASE_BASE_MEMORY_PTR_UTIL_H_
 
 #include <memory>
 #include <utility>
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 template <typename T, typename... Args>
 std::unique_ptr<T> WrapUnique(T* ptr) {
@@ -26,6 +26,6 @@ std::unique_ptr<T> WrapUnique(T* ptr) {
 // ownership and shared ownership are different questions and base/ keeps their
 // helpers in different places, matching Chromium.
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_MEMORY_PTR_UTIL_H_
+#endif  // AVBASE_BASE_MEMORY_PTR_UTIL_H_

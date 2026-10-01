@@ -1,16 +1,16 @@
 // Copyright (c) 2013-2026 Zhang Rui <bbcallen@gmail.com>
 // Copyright (c) 2013-2026 Bilibili
 // Copyright (c) 2003-2013 Fabrice Bellard (ffplay.c)
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 //
-// This file is part of ijkpp.
+// This file is part of avbase.
 //
-// ijkpp is free software; you can redistribute it and/or modify it under the
+// avbase is free software; you can redistribute it and/or modify it under the
 // terms of the GNU Lesser General Public License as published by the Free
 // Software Foundation; either version 2.1 of the License, or (at your option)
 // any later version.
 //
-// ijkpp is distributed in the hope that it will be useful, but WITHOUT ANY
+// avbase is distributed in the hope that it will be useful, but WITHOUT ANY
 // WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 // FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
 // details.
@@ -27,7 +27,7 @@
 // AlignAudioDurationToVideo() are line-by-line ports of ijkplayer's
 // get_master_sync_type(), get_master_clock(), synchronize_audio() and
 // synchronize_audio_to_video(), which makes this a derivative work
-// (LGPL-2.1). The rest of ijkpp is BSD-3-Clause; see media/filters/legacy/README.md.
+// (LGPL-2.1). The rest of avbase is BSD-3-Clause; see media/filters/legacy/README.md.
 //
 // ALGORITHM PROVENANCE
 // --------------------
@@ -40,8 +40,8 @@
 // Thresholds are identical by design. Do not tune them without golden-test
 // evidence; see docs/01 §6 and docs/07 §7.
 
-#ifndef IJKPP_MEDIA_FILTERS_LEGACY_AV_SYNC_CONTROLLER_H_
-#define IJKPP_MEDIA_FILTERS_LEGACY_AV_SYNC_CONTROLLER_H_
+#ifndef AVBASE_MEDIA_FILTERS_LEGACY_AV_SYNC_CONTROLLER_H_
+#define AVBASE_MEDIA_FILTERS_LEGACY_AV_SYNC_CONTROLLER_H_
 
 #include <stdint.h>
 
@@ -55,14 +55,14 @@
 #include "media/filters/legacy/clock.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Owns the three media clocks and resolves which one is authoritative.
 //
 // Replaces the loose `audclk`/`vidclk`/`extclk` fields plus `av_sync_type` in
 // ijkplayer's VideoState, where any of the three thread functions could read or
 // write any of them without synchronisation.
-class IJKPP_MEDIA_EXPORT AvSyncController final : public TimeSource {
+class AVBASE_MEDIA_EXPORT AvSyncController final : public TimeSource {
  public:
   enum class MasterType { kAudio = 0, kVideo, kExternal };
 
@@ -170,9 +170,9 @@ class IJKPP_MEDIA_EXPORT AvSyncController final : public TimeSource {
   std::atomic<float> rate_{1.0f};
 };
 
-IJKPP_MEDIA_EXPORT const char* GetMasterTypeName(
+AVBASE_MEDIA_EXPORT const char* GetMasterTypeName(
     AvSyncController::MasterType type);
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_FILTERS_LEGACY_AV_SYNC_CONTROLLER_H_
+#endif  // AVBASE_MEDIA_FILTERS_LEGACY_AV_SYNC_CONTROLLER_H_

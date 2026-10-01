@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -48,8 +48,8 @@
 //       unimplemented, and a caller waiting on that callback would otherwise
 //       hang, which is the exact failure class Δ15 exists to prevent.
 
-#ifndef IJKPP_MEDIA_BASE_RENDERER_H_
-#define IJKPP_MEDIA_BASE_RENDERER_H_
+#ifndef AVBASE_MEDIA_BASE_RENDERER_H_
+#define AVBASE_MEDIA_BASE_RENDERER_H_
 
 #include <optional>
 
@@ -63,7 +63,7 @@
 #include "media/base/renderer_client.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // DRM placeholder, not implemented (decision D8, docs/08 §4).
 class CdmContext;
@@ -72,13 +72,13 @@ class NativeDisplay;
 
 // Which Renderer implementation the pipeline should build.
 enum class RendererType {
-  kRendererImpl = 0,   // Default: FFmpeg decode + ijkpp's own sinks.
+  kRendererImpl = 0,   // Default: FFmpeg decode + avbase's own sinks.
   kNullRenderer,       // Headless. platform/null, M10. CI and transcode-style
                        // decode-to-nowhere runs.
   kCastRenderer,       // Reserved; not planned in this milestone set.
 };
 
-IJKPP_MEDIA_EXPORT const char* RendererTypeToString(RendererType type);
+AVBASE_MEDIA_EXPORT const char* RendererTypeToString(RendererType type);
 
 // Turns demuxed data into audio and video output.
 //
@@ -102,7 +102,7 @@ IJKPP_MEDIA_EXPORT const char* RendererTypeToString(RendererType type);
 // either is a DCHECK in debug builds and a no-op returning kInvalidState in
 // release -- never undefined behaviour, because the caller here is the SDK
 // facade and its users are not in a position to know the sequence rules.
-class IJKPP_MEDIA_EXPORT Renderer {
+class AVBASE_MEDIA_EXPORT Renderer {
  public:
   Renderer(const Renderer&) = delete;
   Renderer& operator=(const Renderer&) = delete;
@@ -207,6 +207,6 @@ class IJKPP_MEDIA_EXPORT Renderer {
   Renderer();
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_RENDERER_H_
+#endif  // AVBASE_MEDIA_BASE_RENDERER_H_

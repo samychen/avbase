@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 #include "base/logging.h"
 #include "base/time/default_tick_clock.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 TaskQueue::TaskQueue() : cv_(&lock_) {}
 
@@ -168,4 +168,4 @@ void TaskQueue::SetTickClockForTesting(const TickClock* clock) {
   tick_clock_ = clock;
 }
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base

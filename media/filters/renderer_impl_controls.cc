@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -18,7 +18,7 @@
 #include "base/logging.h"
 #include "media/base/media_constants.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 void RendererImpl::SetPaused(bool paused) {
   if (paused_ == paused) {
@@ -212,7 +212,7 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
     // success while nothing happens, which is worse than failing: a UI would
     // show a subtitle toggle that does nothing. Fail loudly until TextRenderer
     // exists.
-    LOG(WARNING) << "ijkpp.text: text tracks are not implemented yet";
+    LOG(WARNING) << "avbase.text: text tracks are not implemented yet";
     ReportError(MediaError(
         ErrorCode::kNotImplemented, "text track selection is not supported",
         "this build has no TextRenderer (milestone M7)",
@@ -239,4 +239,4 @@ RendererType RendererImpl::GetRendererType() {
   return RendererType::kRendererImpl;
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

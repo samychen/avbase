@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -19,8 +19,8 @@
 // 32 bits is 4 billion frames; the matrix has room for 64, and using the lower
 // 32 keeps both the painter and the reader below a screen of code.
 
-#ifndef IJKPP_TESTS_SUPPORT_SYNTHETIC_DECODERS_H_
-#define IJKPP_TESTS_SUPPORT_SYNTHETIC_DECODERS_H_
+#ifndef AVBASE_TESTS_SUPPORT_SYNTHETIC_DECODERS_H_
+#define AVBASE_TESTS_SUPPORT_SYNTHETIC_DECODERS_H_
 
 #include <cstdint>
 #include <memory>
@@ -35,7 +35,7 @@
 #include "media/base/video_frame.h"
 #include "tests/support/synthetic_demuxer.h"
 
-namespace ijkpp::media::test {
+namespace avbase::media::test {
 
 constexpr int kFrameIndexBits = 32;
 constexpr int kFrameIndexBlockSize = 8;
@@ -122,6 +122,6 @@ class SyntheticAudioDecoderFactory final : public AudioDecoderFactory {
   const SyntheticSpec spec_;
 };
 
-}  // namespace ijkpp::media::test
+}  // namespace avbase::media::test
 
-#endif  // IJKPP_TESTS_SUPPORT_SYNTHETIC_DECODERS_H_
+#endif  // AVBASE_TESTS_SUPPORT_SYNTHETIC_DECODERS_H_

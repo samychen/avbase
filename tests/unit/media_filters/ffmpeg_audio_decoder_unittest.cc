@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -22,11 +22,11 @@
 #include "media/filters/ffmpeg_demuxer.h"
 #include "gtest/gtest.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 std::string TestFile(const char* name) {
-  return std::string(IJKPP_TESTDATA_DIR) + "/" + name;
+  return std::string(AVBASE_TESTDATA_DIR) + "/" + name;
 }
 
 class SilentHost final : public Demuxer::Host {
@@ -386,4 +386,4 @@ TEST_F(FFmpegAudioDecoderTest, StructurallyInvalidConfigIsDistinctFromUnknownCod
 }
 
 }  // namespace
-}  // namespace ijkpp::media
+}  // namespace avbase::media

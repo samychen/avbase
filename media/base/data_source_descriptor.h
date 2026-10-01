@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_MEDIA_BASE_DATA_SOURCE_DESCRIPTOR_H_
-#define IJKPP_MEDIA_BASE_DATA_SOURCE_DESCRIPTOR_H_
+#ifndef AVBASE_MEDIA_BASE_DATA_SOURCE_DESCRIPTOR_H_
+#define AVBASE_MEDIA_BASE_DATA_SOURCE_DESCRIPTOR_H_
 
 #include <stdint.h>
 
@@ -17,16 +17,16 @@
 #include "media/base/data_source.h"   // Complete type: the implicit ~DataSourceDescriptor needs it.
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // Describes where media comes from. Exactly one member is meaningful, selected
 // by |kind|.
 //
 // This type lives in media/base rather than player/public because media::Demuxer
 // takes it as a parameter and media/ must not depend on player/ (docs/02 §2.1).
-// player/public/player.h re-exports it into namespace ijkpp so SDK callers still
-// spell it ijkpp::DataSourceDescriptor.
-struct IJKPP_MEDIA_EXPORT DataSourceDescriptor {
+// player/public/player.h re-exports it into namespace avbase so SDK callers still
+// spell it avbase::DataSourceDescriptor.
+struct AVBASE_MEDIA_EXPORT DataSourceDescriptor {
   enum class Kind {
     kUri = 0,          // Open |uri| through FFmpeg's protocol layer.
     kMemoryBuffer,     // Play from an already-downloaded buffer.
@@ -54,6 +54,6 @@ struct IJKPP_MEDIA_EXPORT DataSourceDescriptor {
   std::map<std::string, std::string> options;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_DATA_SOURCE_DESCRIPTOR_H_
+#endif  // AVBASE_MEDIA_BASE_DATA_SOURCE_DESCRIPTOR_H_

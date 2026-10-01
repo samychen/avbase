@@ -1,10 +1,10 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "platform/ffmpeg/interrupt_callback.h"
 
-namespace ijkpp::platform::ffmpeg {
+namespace avbase::platform::ffmpeg {
 
 // static
 int InterruptCallback::Poll(void* opaque) {
@@ -20,4 +20,4 @@ void InterruptCallback::Install(AVFormatContext* ctx) {
   ctx->interrupt_callback.opaque = this;
 }
 
-}  // namespace ijkpp::platform::ffmpeg
+}  // namespace avbase::platform::ffmpeg

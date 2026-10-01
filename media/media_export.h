@@ -1,14 +1,14 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_MEDIA_MEDIA_EXPORT_H_
-#define IJKPP_MEDIA_MEDIA_EXPORT_H_
+#ifndef AVBASE_MEDIA_MEDIA_EXPORT_H_
+#define AVBASE_MEDIA_MEDIA_EXPORT_H_
 
-#if defined(IJKPP_MEDIA_IMPLEMENTATION)
-#define IJKPP_MEDIA_EXPORT __attribute__((visibility("default")))
+#if defined(AVBASE_MEDIA_IMPLEMENTATION)
+#define AVBASE_MEDIA_EXPORT __attribute__((visibility("default")))
 #else
-#define IJKPP_MEDIA_EXPORT
+#define AVBASE_MEDIA_EXPORT
 #endif
 
-#endif  // IJKPP_MEDIA_MEDIA_EXPORT_H_
+#endif  // AVBASE_MEDIA_MEDIA_EXPORT_H_

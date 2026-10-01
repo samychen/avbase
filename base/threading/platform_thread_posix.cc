@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,13 +11,13 @@
 #include <pthread.h>
 #endif
 
-namespace ijkpp::base::PlatformThread {
+namespace avbase::base::PlatformThread {
 namespace {
 
 // Truncate to the lowest common denominator across the POSIX targets: Linux's
 // 16-byte comm limit. Apple allows 64, but keeping every platform at the same
-// width is what makes the docs/04 thread table (ijkpp-media, ijkpp-demux, ...)
-// read identically in logs on both, and the Δ16 names all fit either way.
+// width is what makes the docs/04 thread table (avbase-media, avbase-demux,
+// ...) read identically in logs on both, and the Δ16 names all fit either way.
 constexpr size_t kMaxThreadNameLen = 15;
 
 }  // namespace
@@ -65,4 +65,4 @@ void SetCurrentThreadPriority(ThreadPriority priority) {
 #endif
 }
 
-}  // namespace ijkpp::base::PlatformThread
+}  // namespace avbase::base::PlatformThread

@@ -1,4 +1,4 @@
-# Copyright 2026 The ijkpp Authors. All rights reserved.
+# Copyright 2026 The avbase Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 name: ci
@@ -19,7 +19,7 @@ jobs:
       - run: ctest --preset no-ffmpeg --output-on-failure
 
   # The system-FFmpeg configuration. Until this job existed, everything behind
-  # IJKPP_ENABLE_FFMPEG -- the whole platform_ffmpeg target plus the 35
+  # AVBASE_ENABLE_FFMPEG -- the whole platform_ffmpeg target plus the 35
   # needs-ffmpeg tests -- was only ever built on a developer machine: the
   # no-ffmpeg gate proves G2, not that the FFmpeg path works. A14 (distro
   # FFmpeg, no patch, no vendoring) is what this asserts.
@@ -115,7 +115,7 @@ jobs:
 
   # The strict-warnings gate: Debug + DCHECKs + -Wconversion/-Wold-style-cast +
   # -Werror, over the FFmpeg layer too. The compiler is clang on purpose: the
-  # strict set adds GCC's -Wuseless-cast (cmake/IjkppCompilerFlags.cmake),
+  # strict set adds GCC's -Wuseless-cast (cmake/AvbaseCompilerFlags.cmake),
   # which has never been vetted against this tree, and a gate that arrives red
   # teaches people to ignore gates. The GCC half of this job waits for someone
   # who can vet that flag locally first.

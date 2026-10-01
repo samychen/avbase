@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -29,7 +29,7 @@
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 using test::ExpectedToneHzAt;
@@ -270,4 +270,4 @@ TEST_F(SyntheticDemuxerTest, MediaInfoAndConfigsMatchTheSpec) {
 }
 
 }  // namespace
-}  // namespace ijkpp::media
+}  // namespace avbase::media

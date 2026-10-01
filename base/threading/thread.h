@@ -1,12 +1,12 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `base/threading/thread.h` (BSD-3-Clause), restricted to
-// what ijkpp needs: one TaskQueue-driven sequence per thread.
+// what avbase needs: one TaskQueue-driven sequence per thread.
 
-#ifndef IJKPP_BASE_THREADING_THREAD_H_
-#define IJKPP_BASE_THREADING_THREAD_H_
+#ifndef AVBASE_BASE_THREADING_THREAD_H_
+#define AVBASE_BASE_THREADING_THREAD_H_
 
 #include <atomic>
 #include <string>
@@ -18,20 +18,20 @@
 #include "base/task/task_queue.h"
 #include "base/threading/platform_thread.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // A dedicated thread running a TaskQueue.
 //
-// ijkpp creates exactly six of these per Player (docs/04 §2): ijkpp-media,
-// ijkpp-demux, ijkpp-video, ijkpp-audio, ijkpp-text and ijkpp-event. Each owns
-// a set of objects that only it may touch, which is what SEQUENCE_CHECKER
-// verifies at runtime.
+// avbase creates exactly six of these per Player (docs/04 §2): avbase-media,
+// avbase-demux, avbase-video, avbase-audio, avbase-text and avbase-event.
+// Each owns a set of objects that only it may touch, which is what
+// SEQUENCE_CHECKER verifies at runtime.
 //
-// Stop() is bounded and idempotent: it asks the queue to quit and joins. Because
-// Quit() also makes PostTask() return false, no task can be enqueued against a
-// thread that is going away — the guarantee that makes ~Player() unable to hang
-// on a producer blocked in a full queue (docs/04 §5.4, Δ15).
-class IJKPP_BASE_EXPORT Thread {
+// Stop() is bounded and idempotent: it asks the queue to quit and joins.
+// Because Quit() also makes PostTask() return false, no task can be enqueued
+// against a thread that is going away — the guarantee that makes ~Player()
+// unable to hang on a producer blocked in a full queue (docs/04 §5.4, Δ15).
+class AVBASE_BASE_EXPORT Thread {
  public:
   struct Options {
     std::string name;
@@ -46,7 +46,8 @@ class IJKPP_BASE_EXPORT Thread {
   // Calls Stop() if still running.
   ~Thread();
 
-  // Starts the thread. Returns false if it is already running or the OS refused.
+  // Starts the thread. Returns false if it is already running or the OS
+  // refused.
   bool Start();
   bool StartWithOptions(const Options& options);
 
@@ -77,4 +78,4 @@ class IJKPP_BASE_EXPORT Thread {
 
 }  // namespace base
 
-#endif  // IJKPP_BASE_THREADING_THREAD_H_
+#endif  // AVBASE_BASE_THREADING_THREAD_H_

@@ -1,21 +1,21 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // API mirrors Chromium's `base/synchronization/waitable_event.h`
 // (BSD-3-Clause).
 
-#ifndef IJKPP_BASE_SYNCHRONIZATION_WAITABLE_EVENT_H_
-#define IJKPP_BASE_SYNCHRONIZATION_WAITABLE_EVENT_H_
+#ifndef AVBASE_BASE_SYNCHRONIZATION_WAITABLE_EVENT_H_
+#define AVBASE_BASE_SYNCHRONIZATION_WAITABLE_EVENT_H_
 
 #include <condition_variable>
 #include <mutex>
 
 #include "base/time/time.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
-// A manual- or automatic-reset event. ijkpp uses this for bounded shutdown
+// A manual- or automatic-reset event. avbase uses this for bounded shutdown
 // waits so that ~Player() can never block indefinitely (see docs/04 §5.4 and
 // behaviour difference Δ15).
 class WaitableEvent {
@@ -80,6 +80,6 @@ class WaitableEvent {
   bool signaled_;
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_SYNCHRONIZATION_WAITABLE_EVENT_H_
+#endif  // AVBASE_BASE_SYNCHRONIZATION_WAITABLE_EVENT_H_

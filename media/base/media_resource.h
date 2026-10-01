@@ -1,9 +1,9 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `media/base/media_resource.h` (BSD-3-Clause), reduced to
-// the single hook ijkpp actually needs.
+// the single hook avbase actually needs.
 //
 // STATUS: IN THE BUILD (promoted from DRAFT, tenth round)
 // PROMOTED into the build in the tenth round, after a full compile and test
@@ -24,19 +24,19 @@
 //      through interface review.
 //   2. RendererImpl::Initialize() is the only caller (M7).
 //   3. Chromium's GetFirstDataSource()/byte-range loaders are intentionally
-//      absent: decision D2 keeps FFmpeg types out of media/base, and ijkpp's
+//      absent: decision D2 keeps FFmpeg types out of media/base, and avbase's
 //      byte source is media::DataSource, reached through the Demuxer rather
 //      than through the resource. If M9's DataSource decorators
 //      (RetryDataSource / LiveDataSource) need a second access path, add it
 //      here rather than widening Demuxer.
 
-#ifndef IJKPP_MEDIA_BASE_MEDIA_RESOURCE_H_
-#define IJKPP_MEDIA_BASE_MEDIA_RESOURCE_H_
+#ifndef AVBASE_MEDIA_BASE_MEDIA_RESOURCE_H_
+#define AVBASE_MEDIA_BASE_MEDIA_RESOURCE_H_
 
 #include "media/base/demuxer_stream.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 // What a Renderer is given to read from.
 //
@@ -58,7 +58,7 @@ namespace ijkpp::media {
 //
 // Threading: called on the media sequence only. Implementations need no lock;
 // SEQUENCE_CHECKER enforces it.
-class IJKPP_MEDIA_EXPORT MediaResource {
+class AVBASE_MEDIA_EXPORT MediaResource {
  public:
   MediaResource(const MediaResource&) = delete;
   MediaResource& operator=(const MediaResource&) = delete;
@@ -74,6 +74,6 @@ class IJKPP_MEDIA_EXPORT MediaResource {
   virtual ~MediaResource() = default;
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_MEDIA_RESOURCE_H_
+#endif  // AVBASE_MEDIA_BASE_MEDIA_RESOURCE_H_

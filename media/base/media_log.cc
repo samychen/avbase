@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/time/default_tick_clock.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 namespace {
 
 std::string EscapeJson(std::string_view in) {
@@ -179,4 +179,4 @@ MediaLogRecord& MediaLogRecord::With(std::string key, int64_t value) {
   return *this;
 }
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media

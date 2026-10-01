@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -13,8 +13,8 @@
 // (microseconds / milliseconds / stream ticks / seconds-as-double) is only
 // discoverable by reading the callee. See docs/01 §2 病灶 5.
 
-#ifndef IJKPP_BASE_TIME_TIME_H_
-#define IJKPP_BASE_TIME_TIME_H_
+#ifndef AVBASE_BASE_TIME_TIME_H_
+#define AVBASE_BASE_TIME_TIME_H_
 
 #include <stdint.h>
 
@@ -25,12 +25,12 @@
 
 #include "base/base_export.h"
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // ---------------------------------------------------------------------------
 // TimeDelta
 // ---------------------------------------------------------------------------
-class IJKPP_BASE_EXPORT TimeDelta {
+class AVBASE_BASE_EXPORT TimeDelta {
  public:
   constexpr TimeDelta() noexcept = default;
 
@@ -176,12 +176,12 @@ constexpr TimeDelta Seconds(int64_t s) noexcept { return TimeDelta::FromSeconds(
 constexpr TimeDelta SecondsD(double s) noexcept { return TimeDelta::FromSecondsD(s); }
 constexpr TimeDelta Minutes(int64_t m) noexcept { return TimeDelta::FromMinutes(m); }
 
-IJKPP_BASE_EXPORT std::ostream& operator<<(std::ostream& os, TimeDelta d);
+AVBASE_BASE_EXPORT std::ostream& operator<<(std::ostream& os, TimeDelta d);
 
 // ---------------------------------------------------------------------------
 // TimeTicks — monotonic. Use for scheduling, deadlines and elapsed time.
 // ---------------------------------------------------------------------------
-class IJKPP_BASE_EXPORT TimeTicks {
+class AVBASE_BASE_EXPORT TimeTicks {
  public:
   constexpr TimeTicks() noexcept = default;
 
@@ -222,13 +222,13 @@ class IJKPP_BASE_EXPORT TimeTicks {
   int64_t micros_{0};
 };
 
-IJKPP_BASE_EXPORT std::ostream& operator<<(std::ostream& os, TimeTicks t);
+AVBASE_BASE_EXPORT std::ostream& operator<<(std::ostream& os, TimeTicks t);
 
 // ---------------------------------------------------------------------------
 // Time — calendar wall clock (microseconds since Windows epoch, as in
 // Chromium, so that serialized values are comparable across the two).
 // ---------------------------------------------------------------------------
-class IJKPP_BASE_EXPORT Time {
+class AVBASE_BASE_EXPORT Time {
  public:
   constexpr Time() noexcept = default;
   static Time Now();
@@ -261,6 +261,6 @@ class IJKPP_BASE_EXPORT Time {
   int64_t micros_{0};
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_TIME_TIME_H_
+#endif  // AVBASE_BASE_TIME_TIME_H_

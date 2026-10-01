@@ -1,18 +1,18 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Mirrors Chromium's `media/base/audio_parameters.h` (BSD-3-Clause).
 
-#ifndef IJKPP_MEDIA_BASE_AUDIO_PARAMETERS_H_
-#define IJKPP_MEDIA_BASE_AUDIO_PARAMETERS_H_
+#ifndef AVBASE_MEDIA_BASE_AUDIO_PARAMETERS_H_
+#define AVBASE_MEDIA_BASE_AUDIO_PARAMETERS_H_
 
 #include <stdint.h>
 
 #include "base/time/time.h"
 #include "media/media_export.h"
 
-namespace ijkpp::media {
+namespace avbase::media {
 
 enum class SampleFormat {
   kUnknown = 0, kU8, kS16, kS32, kF32, kS16P, kS32P, kF32P,
@@ -22,17 +22,17 @@ enum class ChannelLayout {
   k5_1, k7_1, kDiscrete,
 };
 
-IJKPP_MEDIA_EXPORT const char* GetSampleFormatName(SampleFormat format);
-IJKPP_MEDIA_EXPORT const char* GetChannelLayoutName(ChannelLayout layout);
-IJKPP_MEDIA_EXPORT int ChannelLayoutToChannelCount(ChannelLayout layout);
-IJKPP_MEDIA_EXPORT int SampleFormatBytesPerChannel(SampleFormat format);
+AVBASE_MEDIA_EXPORT const char* GetSampleFormatName(SampleFormat format);
+AVBASE_MEDIA_EXPORT const char* GetChannelLayoutName(ChannelLayout layout);
+AVBASE_MEDIA_EXPORT int ChannelLayoutToChannelCount(ChannelLayout layout);
+AVBASE_MEDIA_EXPORT int SampleFormatBytesPerChannel(SampleFormat format);
 
 // Decodes one sample at |src| into a float in [-1, 1]. Returns 0 for unknown
 // formats rather than trapping: a malformed stream must degrade to silence, not
 // crash the audio thread (which would take the whole player down).
-IJKPP_MEDIA_EXPORT float DecodeSample(const uint8_t* src, SampleFormat format);
+AVBASE_MEDIA_EXPORT float DecodeSample(const uint8_t* src, SampleFormat format);
 
-class IJKPP_MEDIA_EXPORT AudioParameters {
+class AVBASE_MEDIA_EXPORT AudioParameters {
  public:
   AudioParameters() = default;
   AudioParameters(ChannelLayout layout, SampleFormat format, int sample_rate,
@@ -66,6 +66,6 @@ class IJKPP_MEDIA_EXPORT AudioParameters {
   int frames_per_buffer_{1024};
 };
 
-}  // namespace ijkpp::media
+}  // namespace avbase::media
 
-#endif  // IJKPP_MEDIA_BASE_AUDIO_PARAMETERS_H_
+#endif  // AVBASE_MEDIA_BASE_AUDIO_PARAMETERS_H_

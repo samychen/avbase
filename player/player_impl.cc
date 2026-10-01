@@ -1,4 +1,4 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -16,16 +16,16 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/time/default_tick_clock.h"
-#include "ijkpp/BuildConfig.h"
+#include "avbase/BuildConfig.h"
 #include "media/base/media_constants.h"
 #include "media/base/media_error.h"
 #include "media/base/media_log.h"
-#if IJKPP_ENABLE_FFMPEG
+#if AVBASE_ENABLE_FFMPEG
 #include "media/filters/ffmpeg_decoder_factories.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #endif
 
-namespace ijkpp {
+namespace avbase {
 namespace {
 
 media::AvSyncController::MasterType ToMediaMaster(SyncMasterType type) {
@@ -55,9 +55,9 @@ PlayerImpl::PlayerImpl(const PlayerConfig& config, std::unique_ptr<Deps> deps)
     : config_(config),
       deps_(deps ? std::move(deps)
                  : std::make_unique<Deps>(Deps::CreateDefault())),
-      media_thread_("ijkpp-media"),
-      video_thread_("ijkpp-video"),
-      audio_thread_("ijkpp-audio") {
+      media_thread_("avbase-media"),
+      video_thread_("avbase-video"),
+      audio_thread_("avbase-audio") {
   media_thread_.Start();
   video_thread_.Start();
   audio_thread_.Start();
@@ -66,7 +66,7 @@ PlayerImpl::PlayerImpl(const PlayerConfig& config, std::unique_ptr<Deps> deps)
     deps_->tick_clock = std::shared_ptr<const base::TickClock>(
         base::DefaultTickClock::GetInstance(), [](const base::TickClock*) {});
   }
-#if IJKPP_ENABLE_FFMPEG
+#if AVBASE_ENABLE_FFMPEG
   // The software FFmpeg decoders are the fallback chain's tail; anything the
   // host injected keeps its place ahead of them (Δ12).
   if (deps_->video_decoder_factories.empty()) {
@@ -92,7 +92,7 @@ PlayerImpl::~PlayerImpl() {
 }
 
 std::unique_ptr<media::Demuxer> PlayerImpl::CreateDemuxer() {
-#if IJKPP_ENABLE_FFMPEG
+#if AVBASE_ENABLE_FFMPEG
   bool has_source = false;
   {
     base::AutoLock scoped(state_lock_);
@@ -169,9 +169,9 @@ Status PlayerImpl::PrepareAsync() {
     event_hub_.PostError(
         MediaError(ErrorCode::kNotImplemented,
                    "no demuxer is available for this data source",
-                   "this build has IJKPP_ENABLE_FFMPEG off, or the source "
+                   "this build has AVBASE_ENABLE_FFMPEG off, or the source "
                    "kind needs the DataSource bridge (M9)",
-                   "build with -DIJKPP_ENABLE_FFMPEG=ON and pass a URI, or "
+                   "build with -DAVBASE_ENABLE_FFMPEG=ON and pass a URI, or "
                    "wait for the M9 DataSource AVIOContext bridge"),
         base::TimeDelta());
     return OkStatus();
@@ -242,13 +242,13 @@ Status PlayerImpl::PrepareSync(base::TimeDelta timeout) {
         ErrorCode::kInvalidState, "preparing the source failed",
         "the pipeline reported an error before it was ready; the kError event "
         "carries the three-part detail",
-        "inspect the error event, or run ijkpp-inspect probe <url> on the "
+        "inspect the error event, or run avbase-inspect probe <url> on the "
         "source"));
   }
   return base::unexpected(MediaError(
       ErrorCode::kInvalidState, "prepare ended in an unexpected state",
       std::string("final state: ") + GetPlayerStateName(s),
-      "inspect the event stream; this is an ijkpp bug, please report it with "
+      "inspect the event stream; this is an avbase bug, please report it with "
       "DumpDiagnostics() output"));
 }
 
@@ -378,7 +378,7 @@ void PlayerImpl::StopSync(base::TimeDelta timeout) {
       FROM_HERE,
       base::BindOnce([](base::WaitableEvent* e) { e->Signal(); }, &done));
   if (!done.TimedWait(timeout)) {
-    LOG(ERROR) << "ijkpp: StopSync timed out after "
+    LOG(ERROR) << "avbase: StopSync timed out after "
                << timeout.InMillisecondsF()
                << "ms; detaching (delta 15: leak a thread, never hang)";
   }
@@ -469,4 +469,4 @@ Result<int64_t> PlayerImpl::SeekTo(base::TimeDelta position, SeekMode mode,
   return id;
 }
 
-}  // namespace ijkpp
+}  // namespace avbase

@@ -1,13 +1,13 @@
-// Copyright 2026 The ijkpp Authors. All rights reserved.
+// Copyright 2026 The avbase Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IJKPP_BASE_SYNCHRONIZATION_ATOMIC_SEQUENCE_NUMBER_H_
-#define IJKPP_BASE_SYNCHRONIZATION_ATOMIC_SEQUENCE_NUMBER_H_
+#ifndef AVBASE_BASE_SYNCHRONIZATION_ATOMIC_SEQUENCE_NUMBER_H_
+#define AVBASE_BASE_SYNCHRONIZATION_ATOMIC_SEQUENCE_NUMBER_H_
 
 #include <atomic>
 
-namespace ijkpp::base {
+namespace avbase::base {
 
 // Atomic counter used for seek generation numbers (`serial`) and request ids.
 class AtomicSequenceNumber {
@@ -26,6 +26,6 @@ class AtomicSequenceNumber {
   std::atomic<int> seq_{0};
 };
 
-}  // namespace ijkpp::base
+}  // namespace avbase::base
 
-#endif  // IJKPP_BASE_SYNCHRONIZATION_ATOMIC_SEQUENCE_NUMBER_H_
+#endif  // AVBASE_BASE_SYNCHRONIZATION_ATOMIC_SEQUENCE_NUMBER_H_
