@@ -4,21 +4,80 @@
 
 ## 当前状态：**M0–M8 ✅ · 端到端播放 ✅ · M9 进行中（三级 HWM + 精确 seek + DataSource 桥 + 饥饿信号 ✅）**
 
-最后更新：2026-10-02（第十二轮）—— **M9 第二步：精确 seek 全链落地。** `SeekTo(kAccurate)`
-从"警告 + 关键帧"变成真实现：媒体层丢弃窗口 + 呈现帧到达检测 + facade 侧
-`SeekController` 超时/取代策略。全量测试 407/407（FFmpeg 配置）与 372/372（no-ffmpeg）
-全绿，`check_invariants` 全过（252 文件）。
+最后更新：2026-10-02（第十四轮）—— **Phase 0 仓库改造：ijkpp → avbase 更名落地。**
+305 个文件三种大小写变体全局替换（`ijkpp/Ijkpp/IJKPP → avbase/Avbase/AVBASE`，
+"ijkplayer" 267 处刻意保留于溯源注释），四个 cmake 模块 `Ijkpp*.cmake → Avbase*.cmake`。
+附带修复：线程截断测试的新前缀 15 字符期望、C23 列宽棘轮 45 行收窄并缩基线
+（286 行，-24）、`renderer_impl.cc` 登记 C1 豁免（540 行，分支既有违规，与更名无关）。
+LGPL 清点出 1 个矛盾待法务决策（见本轮表）；文档合并 docs/11 行为规范卷；
+对外叙事切换为"企业播放器基座"。no-ffmpeg 376/376 全绿，`check_invariants` 全过（258 文件）。
+> 第十三轮：DataSource 桥（M4 余项收口）+ 饥饿信号（M9 第三块）
+> 第十二轮：M9 精确 seek——丢弃窗口 · 到达检测 · SeekController（407/407 FFmpeg · 372/372 no-ffmpeg）
 > 第十一轮：M9 开篇（限速假件 + 三级 HWM + 管线级 seek 夹具，401/401）
 > 第十轮：播放链路打通（M7 收尾 + M8 接线，359/359，macOS 首建）
-> 第十轮：播放链路打通（M7 收尾 + M8 接线，359/359，macOS 首建）
 > 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
 > 27 个文件转正进构建）
-`Player` 的 10 个桩方法接通 9 个（SetDataSource/Prepare/Start/Pause/Stop/SeekTo/音量/倍速/事件全部可用）；
-`headless` 示例对 5 个测试媒体完成"prepare→play→EOS→kCompleted"全流程（退出码 0），
-`play_sdl2` 在真实窗口带音频出画。全量测试 359/359（FFmpeg 配置）与 324/324（no-ffmpeg）全绿，
-`check_invariants` 全过（220 文件）且 C23 列宽基线 323→310（只降不升）。本轮在 **macOS / AppleClang 21 / FFmpeg 7.1.1 (Homebrew) / SDL2 2.32** 上开发——这是项目第一次在 Linux 之外构建，见 §10.1 的四项 macOS 修复。
-> 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
-> 27 个文件转正进构建）
+
+## 第十四轮（本轮）：Phase 0 仓库改造——更名 avbase · LGPL 清点 · 文档合并
+
+依据 avbase 升级计划（Phase 0，纯工程与法务，要求更名做成独立 commit）。
+
+### 已完成
+
+| 计划项 | 结果 |
+|---|---|
+| 更名 ijkpp → avbase | ✅ 独立 commit（`4c655fc`）。305 个文件、三种大小写变体（`ijkpp`×1805 / `Ijkpp`×42 / `IJKPP`×1239）。四个 cmake 模块 git mv。**"ijkplayer" 不含 "ijkpp" 子串，267 处上游指称原样保留**——溯源注释与 docs/05 的对照关系不受影响。git 历史全保留（无 squash）。宿主侧的仓库目录改名（GitHub repo rename）需要人工操作，内容层面已全部就位 |
+| LICENSE | ✅ 第九轮已落 BSD-3 全文 + 第三方/衍生说明节，本轮仅随更名改抬头。README 声明一致 |
+| CI 矩阵 | ✅ 第十轮已加 macOS 档（`macos-14`：no-ffmpeg + ffmpeg 两个 preset），计划项提前完成，无需改动 |
+| 文档合并 | ✅ avbase_design.md §5/§7/§8 并入 [11-行为规范卷](11-行为规范卷.md)（线程表 / 背压级联与 seek 序列 / 三级水位表，标注为 Phase 1–2 的验收依据）；docs/05 顶部标注为历史卷（golden 对拍与常量溯源仍引用）；README 标题与定位改为"企业播放器基座"，补项目沿革段 |
+| git 历史 | ✅ 更名 commit 与其余改动分离，历史未重写 |
+
+### 更名的两个连带修复（都是"改名暴露既有事实"，不是新 bug）
+
+1. **`ThreadTest.LongNameIsTruncatedNotRejected` 自相矛盾**：原期望截断产物
+   `ijkpp-this-name`（15 字符，恰好等于 `kMaxThreadNameLen`）；前缀换成 6 字符的
+   `avbase-` 后同样输入截断为 `avbase-this-nam`，与 `EXPECT_LE(15u)` 冲突。
+   期望值改为新前缀下的 15 字符产物。
+2. **C23 列宽棘轮**：`avbase` 比 `ijkpp` 宽一列，把 45 行顶过 80 列（检查器按字符计，
+   中文注释不误伤）。全部手工收窄——按"动过的文件回归干净"的棘轮精神，而不是加基线；
+   基线 310→286（-24）。
+
+### LGPL 标记清点（计划项 3，"更名窗口内做完"）
+
+| 文件 | 自述 | LICENSE 声明 | 结论 |
+|---|---|---|---|
+| `media/filters/legacy/*`（6 个） | 逐行移植 ff_ffplay.c，LGPL-2.1 头 + 隔离目录 + 阈值不可改 | LICENSE §1 逐一列名 | ✅ 一致，合规隔离成立 |
+| `media/filters/ffmpeg_demuxer.cc` | "demux 循环的**形状**追随 read_thread()；seek flags 同" | LICENSE §3：全部 ffmpeg_* 为原创 BSD | ✅ 低风险：高层设计思路不受版权保护，seek flags 是 FFmpeg API 常量，无表达式复制 |
+| `media/filters/video_renderer_impl.h` | 仅指路注释（"节拍算法住在 legacy/"） | 同上 | ✅ 无移植事实 |
+| **`media/filters/ffmpeg_audio_decoder.{h,cc}`** | 头注释自称 **"Ported from ff_ffplay.c audio_decode_frame() (LGPL-2.1-or-later)"**，"restructured behind Chromium's AudioDecoder interface" | LICENSE §3 声明所有 `ffmpeg_*` 为**原创 BSD** | 🔴 **矛盾，待决策** |
+
+🔴 项的两个事实方向冲突：代码结构（avcodec send/receive 解码器）追随的是
+Chromium `FFmpegAudioDecoder`（BSD），与 ffplay `audio_decode_frame`（滤镜图取帧 +
+swr 重采样的消费端胶水）结构上并不相似，"Ported" 措辞疑似**夸大**；但**头注释白纸黑字
+的移植声明不能由写代码的人单方面抹掉**，而按项目自己的规则（legacy/README 准入：
+"自认移植的文件应进隔离区"）把它搬进 legacy/ 又会打断"基座纯 BSD"的更名目标。
+这是法律判断，本轮**不动代码、不动 LICENSE**，只登记矛盾。两条出路（均需法务/作者确认）：
+
+- **A（推荐，若作者确认是措辞夸大）**：改写头注释为准确的出处描述（结构追随 Chromium，
+  原创实现），LICENSE 不变，基座保持纯 BSD-3。
+- **B（保守）**：文件搬入 `media/filters/legacy/` 并进 LICENSE §1 例外清单，声明为
+  LGPL-2.1；代价是 §1 "隔离目录 = 全部衍生作品" 的清单式边界被稀释。
+
+### 连带登记：`renderer_impl.cc` 的 C1 豁免
+
+更名跑 invariant 时暴露 `media/filters/renderer_impl.cc` 540 行 > 500 限——**分支既有
+违规**（`daf6373` 起 512 行，饥饿信号各 commit 推到 540），与更名无关，CI 未及发现。
+按 C2 豁免的先例登记进 `LINE_LIMIT_ALLOWLIST` 并写明理由（视频/音频两半互为镜像，
+按行数硬拆只会复制生命周期状态机）；M9 BufferController 吸收
+`CheckBufferingTransitions()` 时应回头重审。
+
+### 验证
+
+- no-ffmpeg preset 全量构建 + 376/376 测试通过（本机 macOS，GTest 经 Homebrew 补装——
+  此前 287 个用例只在 Linux CI 跑过）。
+- `check_invariants.py` 全规则通过（258 文件），C23 基线只降不升。
+- FFmpeg 配置与 sanitizer 配置本机未跑（依赖 Homebrew ffmpeg/SDL2 环境较重），
+  以 Linux CI 为准。
 
 ## 第十三轮（本轮）：DataSource 桥（M4 余项收口）+ 饥饿信号（M9 第三块）
 

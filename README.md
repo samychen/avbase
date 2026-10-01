@@ -1,9 +1,13 @@
-# avbase — ijkplayer 核心播放器的 C++20 重构
+# avbase — 企业播放器基座(C++20)
 
 **风格**：Google C++ Style Guide + Chromium 工程约定（`base/` · `media/` 分层、`DCHECK`、sequence 模型、`base::BindOnce`/`WeakPtr`/`scoped_refptr`）
 **目标平台**：Linux（X11 / Wayland），SDL2 后端 + 原生 OpenGL 后端双实现
 **定位**：面向二次开发者的 **SDK**（API 易用、文档完整、示例齐全、错误信息可操作）
 **依赖**：系统 FFmpeg（`find_package`，不打 patch）
+
+> **项目沿革**：起于 ijkplayer 的 C++20 重构(docs/05 迁移对照表为历史卷,
+> golden 对拍 ijkplayer 保留为回归资产);现按 avbase 升级计划演进为
+> 三平台、硬解、网络流完备的企业播放器基座。
 
 > **当前状态：M0–M6 ✅ · M7 渲染层代码完成 · M8 播放链路已接线 ✅ · 端到端播放 ✅（headless + SDL2 真窗口）**
 >
@@ -61,6 +65,7 @@
 | 08 | [实施路线图与风险](docs/08-实施路线图与风险.md) | M0–M12 里程碑与 DoD、双人并行方案、工作量估算、砍掉/后置清单、**16 条风险登记册**、"平替"验收标准 A1–A16 |
 | 09 | [Linux 平台实现方案](docs/09-Linux平台实现方案.md) | **双后端详细设计**：SDL2 后端、原生 OpenGL 后端（GLX/EGL + X11/Wayland）、ALSA/PulseAudio/PipeWire、vsync 与 Present 扩展、零拷贝 dmabuf、色彩空间、嵌入模式窗口协议 |
 | 10 | [SDK 易用性设计](docs/10-SDK易用性设计.md) | **面向二次开发者**：10 行 quick-start、可操作错误信息规范、API 人体工学清单、文档体系、示例矩阵、打包与集成方式、常见任务 cookbook |
+| 11 | [行为规范卷](docs/11-行为规范卷.md) | **验收依据**（自 avbase_design.md §5/§7/§8 并入）：线程与任务模型、背压级联与 seek 序列、三级水位表。Phase 1–2 的验收标准引用本章 |
 
 ---
 
@@ -310,7 +315,7 @@ avbase/
 │                               inspect 的 doctor/play/dump/golden 子命令
 ├── examples/                ✅ 2 个 / 328 行（headless · play_sdl2）；⬜ 其余 10 个
 ├── third_party/             ⬜ 按设计保持为空（不 vendor）
-└── docs/                    ✅ 13 篇（01–10 + PROGRESS + BUILDING + 项目架构与能力分析，
+└── docs/                    ✅ 14 篇（01–11 + PROGRESS + BUILDING + 项目架构与能力分析，
                              约 49.5 万字符）
                              ⬜ API · COOKBOOK · MIGRATION · TROUBLESHOOTING
                                 EXTENDING · PERFORMANCE · CHANGELOG（M13 发版 blocker）
