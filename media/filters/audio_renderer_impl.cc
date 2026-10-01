@@ -132,7 +132,14 @@ void AudioRendererImpl::StartPlayingFrom(base::TimeDelta time) {
   if (!initialized_ || stopping_) {
     return;
   }
-  serial_ = decoder_stream_.demuxer_stream()->serial();
+  // Same adoption as the video side (see the comment there): the flush that
+  // came with the seek read the demuxer's serial while the demuxer was still
+  // moving, so this is where the new generation is actually picked up.
+  const int32_t stream_serial = decoder_stream_.demuxer_stream()->serial();
+  if (serial_ != stream_serial) {
+    serial_ = stream_serial;
+    decoder_stream_.AdoptSerial(serial_);
+  }
   algorithm_.FlushBuffers();
   {
     base::AutoLock scoped(handoff_lock_);
@@ -315,6 +322,11 @@ void AudioRendererImpl::OnDecoderOutput(
       ended_cb_.Run();
     }
   } else if (!status.is_ok()) {
+    if (status.code() == DecoderStatus::Codes::kDecodingAborted) {
+      // A flush is in progress (the seek adopts the new generation with one);
+      // the video side has the same tolerance for the same reason.
+      return;
+    }
     LOG(ERROR) << "ijkpp.adec: decode failed (" << status.AsDebugString()
                << "), reporting to the pipeline";
     // DecoderStream has already run its fallback chain by the time it reports a

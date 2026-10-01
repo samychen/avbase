@@ -413,6 +413,21 @@ void DecoderStream<Traits>::OnDecoderOutput(OutputRefPtr output) {
 }
 
 template <typename Traits>
+void DecoderStream<Traits>::AdoptSerial(int32_t serial) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (serial_ == serial) {
+    return;
+  }
+  serial_ = serial;
+  // Anything buffered belongs to the generation being left behind; the pending
+  // reads stay pending, and the next output satisfies them.
+  decoded_outputs_.clear();
+  pending_buffers_.clear();
+  pending_buffer_index_ = 0;
+  end_of_stream_ = false;
+}
+
+template <typename Traits>
 void DecoderStream<Traits>::Flush(int32_t serial, FlushCB closure) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   flushing_ = true;

@@ -97,7 +97,19 @@ void VideoRendererImpl::StartPlayingFrom(base::TimeDelta time) {
   if (!initialized_ || stopping_) {
     return;
   }
-  serial_ = decoder_stream_.demuxer_stream()->serial();
+  // Adopt the generation the demuxer is on *now*. The flush that came with the
+  // seek ran while the demuxer was still moving (DoSeek starts the two in
+  // parallel), so the decoder stream was left filtering on the old serial and
+  // dropped every packet of the new one: after a seek, video never resumed.
+  // The headless end-to-end test cannot see it -- its null sink does not count
+  // frames -- and tests/integration/pipeline_synthetic_unittest.cc reproduces
+  // it
+  // (after SeekTo(5 s), not one frame of generation 1 reached the display).
+  const int32_t stream_serial = decoder_stream_.demuxer_stream()->serial();
+  if (serial_ != stream_serial) {
+    serial_ = stream_serial;
+    decoder_stream_.AdoptSerial(serial_);
+  }
   compositor_.Flush();
   ended_ = false;
   paused_ = false;

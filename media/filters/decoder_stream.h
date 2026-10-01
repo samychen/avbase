@@ -173,6 +173,15 @@ class IJKPP_MEDIA_EXPORT DecoderStream {
   // |closure|. |serial| is the demuxer's new serial, so buffers already in
   // flight can be recognized and dropped.
   void Flush(int32_t serial, FlushCB closure);
+  // Adopts |serial| as the current generation *without* disturbing a pending
+  // read. Flush() is the wrong tool for that: it completes outstanding reads
+  // with kDecodingAborted, and a renderer's decode pump -- whose read callback
+  // clears read_outstanding_ -- is not re-armed by that status, so the pump
+  // stops for good. This exists because the flush that comes with a seek runs
+  // while the demuxer is still moving, which leaves the stream filtering on the
+  // previous generation's serial; the sub-renderers adopt the new one when the
+  // seek completes (StartPlayingFrom).
+  void AdoptSerial(int32_t serial);
 
   size_t buffered_outputs() const { return decoded_outputs_.size(); }
   bool CanReadWithoutStalling() const;
