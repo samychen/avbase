@@ -2,7 +2,7 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M8 ✅ · 端到端播放 ✅ · M9 进行中（限速假件 + 三级 HWM + 精确 seek ✅）**
+## 当前状态：**M0–M8 ✅ · 端到端播放 ✅ · M9 进行中（三级 HWM + 精确 seek + DataSource 桥 + 饥饿信号 ✅）**
 
 最后更新：2026-10-02（第十二轮）—— **M9 第二步：精确 seek 全链落地。** `SeekTo(kAccurate)`
 从"警告 + 关键帧"变成真实现：媒体层丢弃窗口 + 呈现帧到达检测 + facade 侧
@@ -19,6 +19,25 @@
 `check_invariants` 全过（220 文件）且 C23 列宽基线 323→310（只降不升）。本轮在 **macOS / AppleClang 21 / FFmpeg 7.1.1 (Homebrew) / SDL2 2.32** 上开发——这是项目第一次在 Linux 之外构建，见 §10.1 的四项 macOS 修复。
 > 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
 > 27 个文件转正进构建）
+
+## 第十三轮（本轮）：DataSource 桥（M4 余项收口）+ 饥饿信号（M9 第三块）
+
+| 组件 | 说明 | 备注 |
+|---|---|---|
+| `platform/ffmpeg/data_source_io.{h,cc}` | **DataSource → AVIOContext 桥**，M4 余项收口：内存缓冲 / 宿主 `DataSource` 经自定义 AVIOContext 进入 FFmpegDemuxer（kUri/kFd 仍走协议层）。桥自持字节位置——`avio_tell()` 是"FFmpeg 消费到哪"，不是"下一字节从哪来"，混用会毁掉每次 seek；读路径只用 `ReadBlocking`（D3 契约），demuxer 的 interrupt flag 短路阻塞读，Stop() 会 `Abort()` 源 | 2 端到端用例（探针/尺寸/时长过桥）；AVFMT_FLAG_CUSTOM_IO 下 `avformat_close_input` 不管 pb，自定义 pb 的正确终结符是 `avio_context_free`（`avio_closep` 会把 opaque 当 URLContext 释放）；`avio_alloc_context` 的缓冲归 FFmpeg 所有，必须 `av_malloc` |
+| `renderer_impl` 饥饿信号 | `CheckBufferingTransitions()`（10ms 时钟节拍，S1）：所辖流全部干涸 → kHaveNothing，数据恢复 → kHaveEnough，只有边沿过界。**这是 BufferController 循环的第一个真实触发者**——此前 `OnBufferingStart` 没有任何调用方，三级 HWM 永远停在第一步 | 无新增用例（管线 seek 夹具的手动泵天然制造干涸边沿，409 全绿即回归证据）；防滞回（trickle 振荡）留待限速源用例观察 |
+| `player` 侧 | `CreateDemuxer` 接受全部描述符种类；demuxer 内部对不支持的种类报可操作错误 | |
+
+### 遗留（M9 内，更新）
+
+1. **限速源卡顿-恢复集成用例**：前置已齐（桥 + 饥饿信号），差夹具——
+   FFmpegDemuxer(ThrottledDataSource(Memory(file))) + 假 sink 的管线级驱动，
+   断言 kHaveNothing→kHaveEnough 的边沿与 hwm_step 递进。下一轮第一优先。
+2. RetryDataSource / LiveDataSource / UrlRewriteInterceptor（故障注入假件就绪）。
+3. docs/07 §5 其余管线级断言。
+4. 精确 seek 的 golden 验证等 M10/Q8。
+
+---
 
 ## 第十二轮（本轮）：M9 精确 seek——丢弃窗口 · 到达检测 · SeekController
 

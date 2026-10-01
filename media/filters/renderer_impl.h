@@ -211,6 +211,12 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   void OnVideoStreamEnded();
   void OnAudioStreamEnded();
   void CheckForEnded();
+  // S1, from the 10 ms clock push: publishes kHaveNothing when every stream
+  // the renderer owns has run dry, and kHaveEnough when data flows again.
+  // This is the real trigger behind the facade's BufferController cycles
+  // -- before it existed, OnBufferingStart had no caller and the three-tier
+  // HWM could never advance (M9).
+  void CheckBufferingTransitions();
   static AudioParameters MakeAudioParameters(const AudioDecoderConfig& config,
                                              int frames_per_buffer);
 
@@ -229,6 +235,14 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   bool has_audio_{false};
   bool ended_{false};
   bool paused_{false};
+  // Set by StartPlayingFrom: the buffering-starvation check below only
+  // applies while rendering, so the dry pipeline before Play() does not
+  // report kHaveNothing on top of kHaveMetadata.
+  bool rendering_{false};
+  // S1-only: the last buffering edge this renderer published. Only the
+  // transitions cross the client boundary -- a repeated state would make
+  // every 10 ms clock tick a kHaveNothing event.
+  bool starved_reported_{false};
   // S1-only: the sub-renderers reported end of stream. The final decision
   // waits for the buffers to drain (CheckForEnded).
   bool video_ended_{false};

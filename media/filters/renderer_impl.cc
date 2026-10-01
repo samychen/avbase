@@ -223,6 +223,24 @@ void RendererImpl::OnAudioStreamEnded() {
   CheckForEnded();
 }
 
+void RendererImpl::CheckBufferingTransitions() {
+  // Only PushMasterClock() calls this, on S1; this TU carries no sequence
+  // checker (the class's S1 discipline is by construction and by the callers
+  // that do have checkers).
+  const bool starved = rendering_ && !ended_ &&
+                       (!video_ || video_->frames_pending() == 0) &&
+                       (!audio_ || audio_->buffered_frames() == 0);
+  if (starved == starved_reported_) {
+    return;
+  }
+  starved_reported_ = starved;
+  if (client_) {
+    client_->OnBufferingStateChange(
+        starved ? BufferingState::kHaveNothing : BufferingState::kHaveEnough,
+        base::TimeDelta());
+  }
+}
+
 void RendererImpl::CheckForEnded() {
   if (!initialized_ || ended_) {
     return;
@@ -330,6 +348,14 @@ void RendererImpl::StartPlayingFrom(base::TimeDelta time) {
 
 void RendererImpl::PushMasterClock() {
   if (!initialized_ || ended_) {
+    // A starvation left open by the end of playback must not outlive it.
+    if (starved_reported_) {
+      starved_reported_ = false;
+      if (client_) {
+        client_->OnBufferingStateChange(BufferingState::kHaveEnough,
+                                        base::TimeDelta());
+      }
+    }
     clock_push_scheduled_ = false;
     return;
   }
@@ -337,6 +363,7 @@ void RendererImpl::PushMasterClock() {
   // decoder EOS, but "ended" also needs the buffers to drain, and nobody else
   // re-evaluates that.
   CheckForEnded();
+  CheckBufferingTransitions();
   const AvSyncController::Snapshot snapshot = av_sync_->GetSnapshot();
   if (video_ && snapshot.master_valid) {
     // Posted, not called: the compositor's write side must stay on S3 (see the
