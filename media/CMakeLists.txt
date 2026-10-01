@@ -35,6 +35,8 @@ add_library(ijkpp_media
     filters/audio_renderer_impl.cc
     filters/decoder_selector.cc
     filters/decoder_stream.cc
+    filters/null_audio_sink.cc
+    filters/null_video_sink.cc
     filters/renderer_impl.cc
     filters/video_renderer_impl.cc
     filters/wsola_internals.cc
