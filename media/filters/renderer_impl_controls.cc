@@ -106,6 +106,14 @@ void RendererImpl::OnVideoFramePresented(base::TimeDelta timestamp,
         FROM_HERE, base::BindOnce(&RendererImpl::OnAccurateSeekTargetReached,
                                   base::Unretained(this)));
   }
+  // The recovery edge must not depend on the 10 ms sampler either: a frame
+  // just left for the display, which is exactly when starvation may have
+  // ended. 30 hops/s is nothing; a missed kHaveEnough leaves the facade's
+  // HWM stuck mid-cycle.
+  deps_.media_task_runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(&RendererImpl::CheckBufferingTransitions,
+                     base::Unretained(this)));
 }
 
 void RendererImpl::OnAccurateSeekTargetReached() {

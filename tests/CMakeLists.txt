@@ -79,7 +79,9 @@ if(IJKPP_ENABLE_FFMPEG)
       SOURCES unit/media_filters/ffmpeg_audio_decoder_unittest.cc
               unit/media_filters/ffmpeg_demuxer_unittest.cc
               unit/media_filters/ffmpeg_video_decoder_unittest.cc
-      DEPS ijkpp::platform_ffmpeg ijkpp::base_test_support)
+              unit/media_filters/pipeline_throttle_unittest.cc
+      DEPS ijkpp::platform_ffmpeg ijkpp::media_test_support
+           ijkpp::base_test_support)
   target_compile_definitions(media_ffmpeg_unittests PRIVATE
       IJKPP_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata")
 endif()

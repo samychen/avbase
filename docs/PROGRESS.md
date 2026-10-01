@@ -45,7 +45,13 @@
 
 ### 遗留（M9 内，更新）
 
-1. **限速源卡顿-恢复集成用例**：断言层已就位（边沿到达客户端），差的是
+1. **两个饥饿边沿的残余竞态（本轮新登记，诊断中）**：(a) 精确 seek 用例的
+   kHaveEnough 恢复边沿仍有 1/6 偶发丢失（已 DISABLED，flush 侧的 kHaveNothing
+   是确定性的，关键帧用例两侧边沿全过并留在门禁里）；(b) 限速源用例
+   （pipeline_throttle_unittest，已进构建）跑出了"EOS 先于可观测饥饿"——两者指向
+   同一疑点：恢复/干涸的观察窗口与解码泵推进的相互作用，需要带时间线的插桩而不是
+   放宽断言。
+2. **限速源卡顿-恢复集成用例**：断言层已就位（边沿到达客户端），差的是
    FFmpeg+ThrottledDataSource 的夹具变体（进 media_ffmpeg_unittests）——
    FFmpegDemuxer(ThrottledDataSource(Memory(file))) + 假 sink 的管线级驱动，
    断言 kHaveNothing→kHaveEnough 的边沿与 hwm_step 递进。下一轮第一优先。
