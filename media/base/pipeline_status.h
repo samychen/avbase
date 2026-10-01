@@ -5,15 +5,14 @@
 // Mirrors Chromium's `media/base/pipeline_status.h` (BSD-3-Clause), with the
 // browser-only codes (encryption, live trace, WebMedia* ) removed.
 //
-//
 // STATUS: IN THE BUILD (promoted from DRAFT, tenth round)
-// (promoted from DRAFT, tenth round) (milestone M8, docs/08 §2).
 // PROMOTED into the build in the tenth round, after a full compile and test
 // run (docs/PROGRESS.md §3l). Any wording below saying this file has never
 // been compiled, or is excluded from every CMake target, is HISTORICAL: it
 // describes the state when the file was written and is kept so the reasoning
 // behind each gap list stays readable. The gap lists themselves are still
 // open unless a later note says otherwise.
+// (milestone M8, docs/08 §2).
 // Interface frozen so that M7 (RendererImpl / VideoRendererImpl /
 // AudioRendererImpl) and M8 (pipeline_impl + Player wiring) can be written in
 // parallel against a fixed contract, the same way player/public/ was frozen

@@ -3,16 +3,16 @@
 // found in the LICENSE file.
 //
 // STATUS: IN THE BUILD (promoted from DRAFT, tenth round)
-// Never compiled. The header carries the
 // PROMOTED into the build in the tenth round, after a full compile and test
 // run (docs/PROGRESS.md §3l). Any wording below saying this file has never
 // been compiled, or is excluded from every CMake target, is HISTORICAL: it
 // describes the state when the file was written and is kept so the reasoning
 // behind each gap list stays readable. The gap lists themselves are still
 // open unless a later note says otherwise.
-// gap list; the two most consequential are gap 3 (text tracks are accepted and
-// silently ignored, which is a lie the SDK must not tell) and gap 2
-// (AudioParameters are synthesised here because media/audio/ does not exist).
+// Never compiled. The header carries the gap list; the two most consequential
+// are gap 3 (text tracks are accepted and silently ignored, which is a lie the
+// SDK must not tell) and gap 2 (AudioParameters are synthesised here because
+// media/audio/ does not exist).
 
 #include "media/filters/renderer_impl.h"
 

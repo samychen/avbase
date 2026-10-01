@@ -8,13 +8,13 @@
 // below.
 //
 // STATUS: IN THE BUILD (promoted from DRAFT, tenth round)
-// (milestone M7, docs/08 §2).
 // PROMOTED into the build in the tenth round, after a full compile and test
 // run (docs/PROGRESS.md §3l). Any wording below saying this file has never
 // been compiled, or is excluded from every CMake target, is HISTORICAL: it
 // describes the state when the file was written and is kept so the reasoning
 // behind each gap list stays readable. The gap lists themselves are still
 // open unless a later note says otherwise.
+// (milestone M7, docs/08 §2).
 // Written in an environment with no compiler, so it has never been built or
 // run. Excluded from every CMake target on purpose: a file that cannot compile
 // must not be reachable from a build.

@@ -15,14 +15,14 @@
 // If a second consumer appears (AudioRendererImpl's own buffering, or the M9
 // watermarks), that is the signal to move it.
 // STATUS: IN THE BUILD (promoted from DRAFT, tenth round)
-// NOT YET IN THE
 // PROMOTED into the build in the tenth round, after a full compile and test
 // run (docs/PROGRESS.md §3l). Any wording below saying this file has never
 // been compiled, or is excluded from every CMake target, is HISTORICAL: it
 // describes the state when the file was written and is kept so the reasoning
 // behind each gap list stays readable. The gap lists themselves are still
 // open unless a later note says otherwise.
-// BUILD. Never compiled; see the gap list in audio_renderer_algorithm.h.
+// NOT YET IN THE BUILD. Never compiled; see the gap list in
+// audio_renderer_algorithm.h.
 
 #ifndef IJKPP_MEDIA_FILTERS_AUDIO_FRAME_QUEUE_H_
 #define IJKPP_MEDIA_FILTERS_AUDIO_FRAME_QUEUE_H_

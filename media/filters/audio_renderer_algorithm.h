@@ -28,21 +28,21 @@
 // few hundred lines, needs no external code, and -- unlike naive resampling --
 // keeps pitch constant while the rate changes, which is what
 // STATUS: IN THE BUILD (promoted from DRAFT, tenth round)
-// ` is supposed to sound like. STATUS: PROMOTED FROM DRAFT — NOT YET IN
 // PROMOTED into the build in the tenth round, after a full compile and test
 // run (docs/PROGRESS.md §3l). Any wording below saying this file has never
 // been compiled, or is excluded from every CMake target, is HISTORICAL: it
 // describes the state when the file was written and is kept so the reasoning
 // behind each gap list stays readable. The gap lists themselves are still
 // open unless a later note says otherwise.
-// THE BUILD (milestone M7, docs/08 §2). Written in an environment with no
-// compiler, so it has never been built. It is excluded from every CMake target
-// on purpose: a file that cannot compile must not be reachable from a build
-// (the convention docs/PROGRESS.md records from the fifth round). Gaps to close
-// before it joins `ijkpp_media`:
-//   1. Compile it. `-std=c++20 -fno-exceptions -fno-rtti -Werror`, plus the
-//      Google warning set; the DSP loops are the kind of code where a signed/
-//      unsigned comparison or a narrowing conversion shows up immediately.
+// ` is supposed to sound like. STATUS: PROMOTED FROM DRAFT — NOT YET IN THE
+// BUILD (milestone M7, docs/08 §2). Written in an environment with no compiler,
+// so it has never been built. It is excluded from every CMake target on
+// purpose: a file that cannot compile must not be reachable from a build (the
+// convention docs/PROGRESS.md records from the fifth round). Gaps to close
+// before it joins `ijkpp_media`: 1. Compile it. `-std=c++20 -fno-exceptions
+// -fno-rtti -Werror`, plus the Google warning set; the DSP loops are the kind
+// of code where a signed/ unsigned comparison or a narrowing conversion shows
+// up immediately.
 // 2. Verify Similarity() against internal::SimilarityFloat (see the gap above).
 // 3. Run docs/07 §3.9's checklist, in particular the FFT pitch assertion --
 // that is Δ17's acceptance test and the only thing that proves replacing

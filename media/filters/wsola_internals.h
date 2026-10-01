@@ -53,15 +53,14 @@
 // kept as PROVENANCE rather than deleted: a reader should still know that three
 // of these functions knowingly differ from Chromium's.
 //
-//
 // STATUS: IN THE BUILD (promoted from DRAFT, tenth round)
-// (promoted from DRAFT, tenth round). Never compiled; see the gap list in
 // PROMOTED into the build in the tenth round, after a full compile and test
 // run (docs/PROGRESS.md §3l). Any wording below saying this file has never
 // been compiled, or is excluded from every CMake target, is HISTORICAL: it
 // describes the state when the file was written and is kept so the reasoning
 // behind each gap list stays readable. The gap lists themselves are still
 // open unless a later note says otherwise.
+// (promoted from DRAFT, tenth round). Never compiled; see the gap list in
 // audio_renderer_algorithm.h.
 //
 // NOTE ON THE MARKER MECHANISM (kept after promotion because it is a live
