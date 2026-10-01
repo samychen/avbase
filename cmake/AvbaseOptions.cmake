@@ -10,6 +10,19 @@ option(AVBASE_ENABLE_IOS          "Build the iOS backend"                     OF
 option(AVBASE_ENABLE_CAPI         "Build the C ABI compatibility layer"       OFF)
 option(AVBASE_BUILD_SHARED        "Build shared libraries instead of static"  OFF)
 
+# Hardware decoder factories (Phase 3). Each is a thin FFmpeg-hwaccel factory:
+# the decode work is the platform's video device, the frames leave as typed
+# NativeHandles, and the fallback chain absorbs a missing device. A factory
+# only builds when AVBASE_ENABLE_FFMPEG does (they instantiate
+# FFmpegHwVideoDecoder); platform/CMakeLists enforces that.
+if(APPLE)
+  option(AVBASE_ENABLE_VIDEOTOOLBOX "Build the VideoToolbox hw decoder factory" ON)
+else()
+  option(AVBASE_ENABLE_VIDEOTOOLBOX "Build the VideoToolbox hw decoder factory" OFF)
+endif()
+option(AVBASE_ENABLE_VAAPI  "Build the VAAPI hw decoder factory"   OFF)
+option(AVBASE_ENABLE_D3D11  "Build the D3D11 hw decoder factory"   OFF)
+
 option(AVBASE_BUILD_TESTS    "Build unit/contract/integration tests" ${AVBASE_IS_TOP_LEVEL})
 option(AVBASE_BUILD_EXAMPLES "Build example programs"               ${AVBASE_IS_TOP_LEVEL})
 option(AVBASE_BUILD_BENCH    "Build benchmarks"                     OFF)

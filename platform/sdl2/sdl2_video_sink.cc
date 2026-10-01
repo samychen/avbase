@@ -8,7 +8,10 @@
 
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "platform/sdl2/surface.h"
+
+#include <atomic>
 
 namespace avbase::media {
 namespace {
@@ -127,6 +130,28 @@ void Sdl2VideoSink::PresentOne() {
   if (playing_.load() && callback_) {
     base::scoped_refptr<VideoFrame> frame =
         callback_->Render(base::TimeTicks(), base::TimeTicks());
+    // Zero-copy contract (avbase §6.2): a hardware frame arrives GPU-resident
+    // and SDL2's CPU blit cannot take it. The readback is EXPLICIT here --
+    // ToI420() -- so the GPU path stays the default and the cost shows up in
+    // exactly one place. A zero-copy SDL display path (NV12 texture import)
+    // is what replaces this when it lands; until then hardware playback is
+    // still correct, just with one readback per presented frame.
+    if (frame && !frame->IsMappable()) {
+      base::scoped_refptr<VideoFrame> mapped = frame->ToI420();
+      if (!mapped) {
+        // No readback path installed: treat as a submit failure so the
+        // renderer's stats tell the truth instead of dropping silently.
+        submit_failures_.fetch_add(1);
+        frame = nullptr;
+      } else {
+        static std::atomic<bool> warned{false};
+        if (!warned.exchange(true)) {
+          LOG(WARNING) << "sdl2 sink read back a hardware frame via ToI420(); "
+                          "expect this only on the CPU-fallback display path";
+        }
+        frame = std::move(mapped);
+      }
+    }
     if (discard_.load() || !frame) {
       frames_dropped_.fetch_add(1);
     } else if (UploadAndPresent(*frame)) {

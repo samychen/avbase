@@ -4,6 +4,9 @@
 
 #include "media/base/video_frame.h"
 
+#include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
+
 #include "gtest/gtest.h"
 
 namespace avbase::media {
@@ -115,6 +118,133 @@ TEST(SizeTest, Helpers) {
   EXPECT_TRUE(empty.IsEmpty());
   EXPECT_FALSE(one.IsEmpty());
   EXPECT_EQ(area.GetArea(), 20);
+}
+
+// ---- Phase 3: the native-buffer branch -------------------------------------
+
+TEST(VideoFrameTest, WrapNativeBufferCarriesTypedHandle) {
+  int dummy_handle = 0;
+  bool released = false;
+  auto frame = VideoFrame::WrapNativeBuffer(
+      NativeHandle{NativeHandleKind::kCVPixelBuffer, &dummy_handle, 0},
+      VideoFormat::kNV12, Size{1920, 1080}, Size{1920, 1080}, Rational{1, 1},
+      base::Milliseconds(33), base::Microseconds(33333), 7,
+      base::BindOnce([&released] { released = true; }),
+      base::RepeatingCallback<base::scoped_refptr<VideoFrame>()>());
+  ASSERT_TRUE(frame);
+  EXPECT_FALSE(frame->IsMappable());
+  EXPECT_EQ(frame->storage_type(), VideoFrame::StorageType::kStorageOpaque);
+  EXPECT_EQ(frame->native_handle().kind, NativeHandleKind::kCVPixelBuffer);
+  EXPECT_EQ(frame->native_handle().id, &dummy_handle);
+  EXPECT_EQ(frame->opaque_handle(), &dummy_handle);
+  EXPECT_EQ(frame->format(), VideoFormat::kNV12);
+  EXPECT_EQ(frame->serial(), 7);
+  // No CPU planes exist behind a GPU surface.
+  EXPECT_TRUE(frame->visible_data(VideoFrame::kYPlane).empty());
+  EXPECT_FALSE(released);
+  frame = nullptr;
+  EXPECT_TRUE(released);
+}
+
+TEST(VideoFrameTest, NativeBufferReleaseRunsOnceAtLastUnref) {
+  int dummy_handle = 0;
+  int releases = 0;
+  auto frame = VideoFrame::WrapNativeBuffer(
+      NativeHandle{NativeHandleKind::kVaapiSurface, &dummy_handle, 3},
+      VideoFormat::kNV12, Size{3840, 2160}, Size{3840, 2160}, Rational{1, 1},
+      base::TimeDelta(), base::TimeDelta(), 0,
+      base::BindOnce([&releases] { ++releases; }),
+      base::RepeatingCallback<base::scoped_refptr<VideoFrame>()>());
+  // Cloning the reference (what passing a frame to a sink does) must not run
+  // the release callback; only dropping the LAST reference does.
+  base::scoped_refptr<VideoFrame> second = frame;
+  second = nullptr;
+  EXPECT_EQ(releases, 0);
+  frame = nullptr;
+  EXPECT_EQ(releases, 1);
+}
+
+TEST(VideoFrameTest, NativeBufferHandleNotAliasedByCopies) {
+  // The handle travels by value with the frame, so every reference reports
+  // the same typed handle without extra plumbing.
+  int dummy_handle = 0;
+  auto frame = VideoFrame::WrapNativeBuffer(
+      NativeHandle{NativeHandleKind::kD3D11Texture, &dummy_handle, 5},
+      VideoFormat::kNV12, Size{1280, 720}, Size{1280, 720}, Rational{1, 1},
+      base::TimeDelta(), base::TimeDelta(), 0, base::DoNothing(),
+      base::RepeatingCallback<base::scoped_refptr<VideoFrame>()>());
+  base::scoped_refptr<VideoFrame> second = frame;
+  frame = nullptr;
+  ASSERT_TRUE(second);
+  EXPECT_EQ(second->native_handle().kind, NativeHandleKind::kD3D11Texture);
+  EXPECT_EQ(second->native_handle().subresource, 5);
+}
+
+TEST(VideoFrameTest, ToI420WithoutReadbackPathReturnsNull) {
+  int dummy_handle = 0;
+  auto frame = VideoFrame::WrapNativeBuffer(
+      NativeHandle{NativeHandleKind::kCVPixelBuffer, &dummy_handle, 0},
+      VideoFormat::kNV12, Size{640, 360}, Size{640, 360}, Rational{1, 1},
+      base::TimeDelta(), base::TimeDelta(), 0, base::DoNothing(),
+      base::RepeatingCallback<base::scoped_refptr<VideoFrame>()>());
+  EXPECT_EQ(frame->ToI420(), nullptr);
+}
+
+TEST(VideoFrameTest, ToI420UsesProducerReadbackPath) {
+  int dummy_handle = 0;
+  auto frame = VideoFrame::WrapNativeBuffer(
+      NativeHandle{NativeHandleKind::kCVPixelBuffer, &dummy_handle, 0},
+      VideoFormat::kNV12, Size{640, 360}, Size{640, 360}, Rational{1, 1},
+      base::Milliseconds(10), base::TimeDelta(), 1, base::DoNothing(),
+      base::BindRepeating([]() -> base::scoped_refptr<VideoFrame> {
+        auto out = VideoFrame::CreateBlackFrame(
+            VideoFormat::kI420, Size{640, 360}, Size{640, 360}, Rational{1, 1},
+            base::Milliseconds(10), base::TimeDelta(), 1);
+        out->mutable_data(VideoFrame::kYPlane)[0] = 0xAB;
+        return out;
+      }));
+  base::scoped_refptr<VideoFrame> mapped = frame->ToI420();
+  ASSERT_TRUE(mapped);
+  EXPECT_TRUE(mapped->IsMappable());
+  EXPECT_EQ(mapped->format(), VideoFormat::kI420);
+  EXPECT_EQ(mapped->visible_data(VideoFrame::kYPlane)[0], 0xAB);
+  // The readback may run again: RepeatingCallback, not Once.
+  ASSERT_TRUE(frame->ToI420());
+  // The original GPU frame is untouched by the readback.
+  EXPECT_FALSE(frame->IsMappable());
+}
+
+TEST(VideoFrameTest, ToI420OnOwnedI420ReturnsSamePixels) {
+  auto frame = VideoFrame::CreateBlackFrame(
+      VideoFormat::kI420, Size{320, 240}, Size{320, 240}, Rational{1, 1},
+      base::TimeDelta(), base::TimeDelta(), 0);
+  frame->mutable_data(VideoFrame::kYPlane)[0] = 0x5A;
+  base::scoped_refptr<VideoFrame> same = frame->ToI420();
+  ASSERT_TRUE(same);
+  EXPECT_EQ(same.get(), frame.get());   // A new reference, not a copy.
+  EXPECT_EQ(same->visible_data(VideoFrame::kYPlane)[0], 0x5A);
+}
+
+TEST(VideoFrameTest, ColorSpaceProducerSetter) {
+  auto frame = VideoFrame::CreateBlackFrame(
+      VideoFormat::kI420, Size{320, 240}, Size{320, 240}, Rational{1, 1},
+      base::TimeDelta(), base::TimeDelta(), 0);
+  EXPECT_FALSE(frame->color_space().IsSpecified());
+  frame->set_color_space(VideoColorSpace{
+      ColorMatrix::kBT709, ColorPrimaries::kBT709, ColorTransfer::kBT709,
+      ColorRange::kLimited});
+  EXPECT_TRUE(frame->color_space().IsSpecified());
+  EXPECT_NE(frame->AsDebugString().find("cs=bt709"), std::string::npos);
+}
+
+TEST(NativeHandleKindTest, Names) {
+  EXPECT_STREQ(GetNativeHandleKindName(NativeHandleKind::kNone), "none");
+  EXPECT_STREQ(GetNativeHandleKindName(NativeHandleKind::kVaapiSurface),
+               "vaapi-surface");
+  EXPECT_STREQ(GetNativeHandleKindName(NativeHandleKind::kD3D11Texture),
+               "d3d11-texture");
+  EXPECT_STREQ(GetNativeHandleKindName(NativeHandleKind::kCVPixelBuffer),
+               "cvpixelbuffer");
 }
 
 }  // namespace

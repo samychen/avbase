@@ -8,6 +8,13 @@ if(AVBASE_ENABLE_FFMPEG)
   add_executable(headless headless.cc)
   target_link_libraries(headless PRIVATE avbase::avbase)
   avbase_configure_target(headless)
+
+  # Phase 3: the zero-copy frame-acquisition example. Needs the FFmpeg layer
+  # for decode, and shows NativeHandle frames when a hardware factory is
+  # enabled, but builds (and prints storage=cpu) without any of them.
+  add_executable(pull_frames pull_frames.cc)
+  target_link_libraries(pull_frames PRIVATE avbase::avbase)
+  avbase_configure_target(pull_frames)
 endif()
 
 if(AVBASE_ENABLE_FFMPEG AND AVBASE_ENABLE_SDL2)

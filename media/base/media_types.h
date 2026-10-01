@@ -31,6 +31,7 @@ enum class VideoDecoderType {
   kMediaCodec,
   kVideoToolbox,
   kNvDec,
+  kD3D11VideoDecoder,   // D3D11VA (NVDEC/QuickSync surface through it too).
   kMock,
 };
 

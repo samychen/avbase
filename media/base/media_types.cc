@@ -26,6 +26,7 @@ const char* GetVideoDecoderTypeName(VideoDecoderType type) {
     case VideoDecoderType::kMediaCodec:          return "MediaCodec";
     case VideoDecoderType::kVideoToolbox:        return "VideoToolbox";
     case VideoDecoderType::kNvDec:               return "NvDec";
+    case VideoDecoderType::kD3D11VideoDecoder:   return "D3D11VideoDecoder";
     case VideoDecoderType::kMock:                return "Mock";
   }
   return "invalid";

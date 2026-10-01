@@ -74,7 +74,12 @@ struct AVBASE_PLAYER_EXPORT SeekConfig {
 struct AVBASE_PLAYER_EXPORT VideoConfig {
   bool disabled{false};                                      // "vn"
   DecoderPreference decoder_preference{DecoderPreference::kAuto};
-  HwCodecMask hw_codecs{0};                                   // "mediacodec-*"
+  // Which codecs the hardware path may handle; each bit is an HwCodecFlag.
+  // kAll (not 0) so that the Phase 3 default is "hardware first, fall back to
+  // software", matching decoder_preference{kAuto}; opt OUT per codec with
+  // `hw_codecs & ~HwCodecFlag::kAvc`, or force software via kSoftware.
+  // Replaces ijkplayer's "mediacodec-*" booleans.
+  HwCodecMask hw_codecs{static_cast<HwCodecMask>(HwCodecFlag::kAll)};
   std::string hw_decoder_name;                               // "mediacodec-default-name"
   bool hw_sync_mode{false};                                  // "mediacodec-sync"
   bool hw_async{false};                                      // "videotoolbox-async"

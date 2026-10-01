@@ -4,19 +4,67 @@
 
 ## 当前状态：**M0–M8 ✅ · 端到端播放 ✅ · M9 进行中（三级 HWM + 精确 seek + DataSource 桥 + 饥饿信号 ✅）**
 
-最后更新：2026-10-02（第十四轮）—— **Phase 0 仓库改造：ijkpp → avbase 更名落地。**
-305 个文件三种大小写变体全局替换（`ijkpp/Ijkpp/IJKPP → avbase/Avbase/AVBASE`，
-"ijkplayer" 267 处刻意保留于溯源注释），四个 cmake 模块 `Ijkpp*.cmake → Avbase*.cmake`。
-附带修复：线程截断测试的新前缀 15 字符期望、C23 列宽棘轮 45 行收窄并缩基线
-（286 行，-24）、`renderer_impl.cc` 登记 C1 豁免（540 行，分支既有违规，与更名无关）。
-LGPL 清点出 1 个矛盾待法务决策（见本轮表）；文档合并 docs/11 行为规范卷；
-对外叙事切换为"企业播放器基座"。no-ffmpeg 376/376 全绿，`check_invariants` 全过（258 文件）。
+最后更新：2026-10-02（第十五轮）—— **Phase 3 硬解与零拷贝：VideoToolbox 全链实测打通。**
+`VideoFrame` 落地 NativeBuffer 分支（强类型 GPU 句柄 + 释放回调 + 显式 `ToI420()` 回读，
+avbase §6.2 契约）；`FFmpegHwVideoDecoder`（hw_device_ctx + get_format，platform/ffmpeg）
++ VideoToolbox/VAAPI/D3D11 三个工厂 target；硬解工厂默认插在软解之前，回退链不变；
+颜色空间元数据从零到全（VideoColorSpace + 容器信息兜底表 + 单测）；`examples/pull_frames`
+零拷贝取帧示例。本机实测：pull_frames 8 帧全部 `handle=cvpixelbuffer`（GPU 帧直出），
+headless 全部测试媒体到 kCompleted。ffmpeg 430/430、no-ffmpeg 376/376 全绿，
+invariant 全过（276 文件）。
+> 第十四轮：Phase 0 仓库改造——更名 avbase · LGPL 清点（决策 A）· 文档合并
 > 第十三轮：DataSource 桥（M4 余项收口）+ 饥饿信号（M9 第三块）
 > 第十二轮：M9 精确 seek——丢弃窗口 · 到达检测 · SeekController（407/407 FFmpeg · 372/372 no-ffmpeg）
 > 第十一轮：M9 开篇（限速假件 + 三级 HWM + 管线级 seek 夹具，401/401）
 > 第十轮：播放链路打通（M7 收尾 + M8 接线，359/359，macOS 首建）
 > 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
 > 27 个文件转正进构建）
+
+## 第十五轮（本轮）：Phase 3 硬解与零拷贝——NativeBuffer · VideoToolbox 全链 · 颜色空间
+
+依据 avbase 升级计划 Phase 3（1–2 人 × 4 周的量，本轮落地的是其全部结构 + macOS 一条
+实测链；Linux/Windows 的实测验收依赖对应硬件，留给有设备的环境）。
+
+### 落地内容
+
+| 计划项 | 实现 | 验证 |
+|---|---|---|
+| VideoFrame NativeBuffer 分支 | `NativeHandleKind{kVaapiSurface,kD3D11Texture,kCVPixelBuffer}` + `NativeHandle{kind,id,subresource}`（§6.2：消费者永不盲转）；`WrapNativeBuffer()` 带 `release_cb`（最后引用释放生产端后备存储）与 `to_i420_cb`；`ToI420()` 显式回读——owned I420 返回自身新引用，否则走生产端回读，无回读路径返回 nullptr | 6 个新单测：句柄类型、释放恰好一次、克隆引用共享句柄、无回读返回 null、回读可重复且不动原帧、owned I420 返回同帧 |
+| FFmpeg 硬解路径 | `platform/ffmpeg/ffmpeg_hw_video_decoder.{h,cc}`：`av_hwdevice_ctx_create` + `avcodec_get_hw_config` + get_format 回调（拒答软格式——静默降级是谎报硬解）；hw 帧经 `WrapNativeBuffer` 直出，帧句柄按设备取自 `data[3]`（vt: CVPixelBufferRef / vaapi: VASurfaceID / d3d11: texture+subresource）；中途掉出 hw 路径即报错交给回退链，绝不冒充软解 | 本机实测：`pull_frames` 8/8 帧 `handle=cvpixelbuffer`；headless 全部测试媒体 kCompleted（硬解优先链下） |
+| 显式回读 | `platform/ffmpeg/hw_frame_readback.cc`：`av_hwframe_transfer_data` + sws→I420，只在 `ToI420()` 背后被调 | 单测（回调机制）+ SDL2 sink 改造后可在真实播放中走通 |
+| 平台工厂 | `platform/{videotoolbox,vaapi,d3d11}/` 各一个 factory target：capability `hardware=true, outputs_opaque_surface=true, priority=10`；codec 级掩码门（`CodecAllowedByMask`），被排除的 codec 是"not me"而非错误 | CMake 选项 `AVBASE_ENABLE_VIDEOTOOLBOX/VAAPI/D3D11`（第一个 Apple 默认 ON）；工厂返回 nullptr → DecoderStream 现成的 "declined" 路径 |
+| 选择器接线 | `player_impl` 默认工厂列表：硬解工厂（按偏好）插在软解 FFmpeg 之前，宿主注入仍在最前；掩码过滤在工厂内（DecoderStream 对 null 解码器有现成的 fallback）；`hw_codecs` 默认值从 0 改为 kAll（0 意味着禁用全部硬解，与 kAuto 的"硬解优先"矛盾） | 既有 decoder_stream 回退单测 + 端到端 |
+| 颜色空间兜底 | 新 `media/base/video_color_space.{h,cc}`：四轴类型 + `GuessColorSpaceFallback` 数据表（HDR→BT2020/PQ；≥600 行→BT.709；SD→SMPTE170M；每行整组指定）；`platform/ffmpeg/color_space_bridge` 从 AVFrame 映射，无标签时按**容器**信息兜底（风险 §14.4），软硬解路径统一接入 | 8 个新单测含边界行 599/600 与"永不半指定"不变量 |
+| examples/pull_frames | 自定义 VideoRendererSink 捕获合成层输出帧并逐帧打印句柄类型——零拷贝取帧的活文档 | 本机实测 8 帧 GPU 直出 |
+
+### 关键设计决定
+
+1. **get_format 拒答软格式**：hw 解码器若在 get_format 接受软格式，FFmpeg 会静默降级软解
+   而管线以为自己在硬解——谎报比失败更糟；失败交回退链，事件流里能看到。
+2. **VAAPI/D3D11 本轮编译骨架 + 实测顺延**：解码器与工厂代码完整，但零拷贝**显示**链
+   （VASurface→EGLImage、D3D11-GL interop）是 sink 侧工作，且验收要求对应硬件；解码侧
+   的 GPU 传递对三个平台是同一套代码。
+3. **SDL2 sink 显式回读**：SDL2 是 CPU blit，遇到不透明帧走 `ToI420()` 并告警一次——
+   硬解播放因此保持正确（每帧一次回读），零拷贝显示路径出现后此处替换。
+4. **`pull_frames` 不调 `ToI420()`**：示例的职责是证明零拷贝路径存在，回读反而模糊焦点。
+
+### 与计划的偏差（登记）
+
+- `platform/ffmpeg` 是唯一见 libav 的 target（C8），所以 FFmpeg-hwaccel 介质的硬解解码器
+  必须住在那里；三个平台目录各持一个薄工厂 target 链接它。计划设想的
+  "platform/vaapi/ 等目录装硬解"在原生（非 FFmpeg）解码出现前受 C8 约束。
+- `DecoderPreference::kHardwareOnly` 的"宁败不回退"语义仍只在 Selector 层实现；
+  生产接线按 kAuto/kHardwareFirst 排序，DecoderStream 的配置时重排序是 M9 后续项。
+
+### 验证
+
+- ffmpeg preset：430/430（新增 14 个）；no-ffmpeg：376/376（media/base 不依赖 FFmpeg）。
+- `check_invariants` 全规则通过（276 文件），C23 基线 286 行未增长（新文件全部 ≤80 列）。
+- asan 配置构建+测试（后台）。
+- 本机 VideoToolbox 实测：`pull_frames` 输出 `handle=cvpixelbuffer`（零拷贝 GPU 帧到达
+  合成层边界），headless e2e 全部通过（corrupt_header 按设计失败于 DecodeFailed）。
+- 未跑：4K 硬解 CPU 占用对照、Linux VAAPI-EGL 与 Windows D3D11-GL interop 零拷贝显示链
+  （无设备，Phase 3 验收的环境相关部分）。
 
 ## 第十四轮（本轮）：Phase 0 仓库改造——更名 avbase · LGPL 清点 · 文档合并
 

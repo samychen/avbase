@@ -18,6 +18,7 @@
 #include "media/base/media_constants.h"
 #include "platform/ffmpeg/av_includes.h"
 #include "platform/ffmpeg/av_packet_storage.h"
+#include "platform/ffmpeg/color_space_bridge.h"
 #include "platform/ffmpeg/compat.h"
 
 namespace avbase::media {
@@ -238,6 +239,7 @@ bool FFmpegVideoDecoder::DecodeAvailableFrames() {
       av_frame_unref(frame);
       return false;
     }
+    out->set_color_space(ff::ColorSpaceFromAvFrame(frame, config_));
 
     if (ctx_->sws) {
       uint8_t* dst[4] = {nullptr, nullptr, nullptr, nullptr};

@@ -10,6 +10,8 @@
 
 #include "player/player_impl.h"
 
+#include "player/video_decoder_defaults.h"
+
 #include <algorithm>
 #include <utility>
 
@@ -24,7 +26,6 @@
 #include "media/filters/ffmpeg_decoder_factories.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #endif
-
 namespace avbase {
 namespace {
 
@@ -68,8 +69,16 @@ PlayerImpl::PlayerImpl(const PlayerConfig& config, std::unique_ptr<Deps> deps)
   }
 #if AVBASE_ENABLE_FFMPEG
   // The software FFmpeg decoders are the fallback chain's tail; anything the
-  // host injected keeps its place ahead of them (Δ12).
+  // host injected keeps its place ahead of them (Δ12), and the platform's
+  // hardware factories slot in between when the preference allows hardware.
   if (deps_->video_decoder_factories.empty()) {
+    if (config_.video.decoder_preference !=
+        media::DecoderPreference::kSoftware) {
+      auto hw = DefaultHardwareVideoDecoderFactories(
+          video_thread_.task_runner(), config_.video.hw_codecs);
+      deps_->video_decoder_factories.insert(
+          deps_->video_decoder_factories.end(), hw.begin(), hw.end());
+    }
     deps_->video_decoder_factories.push_back(
         base::MakeRefCounted<media::FFmpegVideoDecoderFactory>(
             video_thread_.task_runner()));

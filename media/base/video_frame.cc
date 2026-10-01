@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 #include "base/check.h"
 
@@ -71,11 +72,70 @@ int VideoFormatPlaneCount(VideoFormat format) {
   return LayoutFor(format).plane_count;
 }
 
+const char* GetNativeHandleKindName(NativeHandleKind kind) {
+  switch (kind) {
+    case NativeHandleKind::kNone:         return "none";
+    case NativeHandleKind::kVaapiSurface: return "vaapi-surface";
+    case NativeHandleKind::kD3D11Texture: return "d3d11-texture";
+    case NativeHandleKind::kCVPixelBuffer: return "cvpixelbuffer";
+  }
+  return "invalid";
+}
+
 VideoFrame::VideoFrame() = default;
 
 VideoFrame::~VideoFrame() {
   std::free(allocation_);
   allocation_ = nullptr;
+  if (release_cb_) {
+    std::move(release_cb_).Run();
+  }
+}
+
+base::scoped_refptr<VideoFrame> VideoFrame::ToI420() const {
+  if (format_ == VideoFormat::kI420 && IsMappable()) {
+    // Already owned I420 CPU memory: hand back another reference to the same
+    // pixels rather than duplicating them.
+    return base::scoped_refptr<VideoFrame>(const_cast<VideoFrame*>(this));
+  }
+  if (to_i420_cb_) {
+    return to_i420_cb_.Run();
+  }
+  return nullptr;
+}
+
+// static
+base::scoped_refptr<VideoFrame> VideoFrame::WrapNativeBuffer(
+    NativeHandle handle,
+    VideoFormat format,
+    Size coded_size,
+    Size natural_size,
+    Rational sar,
+    base::TimeDelta timestamp,
+    base::TimeDelta duration,
+    int32_t serial,
+    base::OnceClosure release_cb,
+    base::RepeatingCallback<base::scoped_refptr<VideoFrame>()> to_i420_cb) {
+  DCHECK(handle.kind != NativeHandleKind::kNone)
+      << "WrapNativeBuffer needs a typed handle; use CreateBlackFrame for "
+         "CPU frames";
+  DCHECK(release_cb) << "a native-buffer frame without a release callback "
+                        "would leak its producer-side backing store";
+
+  base::scoped_refptr<VideoFrame> frame(new VideoFrame());
+  frame->format_ = format;
+  frame->storage_type_ = StorageType::kStorageOpaque;
+  frame->coded_size_ = coded_size;
+  frame->natural_size_ = natural_size;
+  frame->sar_ = sar;
+  frame->timestamp_ = timestamp;
+  frame->duration_ = duration;
+  frame->serial_ = serial;
+  frame->native_handle_ = handle;
+  frame->opaque_handle_ = handle.id;
+  frame->release_cb_ = std::move(release_cb);
+  frame->to_i420_cb_ = std::move(to_i420_cb);
+  return frame;
 }
 
 std::span<const uint8_t> VideoFrame::visible_data(Plane plane) const {
@@ -101,6 +161,13 @@ std::string VideoFrame::AsDebugString() const {
   out += " serial=" + std::to_string(serial_);
   if (storage_type_ != StorageType::kStorageOwned) {
     out += " storage=non-cpu";
+  }
+  if (native_handle_.kind != NativeHandleKind::kNone) {
+    out += " handle=";
+    out += GetNativeHandleKindName(native_handle_.kind);
+  }
+  if (color_space_.IsSpecified()) {
+    out += " cs=" + color_space_.AsDebugString();
   }
   return out;
 }
