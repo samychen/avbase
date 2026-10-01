@@ -128,6 +128,7 @@ void AudioRendererImpl::StartPlayingFrom(base::TimeDelta time) {
     serial_ = stream_serial;
     decoder_stream_.AdoptSerial(serial_);
   }
+  decoder_stream_.HoldReads(false);
   algorithm_.FlushBuffers();
   {
     base::AutoLock scoped(handoff_lock_);
@@ -170,6 +171,9 @@ void AudioRendererImpl::Flush(base::OnceClosure closure) {
     av_sync_->Flush();
   }
   serial_ = decoder_stream_.demuxer_stream()->serial();
+  // Same hold as the video side (see the comment there): reads issued before
+  // StartPlayingFrom() adopts the new generation would burn it as stale.
+  decoder_stream_.HoldReads(true);
   decoder_stream_.Flush(
       serial_, base::BindOnce(
                    [](AudioRendererImpl* self, base::OnceClosure done) {

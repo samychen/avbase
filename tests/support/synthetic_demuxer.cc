@@ -161,6 +161,12 @@ base::TimeDelta SyntheticDemuxer::KeyframeAtOrBefore(
 }
 
 void SyntheticDemuxer::SetPosition(base::TimeDelta time) {
+  std::scoped_lock scoped(lock_);
+  SetPositionLocked(time);
+}
+
+// Callers hold |lock_|.
+void SyntheticDemuxer::SetPositionLocked(base::TimeDelta time) {
   position_ = time;
   next_frame_ = FrameIndexAt(time);
   next_audio_packet_ = AudioPacketAt(spec_, time);
@@ -191,24 +197,35 @@ void SyntheticDemuxer::Initialize(
 }
 
 void SyntheticDemuxer::StartPlayingFrom(base::TimeDelta time, SeekCB cb) {
-  ++seek_count_;
-  // A seek is a new generation: consumers drop anything stamped with the old
-  // serial, which is the whole mechanism behind "no frame from the flushed
-  // generation reaches the display".
-  ++serial_;
-  // A physical seek lands on a keyframe at or before the request, which is what
-  // FFmpegDemuxer does and what the cb's "actual" reports.
-  SetPosition(KeyframeAtOrBefore(time));
-  std::move(cb).Run(OkStatus(), position_);
+  base::TimeDelta actual;
+  {
+    std::scoped_lock scoped(lock_);
+    ++seek_count_;
+    // A seek is a new generation: consumers drop anything stamped with the old
+    // serial, which is the whole mechanism behind "no frame from the flushed
+    // generation reaches the display".
+    ++serial_;
+    // A physical seek lands on a keyframe at or before the request, which is
+    // what FFmpegDemuxer does and what the cb's "actual" reports.
+    SetPositionLocked(KeyframeAtOrBefore(time));
+    actual = position_;
+  }
+  std::move(cb).Run(OkStatus(), actual);
 }
 
 void SyntheticDemuxer::Flush(base::OnceClosure flush_cb) {
-  SetPosition(base::TimeDelta());
+  {
+    std::scoped_lock scoped(lock_);
+    SetPositionLocked(base::TimeDelta());
+  }
   std::move(flush_cb).Run();
 }
 
 void SyntheticDemuxer::Reset(base::OnceClosure reset_cb) {
-  SetPosition(base::TimeDelta());
+  {
+    std::scoped_lock scoped(lock_);
+    SetPositionLocked(base::TimeDelta());
+  }
   std::move(reset_cb).Run();
 }
 
@@ -228,13 +245,14 @@ DemuxerStream* SyntheticDemuxer::GetStream(DemuxerStreamType type) {
 }
 
 DemuxerStats SyntheticDemuxer::GetStats() const {
+  std::scoped_lock scoped(lock_);
   DemuxerStats stats;
   stats.packets_demuxed = static_cast<uint64_t>(packets_read_);
   stats.seek_count = static_cast<uint64_t>(seek_count_);
   return stats;
 }
 
-base::scoped_refptr<DecoderBuffer> SyntheticDemuxer::MakeVideoPacket() {
+base::scoped_refptr<DecoderBuffer> SyntheticDemuxer::MakeVideoPacketLocked() {
   const int64_t index = next_frame_++;
   const std::vector<uint8_t> payload =
       IndexPayload(static_cast<uint32_t>(index));
@@ -248,7 +266,7 @@ base::scoped_refptr<DecoderBuffer> SyntheticDemuxer::MakeVideoPacket() {
   return buffer;
 }
 
-base::scoped_refptr<DecoderBuffer> SyntheticDemuxer::MakeAudioPacket() {
+base::scoped_refptr<DecoderBuffer> SyntheticDemuxer::MakeAudioPacketLocked() {
   const int64_t index = next_audio_packet_++;
   const std::vector<uint8_t> payload =
       IndexPayload(static_cast<uint32_t>(index));
@@ -270,17 +288,21 @@ SyntheticDemuxer::VideoStream::VideoStream(SyntheticDemuxer* owner)
 
 void SyntheticDemuxer::VideoStream::Read(uint32_t count, ReadCB read_cb) {
   DecoderBufferVector out;
-  while (out.size() < count &&
-         owner_->next_frame_ < owner_->spec_.frame_count()) {
-    out.push_back(owner_->MakeVideoPacket());
-  }
-  if (out.empty()) {
-    out.push_back(DecoderBuffer::CreateEOSBuffer());
+  {
+    std::scoped_lock scoped(owner_->lock_);
+    while (out.size() < count &&
+           owner_->next_frame_ < owner_->spec_.frame_count()) {
+      out.push_back(owner_->MakeVideoPacketLocked());
+    }
+    if (out.empty()) {
+      out.push_back(DecoderBuffer::CreateEOSBuffer());
+    }
   }
   std::move(read_cb).Run(Status::kOk, std::move(out));
 }
 
 size_t SyntheticDemuxer::VideoStream::buffered_buffers() const {
+  std::scoped_lock scoped(owner_->lock_);
   const int64_t remaining = owner_->spec_.frame_count() - owner_->next_frame_;
   return static_cast<size_t>(std::max<int64_t>(remaining, 0));
 }
@@ -297,17 +319,21 @@ SyntheticDemuxer::AudioStream::AudioStream(SyntheticDemuxer* owner)
 
 void SyntheticDemuxer::AudioStream::Read(uint32_t count, ReadCB read_cb) {
   DecoderBufferVector out;
-  while (out.size() < count &&
-         owner_->next_audio_packet_ < owner_->spec_.audio_packet_count()) {
-    out.push_back(owner_->MakeAudioPacket());
-  }
-  if (out.empty()) {
-    out.push_back(DecoderBuffer::CreateEOSBuffer());
+  {
+    std::scoped_lock scoped(owner_->lock_);
+    while (out.size() < count &&
+           owner_->next_audio_packet_ < owner_->spec_.audio_packet_count()) {
+      out.push_back(owner_->MakeAudioPacketLocked());
+    }
+    if (out.empty()) {
+      out.push_back(DecoderBuffer::CreateEOSBuffer());
+    }
   }
   std::move(read_cb).Run(Status::kOk, std::move(out));
 }
 
 size_t SyntheticDemuxer::AudioStream::buffered_buffers() const {
+  std::scoped_lock scoped(owner_->lock_);
   const int64_t remaining =
       owner_->spec_.audio_packet_count() - owner_->next_audio_packet_;
   return static_cast<size_t>(std::max<int64_t>(remaining, 0));

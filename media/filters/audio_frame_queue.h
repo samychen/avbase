@@ -27,6 +27,7 @@
 #ifndef IJKPP_MEDIA_FILTERS_AUDIO_FRAME_QUEUE_H_
 #define IJKPP_MEDIA_FILTERS_AUDIO_FRAME_QUEUE_H_
 
+#include <atomic>
 #include <deque>
 #include <optional>
 
@@ -68,7 +69,11 @@ class IJKPP_MEDIA_EXPORT AudioFrameQueue {
   // trade in AudioRendererAlgorithm::PeekAudioWithZeroPrepend.
   void Append(base::scoped_refptr<AudioBuffer> buffer);
 
-  int frames() const { return frames_; }
+  // Atomic because the read crosses sequences: RendererImpl::GetStatistics()
+  // sums it on S1 while S4 mutates the queue. Everything else about this class
+  // is single-sequence by design (see the note below); the atomic avoids
+  // putting a mutex on the audio callback path.
+  int frames() const { return frames_.load(std::memory_order_relaxed); }
   bool empty() const { return buffers_.empty(); }
 
   // Timestamp of the buffer at the front, or nullopt when the queue is empty.
@@ -103,7 +108,7 @@ class IJKPP_MEDIA_EXPORT AudioFrameQueue {
  private:
   std::deque<base::scoped_refptr<AudioBuffer>> buffers_;
   int front_offset_{0};   // frames already consumed within buffers_.front()
-  int frames_{0};         // cached total, so frames() stays O(1)
+  std::atomic<int> frames_{0};  // cached total, so frames() stays O(1)
 };
 
 }  // namespace ijkpp::media

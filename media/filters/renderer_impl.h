@@ -71,6 +71,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/time/tick_clock.h"
@@ -240,6 +241,13 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   // callback; when video finished before audio, the closure died in the
   // returning stack frame and the pipeline waited forever.
   PipelineStatusCallback pending_init_cb_;
+  // Must be last: the two repeating chains below (PushMasterClock /
+  // PushStatistics) are bound through it, so a task that outlives the
+  // renderer -- e.g. the 10 ms clock push still queued while the owner tears
+  // the pipeline down -- is skipped instead of running on freed memory.
+  // Found by the 30-minute TSan soak (SEGV in ~TaskEnvironment's final
+  // RunUntilIdle, iteration 68).
+  base::WeakPtrFactory<RendererImpl> weak_factory_{this};
 };
 
 }  // namespace ijkpp::media

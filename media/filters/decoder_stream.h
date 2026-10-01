@@ -182,6 +182,17 @@ class IJKPP_MEDIA_EXPORT DecoderStream {
   // previous generation's serial; the sub-renderers adopt the new one when the
   // seek completes (StartPlayingFrom).
   void AdoptSerial(int32_t serial);
+  // Gates demuxer reads and decoding between a seek's flush and the restart.
+  // The window is real: the flush runs with the *stale* clock serial (the
+  // demuxer bumps its own in parallel), and the consumer pump keeps calling
+  // Render()/pulling until StartPlayingFrom() adopts the new generation --
+  // reads issued in that window see the new generation's buffers against the
+  // old serial, drop every one of them as stale, and the EOS buffer (which by
+  // contract bypasses the serial filter) ends the stream before it began.
+  // Measured: ~3% of pipeline-level seeks lost the whole generation this way
+  // (docs/PROGRESS.md, #52). Release() re-arms the pump; StartPlayingFrom
+  // pairs the two.
+  void HoldReads(bool hold);
 
   size_t buffered_outputs() const { return decoded_outputs_.size(); }
   bool CanReadWithoutStalling() const;
@@ -226,6 +237,7 @@ class IJKPP_MEDIA_EXPORT DecoderStream {
   bool decode_in_flight_ = false;
   bool end_of_stream_ = false;
   bool flushing_ = false;
+  bool reads_held_ = false;
   int32_t serial_ = 0;
 
   DecoderStatus init_status_;

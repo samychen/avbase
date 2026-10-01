@@ -316,14 +316,15 @@ void RendererImpl::StartPlayingFrom(base::TimeDelta time) {
     deps_.media_task_runner->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&RendererImpl::PushMasterClock,
-                       base::Unretained(this)),
+                       weak_factory_.GetWeakPtr()),
         kClockPushInterval);
   }
   if (!stats_scheduled_) {
     stats_scheduled_ = true;
     deps_.media_task_runner->PostDelayedTask(
         FROM_HERE,
-        base::BindOnce(&RendererImpl::PushStatistics, base::Unretained(this)),
+        base::BindOnce(&RendererImpl::PushStatistics,
+                       weak_factory_.GetWeakPtr()),
         kStatsInterval);
   }
 }
@@ -355,7 +356,8 @@ void RendererImpl::PushMasterClock() {
   }
   deps_.media_task_runner->PostDelayedTask(
       FROM_HERE,
-      base::BindOnce(&RendererImpl::PushMasterClock, base::Unretained(this)),
+      base::BindOnce(&RendererImpl::PushMasterClock,
+                     weak_factory_.GetWeakPtr()),
       kClockPushInterval);
 }
 
@@ -369,7 +371,8 @@ void RendererImpl::PushStatistics() {
   }
   deps_.media_task_runner->PostDelayedTask(
       FROM_HERE,
-      base::BindOnce(&RendererImpl::PushStatistics, base::Unretained(this)),
+      base::BindOnce(&RendererImpl::PushStatistics,
+                     weak_factory_.GetWeakPtr()),
       kStatsInterval);
 }
 

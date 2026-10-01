@@ -35,6 +35,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 
 #include "base/memory/scoped_refptr.h"
 #include "base/task/sequenced_task_runner.h"
@@ -97,8 +98,14 @@ class SyntheticDemuxer final : public Demuxer {
   // carries it, which is what lets a consumer drop a buffer from before a seek
   // (media/base/demuxer_stream.h: "a consumer must drop any whose serial is
   // older than the value returned here after a Flush").
-  int32_t serial() const { return serial_; }
-  int64_t packets_read() const { return packets_read_; }
+  int32_t serial() const {
+    std::scoped_lock scoped(lock_);
+    return serial_;
+  }
+  int64_t packets_read() const {
+    std::scoped_lock scoped(lock_);
+    return packets_read_;
+  }
 
   // The frame a keyframe seek to |time| lands on: the last keyframe at or
   // before
@@ -145,7 +152,10 @@ class SyntheticDemuxer final : public Demuxer {
     }
     int32_t stream_index() const override { return 0; }
     bool SupportsConfigChanges() const override { return false; }
-    int32_t serial() const override { return owner_->serial_; }
+    int32_t serial() const override {
+      std::scoped_lock scoped(owner_->lock_);
+      return owner_->serial_;
+    }
     size_t buffered_buffers() const override;
     size_t buffered_bytes() const override { return 0; }
     base::TimeDelta buffered_duration() const override;
@@ -171,7 +181,10 @@ class SyntheticDemuxer final : public Demuxer {
     }
     int32_t stream_index() const override { return 1; }
     bool SupportsConfigChanges() const override { return false; }
-    int32_t serial() const override { return owner_->serial_; }
+    int32_t serial() const override {
+      std::scoped_lock scoped(owner_->lock_);
+      return owner_->serial_;
+    }
     size_t buffered_buffers() const override;
     size_t buffered_bytes() const override { return 0; }
     base::TimeDelta buffered_duration() const override;
@@ -184,9 +197,11 @@ class SyntheticDemuxer final : public Demuxer {
 
   // Packet factories. The index travels in the payload, the geometry in the
   // timestamp and the keyframe flag. Not const: producing a packet is what
-  // advances the cursor.
-  base::scoped_refptr<DecoderBuffer> MakeVideoPacket();
-  base::scoped_refptr<DecoderBuffer> MakeAudioPacket();
+  // advances the cursor. The Locked variants require |lock_| held; the Read()
+  // methods call them under one lock so a batch is a consistent snapshot.
+  base::scoped_refptr<DecoderBuffer> MakeVideoPacketLocked();
+  base::scoped_refptr<DecoderBuffer> MakeAudioPacketLocked();
+  void SetPositionLocked(base::TimeDelta time);
 
   const SyntheticSpec spec_;
   MediaInfo media_info_;
@@ -198,6 +213,12 @@ class SyntheticDemuxer final : public Demuxer {
   int64_t next_audio_packet_ = 0;
   base::TimeDelta position_;
   int32_t serial_ = 0;
+  // Guards every mutable member below the streams' Read()s: the pipeline's
+  // two decoder sequences (S3/S4) read the two streams CONCURRENTLY, and S1
+  // seeks while they do. The real demuxer locks internally; the double must
+  // not lie about that (TSan caught S3 and S4 racing here the first time
+  // HoldReads() released both streams at once).
+  mutable std::mutex lock_;
   int seek_count_ = 0;
   int64_t packets_read_ = 0;
 };

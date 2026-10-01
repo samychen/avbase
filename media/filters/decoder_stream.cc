@@ -240,7 +240,7 @@ void DecoderStream<Traits>::Deliver(ReadCB read_cb, DecoderStatus status,
 template <typename Traits>
 void DecoderStream<Traits>::ReadFromDemuxer() {
   if (demuxer_read_in_flight_ || !demuxer_stream_ || end_of_stream_ ||
-      flushing_) {
+      flushing_ || reads_held_) {
     return;
   }
   if (decoded_outputs_.size() >= kDecodeWatermark) {
@@ -320,8 +320,21 @@ void DecoderStream<Traits>::OnBufferReady(
 }
 
 template <typename Traits>
+void DecoderStream<Traits>::HoldReads(bool hold) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  reads_held_ = hold;
+  if (!hold) {
+    // Re-arm the pump: whatever Read() or priming follows will find the
+    // stream ready, but an already-outstanding consumer read delivered while
+    // held would otherwise sit unserved until the next pull.
+    DecodeNextBuffer();
+    MaybeDeliver();
+  }
+}
+
+template <typename Traits>
 void DecoderStream<Traits>::DecodeNextBuffer() {
-  if (decode_in_flight_ || flushing_ || !decoder_) {
+  if (decode_in_flight_ || flushing_ || reads_held_ || !decoder_) {
     return;
   }
   // This is the real back-pressure point: output accumulates here, so gating

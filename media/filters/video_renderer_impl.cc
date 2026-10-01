@@ -110,6 +110,7 @@ void VideoRendererImpl::StartPlayingFrom(base::TimeDelta time) {
     serial_ = stream_serial;
     decoder_stream_.AdoptSerial(serial_);
   }
+  decoder_stream_.HoldReads(false);
   compositor_.Flush();
   ended_ = false;
   paused_ = false;
@@ -134,6 +135,11 @@ void VideoRendererImpl::Flush(int32_t serial, base::OnceClosure closure) {
   compositor_.Flush();
   ended_ = false;
   serial_ = serial;
+  // Hold reads until StartPlayingFrom adopts the new generation: the pump is
+  // free-running, and a read issued here would see new-generation buffers
+  // against this stale |serial| and burn the whole generation as "stale"
+  // (docs/PROGRESS.md, #52).
+  decoder_stream_.HoldReads(true);
   decoder_stream_.Flush(serial, std::move(closure));
 }
 

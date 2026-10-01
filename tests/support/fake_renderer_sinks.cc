@@ -6,6 +6,10 @@
 
 #include <utility>
 
+#include "base/functional/bind.h"
+#include "base/location.h"
+#include "base/synchronization/waitable_event.h"
+
 namespace ijkpp::media::test {
 
 void FakeVideoSink::Initialize(RenderCallback* callback) {
@@ -109,8 +113,27 @@ int FakeAudioSink::PullPeriod(AudioBus* dest) {
   if (!callback || !dest) {
     return 0;
   }
-  return callback->Render(base::TimeDelta(), base::TimeTicks(),
-                          AudioGlitchInfo(), dest);
+  if (!render_runner_) {
+    return callback->Render(base::TimeDelta(), base::TimeTicks(),
+                            AudioGlitchInfo(), dest);
+  }
+  // One device period, rendered on the renderer's own sequence. The caller
+  // blocks until it is done, which is what makes this equivalent to a device
+  // thread pulling at this instant -- and what keeps every renderer state
+  // touch on one sequence.
+  base::WaitableEvent done;
+  int written = 0;
+  render_runner_->PostTask(
+      FROM_HERE, base::BindOnce(
+                     [](RenderCallback* cb, AudioBus* bus, int* out,
+                        base::WaitableEvent* ev) {
+                       *out = cb->Render(base::TimeDelta(), base::TimeTicks(),
+                                         AudioGlitchInfo(), bus);
+                       ev->Signal();
+                     },
+                     callback, dest, &written, &done));
+  done.Wait();
+  return written;
 }
 
 }  // namespace ijkpp::media::test

@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "base/memory/scoped_refptr.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "media/base/audio_bus.h"
 #include "media/base/audio_parameters.h"
@@ -92,7 +93,20 @@ class FakeAudioSink final : public AudioRendererSink {
   RenderCallback* callback() const { return callback_.load(); }
   // Fills |dest| as one device period would. Returns the frames the renderer
   // wrote (0 means it had nothing and asked for silence).
+  //
+  // With |render_runner| set (pipeline-level tests), the callback is marshalled
+  // onto that sequence and the call waits for it, instead of running inline on
+  // the pulling thread. The real device thread is a sequence of its own; a
+  // pipeline test's pulling thread is the gtest main thread, and an inline
+  // render there lets renderer state be touched from two sequences at once
+  // (TSan: SyntheticDemuxer::MakeAudioPacket via the pump the render callback
+  // triggers). The RendererImpl-style suites leave it unset: single pump, no
+  // second sequence to race with.
   int PullPeriod(AudioBus* dest);
+  void set_render_runner(
+      base::scoped_refptr<base::SequencedTaskRunner> runner) {
+    render_runner_ = std::move(runner);
+  }
   int start_count() const { return start_count_.load(); }
   int stop_count() const { return stop_count_.load(); }
   int pause_count() const { return pause_count_.load(); }
@@ -123,6 +137,7 @@ class FakeAudioSink final : public AudioRendererSink {
   ~FakeAudioSink() override = default;
 
   std::atomic<RenderCallback*> callback_{nullptr};
+  base::scoped_refptr<base::SequencedTaskRunner> render_runner_;
   AudioParameters params_;
   std::atomic<bool> running_{false};
   std::atomic<int> start_count_{0};
