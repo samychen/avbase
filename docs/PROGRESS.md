@@ -2,9 +2,14 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M6 ✅ · M7 渲染层代码完成 · M8 播放链路已接线 ✅ · 端到端播放 ✅（headless + SDL2 真窗口）**
+## 当前状态：**M0–M8 ✅ · 端到端播放 ✅ · 管线级 seek 夹具 ✅ · M9 进行中（限速假件 + 三级 HWM ✅）**
 
-最后更新：2026-10-01（第十轮）—— **播放轮：M7 收尾 + M8 接线，第一次真正播放了视频。**
+最后更新：2026-10-02（第十一轮）—— **M9 开篇：限速假件 + 三级 HWM 决策核心。** 全量测试
+401/401（FFmpeg 配置）与 366/366（no-ffmpeg）全绿，`check_invariants` 全过（249 文件，
+门禁收敛为 7 条结构规则）。
+> 第十轮：播放链路打通（M7 收尾 + M8 接线，359/359，macOS 首建）
+> 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
+> 27 个文件转正进构建）
 `Player` 的 10 个桩方法接通 9 个（SetDataSource/Prepare/Start/Pause/Stop/SeekTo/音量/倍速/事件全部可用）；
 `headless` 示例对 5 个测试媒体完成"prepare→play→EOS→kCompleted"全流程（退出码 0），
 `play_sdl2` 在真实窗口带音频出画。全量测试 359/359（FFmpeg 配置）与 324/324（no-ffmpeg）全绿，
@@ -12,7 +17,29 @@
 > 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
 > 27 个文件转正进构建）
 
-## 第十轮（本轮）：播放链路打通
+## 第十一轮（本轮）：M9 开篇——限速假件 · 三级 HWM · 管线级 seek 夹具
+
+M9（缓冲 + Seek 完整版）的前两步，加上上一轮收尾的测试基建：
+
+| 组件 | 说明 | 备注 |
+|---|---|---|
+| `tests/unit/media_filters/pipeline_seek_unittest.cc` · `tests/support/{fake_sink_factories,fake_pipeline_client}` | 管线级 seek 契约（docs/07 §5 首条）："SeekTo(5s) 后落地帧 ∈ 150–152" + "落地后旧世代不再出现"；`DefaultRendererFactory` 组装 + S1/S3/S4 三条真线程 + 手动泵双 sink | 压力 100/100、`ctest -j8` 4 轮 349/349；连带抓出 #51/#52。确定性规则：等待有界单向 · 渲染只由泵驱动 · 泵轮节奏落后媒体节奏（16ms 睡眠让外推时钟超前，落地帧漂到 155–158）· Play 等 kHaveMetadata |
+| `tests/support/throttled_data_source.{h,cc}` | M9 的测量仪器：限速供数（墙钟预算 + 封顶突发）+ `FailFrom/ClearFailure` 故障注入 + `Abort()` 及时解锁 + `bytes_served/stalls` 观测 | 7 用例。设计陷阱：默认突发 = 1s × 速率，小于速率的文件在突发内跑完、节流器形同虚设 → `set_max_burst_bytes()` 旋钮 |
+| `player/buffer_controller.{h,cc}` | 三级 HWM 决策核心（照 `DecideNextFrame` 纯函数模式）：`first`(100ms) 起播 · `next`(500ms) 首次恢复 · `last`(4s) 后续 + 上限；每完成一个缓冲周期升一级，**seek 完成回卷到 first**（新位置对旧缓冲一无所知） | 10 用例。挂接 `PlayerImpl`（媒体序列，`SEQUENCE_CHECKER` 免锁）：`kBufferingEnded` 载荷携带本周期实际等待的 mark；缓冲期间统计 tick 发 `kBufferingProgress`；`OnMediaSeekDone` 执行重置 |
+
+**TSan 浸泡与三个真缺陷**（#51/#52/#53，详见 §(3) 表）：30 分钟 232 轮 0 报告（修 #51 前第 68 轮 SEGV）。
+
+### (5) 遗留（M9 内）
+
+1. `SeekController` 精确 seek ±1 帧（`HoldReads` 世代机制为地基，待做）。
+2. `RetryDataSource` / `LiveDataSource` / `UrlRewriteInterceptor`（故障注入假件已就绪）。
+3. 管线级 HWM 集成用例：限速源下观察 `hwm_step` 递进与起播/恢复判定（DoD"限速 50KB/s 下
+   卡顿-恢复循环正常"），假件已就绪、用例未写。
+4. docs/07 §5 其余管线级断言（丢帧数、变速、故障注入、循环、纯音/纯视频）。
+
+---
+
+## 第十轮：播放链路打通
 
 本轮把"能构建、能测"推进到"能播放"。新增实现约 2,900 行：`PipelineImpl`（管线编排）、
 `DefaultRendererFactory`、media 层 null 双 sink、`FFmpegVideo/AudioDecoderFactory`、
