@@ -52,6 +52,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | `base/synchronization/lock.cc` · `tests/unit/base/synchronization_unittest.cc` | `ObservedOrder()` 补 `thread_local`；新增 `LockTest.ConcurrentOrderRecordingIsRaceFree` | #44 |
 | `tests/support/synthetic_demuxer.{h,cc}` | 合成源（M10 的第一片，docs/07 §5）：10s/30fps/48kHz 的可脚本化 `Demuxer`，**编码即契约**——每个包的负载前 4 字节是它自己的序号（`ReadIndexPayload`），时间戳按序号整数算出（不是累加帧时长，所以第 150 帧恰好是 5.000s），音频音高 = 440 + 该包所落的整秒，关键帧每 30 帧一个，`StartPlayingFrom()` 落在"不晚于请求"的关键帧上、回传实际位置并 **bump 流 serial**（新世代，`demuxer_stream.h` 的契约，也是 #50 的判据） | 自测 6 例（序号/节奏/关键帧/seek 落点/音频秒边界/EOS/媒体信息）全过且耗时 **0 ms**；帧号画进像素与故障注入（`fail_read_at_packet` 等）**故意未实现**——没有消费方的钩子只会让替身开始说谎 |
 | `tests/support/*` · 三个渲染器套件（`renderer_impl` · `video_renderer_impl` · `audio_renderer_impl`） | 渲染器直接单测：脚本化输入、可编排解码器、手动拉动的双 sink、记录型 renderer client（`renderer_client.h` 里点名"not written yet"的那个）。14 个用例覆盖启动契约（只报一次、绝不内联、视频 sink 在解码器就绪时开、音频设备在 StartPlayingFrom 才开）、结束契约（双流排空 + 尾帧必须发布）、暂停门控（视频不出新帧；音频报静音且不计 underrun）、以及 flush 后的串号隔离（两侧都不许放行旧 serial 的帧） | 第十轮的 12 个渲染器 bug 全靠端到端发现；这套件当场抓出 #47/#48/#49，三处产品修复随它一起进 |
+| `tests/unit/media_filters/pipeline_seek_unittest.cc` · `tests/support/{fake_sink_factories,fake_pipeline_client}.{h,cc}` | 管线级 seek 契约（docs/07 §5 首条）："SeekTo(5s) 后落地帧 ∈ 150–152"+"落地后旧世代不再出现"，`DefaultRendererFactory` 组装 + S1/S3/S4 三条真线程 + 手动泵双 sink，注入点就是 `Pipeline::Start()` 的 demuxer 参数（产品代码零改动） | 压力 100/100；连带抓出 #51/#52。等待全部有界单向、渲染只由泵驱动，是它和被撤回首版的全部差别 |
 | 10 个 `CMakeLists.txt` · `cmake/IjkppCheckInvariants.cmake` · `tools/check_invariants.py` | 源文件列举定成一条规则（docs/06 §7.6）：目录成员 == 目标成员处改用 `file(GLOB ... CONFIGURE_DEPENDS)`（`media/base` · `media/renderers` · `media/filters/legacy` · `player` · `platform/{ffmpeg,sdl2}` · `tools/inspect` · `tests/unit/{base,media_base,player}`），其余四处（`media/filters` · `tests/unit/media_filters` · `base` · `examples`）保持显式并在文件里写明理由。**新增门禁 C25**：每个 `.cc` 必须被某个目标覆盖（显式列表，或规则自己展开的 glob），否则非零退出 | 新增文件不必再改 CMake，Ninja 在构建时重跑 glob（`[0/N] Re-checking globbed directories...`）。C24 管"列出的文件存在"，C25 管"存在的文件被编译"——两个方向都不再静默。`aux_source_directory` 明确不用：不递归，且新增文件不触发 CMake 重配（CMake 官方文档警示的正是这一点）。实测 108 个 (target, source) 与改动前逐一相同 |
 
 ### (3) 本轮抓到的 bug（接通播放 = 第一条真正跑全链路的路径，收获很大）
@@ -75,6 +76,9 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | 47 | **init 回调内联**：`RendererImpl::Initialize` 的缺流错误路径直接 `std::move(init_cb).Run(...)`，违反 renderer.h 的"绝不内联、调用方可在回调里销毁状态"——调用方会在 `Initialize()` 还在栈上时被重入 | 🔴 契约违背（新单测发现；已改为与成功路径同一条 hop） |
 | 48 | **音频 EOS 尾帧永不发布**：`MarkEndOfStream()` 只翻标志不搬帧，而 `PreStretch()` 只在 `OnDecoderOutput` 与"恢复暂停"时调用。解码器一次输出的帧数大于设备周期时，EOS 到达那一刻环是满的 → 泵因背压停摆、此后无人搬运 → `buffered_frames()` 永不归零 → `CheckForEnded()` 永不报 `OnEnded`（"播完了但不结束"）。设备周期与解码粒度相同时不触发，这正是端到端一直没遇到它的原因 | 🔴 逻辑缺口（新单测发现；修法：`PumpDecoder()` 在 `ended_` 后仍搬运一次尾帧） |
 | 49 | **初始化上报跨 sequence**：`OnVideoInitialized`/`OnAudioInitialized` 由子渲染器在 S3/S4 上调用，却直接写 S1 的 `video_initialized_`/`audio_initialized_` 并互相读。第十轮只给 "ended" 与 init 完成两条路径加了 hop，这条漏了 | 🔴 数据竞争（TSan 在真线程夹具下报出；已加 hop） |
+| 51 | **析构后时钟推送链继续跑**：`RendererImpl::PushMasterClock`/`PushStatistics` 两条 10 ms 自续定时链用 `Unretained(this)` 绑定，对象销毁后队列里残留的任务照常执行，读到已释放的 `Clock` → SEGV。TSan 浸泡第 68 轮抓到（崩在 `~TaskEnvironment` 收尾的 `RunUntilIdle`，普通构建下是无征兆的 UAF） | 🔴 生命周期（修法：两条链与首次定时都改绑 `WeakPtrFactory`，失效任务由绑定层跳过；成员置于末位并注明） |
+| 52 | **flush 与重启的窗口烧掉整个新世代**：`VideoRendererImpl::Flush` 写入的是过期 serial（`av_sync_->master_serial()`），此后到 `StartPlayingFrom` 采纳之间，自由运行的消费泵驱动 `DecoderStream` 继续读 demuxer——此时 demuxer 已 bump 到新 serial，于是新世代每个包都按"stale"丢弃，而 EOS 包按契约不过滤序列 → `end_of_stream_` 直接置位：流还没开始就结束了，"ended" 提前、落地帧永不出现。实测约 3% 的管线级 seek 命中（插桩日志：连续 `stale drop buf_serial=1 mine=0` 后紧跟 `EOS buffer accepted, mine=0`） | 🔴 编排缺陷（管线级夹具压力 100 轮发现；修法：`DecoderStream::HoldReads()`——flush 合闸、`StartPlayingFrom` 采纳后开闸，两侧子渲染器同样处理） |
+| 53 | **统计路径跨序列读未保护状态**：`RendererImpl::GetStatistics()`（S1）经 `buffered_frames()` 读 `AudioFrameQueue::frames_`，与 S4 的 `SeekFrames`/`Append` 并发。该队列"单序列无锁"是有意设计（头文件注记：音频回调 100 µs 预算不允许加锁），破坏契约的是统计读这一侧 | 🟠 数据竞争（TSan 浸泡第 1 轮报出；修法：`frames_` 改 `std::atomic<int>`——不加锁、保留单序列设计，读方 relaxed） |
 
 ### (4) 验证结果（macOS 24.5 arm64 / AppleClang 21 / Homebrew FFmpeg 7.1.1 / SDL2 2.32.6）
 
@@ -90,7 +94,9 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 ✅ ctest: 373/373（mac 配置）· 338/338（no-ffmpeg）——第十轮末尾各 +1：锁序竞态回归用例（#44）；
    渲染器直接单测再 +14（RendererImpl 6 · VideoRendererImpl 3 · AudioRendererImpl 5）
 ✅ TSan：三个渲染器套件 14 用例在 `tsan` 预设下 **0 报告**（此前该路径报出 #49 与
-   假 sink 自身的 3 处竞争，两者都已修）
+   假 sink 自身的 3 处竞争，两者都已修）；**30 分钟浸泡**（渲染器三套件 + 管线级 seek
+   连续循环）修 #51 前在第 68 轮 SEGV、修后完整跑完 **0 报告**；TSan 下
+   `headless --seek 1.5` 连跑 **20 次全部 exit=0**
 ✅ 严格告警配置覆盖 FFmpeg 层：`debug`（Debug + 严格告警 + `-Werror` + FFmpeg）实测
    **0 警告**；此前该预设沿用 `IJKPP_ENABLE_FFMPEG=OFF`，FFmpeg 适配层
    （`platform/ffmpeg/*` 与 `media/filters/ffmpeg_*.cc`）从未进过严格门禁。
@@ -98,6 +104,9 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 ✅ 合成源自测 6 例 + 合成解码器 4 例（348/348 · 383/383 内含），耗时 **0 ms**
 ✅ 真实 seek 稳定性：修 #50 后 `headless --seek 1.5` 连跑 **6 次全部 exit=0**；而用
    `Flush()` 采纳世代的那一版连跑 4 次里 3 次 exit=1
+✅ 管线级 seek 夹具（重建版）：压力 **100/100**，`ctest -j 8` 全量并行 4 轮
+   **349/349 ×4**；首轮无闸门版本 100 轮 18 失败（泵速失配：音频每轮只推 5.3 ms 媒体
+   时间而显示间隔 16 ms，落地帧永远"未到期"），对齐泵速后仍 3/100——那 3 次就是 #52
 ✅ 伪证检查：临时撤掉 #48 的修复后，`EndedPublishesTheTailTheRingCouldNotTake` 与
    `EndedIsReportedAfterBothStreamsDrain` 双双报红，恢复后全绿——两条结束用例确实咬住了
    那个缺陷，而不是恰好通过
@@ -112,18 +121,28 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 
 ### (5) 本轮未做 / 遗留
 
-1. **管线级 seek 断言：缺陷已复现并修复，夹具本身仍待稳定**。缝隙比预想的小：`Pipeline::Start()`
-   本来就接收一个 demuxer（冻结签名就是为此），所以媒体层**不改任何产品代码**就能注入合成源；
-   据此搭出的管线级夹具已经断言过 docs/07 §5 那条"SeekTo(5s) 后下一帧 == 150"，并据此抓出
-   并修掉 **#50**（见 §(3)）。但那份夹具（`DefaultRendererFactory` 组装 + S1/S3/S4 三条真线程
-   + 测试手动拉动双 sink）在压力下 **flaky**：连跑 8 轮，6 轮栽在落地断言、1 轮栽在"新世代
-   之后不再出现旧帧"、2 轮等到 10 s 超时。帧因迟到被 compositor 丢弃是合法行为（落地断言因此
-   放宽到 150–152），但超时说明还有时序路径没钉住。按 R12，它已从工作区撤出，等稳定后再连同
-   docs/07 §5 其余条目（丢帧数、变速、故障注入、循环、纯音/纯视频…）一起进；撤出时一并删掉了
-   只服务于它的假 sink 工厂与管线 client（约 150 行，重建即可）。留下的确定性部分是
-   `synthetic_demuxer`（6 例）与 `synthetic_decoders`（4 例）。
-   夹具形状备忘：`RendererImpl` 套件必须用真线程（`~RendererImpl` 会 post 到 S3/S4 后阻塞
-   等待，单线程夹具在析构处死锁），两个子渲染器套件单线程即可（各自析构只 `sink_->Stop()`）。
+1. ~~**管线级 seek 断言：夹具稳定化**~~ → **已落地（重建版）**。`Pipeline::Start()` 接收一个
+   demuxer（冻结签名就是为此），媒体层不改产品代码即可注入合成源。重建版与被撤回的首版差在
+   四条确定性规则：**每个等待有界且单向**（轮询必须到达的状态，超时打印完整事件日志）；**渲染
+   只由手动泵驱动**（没有自由跑的时钟可竞速）；**泵轮对齐节奏**（每轮 3 个音频周期 ≈ 16 ms
+   媒体时间 = 一个显示间隔——首轮 18% 失败正是失配所致）；**Play 等的是 kHaveMetadata**
+   （`OnDurationChange` 在 kReady 之前到达，用它触发 Play 会打在 kStarting 上被吞掉）。
+   稳定后当场抓出 **#51/#52**（见 §(3)）。`tests/unit/media_filters/pipeline_seek_unittest.cc`
+   （1 例）+ `tests/support/{fake_sink_factories,fake_pipeline_client}` 已进库。又补两条夹具
+   层的教训，都在 TSan/压力下现形：**音频假 sink 的拉动必须封送回渲染器序列**（S4）——内联在
+   gtest 主线程跑渲染回调会让渲染器状态被两个 sequence 同时触碰（TSan 报
+   `SyntheticDemuxer::MakeAudioPacket` 竞争；`FakeAudioSink::set_render_runner` 即为此而设，
+   RendererImpl 风格的套件单泵无需启用）；**泵轮的真实节奏要落后于媒体节奏**——音频时钟在两次
+   消耗回报之间按挂钟外推，轮内睡 16 ms（真实 ≈25 ms）会让外推时钟超前，落地帧漂到 155–158
+   被判晚丢弃；改成 4 ms 后时钟滞后（落后只会 hold，安全），100/100；**假件必须像真件一样
+   线程安全**——`HoldReads()` 让两条流首次真正并发读取后，TSan 当场抓住 `SyntheticDemuxer`
+   的共享游标在 S3/S4 竞争（真 demuxer 内部有锁，替身不能在这条契约上撒谎），已按真件语义
+   加锁。
+   仍欠：
+   docs/07 §5 其余条目（丢帧数、变速、故障注入、循环、纯音/纯视频），以及 S1 泵依赖
+   `TaskEnvironment` 的说明——管线任务全走 post，"只睡不泵"的夹具会拿着空事件日志干等。
+   夹具形状备忘不变：`RendererImpl` 套件必须用真线程（析构 post 到 S3/S4 后阻塞等待），
+   两个子渲染器套件单线程即可。
 2. 首播 seek 曾触发一次 NAL 损坏（改为首播不重复寻址后消失）——根因未深究，
    真实 seek 已验证干净，但 seek 后串号隔离的黄金验证要等 M10。
 3. `RunUntilIdle`（需要 message_pump_epoll，R2 降级债）、精确 seek（M9
