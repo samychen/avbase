@@ -53,9 +53,18 @@
       }
     },
     {
+      "name": "ffmpeg",
+      "inherits": "default",
+      "displayName": "System FFmpeg (distro packages), no window system",
+      "cacheVariables": {
+        "IJKPP_ENABLE_FFMPEG": "ON"
+      }
+    },
+    {
       "name": "linux-sdl2",
       "inherits": "default",
       "cacheVariables": {
+        "IJKPP_ENABLE_FFMPEG": "ON",
         "IJKPP_ENABLE_SDL2": "ON",
         "IJKPP_ENABLE_LINUX_NATIVE": "OFF"
       }
@@ -147,6 +156,10 @@
       "configurePreset": "no-ffmpeg"
     },
     {
+      "name": "ffmpeg",
+      "configurePreset": "ffmpeg"
+    },
+    {
       "name": "linux-sdl2",
       "configurePreset": "linux-sdl2",
       "targets": [
@@ -200,6 +213,13 @@
         "exclude": {
           "label": "needs-ffmpeg"
         }
+      }
+    },
+    {
+      "name": "ffmpeg",
+      "configurePreset": "ffmpeg",
+      "output": {
+        "outputOnFailure": true
       }
     },
     {
