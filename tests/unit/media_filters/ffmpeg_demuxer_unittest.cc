@@ -8,6 +8,8 @@
 #include "media/filters/ffmpeg_demuxer.h"
 
 #include <chrono>
+#include <cstdint>
+#include <cstdio>
 #include <string>
 #include <thread>
 #include <vector>
@@ -44,10 +46,14 @@ class FFmpegDemuxerTest : public ::testing::Test {
 
   // Runs Initialize() to completion and returns its status.
   Status Open(const std::string& path, DemuxerOptions options = {}) {
+    return OpenDescriptor(DataSourceDescriptor::FromUri(path), options);
+  }
+  Status OpenDescriptor(const DataSourceDescriptor& descriptor,
+                        DemuxerOptions options = {}) {
     Status result = Err(ErrorCode::kNotImplemented, "not run", {}, {});
     bool done = false;
     demuxer_->Initialize(
-        DataSourceDescriptor::FromUri(path), options, &host_,
+        descriptor, options, &host_,
         task_environment_.GetMainThreadTaskRunnerRef(),
         base::BindOnce([](Status* out, bool* flag, Status s) {
           *out = std::move(s);
@@ -69,6 +75,59 @@ class FFmpegDemuxerTest : public ::testing::Test {
   std::unique_ptr<FFmpegDemuxer> demuxer_;
   RecordingHost host_;
 };
+
+// The DataSource->AVIOContext bridge (M4 leftover, closed): the same MP4 fed
+// as raw bytes must probe, report size, and read identically to the URI path.
+namespace {
+std::vector<uint8_t> ReadFileBytes(const std::string& path) {
+  std::FILE* f = std::fopen(path.c_str(), "rb");
+  std::vector<uint8_t> bytes;
+  if (f) {
+    uint8_t chunk[8192];
+    size_t n = 0;
+    while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0) {
+      bytes.insert(bytes.end(), chunk, chunk + n);
+    }
+    std::fclose(f);
+  }
+  return bytes;
+}
+}  // namespace
+
+TEST_F(FFmpegDemuxerTest, OpensAMemoryBufferThroughTheDataSourceBridge) {
+  const std::vector<uint8_t> bytes =
+      ReadFileBytes(TestFile("small_h264_aac_3s.mp4"));
+  ASSERT_GT(bytes.size(), 1000u);
+  const DataSourceDescriptor descriptor =
+      DataSourceDescriptor::FromMemory(bytes.data(), bytes.size());
+  const Status status = OpenDescriptor(descriptor);
+  ASSERT_TRUE(status) << status.error().ToString();
+
+  const MediaInfo& info = demuxer_->media_info();
+  EXPECT_EQ(info.streams.size(), 2u);
+  EXPECT_TRUE(info.seekable);
+  EXPECT_GT(info.duration, base::Seconds(2));
+  EXPECT_LT(info.duration, base::Seconds(4));
+  // avio_size() through the bridge's AVSEEK_SIZE path reports the buffer.
+  EXPECT_EQ(info.file_size, static_cast<int64_t>(bytes.size()));
+  EXPECT_TRUE(host_.errors.empty());
+}
+
+TEST_F(FFmpegDemuxerTest, OpensAHostSuppliedDataSource) {
+  const std::vector<uint8_t> bytes =
+      ReadFileBytes(TestFile("small_h264_aac_3s.mp4"));
+  ASSERT_GT(bytes.size(), 1000u);
+  auto memory = base::MakeRefCounted<MemoryDataSource>(bytes.data(),
+                                                       bytes.size());
+  const Status status =
+      OpenDescriptor(DataSourceDescriptor::FromSource(std::move(memory)));
+  ASSERT_TRUE(status) << status.error().ToString();
+
+  const MediaInfo& info = demuxer_->media_info();
+  EXPECT_EQ(info.streams.size(), 2u);
+  EXPECT_GT(info.duration, base::Seconds(2));
+  EXPECT_TRUE(host_.errors.empty());
+}
 
 TEST_F(FFmpegDemuxerTest, OpensAndProbesAnMp4) {
   const Status status = Open(TestFile("small_h264_aac_3s.mp4"));

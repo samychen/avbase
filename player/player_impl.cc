@@ -93,13 +93,16 @@ PlayerImpl::~PlayerImpl() {
 
 std::unique_ptr<media::Demuxer> PlayerImpl::CreateDemuxer() {
 #if IJKPP_ENABLE_FFMPEG
-  bool is_uri = false;
+  bool has_source = false;
   {
     base::AutoLock scoped(state_lock_);
-    is_uri =
-        source_set_ && source_.kind == media::DataSourceDescriptor::Kind::kUri;
+    has_source = source_set_;
   }
-  if (is_uri) {
+  if (has_source) {
+    // Every descriptor kind the demuxer can now serve: URI and fd through
+    // FFmpeg's protocol layer, memory and custom sources through the
+    // DataSource→AVIOContext bridge. Unsupported kinds fail inside the
+    // demuxer with an actionable error rather than here.
     return std::make_unique<media::FFmpegDemuxer>(media_log_);
   }
 #endif

@@ -27,6 +27,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/threading/thread.h"
+#include "media/base/data_source.h"
 #include "media/base/data_source_descriptor.h"
 #include "media/base/decoder_buffer_queue.h"
 #include "media/base/decoder_config.h"
@@ -168,6 +169,14 @@ class IJKPP_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   // releases it after joining that thread (docs/04 §7 R7). Kept as void* in the
   // header so no libav* type appears outside platform/ffmpeg and this .cc.
   void* format_ctx_raw_{nullptr};
+  // The DataSource→AVIOContext bridge (platform/ffmpeg/data_source_io.h),
+  // non-null when the source is a memory buffer or a host DataSource. Same
+  // void* convention as format_ctx_raw_: the type lives in platform/, this
+  // header must not name it (media/ must not depend on platform/).
+  void* data_source_io_raw_{nullptr};
+  // Keeps the byte source alive for as long as the AVIOContext references
+  // it. Null for URI sources (FFmpeg's protocol layer opens those itself).
+  base::scoped_refptr<media::DataSource> data_source_;
 
   MediaInfo media_info_;
   base::TimeDelta start_time_;

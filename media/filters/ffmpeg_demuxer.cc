@@ -27,6 +27,7 @@ extern "C" {
 }
 #include "platform/ffmpeg/av_packet_storage.h"
 #include "platform/ffmpeg/compat.h"
+#include "platform/ffmpeg/data_source_io.h"
 #include "platform/ffmpeg/log_bridge.h"
 
 namespace ijkpp::media {
@@ -312,6 +313,15 @@ FFmpegDemuxer::~FFmpegDemuxer() {
     avformat_close_input(&ctx);
     format_ctx_raw_ = nullptr;
   }
+  if (data_source_io_raw_) {
+    // AVFMT_FLAG_CUSTOM_IO means avformat_close_input left our context
+    // alone; flush and free it before the source reference goes.
+    auto* io = static_cast<platform::ffmpeg::DataSourceIO*>(data_source_io_raw_);
+    io->Detach();
+    delete io;
+    data_source_io_raw_ = nullptr;
+  }
+  data_source_ = nullptr;
   delete pending_seek_.exchange(nullptr);
 }
 
@@ -431,17 +441,24 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
   // |format_ctx_raw_| while the loop is running.
   const base::TimeTicks open_started = base::TimeTicks::Now();
 
-  if (source.kind != DataSourceDescriptor::Kind::kUri &&
-      source.kind != DataSourceDescriptor::Kind::kFileDescriptor) {
-    return Err(ErrorCode::kNotImplemented,
-               "this DataSource kind is not wired up yet",
-               "kind = " + std::to_string(static_cast<int>(source.kind)),
-               "use DataSourceDescriptor::FromUri() for now; memory and custom "
-               "sources land with the DataSource-backed AVIOContext path");
-  }
+  // Byte-source kinds route through the DataSource→AVIOContext bridge
+  // (platform/ffmpeg/data_source_io.h); URI and fd keep FFmpeg's own
+  // protocol layer. kMemoryBuffer wraps the caller's buffer -- the
+  // descriptor documents that the caller owns it for the whole playback.
   const bool is_fd = source.kind == DataSourceDescriptor::Kind::kFileDescriptor;
-  const std::string uri = is_fd ? ("fd:" + std::to_string(source.fd)) : source.uri;
-  if (uri.empty()) {
+  if (source.kind == DataSourceDescriptor::Kind::kMemoryBuffer) {
+    data_source_ = base::MakeRefCounted<media::MemoryDataSource>(
+        source.buffer, source.buffer_size);
+  } else if (source.kind == DataSourceDescriptor::Kind::kCustomSource) {
+    data_source_ = source.custom;
+  }
+  const std::string uri = is_fd ? ("fd:" + std::to_string(source.fd))
+                                : source.uri;
+  const char* open_uri =
+      data_source_ ? "" : uri.c_str();   // custom IO: filename is ignored
+  if (!data_source_ && uri.empty()) {
+    // Only the protocol-layer kinds carry a URI; a memory buffer or a host
+    // DataSource is addressed by its bytes, not by a name.
     return Err(ErrorCode::kInvalidArgument, "empty media URI", {},
                "pass a non-empty path or URL to SetDataSource()");
   }
@@ -457,6 +474,17 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
   };
   ctx->interrupt_callback.opaque = this;
 
+  if (data_source_) {
+    auto* io = new platform::ffmpeg::DataSourceIO(data_source_, &interrupt_flag_);
+    MediaError io_error;
+    if (!io->Attach(ctx, &io_error)) {
+      delete io;
+      data_source_ = nullptr;
+      return base::unexpected(io_error);
+    }
+    data_source_io_raw_ = io;
+  }
+
   ff::DictPtr dict = ff::ToAvDict(BuildOpenOptions(options, uri));
   const AVInputFormat* forced = options.forced_format.empty()
                                     ? nullptr
@@ -464,8 +492,23 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
                                           options.forced_format.c_str());
 
   AVDictionary* raw_dict = dict.release();
-  const int ret = avformat_open_input(&ctx, uri.c_str(), forced, &raw_dict);
+  const int ret = avformat_open_input(&ctx, open_uri, forced, &raw_dict);
   dict.reset(raw_dict);
+  if (ret < 0 && data_source_io_raw_) {
+    // The bridge outlives a failed open only long enough to detach: close
+    // the context we custom-fed, free the bridge, release the source.
+    auto* io = static_cast<platform::ffmpeg::DataSourceIO*>(data_source_io_raw_);
+    io->Detach();
+    delete io;
+    data_source_io_raw_ = nullptr;
+    format_ctx_raw_ = nullptr;
+    data_source_ = nullptr;
+    return base::unexpected(ff::ToMediaError(
+        ret, "FFmpegDemuxer::Open (custom data source)",
+        "the source was probed through the DataSource bridge",
+        "check that the bytes are a supported container, or set "
+        "config.demux.forced_format to skip probing"));
+  }
   if (ret < 0) {
     // avformat_open_input frees |ctx| and nulls the local on failure, so clear
     // our own pointer too: leaving it set would make ~FFmpegDemuxer call
@@ -915,6 +958,12 @@ void FFmpegDemuxer::Reset(base::OnceClosure reset_cb) {
 
 void FFmpegDemuxer::Stop() {
   stop_flag_.Set();
+  if (data_source_) {
+    // The bridge's ReadBlocking may be parked in a source that paces its
+    // bytes (ThrottledDataSource, a network downloader); Abort() is the
+    // DataSource contract that bounds this stop.
+    data_source_->Abort();
+  }
   // The three and only three writers of interrupt_flag_, Stop() being one:
   // StartPlayingFrom (to break a read so a seek is picked up) and here.
   // ijkplayer's abort_request had to be signalled from five places and hung
