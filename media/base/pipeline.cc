@@ -18,6 +18,8 @@
 
 #include "media/base/pipeline.h"
 
+#include "media/base/native_display.h"
+
 namespace ijkpp::media {
 
 // Out-of-line `= default`, same convention and same reason as
@@ -25,6 +27,12 @@ namespace ijkpp::media {
 // Pipeline's vtable, so it is emitted once rather than in every includer.
 // Pipeline::Client needs nothing -- every member is pure virtual and its
 // destructor is inline-defaulted.
+// Out-of-line for the same reason as Renderer::SetOutputTarget: the
+// scoped_refptr destructor needs NativeDisplay complete.
+void Pipeline::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
+  (void)display;
+}
+
 Pipeline::Pipeline() = default;
 Pipeline::~Pipeline() = default;
 

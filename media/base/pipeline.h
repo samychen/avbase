@@ -69,6 +69,8 @@
 
 namespace ijkpp::media {
 
+class NativeDisplay;
+
 // Owns and drives one playback: demuxer in, renderer in the middle, sinks out.
 //
 // WHAT IT REPLACES. ijkplayer has no equivalent object. The closest thing is
@@ -143,6 +145,18 @@ class IJKPP_MEDIA_EXPORT Pipeline {
   // After it returns, no new callbacks will be *started*; ones already running
   // finish, which is why Player::StopSync() exists.
   virtual void Stop() = 0;
+
+  // ---- Added when M8 wired playback (docs/PROGRESS.md, playback round) ----
+  // Chromium's media::Pipeline has Play()/Pause(); the DRAFT header dropped
+  // them and no implementation existed to object. With PipelineImpl landing,
+  // they are restored: Play() demuxes and renders from the current position,
+  // Pause() gates the sinks and freezes the clocks. Both are no-ops before
+  // Start() completes.
+  virtual void Play() {}
+  virtual void Pause() {}
+  // Runtime surface swap, backing Player::SetVideoSurface() on a live
+  // pipeline. No-op before the renderer exists.
+  virtual void SetOutputTarget(base::scoped_refptr<NativeDisplay> display);
 
   virtual bool IsRunning() const = 0;
 

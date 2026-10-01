@@ -22,6 +22,7 @@
 #include "media/base/media_log.h"
 #include "media/base/media_error.h"
 #include "media/base/media_info.h"
+#include "media/base/media_resource.h"
 #include "media/media_export.h"
 
 namespace ijkpp::media {
@@ -57,7 +58,7 @@ struct IJKPP_MEDIA_EXPORT DemuxerStats {
   uint64_t interrupt_count{0};
 };
 
-class IJKPP_MEDIA_EXPORT Demuxer {
+class IJKPP_MEDIA_EXPORT Demuxer : public MediaResource {
  public:
   // Receives duration updates (live streams) and buffering progress.
   class Host {

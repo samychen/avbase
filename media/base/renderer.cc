@@ -21,6 +21,7 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "media/base/native_display.h"
 
 namespace ijkpp::media {
 
@@ -37,6 +38,13 @@ const char* RendererTypeToString(RendererType type) {
 // media/base/video_decoder.cc. The point is not stylistic: with the destructor
 // defined here, this translation unit is the key function for Renderer's
 // vtable, so the vtable is emitted once instead of in every includer.
+// The default body lives here rather than inline in the header: |display|'s
+// scoped_refptr destructor needs the complete type, and the forward
+// declaration in the header keeps every includer's closure small.
+void Renderer::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
+  (void)display;
+}
+
 Renderer::Renderer() = default;
 Renderer::~Renderer() = default;
 

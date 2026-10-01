@@ -69,6 +69,8 @@ namespace ijkpp::media {
 // DRM placeholder, not implemented (decision D8, docs/08 §4).
 class CdmContext;
 
+class NativeDisplay;
+
 // Which Renderer implementation the pipeline should build.
 enum class RendererType {
   kRendererImpl = 0,   // Default: FFmpeg decode + ijkpp's own sinks.
@@ -169,6 +171,22 @@ class IJKPP_MEDIA_EXPORT Renderer {
   virtual void OnTracksChanged(DemuxerStreamType track_type,
                                DemuxerStream* enabled_track,
                                base::OnceClosure change_completed_cb) = 0;
+
+  // Both added when M8 wired the pipeline (docs/PROGRESS.md, playback round).
+  // They are pure additions with default no-ops, so no existing renderer had
+  // to change and no factory can break.
+  //
+  // WHY SetPaused AND NOT SetPlaybackRate(0): Chromium's PipelineController
+  // pauses by driving TimeSource, which the Renderer here does not expose, and
+  // AudioRendererAlgorithm legitimately rejects rate 0 ("must be > 0"), so
+  // rate-clamping a pause would leave the audio device playing at 0.25x. An
+  // explicit pause reaches the sinks directly: no frame is consumed, the
+  // clocks freeze at their last anchor, and unpause resumes from exactly there.
+  virtual void SetPaused(bool paused) { (void)paused; }
+  // Runtime surface swap, backing Player::SetVideoSurface(). Default no-op;
+  // renderers that own a video sink forward to
+  // VideoRendererSink::SetOutputTarget().
+  virtual void SetOutputTarget(base::scoped_refptr<NativeDisplay> display);
 
   virtual RendererType GetRendererType() = 0;
 
