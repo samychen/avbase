@@ -6,7 +6,7 @@ name: ci
 on: [push, pull_request]
 
 jobs:
-  # Fast gate: no FFmpeg, no X11, no SDL2. Proves design goal G2 — the core
+  # Fast gate: no FFmpeg, no X11, no SDL2. Proves design goal G2 -- the core
   # builds and its tests pass with nothing but a C++20 compiler.
   quick:
     runs-on: ubuntu-22.04
@@ -17,6 +17,101 @@ jobs:
       - run: cmake --build --preset no-ffmpeg
       - run: python3 tools/check_invariants.py --root .
       - run: ctest --preset no-ffmpeg --output-on-failure
+
+  # The system-FFmpeg configuration. Until this job existed, everything behind
+  # IJKPP_ENABLE_FFMPEG -- the whole platform_ffmpeg target plus the 35
+  # needs-ffmpeg tests -- was only ever built on a developer machine: the
+  # no-ffmpeg gate proves G2, not that the FFmpeg path works. A14 (distro
+  # FFmpeg, no patch, no vendoring) is what this asserts.
+  ffmpeg:
+    needs: quick
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain and FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+      - run: cmake --preset ffmpeg
+      - run: cmake --build --preset ffmpeg
+      - run: python3 tools/check_invariants.py --root .
+      - run: ctest --preset ffmpeg
+
+  # The half of the old e2e-linux stub that needs no display: examples/headless
+  # drives decode -> sync -> render against the null sinks and exits 0 only when
+  # the player reports kCompleted, so this is the end-to-end gate the SDK can
+  # run on any machine. The window path (xvfb + llvmpipe, both Linux backends)
+  # stays in e2e-linux below.
+  e2e-headless:
+    needs: ffmpeg
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain and FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+      - run: cmake --preset ffmpeg
+      - run: cmake --build --preset ffmpeg
+      - name: Play the test media to completion
+        run: |
+          set -u
+          headless=build/ffmpeg/bin/headless
+          fail=0
+          for f in small_h264_aac_3s.mp4 audio_only.m4a video_only.mp4 \
+                   truncated_tail.mp4; do
+            if "$headless" "tests/testdata/$f" --timeout 60 > /dev/null 2>&1; then
+              echo "ok   $f -> kCompleted"
+            else
+              echo "::error::$f did not reach kCompleted (exit $?)"
+              fail=1
+            fi
+          done
+          if "$headless" tests/testdata/small_h264_aac_3s.mp4 --seek 1.5 \
+               --timeout 60 > /dev/null 2>&1; then
+            echo "ok   --seek 1.5 -> kCompleted"
+          else
+            echo "::error::--seek 1.5 did not reach kCompleted"
+            fail=1
+          fi
+          # A corrupt file must fail *with* the actionable detail, and must not
+          # "succeed": the exit code and the message are both asserted. The log
+          # goes to the runner's temp dir, not into the checkout.
+          log="$RUNNER_TEMP/corrupt.log"
+          if "$headless" tests/testdata/corrupt_header.mp4 --timeout 30 \
+               > "$log" 2>&1; then
+            echo "::error::corrupt_header.mp4 unexpectedly reached kCompleted"
+            fail=1
+          elif ! grep -q DecodeFailed "$log"; then
+            echo "::error::corrupt_header.mp4 failed without the DecodeFailed detail"
+            sed -n '1,40p' "$log"
+            fail=1
+          else
+            echo "ok   corrupt_header.mp4 -> actionable failure"
+          fi
+          exit $fail
+
+  # platform/sdl2 had only ever been compiled on macOS, against Homebrew's
+  # SDL2. Ubuntu's libsdl2-dev is a different SDL2 (and a different audio
+  # stack), and play_sdl2 is the target that proves the backend links -- so
+  # build the whole preset here. Running the window is e2e-linux's job.
+  sdl2-build:
+    needs: quick
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain, FFmpeg and SDL2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config libsdl2-dev \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+      - run: cmake --preset linux-sdl2
+      - run: cmake --build build/linux-sdl2
 
   full:
     needs: quick
@@ -31,6 +126,10 @@ jobs:
           - { os: ubuntu-24.04, preset: ubsan,     label: ubsan }
           - { os: ubuntu-24.04, preset: coverage,  label: coverage }
           - { os: macos-14,     preset: no-ffmpeg, label: macos }
+          # Homebrew is the FFmpeg the tenth round had to fix (the include
+          # usage requirements did not survive FindFFmpeg's pkg-config hop, and
+          # Apple's filesystem shadowed <version>). Worth one macOS runner.
+          - { os: macos-14,     preset: ffmpeg,    label: macos-ffmpeg }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +139,9 @@ jobs:
             sudo apt-get install -y ninja-build python3 lcov
           else
             brew install ninja python3
+            if [ "${{ matrix.preset }}" = "ffmpeg" ]; then
+              brew install ffmpeg
+            fi
           fi
       - run: cmake --preset ${{ matrix.preset }}
       - run: cmake --build build/${{ matrix.preset }}
@@ -51,14 +153,17 @@ jobs:
                --exclude '*/tests/*' --exclude '*/third_party/*' || true
           lcov --summary cov.info || true
 
-  # Populated at M4 (FFmpeg adapters) and M11/M12 (Linux backends).
-  # Kept in the workflow from day one so the job names are stable.
-  ffmpeg-matrix:
-    if: false   # enabled at M4
-    runs-on: ubuntu-24.04
-    steps: [{ run: echo "FFmpeg 4.4 / 5.1 / 6.1 / 7.1 matrix lands at M4" }]
-
+  # Still a stub, and enabling it is the milestone's job: G12/A16 ask for both
+  # Linux backends playing 1080p30 under xvfb + llvmpipe, which needs the
+  # native GL backend (M12) and a verify_e2e.py that does not exist yet. The
+  # headless half of the same acceptance runs for real in e2e-headless above.
   e2e-linux:
-    if: false   # enabled at M11
+    if: false   # M11/M12: xvfb + llvmpipe, both backends, verify_e2e.py
     runs-on: ubuntu-24.04
-    steps: [{ run: echo "xvfb + llvmpipe playback verification lands at M11" }]
+    steps: [{ run: echo "xvfb + llvmpipe playback verification lands at M11/M12" }]
+
+  # Deliberately absent, and it should stay that way until the tree is clean:
+  # check-format (clang-format), check-cpplint and check-clang-tidy would all
+  # be red on the first run -- the C23 ratchet exists precisely because 310
+  # lines exceed 80 columns today. A gate that is red from day one teaches
+  # people to ignore gates (R12). See STYLE.md's "工具落地状态".
