@@ -27,6 +27,7 @@ extern "C" {
 }
 #include "platform/ffmpeg/av_packet_storage.h"
 #include "platform/ffmpeg/compat.h"
+#include "platform/ffmpeg/log_bridge.h"
 
 namespace ijkpp::media {
 namespace {
@@ -361,8 +362,28 @@ void FFmpegDemuxer::Initialize(
 }
 
 // static
+namespace {
+
+// reconnect* / user_agent / headers are options of the network protocol
+// handlers, not of the container demuxers; handing them to avformat for a
+// plain file leaves them unconsumed, which the Δ2 reporting then shows as a
+// spurious failure detail. Gate them on the URI scheme.
+bool IsNetworkUri(const std::string& uri) {
+  static const char* kSchemes[] = {"http://", "https://", "rtmp://",
+                                   "rtmps://", "rtsp://",  "srt://",
+                                   "mms://",   "udp://",   "tcp://"};
+  for (const char* scheme : kSchemes) {
+    if (uri.rfind(scheme, 0) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
+
 std::map<std::string, std::string> FFmpegDemuxer::BuildOpenOptions(
-    const DemuxerOptions& options) {
+    const DemuxerOptions& options, const std::string& uri) {
   // Start from the verbatim passthrough map so a caller can override anything,
   // then apply the structured fields on top. Structured config wins because it
   // is type-checked; a caller who needs to override a structured field can set
@@ -379,24 +400,27 @@ std::map<std::string, std::string> FFmpegDemuxer::BuildOpenOptions(
     out["rw_timeout"] = std::to_string(options.io_timeout.InMicroseconds());
     out["timeout"] = std::to_string(options.io_timeout.InMilliseconds());
   }
-  if (options.reconnect) {
-    out["reconnect"] = "1";
-    out["reconnect_streamed"] = "1";
-    out["reconnect_delay_max"] = std::to_string(
-        std::max<int64_t>(1, options.reconnect_delay.InSeconds()));
-  }
-  if (!options.user_agent.empty()) {
-    out["user_agent"] = options.user_agent;
-  }
-  if (!options.headers.empty()) {
-    std::string joined;
-    for (const auto& [key, value] : options.headers) {
-      joined += key + ": " + value + "\r\n";
+  // Network-only options: see IsNetworkUri() above.
+  if (IsNetworkUri(uri)) {
+    if (options.reconnect) {
+      out["reconnect"] = "1";
+      out["reconnect_streamed"] = "1";
+      out["reconnect_delay_max"] = std::to_string(
+          std::max<int64_t>(1, options.reconnect_delay.InSeconds()));
     }
-    out["headers"] = joined;
-  }
-  if (options.dns_cache_clear) {
-    out["dns_cache_clear"] = "1";
+    if (!options.user_agent.empty()) {
+      out["user_agent"] = options.user_agent;
+    }
+    if (!options.headers.empty()) {
+      std::string joined;
+      for (const auto& [key, value] : options.headers) {
+        joined += key + ": " + value + "\r\n";
+      }
+      out["headers"] = joined;
+    }
+    if (options.dns_cache_clear) {
+      out["dns_cache_clear"] = "1";
+    }
   }
   return out;
 }
@@ -433,7 +457,7 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
   };
   ctx->interrupt_callback.opaque = this;
 
-  ff::DictPtr dict = ff::ToAvDict(BuildOpenOptions(options));
+  ff::DictPtr dict = ff::ToAvDict(BuildOpenOptions(options, uri));
   const AVInputFormat* forced = options.forced_format.empty()
                                     ? nullptr
                                     : av_find_input_format(

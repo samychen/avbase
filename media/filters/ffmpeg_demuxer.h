@@ -135,7 +135,7 @@ class IJKPP_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   // OpenOnDemuxThread so the option precedence (structured config first, then
   // the verbatim passthrough map) is reviewable in one place.
   static std::map<std::string, std::string> BuildOpenOptions(
-      const DemuxerOptions& options);
+      const DemuxerOptions& options, const std::string& uri);
   void DemuxLoop();
   // One iteration of the read/backpressure step. Returns false when the loop
   // should exit.
