@@ -14,7 +14,7 @@
 > | `debug`（Debug + DCHECK + `-Werror`） | ✅ 全绿，零警告 |
 > | `asan`（ASan + UBSan + **LSan**） | ✅ 全绿，**0 泄漏** |
 > | `tsan`（**ThreadSanitizer**） | ✅ 全绿，**0 data race** |
-> | `check_invariants.py` | ✅ 全规则通过（220 文件；C23 列宽棘轮 323→311） |
+> | `check_invariants.py` | ✅ 全规则通过（220 文件；C23 列宽棘轮 323→310） |
 > | `extract_constants.py --selftest` | ✅ 24 个移植常量与 docs/05 表 7 一致 |
 >
 > ⚠️ **用例数以 [docs/PROGRESS.md](docs/PROGRESS.md) 为准**（活文档，第十轮为

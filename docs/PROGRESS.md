@@ -8,7 +8,7 @@
 `Player` 的 10 个桩方法接通 9 个（SetDataSource/Prepare/Start/Pause/Stop/SeekTo/音量/倍速/事件全部可用）；
 `headless` 示例对 5 个测试媒体完成"prepare→play→EOS→kCompleted"全流程（退出码 0），
 `play_sdl2` 在真实窗口带音频出画。全量测试 358/358（FFmpeg 配置）与 323/323（no-ffmpeg）全绿，
-`check_invariants` 全过（220 文件）且 C23 列宽基线 323→311（只降不升）。本轮在 **macOS / AppleClang 21 / FFmpeg 7.1.1 (Homebrew) / SDL2 2.32** 上开发——这是项目第一次在 Linux 之外构建，见 §10.1 的四项 macOS 修复。
+`check_invariants` 全过（220 文件）且 C23 列宽基线 323→310（只降不升）。本轮在 **macOS / AppleClang 21 / FFmpeg 7.1.1 (Homebrew) / SDL2 2.32** 上开发——这是项目第一次在 Linux 之外构建，见 §10.1 的四项 macOS 修复。
 > 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
 > 27 个文件转正进构建）
 
@@ -44,6 +44,9 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | `decoder_stream.cc` | demuxer 读回调整 hop 到自身 sequence | #40 |
 | `ffmpeg_demuxer.{h,cc}` | open 时安装 log bridge（否则 FFmpeg 失败原因不可见）；网络专用选项按 URI 协议门控（reconnect*/user_agent/headers 传给本地文件只会变成 Δ2 的"未消费选项"噪音） | |
 | `player/player.cc` | 改为纯转发到 PlayerImpl；RunUntilIdle/StepOnce/TakeSnapshot/UpdateConfig/SelectTrack/ReconnectNow 保持 kNotImplemented 并指明里程碑（M9+） | |
+| `base/synchronization/lock.h` | `Lock` 补 `CAPABILITY("mutex")`、`AutoLock` 补 `SCOPED_LOCKABLE` + `EXCLUSIVE_LOCK_FUNCTION`；新增 `EXCLUSIVE_LOCKS_REQUIRED` 宏 | 注解此前不成立：`GUARDED_BY` 从未真正生效，且每处 `GUARDED_BY` 自己又产生一条诊断 |
+| `cmake/IjkppCompilerFlags.cmake` | `-Wuseless-cast` 移入 GCC 专有列表 | clang 报 unknown warning option，`-Werror` 下 debug 预设无法编译 |
+| 24 个文件的头注释 | 修复第十轮脚本把新段落插进旧句子中间留下的断句、重复的 `(promoted from DRAFT, tenth round)` 与重复空注释行 | 纯重排与合并，除重复片段外未改字面 |
 
 ### (3) 本轮抓到的 bug（接通播放 = 第一条真正跑全链路的路径，收获很大）
 
@@ -74,8 +77,12 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 ✅ corrupt_header.mp4              → prepare 失败，错误含 DecodeFailed/建议（不崩溃）
 ✅ play_sdl2（真窗口 + 音频）       → 播完 kCompleted，退出码 0
 ✅ ctest: 358/358（mac 配置，+5 状态机用例）· 323/323（no-ffmpeg）
-✅ check_invariants 全过（220 文件）；C23 列宽基线 323 → 311（净减 12 行，棘轮只降不升）
-✅ 全程零警告（AppleClang 与 Debian 同一警告集）
+✅ check_invariants 全过（220 文件）；C23 列宽基线 323 → 310（净减 13 行，棘轮只降不升）
+✅ 零警告（编译器 + 链接器）：RelWithDebInfo 的 no-ffmpeg / FFmpeg+SDL2 与
+   Debug + 严格告警 + `-Werror` 三套配置实测。这份成绩单在第十轮末尾一度是虚的：
+   `-Wthread-safety` 报的 660 条里有 642 条源于 `base::Lock` 缺 capability 注解，
+   `-Wuseless-cast` 又是 GCC 专有选项却无条件传给了 clang（`-Werror` 下 debug 预设
+   一行都编不过）。两处根因修好后 660 → 0，中途暴露的 18 条真问题逐条修掉。
 ```
 
 ### (5) 本轮未做 / 遗留
@@ -96,6 +103,11 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
    一处代价记在这里：`pipeline_impl_host.cc` 的 `OnDemuxerError`/`OnError`/`OnEnded` 各写
    一次 `state_`/`playing_`，与 M8 那条"具体状态机应与它驱动的 Pipeline 同 TU"的理由
    相反；M9 重排时把这三处收回 `pipeline_impl.cc` 即可闭合。
+7. 警告门禁修好之后 `-Wthread-safety` 才开始说真话：它抓出 7 处 `state_lock_` 保护成员
+   在锁外读写（`PlayerImpl` 的 `PrepareAsync` 两处、`source_`、`display_` 三处、
+   `CreateDemuxer` 一处），以及 `FFmpegDemuxerStream::FulfilPendingReadLocked` 这类
+   "约定持锁却没写注解"的助手。前者是真的要把访问挪进锁内（已改），后者用
+   `EXCLUSIVE_LOCKS_REQUIRED` 表达即可。渲染三件套仍缺直接单测（见本节第 1 条）。
 
 ---
 

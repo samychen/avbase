@@ -5,7 +5,7 @@
 # refuses to raise an entry, so this file can only shrink. Do not edit
 # it by hand: an entry added by hand is an exemption with no reason
 # attached, which is what R12 says must not happen.
-# Total: 311 line(s) in 80 file(s).
+# Total: 310 line(s) in 79 file(s).
 
 base/functional/bind.h 9
 base/functional/callback.h 1
@@ -58,7 +58,6 @@ media/filters/legacy/video_frame_compositor.h 4
 platform/ffmpeg/av_includes.h 1
 platform/ffmpeg/compat.cc 14
 platform/ffmpeg/compat.h 11
-platform/ffmpeg/log_bridge.cc 1
 player/option_registry.cc 9
 player/playback_stats.cc 9
 player/player.cc 1
