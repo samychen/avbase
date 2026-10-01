@@ -307,5 +307,79 @@ TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
       << client_.error().ToString() << "\n" << client_.EventLog();
 }
 
+// The M9 accurate-seek contract at the pipeline level: with the drop window
+// open, NOTHING before the target frame may reach the display -- not the
+// pre-seek generation, not the post-seek frames before the target. That is
+// strictly stronger than the keyframe seek above, whose landing assertion
+// had to tolerate frames beyond the target but could not bound the floor.
+TEST_F(PipelineSeekTest, AccurateSeekPresentsNothingBeforeTheTarget) {
+  StartPipeline();
+  ASSERT_TRUE(PumpUntil([this] { return client_.Started(); }))
+      << "pipeline never started; events:\n" << client_.EventLog();
+  auto bus = AudioBus::Create(kAudioChannels, kFramesPerBuffer);
+  PlayAndWaitForSinks(bus.get());
+  int presented_before = 0;
+  for (int round = 0; round < 60; ++round) {
+    presented_before += PumpRound(bus.get());
+  }
+  ASSERT_GT(presented_before, 0) << client_.EventLog();
+
+  std::atomic<bool> reached{false};
+  // Open the window BEFORE the keyframe seek: it survives Flush() by design,
+  // which is what frames the new generation. On the synthetic 30 fps source,
+  // 5 s is frame 150, and the pre-seek position (~1 s) is frame ~30 -- the
+  // window must drop those too.
+  pipeline_->BeginAccurateSeek(
+      base::Seconds(5),
+      base::BindOnce([](std::atomic<bool>* r) { r->store(true); }, &reached));
+  const size_t window_batch = video_sinks_->last_sink()
+                                  ? video_sinks_->last_sink()->frames().size()
+                                  : 0;
+  seeked_.store(false);
+  pipeline_->Seek(base::Seconds(5), base::BindOnce(&PipelineSeekTest::OnSeeked,
+                                                   base::Unretained(this)));
+  ASSERT_TRUE(PumpUntil([this, &bus] {
+    PumpRound(bus.get());
+    return seeked_.load();
+  })) << "seek callback never ran; events:\n" << client_.EventLog();
+
+  const test::FakeVideoSink* video = video_sinks_->last_sink();
+  ASSERT_TRUE(PumpUntil([&] {
+    PumpRound(bus.get());
+    return LandingFrame(*video, kSeekFrame, window_batch) != nullptr;
+  })) << "no frame >= " << kSeekFrame
+      << " presented after the accurate seek; events:\n"
+      << client_.EventLog();
+
+  // THE contract: from the moment the window opened, no frame below the
+  // target was presented. (A frame dropped as late can land past the target,
+  // so the upper bound keeps the keyframe test's slack; the floor is exact.)
+  const std::vector<base::scoped_refptr<VideoFrame>>& frames =
+      video->frames();
+  for (size_t i = window_batch; i < frames.size(); ++i) {
+    uint32_t index = 0;
+    if (test::ReadFrameIndex(*frames[i], &index)) {
+      EXPECT_GE(index, kSeekFrame)
+          << "frame " << index << " presented under an open accurate-seek "
+          << "window targeting frame " << kSeekFrame;
+    }
+  }
+  uint32_t landed_index = 0;
+  ASSERT_TRUE(test::ReadFrameIndex(
+      **LandingFrame(*video, kSeekFrame, window_batch), &landed_index));
+  EXPECT_LE(landed_index, kSeekFrame + kLandingSlack);
+
+  // The window's reached callback must have fired -- the facade's
+  // SeekController completes the user's seek on it, so a silent window would
+  // hang every accurate seek.
+  ASSERT_TRUE(PumpUntil([&] {
+    PumpRound(bus.get());
+    return reached.load();
+  })) << "accurate-seek window never reported reaching the target";
+
+  EXPECT_FALSE(client_.HasError())
+      << client_.error().ToString() << "\n" << client_.EventLog();
+}
+
 }  // namespace
 }  // namespace ijkpp::media
