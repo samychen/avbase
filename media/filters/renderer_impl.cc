@@ -227,18 +227,14 @@ void RendererImpl::CheckBufferingTransitions() {
   // Only PushMasterClock() calls this, on S1; this TU carries no sequence
   // checker (the class's S1 discipline is by construction and by the callers
   // that do have checkers).
-  // The audio side cannot be tested against zero: WSOLA holds a residual
-  // OLA window (960 frames at 48 kHz, ~20 ms) until end of stream, so
-  // buffered_frames() never reaches 0 mid-stream. The floor must sit ABOVE
-  // that residual, not at one device period -- the throttled-source test
-  // runs 256-frame periods and the first floor (256) was below 960, making
-  // starvation unobservable in exactly the configuration meant to catch it.
-  // Four periods (~85 ms at 1024/48k) says "the device is about to run on
-  // fumes" without firing on normal jitter.
-  const int audio_floor = deps_.audio_frames_per_buffer * 4;
+  // Each sub-renderer publishes its own verdict (event-driven on the audio
+  // side: the device callback knows exactly when it could not serve a
+  // period; WSOLA's residual OLA window makes queue-depth tests
+  // unsatisfiable mid-stream). Video uses the compositor's live pending
+  // count. RendererImpl only merges -- it is not in a position to guess.
   const bool starved = rendering_ && !ended_ &&
                        (!video_ || video_->frames_pending() == 0) &&
-                       (!audio_ || audio_->buffered_frames() < audio_floor);
+                       (!audio_ || audio_->starved());
   if (starved == starved_reported_) {
     return;
   }

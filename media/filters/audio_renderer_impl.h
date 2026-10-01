@@ -191,6 +191,11 @@ class IJKPP_MEDIA_EXPORT AudioRendererImpl final
 
   bool initialized() const { return initialized_; }
   bool ended() const { return ended_; }
+  // The device callback's own verdict: true from the first short/empty
+  // period until it serves a full one. Event-driven (published at the
+  // exact moment the state flips), so RendererImpl's starvation merge
+  // never depends on sampling an oscillating queue depth.
+  bool starved() const { return starved_.load(); }
   uint64_t underruns() const { return underruns_.load(); }
   uint64_t frames_rendered() const { return frames_rendered_.load(); }
   int buffered_frames() const;
@@ -266,6 +271,9 @@ class IJKPP_MEDIA_EXPORT AudioRendererImpl final
   // Written by S7 inside Render(), read by S4 for statistics. Relaxed is
   // enough: these are counters, not ordering constraints.
   std::atomic<uint64_t> underruns_{0};
+  // Same S7 write / any-thread read discipline. Paused does not count:
+  // silence by policy is not starvation.
+  std::atomic<bool> starved_{false};
   std::atomic<uint64_t> frames_rendered_{0};
 
   // True while a DecoderStream::Read is in flight. DecoderStream's contract is

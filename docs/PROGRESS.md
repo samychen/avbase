@@ -49,11 +49,13 @@
    **根因已修**——`StartPlayingFrom` 重置 `starved_reported_`，把 Flush 刚发布的
    DRY 边沿状态吞掉；seek 重启后数据若先于首个 10ms tick 到达，RECOVER 永不发布。
    重置本身语义错误（起播时的干涸是合法的 kHaveNothing，ffplay 同义），移除后
-   12/12 稳定；(b) 限速源用例本轮又修掉一层：音频干涸判据撞上 WSOLA 残余 OLA 窗口（960 帧）——
-   地板曾设为单设备周期（测试配置 256）低于残余，干涸在流中间不可满足；已提到
-   四个周期。剩余 3/8 的偶发是 video-pending 与 audio-buffered **各自独立振荡、
-   同时低于门槛的瞬间**逃过采样——正解是子渲染器各自发布自己的 starved 标志
-   （它们精确知道自己是否干涸），RendererImpl 只做合并，待下一轮重构。
+   12/12 稳定；(b) 限速源用例 **已转正（第十四轮）**。两级修复：音频干涸判据撞上 WSOLA 残余
+   OLA 窗口（960 帧）——地板修到四个周期仍不够；正解是**子渲染器自己发布
+   starved 判决**（AudioRendererImpl 在设备回调里发布：短供/空供置位、满供清除，
+   暂停不计入；RendererImpl 只做合并，不再猜测队列深度），事件驱动彻底取代采样，
+   8/8 压力全稳。过程教训：Render 已被后续轮次重构出 DrainRing，补丁引用了
+   不存在的 `requested` 变量——**构建失败时压测结果无效**（跑的是旧二进制），
+   修复后必须重跑全部数字。
 2. **限速源卡顿-恢复集成用例**：断言层已就位（边沿到达客户端），差的是
    FFmpeg+ThrottledDataSource 的夹具变体（进 media_ffmpeg_unittests）——
    FFmpegDemuxer(ThrottledDataSource(Memory(file))) + 假 sink 的管线级驱动，

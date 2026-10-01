@@ -377,6 +377,7 @@ int AudioRendererImpl::Render(base::TimeDelta delay,
     // as the user is paused.
     return 0;
   }
+  starved_.store(false);   // a served period clears the verdict
   DCHECK(sink_->CurrentThreadIsRenderingThread());
 
   const double rate = playback_rate_.load();
@@ -393,7 +394,11 @@ int AudioRendererImpl::Render(base::TimeDelta delay,
     // AudioGlitchInfo entry, and audio_glitches is how an underrun becomes
     // measurable instead of "sometimes it crackles".
     underruns_.fetch_add(1);
+    starved_.store(true);
     return 0;
+  }
+  if (written < dest->frames()) {
+    starved_.store(true);   // partially served: the queue is on fumes
   }
   // |written| > 0 here, so DrainRing() necessarily filled |first_media_micros|.
   if (av_sync_) {
