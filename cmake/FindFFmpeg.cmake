@@ -46,9 +46,22 @@ if(PKG_CONFIG_FOUND AND NOT _ijkpp_ff_hints AND NOT ANDROID AND NOT IOS)
       continue()
     endif()
     pkg_check_modules(PC_${_comp} QUIET IMPORTED_TARGET lib${_comp})
+    message(STATUS "[FindFFmpeg debug] ${_comp}: found=${PC_${_comp}_FOUND} "
+        "inc=${PC_${_comp}_INCLUDE_DIRS} libs=${PC_${_comp}_LINK_LIBRARIES} "
+        "libdirs=${PC_${_comp}_LIBRARY_DIRS}")
     if(PC_${_comp}_FOUND)
+      # Built directly from the PC_* variables rather than linking the
+      # PkgConfig:: target: on Homebrew/Apple Silicon the PkgConfig target's
+      # include usage requirements did not survive the INTERFACE hop, which
+      # left av_includes.h unfindable with a successful-looking find. The
+      # variables are authoritative either way.
       add_library(FFmpeg::${_comp} INTERFACE IMPORTED)
-      target_link_libraries(FFmpeg::${_comp} INTERFACE PkgConfig::PC_${_comp})
+      set_property(TARGET FFmpeg::${_comp} PROPERTY
+          INTERFACE_INCLUDE_DIRECTORIES "${PC_${_comp}_INCLUDE_DIRS}")
+      set_property(TARGET FFmpeg::${_comp} PROPERTY
+          INTERFACE_LINK_DIRECTORIES "${PC_${_comp}_LIBRARY_DIRS}")
+      set_property(TARGET FFmpeg::${_comp} PROPERTY
+          INTERFACE_LINK_LIBRARIES "${PC_${_comp}_LINK_LIBRARIES}")
       string(REGEX REPLACE "^([0-9]+).*" "\\1" FFmpeg_${_comp}_VERSION_MAJOR
              "${PC_${_comp}_VERSION}")
       set(FFmpeg_${_comp}_FOUND TRUE)

@@ -13,5 +13,11 @@ add_executable(ijkpp-inspect
 target_link_libraries(ijkpp-inspect PRIVATE
     ijkpp::platform_ffmpeg
     ijkpp::base_test_support)
+# The CLI includes platform/ffmpeg headers (av_includes.h), and
+# ijkpp_platform_ffmpeg links FFmpeg PRIVATE on purpose (it is the only
+# FFmpeg-linked target), so the includes must be requested here as well.
+find_package(FFmpeg REQUIRED COMPONENTS avformat avcodec avutil)
+target_link_libraries(ijkpp-inspect PRIVATE
+    FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil)
 target_include_directories(ijkpp-inspect PRIVATE ${CMAKE_SOURCE_DIR})
 ijkpp_configure_target(ijkpp-inspect)
