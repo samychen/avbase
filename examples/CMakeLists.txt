@@ -1,5 +1,8 @@
 # examples/ — the SDK usability bar (docs/10 §6): main.cc 行数是 API 易用性
 # 度量。headless 只需要 FFmpeg；play_sdl2 还需要 SDL2 后端。
+#
+# 源文件保持逐个列出（docs/06 §7.6）：两个可执行文件同在一个目录、却在两个
+# 不同的开关下，目录成员 ≠ 目标成员，glob 表达不了。
 
 if(IJKPP_ENABLE_FFMPEG)
   add_executable(headless headless.cc)

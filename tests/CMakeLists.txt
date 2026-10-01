@@ -12,31 +12,26 @@ function(ijkpp_add_unittest name)
   gtest_discover_tests(${name} PROPERTIES TIMEOUT 120)
 endfunction()
 
+# Source listing (docs/06 §7.6): unit/base/, unit/media_base/ and unit/player/
+# are one directory per target with nothing picked per platform or per option,
+# so they are globbed and a new *_unittest.cc is picked up with no edit here.
+# unit/media_filters/ is the exception: it holds media_unittests' four files
+# beside the three FFmpeg ones that only media_ffmpeg_unittests may compile, so a
+# glob there would drag those into the no-ffmpeg gate (G2).
+
 # ---- base ----
+file(GLOB IJKPP_BASE_UNITTEST_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/unit/base/*.cc")
 ijkpp_add_unittest(base_unittests
-    SOURCES
-        unit/base/time_unittest.cc
-        unit/base/expected_unittest.cc
-        unit/base/scoped_refptr_unittest.cc
-        unit/base/refcount_ownership_unittest.cc
-        unit/base/weak_ptr_unittest.cc
-        unit/base/callback_bind_unittest.cc
-        unit/base/synchronization_unittest.cc
-        unit/base/observer_list_unittest.cc
-        unit/base/task_queue_unittest.cc
-        unit/base/thread_unittest.cc
-        unit/base/task_environment_unittest.cc
+    SOURCES ${IJKPP_BASE_UNITTEST_SOURCES}
     DEPS ijkpp::base_test_support)
 
 # ---- media ----
+file(GLOB IJKPP_MEDIA_UNITTEST_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/unit/media_base/*.cc")
 ijkpp_add_unittest(media_unittests
     SOURCES
-        unit/media_base/audio_buffer_unittest.cc
-        unit/media_base/decoder_buffer_unittest.cc
-        unit/media_base/decoder_buffer_queue_unittest.cc
-        unit/media_base/media_log_unittest.cc
-        unit/media_base/video_frame_queue_unittest.cc
-        unit/media_base/video_frame_unittest.cc
+        ${IJKPP_MEDIA_UNITTEST_SOURCES}
         unit/media_filters/av_sync_controller_unittest.cc
         unit/media_filters/decoder_stream_unittest.cc
         unit/media_filters/video_frame_compositor_unittest.cc
@@ -45,10 +40,10 @@ ijkpp_add_unittest(media_unittests
 
 # ---- player: the SDK facade. ijkpp::player links ijkpp::media PUBLIC, so the
 # media types this suite needs come along without being listed twice.
+file(GLOB IJKPP_PLAYER_UNITTEST_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/unit/player/*.cc")
 ijkpp_add_unittest(player_unittests
-    SOURCES
-        unit/player/deps_ownership_unittest.cc
-        unit/player/state_machine_unittest.cc
+    SOURCES ${IJKPP_PLAYER_UNITTEST_SOURCES}
     DEPS ijkpp::player ijkpp::base_test_support)
 
 # ---- media + FFmpeg: real containers, labelled needs-ffmpeg so the

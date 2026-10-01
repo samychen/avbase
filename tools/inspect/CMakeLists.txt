@@ -4,12 +4,14 @@
 # Split per subcommand so no file exceeds the 500-line limit (invariant C1) and
 # no function exceeds 80 lines (C2). inspect_common holds the plumbing all three
 # share: argument parsing, the demuxer Host, and the task-queue Pump.
-add_executable(ijkpp-inspect
-    inspect_main.cc
-    inspect_common.cc
-    inspect_probe.cc
-    inspect_decode.cc
-    inspect_sync.cc)
+#
+# Source listing (docs/06 §7.6): one directory, one target, no per-file option
+# or platform gate -- the whole directory is gated where it is added in the
+# top-level CMakeLists, not file by file. So the list is a glob and a new
+# subcommand needs no edit here.
+file(GLOB IJKPP_INSPECT_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.cc")
+add_executable(ijkpp-inspect ${IJKPP_INSPECT_SOURCES})
 target_link_libraries(ijkpp-inspect PRIVATE
     ijkpp::platform_ffmpeg
     ijkpp::base_test_support)

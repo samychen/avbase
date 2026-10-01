@@ -1002,6 +1002,35 @@ ijkpp_add_example(ijkpp_inspect SOURCES examples/ijkpp_inspect/main.cc
                                        examples/ijkpp_inspect/golden.cc)
 ```
 
+### 7.6 源文件列举：什么时候可以 glob
+
+一条规则，不再按文件数做判断题：
+
+> **目录里的 `.cc` 全部属于同一个目标、且没有任何文件是按平台或按构建开关挑选的
+> → 用 `file(GLOB ... CONFIGURE_DEPENDS)`；否则逐个列出。**
+
+| 目录 | 处理 | 原因 |
+|---|---|---|
+| `media/base/` · `media/renderers/` · `media/filters/legacy/` | glob | 全部属于 `ijkpp_media`，无平台/开关选择 |
+| `player/` | glob | 单目录单目标 |
+| `platform/ffmpeg/` · `platform/sdl2/` | glob | 目录自身单目标；`platform_ffmpeg` 跨目录取的那五个 `ffmpeg_*.cc` 仍逐个列出 |
+| `tools/inspect/` | glob | 单目录单目标：新增子命令不必再改 CMake |
+| `tests/unit/{base,media_base,player}/` | glob | 测试目录与目标一一对应，也正是新增文件最频繁的地方 |
+| `media/filters/` | 显式 | 同目录下有 5 个 `ffmpeg_*.cc` 属于 `ijkpp_platform_ffmpeg`，glob 会把 `libav*` 扫进核心库，破坏 G2 |
+| `tests/unit/media_filters/` | 显式 | 同上：4 个进 `media_unittests`，3 个进 `media_ffmpeg_unittests` |
+| `base/` | 显式 | 这一层的抽象就是"每平台一个文件"（今天是 `threading/platform_thread_posix.cc`，§7.1 计划里的 `synchronization/` posix/win 成对文件同理），glob 会编进错误平台的那一个 |
+| `examples/` | 显式 | 两个可执行文件同在一个目录、却在两个不同的开关下 |
+
+`CONFIGURE_DEPENDS` 不是可选项：没有它，新增文件不会触发 CMake 重跑，"我加了文件、
+但没被编译"会静默发生。**不要用 `aux_source_directory`**：它既不递归，也没有重跑语义
+（CMake 官方文档正是拿这一点劝阻它）——省下一行显式列表，换来一个静默陷阱。
+
+**门禁 C25** 兜住另一半：每个 `.cc` 必须被某个目标覆盖（显式列表或 glob 展开），否则
+退出码非 0。"忘了加进构建"于是从静默不编译变成响亮的失败。某个文件**不该**被编译时
+（DRAFT），写进 `tools/check_invariants.py` 的 `DRAFT_FILES`——注意 glob 改变了 DRAFT
+的放法：**留在一个被 glob 的目录里的 DRAFT 会被编译**，它应该待在没有任何 glob 能到达
+的子目录里（glob 不递归），直到能编译再移回原位。
+
 ---
 
 ## 8. `CMakePresets.json`

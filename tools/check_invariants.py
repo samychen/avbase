@@ -13,6 +13,7 @@ Exit code 0 = all rules pass. Non-zero = violations printed, one per line.
 from __future__ import annotations
 
 import argparse
+import glob
 import os
 import pathlib
 import re
@@ -385,7 +386,7 @@ CMAKE_SOURCE_RE = re.compile(r"(?<![\w./-])([\w./-]+\.(?:cc|cpp|c))(?![\w./-])")
 
 
 def cmake_target_calls(text: str):
-    """Yields (target, body) for every add_library/add_executable in |text|.
+    r"""Yields (target, body) for every add_library/add_executable in |text|.
 
     The body is found by counting parentheses rather than by looking for a blank
     line. The blank-line version was wrong in a way that mattered: comments are
@@ -442,6 +443,80 @@ def check_cmake_sources(root: pathlib.Path, report: Report) -> None:
                                f"target {target} lists {src}, which does not "
                                f"exist relative to "
                                f"{cm.parent.relative_to(root) or '.'}")
+
+
+CMAKE_GLOB_RE = re.compile(
+    r"file\s*\(\s*GLOB(?:_RECURSE)?\s+([A-Za-z_]\w*)(.*?)\)", re.S)
+CMAKE_GLOB_PATTERN_RE = re.compile(r"\"([^\"]+)\"")
+
+
+def globbed_sources(cm: pathlib.Path, text: str) -> list[pathlib.Path]:
+    """Expands the file(GLOB ...) calls of one CMakeLists into real paths.
+
+    A static checker cannot ask CMake to expand a pattern, so it does it itself:
+    relative patterns resolve against the CMakeLists' own directory, and
+    ${CMAKE_CURRENT_SOURCE_DIR} is substituted (CMake would have done that
+    before globbing). Only quoted patterns count -- an unquoted argument is a
+    variable name, and expanding it as a literal path would silently cover
+    nothing, which is how a rule ends up green and useless.
+    """
+    out: list[pathlib.Path] = []
+    for _var, args in CMAKE_GLOB_RE.findall(text):
+        for raw in CMAKE_GLOB_PATTERN_RE.findall(args):
+            pat = raw.replace("${CMAKE_CURRENT_SOURCE_DIR}",
+                              cm.parent.as_posix())
+            path = pathlib.Path(pat)
+            if not path.is_absolute():
+                path = cm.parent / path
+            out.extend(pathlib.Path(hit).resolve()
+                       for hit in glob.glob(str(path)))
+    return out
+
+
+def check_sources_in_a_target(root: pathlib.Path, report: Report) -> None:
+    """C25: every .cc in the tree is compiled by some target.
+
+    C24 answers "a listed file exists". The other direction was silent: a .cc
+    that no list mentions is simply never compiled, and a test suite running
+    green over a tree that is missing a component is worse than a red one. The
+    rule became reachable when part of the lists turned into file(GLOB ...)
+    (docs/06 §7.6), so those globs are resolved here and the rule means the same
+    thing on both sides of the tree.
+
+    A file that must not be compiled yet is named in DRAFT_FILES. Note what a
+    glob changes about that workflow: a DRAFT .cc left in a globbed directory is
+    compiled whether or not it is exempted here. Globs do not recurse, so the
+    place for it is a subdirectory no target reaches until it builds.
+    """
+    covered: set[pathlib.Path] = set()
+    for cm in sorted(root.rglob("CMakeLists.txt")):
+        if any(part in (".git", "build", "third_party") for part in cm.parts):
+            continue
+        text = re.sub(r"#[^\n]*", "",
+                      cm.read_text(encoding="utf-8", errors="replace"))
+        covered.update(globbed_sources(cm, text))
+        # Whole-file, not "inside add_library": the test suites pass their
+        # sources through the ijkpp_add_unittest() helper, so the only
+        # add_executable in tests/CMakeLists.txt is the one inside the function
+        # body with ${T_SOURCES} -- a target-body-only scan reported all seven
+        # files listed there as uncompiled. What the rule needs to know is
+        # "some build file names it", and that is what this asks.
+        for src in CMAKE_SOURCE_RE.findall(text):
+            if "$" in src or "{" in src:
+                continue          # variable-driven path, covered by its glob
+            covered.add((cm.parent / src).resolve())
+
+    for path in sorted(root.rglob("*.cc")):
+        if any(part in (".git", "build", "third_party")
+               or part.startswith("build") for part in path.parts):
+            continue
+        rel = path.relative_to(root).as_posix()
+        if path.resolve() in covered or rel in DRAFT_FILES:
+            continue
+        report.add("C25", path, 0,
+                   "no target compiles this file: name it in a CMakeLists, or "
+                   "list it in DRAFT_FILES if it must not be built yet "
+                   "(docs/06 §7.6)")
 
 
 def check_columns(root: pathlib.Path, report: Report, update: bool) -> None:
@@ -579,6 +654,7 @@ def main() -> int:
             check_function_length(path, rel, report)
 
     check_cmake_sources(root, report)
+    check_sources_in_a_target(root, report)
     check_columns(root, report, args.update_baseline)
 
     for note in report.notes:

@@ -1,16 +1,11 @@
 # player/ — the SDK facade. Only player/public/*.h is installed.
-add_library(ijkpp_player
-    deps.cc
-    event_hub.cc
-    global.cc
-    option_registry.cc
-    playback_stats.cc
-    player.cc
-    player_config.cc
-    player_event.cc
-    player_impl.cc
-    player_impl_events.cc
-    state_machine.cc)
+#
+# Source listing (docs/06 §7.6): one directory, one target, nothing selected per
+# platform or per build option -- so the list is a glob and a new file needs no
+# edit here. Invariant C25 catches a .cc that lands in no target at all.
+file(GLOB IJKPP_PLAYER_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.cc")
+add_library(ijkpp_player ${IJKPP_PLAYER_SOURCES})
 add_library(ijkpp::player ALIAS ijkpp_player)
 target_include_directories(ijkpp_player PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>

@@ -1,6 +1,12 @@
 # base/ — the Chromium-shaped foundation layer. Zero external dependencies:
 # this target must build and its tests must pass on a machine with nothing but
 # a C++20 compiler (design goal G2).
+#
+# Source listing stays explicit (docs/06 §7.6): this is the layer whose
+# abstraction is one file per platform -- threading/platform_thread_posix.cc
+# today, the posix/win pairs docs/06 §7.1 plans for synchronization/ later -- so
+# directory membership is not target membership, the same reason media/filters/
+# is hand-written. A glob here would compile the wrong platform's file.
 add_library(ijkpp_base
     logging.cc
     check.cc
