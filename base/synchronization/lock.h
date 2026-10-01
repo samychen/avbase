@@ -33,6 +33,19 @@
 #define UNLOCK_FUNCTION(...) \
   IJKPP_THREAD_ANNOTATION_ATTRIBUTE__(unlock_function(__VA_ARGS__))
 #define LOCK_RETURNED(x) IJKPP_THREAD_ANNOTATION_ATTRIBUTE__(lock_returned(x))
+// The two that make the rest mean anything: without a CAPABILITY on Lock,
+// every GUARDED_BY(lock_) in the tree is a diagnostic of its own ("attribute
+// requires arguments whose type is annotated with 'capability'"), and without
+// SCOPED_LOCKABLE on the RAII wrapper clang does not know the lock is held
+// inside the scope -- which is why the tree used to emit 260 "requires holding
+// mutex" warnings at call sites that do take the lock.
+#define CAPABILITY(x) IJKPP_THREAD_ANNOTATION_ATTRIBUTE__(capability(x))
+#define SCOPED_LOCKABLE IJKPP_THREAD_ANNOTATION_ATTRIBUTE__(scoped_lockable)
+// For the "*Locked" convention the codebase uses for helpers that must be
+// called with the lock already held: without it clang reads every member
+// access inside such a helper as an unlocked one.
+#define EXCLUSIVE_LOCKS_REQUIRED(...) \
+  IJKPP_THREAD_ANNOTATION_ATTRIBUTE__(exclusive_locks_required(__VA_ARGS__))
 
 namespace ijkpp::base {
 
@@ -41,7 +54,7 @@ namespace ijkpp::base {
 //   * the global lock-order rule (docs/04 §3.1) can be asserted in debug
 //     builds via LockOrderChecker, and
 //   * clang's GUARDED_BY annotation has a concrete type to attach to.
-class Lock {
+class CAPABILITY("mutex") Lock {
  public:
   Lock() = default;
   Lock(const Lock&) = delete;
@@ -66,15 +79,15 @@ class Lock {
   std::mutex mutex_;
 };
 
-class AutoLock {
+class SCOPED_LOCKABLE AutoLock {
  public:
-  explicit AutoLock(Lock& lock) : lock_(lock) {
+  explicit AutoLock(Lock& lock) EXCLUSIVE_LOCK_FUNCTION(lock) : lock_(lock) {
     lock_.AssertAcquiredInOrder();
     lock_.Acquire();
   }
   AutoLock(const AutoLock&) = delete;
   AutoLock& operator=(const AutoLock&) = delete;
-  ~AutoLock() {
+  ~AutoLock() UNLOCK_FUNCTION() {
     lock_.Release();
     lock_.RecordRelease();
   }
