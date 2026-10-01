@@ -22,6 +22,11 @@ namespace ijkpp {
 
 void PlayerImpl::OnMediaSeekDone(int64_t request_id,
                                  base::TimeDelta requested) {
+  // The fresh position knows nothing about the old buffer: the progression
+  // rewinds to kFirst, and a cycle left open by the seek's starvation closes
+  // (BufferController::OnSeekCompleted's contract).
+  DCHECK_CALLED_ON_VALID_SEQUENCE(buffer_controller_sequence_);
+  buffer_controller_.OnSeekCompleted();
   Player::SeekCB cb;
   {
     base::AutoLock scoped(seek_lock_);
@@ -130,17 +135,26 @@ void PlayerImpl::OnDurationChange(base::TimeDelta duration) {
 
 void PlayerImpl::OnBufferingStateChange(media::BufferingState state,
                                         base::TimeDelta /*memory_usage*/) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(buffer_controller_sequence_);
   if (state == media::BufferingState::kHaveMetadata) {
     OnPipelineReady();
     return;
   }
   if (state == media::BufferingState::kHaveNothing) {
+    buffer_controller_.OnBufferingStart();
     event_hub_.Post(EventType::kBufferingStarted, BufferedUpdatePayload{},
                     GetMediaTime());
     return;
   }
   if (state == media::BufferingState::kHaveEnough) {
-    event_hub_.Post(EventType::kBufferingEnded, BufferedUpdatePayload{},
+    // Complete the cycle BEFORE rendering the payload, so the mark it
+    // carries is the tier this cycle was waiting on, not the next one.
+    const base::TimeDelta waited_for = buffer_controller_.current_mark();
+    buffer_controller_.OnBufferingEnd();
+    BufferedUpdatePayload payload;
+    payload.cached_time = GetBufferedTime();
+    payload.high_water_mark_time = waited_for;
+    event_hub_.Post(EventType::kBufferingEnded, std::move(payload),
                     GetMediaTime());
   }
 }
@@ -152,9 +166,21 @@ void PlayerImpl::OnWaiting(media::WaitingReason reason) {
 }
 
 void PlayerImpl::OnStatisticsUpdate(const media::PipelineStatistics& stats) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(buffer_controller_sequence_);
   {
     base::AutoLock scoped(snapshot_lock_);
     last_stats_ = stats;
+  }
+  // While a buffering cycle is open, report progress toward the CURRENT
+  // tier's mark (M9's observable hwm_step). The pipeline's own
+  // kHaveEnough ends the cycle; this tick only re-draws the bar.
+  if (buffer_controller_.buffering()) {
+    const base::TimeDelta buffered = GetBufferedTime();
+    BufferingProgressPayload payload;
+    payload.buffered_ahead = buffered;
+    payload.percent = buffer_controller_.progress_percent(buffered);
+    event_hub_.Post(EventType::kBufferingProgress, std::move(payload),
+                    GetMediaTime());
   }
   StatsPayload payload;
   payload.stats = GetPlaybackStats();

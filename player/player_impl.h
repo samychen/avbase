@@ -17,6 +17,7 @@
 #include "media/base/pipeline.h"
 #include "media/filters/pipeline_impl.h"
 #include "media/renderers/default_renderer_factory.h"
+#include "player/buffer_controller.h"
 #include "player/event_hub.h"
 #include "player/public/player.h"
 #include "player/public/player_config.h"
@@ -156,6 +157,13 @@ class PlayerImpl final : public media::Pipeline::Client {
   // sequence (docs/05 table 5's request_id fix).
   mutable base::Lock seek_lock_;
   std::map<int64_t, Player::SeekCB> pending_seeks_ GUARDED_BY(seek_lock_);
+
+  // Three-tier HWM policy (M9). All of its inputs -- buffering transitions,
+  // statistics ticks, seek completions -- arrive on the media sequence via
+  // the Pipeline::Client callbacks, so the controller itself needs no lock;
+  // the sequence checker is what makes that claim checkable.
+  SEQUENCE_CHECKER(buffer_controller_sequence_);
+  player::BufferController buffer_controller_;
 };
 
 }  // namespace ijkpp
