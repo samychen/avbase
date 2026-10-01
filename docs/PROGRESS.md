@@ -49,7 +49,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | 24 个文件的头注释 | 修复第十轮脚本把新段落插进旧句子中间留下的断句、重复的 `(promoted from DRAFT, tenth round)` 与重复空注释行 | 纯重排与合并，除重复片段外未改字面 |
 | `.github/workflows/ci.yml` · `CMakePresets.json` | 骨架 job 变真：新增 `ffmpeg`（发行版 FFmpeg，359 用例）、`e2e-headless`（5 个样本播到结束）、`sdl2-build`（Linux 上编译 SDL2 后端）；新增 `ffmpeg` 预设，`linux-sdl2` 补上 FFmpeg | 带 FFmpeg 的配置与端到端此前从未在 CI 跑过（`ffmpeg-matrix` / `e2e-linux` 一直是 `if: false`）；`linux-sdl2` 因缺 FFmpeg 连 `play_sdl2` 都建不出来 |
 | `base/synchronization/lock.cc` · `tests/unit/base/synchronization_unittest.cc` | `ObservedOrder()` 补 `thread_local`；新增 `LockTest.ConcurrentOrderRecordingIsRaceFree` | #44 |
-| `tests/support/*` · `tests/unit/media_filters/renderer_impl_unittest.cc` | 渲染器直接单测的第一片：脚本化输入、可编排解码器、手动拉动的双 sink、记录型 renderer client（`renderer_client.h` 里点名"not written yet"的那个），加 `RendererImpl` 的 6 个用例（缺流、init 不内联且只报一次、音频设备在 StartPlayingFrom 才打开、双流排空后 OnEnded） | 第十轮的 12 个渲染器 bug 全靠端到端发现；这套件当场抓出 #47/#48/#49，三处产品修复随它一起进 |
+| `tests/support/*` · 三个渲染器套件（`renderer_impl` · `video_renderer_impl` · `audio_renderer_impl`） | 渲染器直接单测：脚本化输入、可编排解码器、手动拉动的双 sink、记录型 renderer client（`renderer_client.h` 里点名"not written yet"的那个）。14 个用例覆盖启动契约（只报一次、绝不内联、视频 sink 在解码器就绪时开、音频设备在 StartPlayingFrom 才开）、结束契约（双流排空 + 尾帧必须发布）、暂停门控（视频不出新帧；音频报静音且不计 underrun）、以及 flush 后的串号隔离（两侧都不许放行旧 serial 的帧） | 第十轮的 12 个渲染器 bug 全靠端到端发现；这套件当场抓出 #47/#48/#49，三处产品修复随它一起进 |
 | 10 个 `CMakeLists.txt` · `cmake/IjkppCheckInvariants.cmake` · `tools/check_invariants.py` | 源文件列举定成一条规则（docs/06 §7.6）：目录成员 == 目标成员处改用 `file(GLOB ... CONFIGURE_DEPENDS)`（`media/base` · `media/renderers` · `media/filters/legacy` · `player` · `platform/{ffmpeg,sdl2}` · `tools/inspect` · `tests/unit/{base,media_base,player}`），其余四处（`media/filters` · `tests/unit/media_filters` · `base` · `examples`）保持显式并在文件里写明理由。**新增门禁 C25**：每个 `.cc` 必须被某个目标覆盖（显式列表，或规则自己展开的 glob），否则非零退出 | 新增文件不必再改 CMake，Ninja 在构建时重跑 glob（`[0/N] Re-checking globbed directories...`）。C24 管"列出的文件存在"，C25 管"存在的文件被编译"——两个方向都不再静默。`aux_source_directory` 明确不用：不递归，且新增文件不触发 CMake 重配（CMake 官方文档警示的正是这一点）。实测 108 个 (target, source) 与改动前逐一相同 |
 
 ### (3) 本轮抓到的 bug（接通播放 = 第一条真正跑全链路的路径，收获很大）
@@ -84,10 +84,13 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 ✅ headless: truncated_tail.mp4    → completed at 2.88s（截断文件优雅播到 EOF）
 ✅ corrupt_header.mp4              → prepare 失败，错误含 DecodeFailed/建议（不崩溃）
 ✅ play_sdl2（真窗口 + 音频）       → 播完 kCompleted，退出码 0
-✅ ctest: 365/365（mac 配置）· 330/330（no-ffmpeg）——第十轮末尾各 +1：锁序竞态回归用例（#44）；
-   渲染器直接单测再 +6（tests/unit/media_filters/renderer_impl_unittest.cc）
-✅ TSan：`RendererImplTest` 6 用例在 `tsan` 预设下 **0 报告**（此前该路径报出 #49 与
+✅ ctest: 373/373（mac 配置）· 338/338（no-ffmpeg）——第十轮末尾各 +1：锁序竞态回归用例（#44）；
+   渲染器直接单测再 +14（RendererImpl 6 · VideoRendererImpl 3 · AudioRendererImpl 5）
+✅ TSan：三个渲染器套件 14 用例在 `tsan` 预设下 **0 报告**（此前该路径报出 #49 与
    假 sink 自身的 3 处竞争，两者都已修）
+✅ 伪证检查：临时撤掉 #48 的修复后，`EndedPublishesTheTailTheRingCouldNotTake` 与
+   `EndedIsReportedAfterBothStreamsDrain` 双双报红，恢复后全绿——两条结束用例确实咬住了
+   那个缺陷，而不是恰好通过
 ✅ check_invariants 全过（220 文件）；C23 列宽基线 323 → 310（净减 13 行，棘轮只降不升）；
    新增 C25（源文件必须被某个目标覆盖）后复跑全过，且从零 configure 的构建目录同样 324/324
 ✅ 零警告（编译器 + 链接器）：RelWithDebInfo 的 no-ffmpeg / FFmpeg+SDL2 与
@@ -99,12 +102,12 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 
 ### (5) 本轮未做 / 遗留
 
-1. **渲染三件套的直接单测只落地了第一片**：`tests/support/` 的四组假件（脚本化 demuxer
-   stream + media resource、可编排解码器工厂、两个手动拉动的 sink、记录型 renderer client）
-   与 `RendererImpl` 的 6 个用例已就位，并当场抓出 #47/#48/#49；`VideoRendererImpl` /
-   `AudioRendererImpl` 各自的 suite 与暂停恢复、seek 后串号隔离仍欠。注意夹具形状：本套件
-   用**真线程**跑 S3/S4，因为 `~RendererImpl` 会 post 到各自 sequence 后阻塞等待，单线程
-   夹具必然在析构处死锁；这也使 SEQUENCE_CHECKER 首次在单测里真正生效。
+1. **渲染三件套的直接单测已落地，只剩一条**：四组假件 + 三个套件（14 用例）覆盖调用契约、
+   EOS、暂停门控与 flush 串号，并当场抓出 #47/#48/#49。仍欠的是**真实容器上的 seek 行为**：
+   #2 的 NAL 损坏根因未深究，黄金验证要等 M10 的同步样本（合成流只能证明"旧 serial 不放行"，
+   证明不了"seek 落点正确"）。夹具形状备忘：`RendererImpl` 套件必须用真线程（`~RendererImpl`
+   会 post 到 S3/S4 后阻塞等待，单线程夹具在析构处死锁），两个子渲染器套件单线程即可
+   （各自析构只 `sink_->Stop()`）。
 2. 首播 seek 曾触发一次 NAL 损坏（改为首播不重复寻址后消失）——根因未深究，
    真实 seek 已验证干净，但 seek 后串号隔离的黄金验证要等 M10。
 3. `RunUntilIdle`（需要 message_pump_epoll，R2 降级债）、精确 seek（M9
