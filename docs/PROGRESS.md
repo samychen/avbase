@@ -49,6 +49,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | 24 个文件的头注释 | 修复第十轮脚本把新段落插进旧句子中间留下的断句、重复的 `(promoted from DRAFT, tenth round)` 与重复空注释行 | 纯重排与合并，除重复片段外未改字面 |
 | `.github/workflows/ci.yml` · `CMakePresets.json` | 骨架 job 变真：新增 `ffmpeg`（发行版 FFmpeg，359 用例）、`e2e-headless`（5 个样本播到结束）、`sdl2-build`（Linux 上编译 SDL2 后端）；新增 `ffmpeg` 预设，`linux-sdl2` 补上 FFmpeg | 带 FFmpeg 的配置与端到端此前从未在 CI 跑过（`ffmpeg-matrix` / `e2e-linux` 一直是 `if: false`）；`linux-sdl2` 因缺 FFmpeg 连 `play_sdl2` 都建不出来 |
 | `base/synchronization/lock.cc` · `tests/unit/base/synchronization_unittest.cc` | `ObservedOrder()` 补 `thread_local`；新增 `LockTest.ConcurrentOrderRecordingIsRaceFree` | #44 |
+| `tests/support/*` · `tests/unit/media_filters/renderer_impl_unittest.cc` | 渲染器直接单测的第一片：脚本化输入、可编排解码器、手动拉动的双 sink、记录型 renderer client（`renderer_client.h` 里点名"not written yet"的那个），加 `RendererImpl` 的 6 个用例（缺流、init 不内联且只报一次、音频设备在 StartPlayingFrom 才打开、双流排空后 OnEnded） | 第十轮的 12 个渲染器 bug 全靠端到端发现；这套件当场抓出 #47/#48/#49，三处产品修复随它一起进 |
 | 10 个 `CMakeLists.txt` · `cmake/IjkppCheckInvariants.cmake` · `tools/check_invariants.py` | 源文件列举定成一条规则（docs/06 §7.6）：目录成员 == 目标成员处改用 `file(GLOB ... CONFIGURE_DEPENDS)`（`media/base` · `media/renderers` · `media/filters/legacy` · `player` · `platform/{ffmpeg,sdl2}` · `tools/inspect` · `tests/unit/{base,media_base,player}`），其余四处（`media/filters` · `tests/unit/media_filters` · `base` · `examples`）保持显式并在文件里写明理由。**新增门禁 C25**：每个 `.cc` 必须被某个目标覆盖（显式列表，或规则自己展开的 glob），否则非零退出 | 新增文件不必再改 CMake，Ninja 在构建时重跑 glob（`[0/N] Re-checking globbed directories...`）。C24 管"列出的文件存在"，C25 管"存在的文件被编译"——两个方向都不再静默。`aux_source_directory` 明确不用：不递归，且新增文件不触发 CMake 重配（CMake 官方文档警示的正是这一点）。实测 108 个 (target, source) 与改动前逐一相同 |
 
 ### (3) 本轮抓到的 bug（接通播放 = 第一条真正跑全链路的路径，收获很大）
@@ -68,6 +69,9 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | 44 | RendererImpl::Flush 完成回调从 S3 直达 PipelineImpl | 🔴 跨 sequence |
 | 45 | PipelineImpl 并行初始化 demuxer 和 renderer，后者拿到零条流报 kMissingDemuxerStreams（首跑的"StreamNotFound"假象） | 🔴 编排顺序 |
 | 46 | **macOS 移植四件**：根目录 `VERSION` 文件在大小写不敏感 FS 上遮蔽 libc++ 的 `<version>`（改名 VERSION.txt）；`pthread_setname_np` 平台差异（统一截断 15 字符）；FindFFmpeg 的 pkg-config 分支 include 目录经 `PkgConfig::` 中转后丢失（改为从 PC_* 变量直构）；`ijkpp-inspect` 因 FFmpeg PRIVATE 链接拿不到头（显式链接） | 🟠 平台 |
+| 47 | **init 回调内联**：`RendererImpl::Initialize` 的缺流错误路径直接 `std::move(init_cb).Run(...)`，违反 renderer.h 的"绝不内联、调用方可在回调里销毁状态"——调用方会在 `Initialize()` 还在栈上时被重入 | 🔴 契约违背（新单测发现；已改为与成功路径同一条 hop） |
+| 48 | **音频 EOS 尾帧永不发布**：`MarkEndOfStream()` 只翻标志不搬帧，而 `PreStretch()` 只在 `OnDecoderOutput` 与"恢复暂停"时调用。解码器一次输出的帧数大于设备周期时，EOS 到达那一刻环是满的 → 泵因背压停摆、此后无人搬运 → `buffered_frames()` 永不归零 → `CheckForEnded()` 永不报 `OnEnded`（"播完了但不结束"）。设备周期与解码粒度相同时不触发，这正是端到端一直没遇到它的原因 | 🔴 逻辑缺口（新单测发现；修法：`PumpDecoder()` 在 `ended_` 后仍搬运一次尾帧） |
+| 49 | **初始化上报跨 sequence**：`OnVideoInitialized`/`OnAudioInitialized` 由子渲染器在 S3/S4 上调用，却直接写 S1 的 `video_initialized_`/`audio_initialized_` 并互相读。第十轮只给 "ended" 与 init 完成两条路径加了 hop，这条漏了 | 🔴 数据竞争（TSan 在真线程夹具下报出；已加 hop） |
 
 ### (4) 验证结果（macOS 24.5 arm64 / AppleClang 21 / Homebrew FFmpeg 7.1.1 / SDL2 2.32.6）
 
@@ -80,7 +84,10 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 ✅ headless: truncated_tail.mp4    → completed at 2.88s（截断文件优雅播到 EOF）
 ✅ corrupt_header.mp4              → prepare 失败，错误含 DecodeFailed/建议（不崩溃）
 ✅ play_sdl2（真窗口 + 音频）       → 播完 kCompleted，退出码 0
-✅ ctest: 359/359（mac 配置）· 324/324（no-ffmpeg）——第十轮末尾各 +1：锁序竞态回归用例（#44）
+✅ ctest: 365/365（mac 配置）· 330/330（no-ffmpeg）——第十轮末尾各 +1：锁序竞态回归用例（#44）；
+   渲染器直接单测再 +6（tests/unit/media_filters/renderer_impl_unittest.cc）
+✅ TSan：`RendererImplTest` 6 用例在 `tsan` 预设下 **0 报告**（此前该路径报出 #49 与
+   假 sink 自身的 3 处竞争，两者都已修）
 ✅ check_invariants 全过（220 文件）；C23 列宽基线 323 → 310（净减 13 行，棘轮只降不升）；
    新增 C25（源文件必须被某个目标覆盖）后复跑全过，且从零 configure 的构建目录同样 324/324
 ✅ 零警告（编译器 + 链接器）：RelWithDebInfo 的 no-ffmpeg / FFmpeg+SDL2 与
@@ -92,9 +99,12 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 
 ### (5) 本轮未做 / 遗留
 
-1. **渲染三件套的直接单测仍欠**（tests/support/ 假件未建）——本轮的验证是 headless
-   端到端 + 既有 359 用例；RendererImpl 的暂停恢复、seek 后串号隔离、环形交接内存序
-   仍只有推理与 TSan 待跑。
+1. **渲染三件套的直接单测只落地了第一片**：`tests/support/` 的四组假件（脚本化 demuxer
+   stream + media resource、可编排解码器工厂、两个手动拉动的 sink、记录型 renderer client）
+   与 `RendererImpl` 的 6 个用例已就位，并当场抓出 #47/#48/#49；`VideoRendererImpl` /
+   `AudioRendererImpl` 各自的 suite 与暂停恢复、seek 后串号隔离仍欠。注意夹具形状：本套件
+   用**真线程**跑 S3/S4，因为 `~RendererImpl` 会 post 到各自 sequence 后阻塞等待，单线程
+   夹具必然在析构处死锁；这也使 SEQUENCE_CHECKER 首次在单测里真正生效。
 2. 首播 seek 曾触发一次 NAL 损坏（改为首播不重复寻址后消失）——根因未深究，
    真实 seek 已验证干净，但 seek 后串号隔离的黄金验证要等 M10。
 3. `RunUntilIdle`（需要 message_pump_epoll，R2 降级债）、精确 seek（M9

@@ -121,7 +121,15 @@ void RendererImpl::Initialize(MediaResource* media_resource,
   if (!has_video_ && !has_audio_) {
     // Not "no media": a subtitle-only file is a legitimate input, but this
     // renderer has no TextRenderer (gap 3), so it genuinely cannot play it.
-    std::move(init_cb).Run(PipelineStatus::kMissingDemuxerStreams);
+    //
+    // Reported through the same hop as the success path rather than inline:
+    // renderer.h says |init_cb| "runs on the media sequence and is never run
+    // inline, so a caller may safely destroy state in it", and this path broke
+    // that -- the caller was re-entered while Initialize() was still on the
+    // stack. RendererImplTest.InitCallbackIsNeverRunInline is the regression
+    // test; it failed against the inline version.
+    pending_init_cb_ = std::move(init_cb);
+    CompleteInitialization(PipelineStatus::kMissingDemuxerStreams);
     return;
   }
   // An audio-only or video-only stream must fall back to the external clock;
@@ -162,7 +170,7 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
         base::BindOnce(&VideoRendererImpl::Initialize,
                        base::Unretained(video_.get()), video_stream,
                        std::move(deps_.video_sink),
-                       base::BindOnce(&RendererImpl::OnVideoInitialized,
+                       base::BindOnce(&RendererImpl::PostVideoInitialized,
                                       base::Unretained(this))));
   }
   if (audio_) {
@@ -171,7 +179,7 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
         base::BindOnce(&AudioRendererImpl::Initialize,
                        base::Unretained(audio_.get()), audio_stream,
                        audio_params_, deps_.audio_sink,
-                       base::BindOnce(&RendererImpl::OnAudioInitialized,
+                       base::BindOnce(&RendererImpl::PostAudioInitialized,
                                       base::Unretained(this))));
   }
   // The ended callbacks fire on the sub-renderers' own sequences (S3/S4); the
@@ -227,6 +235,18 @@ void RendererImpl::CheckForEnded() {
   if (video_done && audio_done) {
     OnEnded();
   }
+}
+
+void RendererImpl::PostVideoInitialized(PipelineStatus status) {
+  deps_.media_task_runner->PostTask(
+      FROM_HERE, base::BindOnce(&RendererImpl::OnVideoInitialized,
+                                base::Unretained(this), status));
+}
+
+void RendererImpl::PostAudioInitialized(PipelineStatus status) {
+  deps_.media_task_runner->PostTask(
+      FROM_HERE, base::BindOnce(&RendererImpl::OnAudioInitialized,
+                                base::Unretained(this), status));
 }
 
 void RendererImpl::OnVideoInitialized(PipelineStatus status) {

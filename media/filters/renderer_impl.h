@@ -166,6 +166,13 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
   bool ended() const { return ended_; }
 
  private:
+  // Handed to the sub-renderers; they run it on S3 and S4 respectively, so it
+  // only hops -- the flags it flips are S1 state. Same split as the ended
+  // callbacks below, and for the same reason: a TSan run of
+  // tests/unit/media_filters/renderer_impl_unittest.cc reported the direct
+  // version as a data race between S3, S4 and S1.
+  void PostVideoInitialized(PipelineStatus status);
+  void PostAudioInitialized(PipelineStatus status);
   void OnVideoInitialized(PipelineStatus status);
   void OnAudioInitialized(PipelineStatus status);
   void MaybeReportInitialized();

@@ -12,6 +12,22 @@ function(ijkpp_add_unittest name)
   gtest_discover_tests(${name} PROPERTIES TIMEOUT 120)
 endfunction()
 
+# ---- shared fakes ----
+# Test doubles used by more than one suite: a scripted demuxer stream and the
+# resource that hands it out, scriptable decoder factories, the two sinks, and
+# the renderer client. One directory, one target, so tests/support/ is globbed
+# (docs/06 §7.6). This is its own target rather than part of ijkpp_media so that
+# no fake can ever reach a shipped binary -- the same reason base/ keeps
+# ijkpp_base_test_support separate.
+file(GLOB IJKPP_TEST_SUPPORT_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/support/*.cc")
+add_library(ijkpp_media_test_support ${IJKPP_TEST_SUPPORT_SOURCES})
+add_library(ijkpp::media_test_support ALIAS ijkpp_media_test_support)
+target_include_directories(ijkpp_media_test_support PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+target_link_libraries(ijkpp_media_test_support PUBLIC ijkpp::media)
+ijkpp_configure_target(ijkpp_media_test_support)
+
 # Source listing (docs/06 §7.6): unit/base/, unit/media_base/ and unit/player/
 # are one directory per target with nothing picked per platform or per option,
 # so they are globbed and a new *_unittest.cc is picked up with no edit here.
@@ -34,9 +50,14 @@ ijkpp_add_unittest(media_unittests
         ${IJKPP_MEDIA_UNITTEST_SOURCES}
         unit/media_filters/av_sync_controller_unittest.cc
         unit/media_filters/decoder_stream_unittest.cc
+        unit/media_filters/renderer_impl_unittest.cc
         unit/media_filters/video_frame_compositor_unittest.cc
         unit/media_filters/audio_renderer_algorithm_unittest.cc
-    DEPS ijkpp::media ijkpp::base_test_support)
+    DEPS ijkpp::media_test_support ijkpp::base_test_support)
+# ijkpp::media is not named here on purpose: media_test_support carries it in its
+# INTERFACE, and naming both sides again makes ld report "ignoring duplicate
+# libraries" on this link -- the same lesson the function comment above records
+# for base_test_support.
 
 # ---- player: the SDK facade. ijkpp::player links ijkpp::media PUBLIC, so the
 # media types this suite needs come along without being listed twice.

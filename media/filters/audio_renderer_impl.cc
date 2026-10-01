@@ -268,7 +268,21 @@ int AudioRendererImpl::buffered_frames() const {
 // ---------------------------------------------------------------------------
 
 void AudioRendererImpl::PumpDecoder() {
-  if (stopping_ || read_outstanding_ || ended_) {
+  if (stopping_ || read_outstanding_) {
+    return;
+  }
+  if (ended_) {
+    // End of stream: no more buffers arrive, but the algorithm can still hold
+    // frames the ring never took. MarkEndOfStream() only flips the flag that
+    // lets the last partial window play out; it does not move the frames. When
+    // a decoded buffer is larger than the device period the ring can be full as
+    // the EOS marker arrives, the pump then stops on back-pressure, and no
+    // other caller runs PreStretch() again -- so the tail never published and
+    // buffered_frames() never reached zero, which stopped
+    // RendererImpl::CheckForEnded() from reporting OnEnded. DrainRing wakes
+    // this path per drained chunk, which is where the tail gets out; see
+    // RendererImplTest.EndedIsReportedAfterBothStreamsDrain.
+    PreStretch();
     return;
   }
   {
