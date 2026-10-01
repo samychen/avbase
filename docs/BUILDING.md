@@ -96,6 +96,11 @@ cmake --preset debug && cmake --build build/debug
 以及 `-Werror=return-type/uninitialized/narrowing/delete-non-virtual-dtor/reorder`。
 **新代码第一次编译就应该在这里过，而不是在 `no-ffmpeg` 里过。**
 
+`debug` 同时打开 `IJKPP_ENABLE_FFMPEG`（严格告警必须覆盖全部目标）。在此之前它
+沿用默认值 OFF，于是 `platform/ffmpeg/*` 与 `media/filters/ffmpeg_*.cc` 只被非严格的
+`ffmpeg` / `linux-sdl2` 预设编过——"零警告"实际只覆盖了不含 FFmpeg 的那半棵树，
+而 FFmpeg 适配层正好是 `-Wthread-safety` 最容易说话的地方之一。
+
 ### 3.4 Sanitizer
 
 ```bash
@@ -229,7 +234,7 @@ done
 | `renderer_factory.h` 的前置声明够不够 | 我为了缩小传递闭包把 5 个类型改成了前置声明（33 → 27 个头）。只以指针出现的类型够用，但任何 include 它的 TU 若要**调用** `Create*()` 就必须自己 include 完整类型 |
 | `base::BindOnce` 能不能搬 `unique_ptr` | `renderer_impl.cc` 的 `Initialize()` 把 `unique_ptr<VideoRendererSink>` 绑进了 `BindOnce`。`bind.h` 自称是 R2 降级的 **L1 层**，明确列出不支持 `Passed()`/`Owned()`/变参包，**但没说 move-only 绑定参数支不支持**。若不支持，改成"任务体内读成员字段" |
 | `pipeline_controller.h` 的抽象声明 | 我把它声明为抽象类，而 docs/03 §6 与 Chromium 都是持有 `unique_ptr<Pipeline>` 的具体类。这是刻意偏离，编译期不会有意见，但 M8 接线时要认账 |
-| 80 列 / 命名 / `-Wshadow` | 列宽已由 C23 棘轮守着（基线 310 行），`-Wshadow` 与其余编译告警由 `debug` preset 的 `-Werror` 全量守；但**命名规则没有任何门禁**——`.clang-tidy` 已落盘却未接线，`check-format` / `check-cpplint` 两个 job 也刻意没开（见 §7 末） |
+| 80 列 / 命名 / `-Wshadow` | 列宽已由 C23 棘轮守着（基线 310 行），`-Wshadow` 与其余编译告警由 `debug` preset 的 `-Werror` 全量守（该预设现已含 FFmpeg 层，见 §3.3）；但**命名规则没有任何门禁**——`.clang-tidy` 已落盘却未接线，`check-format` / `check-cpplint` 两个 job 也刻意没开（见 §7 末） |
 
 ```bash
 # 第 2 步：语法过了再进构建。media/base 的 7 个头加入 ijkpp_media

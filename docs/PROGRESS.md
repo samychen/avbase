@@ -88,6 +88,9 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
    渲染器直接单测再 +14（RendererImpl 6 · VideoRendererImpl 3 · AudioRendererImpl 5）
 ✅ TSan：三个渲染器套件 14 用例在 `tsan` 预设下 **0 报告**（此前该路径报出 #49 与
    假 sink 自身的 3 处竞争，两者都已修）
+✅ 严格告警配置覆盖 FFmpeg 层：`debug`（Debug + 严格告警 + `-Werror` + FFmpeg）实测
+   **0 警告、373/373**；此前该预设沿用 `IJKPP_ENABLE_FFMPEG=OFF`，FFmpeg 适配层
+   （`platform/ffmpeg/*` 与 `media/filters/ffmpeg_*.cc`）从未进过严格门禁
 ✅ 伪证检查：临时撤掉 #48 的修复后，`EndedPublishesTheTailTheRingCouldNotTake` 与
    `EndedIsReportedAfterBothStreamsDrain` 双双报红，恢复后全绿——两条结束用例确实咬住了
    那个缺陷，而不是恰好通过
@@ -126,8 +129,15 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 7. 警告门禁修好之后 `-Wthread-safety` 才开始说真话：它抓出 7 处 `state_lock_` 保护成员
    在锁外读写（`PlayerImpl` 的 `PrepareAsync` 两处、`source_`、`display_` 三处、
    `CreateDemuxer` 一处），以及 `FFmpegDemuxerStream::FulfilPendingReadLocked` 这类
-   "约定持锁却没写注解"的助手。前者是真的要把访问挪进锁内（已改），后者用
-   `EXCLUSIVE_LOCKS_REQUIRED` 表达即可。渲染三件套仍缺直接单测（见本节第 1 条）。
+   "约定持锁却没写注解"的助手。两件都已完成（该助手现在写着 `EXCLUSIVE_LOCKS_REQUIRED`）。
+   **顺带查出一个门禁空洞并修掉**：严格告警 + `-Werror` 只在 `debug` 预设里，而它沿用
+   `IJKPP_ENABLE_FFMPEG` 的默认 OFF——FFmpeg 适配层从未被严格配置编过，所以"零警告"
+   只覆盖了不含 FFmpeg 的那半棵树，而那一层恰恰是 `-Wthread-safety` 最常说话的地方之一。
+   `debug` 现在打开 FFmpeg（实测 Debug + 严格告警 + `-Werror` + FFmpeg：0 警告、
+   373/373 通过），理由写进 BUILDING §3.3。**仍未做的**：CI 矩阵里没有任何 job 打开
+   `IJKPP_STRICT_WARNINGS`（`debug` 不在矩阵中）；而给 `ffmpeg` 预设加 `-Werror` 会连带
+   打开 GCC 专有的 `-Wuseless-cast`，按 R12"不要上线一门必红的门禁"，这一步留给能在
+   GCC 上实测的人。
 8. glob 改的是"新增文件不用改 CMake"，代价落在 DRAFT 的放法上（docs/06 §7.6）：留在一个
    被 glob 目录里的 DRAFT `.cc` 会被编译，所以它要待在没有任何 glob 能到达的子目录里
    （glob 不递归）直到能编译为止，并在 `DRAFT_FILES` 里登记。显式列表的四个目录不受此限。

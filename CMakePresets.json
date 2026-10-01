@@ -29,6 +29,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "IJKPP_ENABLE_FFMPEG": "ON",
         "IJKPP_STRICT_WARNINGS": "ON",
         "IJKPP_WERROR": "ON"
       }
