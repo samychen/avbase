@@ -45,6 +45,7 @@ ijkpp_add_unittest(media_unittests
 ijkpp_add_unittest(player_unittests
     SOURCES
         unit/player/deps_ownership_unittest.cc
+        unit/player/state_machine_unittest.cc
     DEPS ijkpp::player ijkpp::base_test_support)
 
 # ---- media + FFmpeg: real containers, labelled needs-ffmpeg so the

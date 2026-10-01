@@ -1,8 +1,19 @@
 # platform/ — the only place allowed to touch vendor and platform SDKs.
 # Populated in M10 (null), M11 (sdl2), M12 (linux). See docs/09.
 
+# SDL2 backend (M11). The window and renderer belong to the host in embedding
+# mode; see platform/sdl2/surface.h for the two threading rules.
 if(IJKPP_ENABLE_SDL2)
-  message(FATAL_ERROR "IJKPP_ENABLE_SDL2 is scheduled for milestone M11")
+  find_package(SDL2 REQUIRED)
+  add_library(ijkpp_platform_sdl2
+      sdl2/sdl2_video_sink.cc
+      sdl2/sdl2_audio_sink.cc)
+  add_library(ijkpp::platform_sdl2 ALIAS ijkpp_platform_sdl2)
+  target_include_directories(ijkpp_platform_sdl2 PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+  target_link_libraries(ijkpp_platform_sdl2 PUBLIC ijkpp::media SDL2::SDL2)
+  target_compile_definitions(ijkpp_platform_sdl2 PRIVATE IJKPP_ENABLE_SDL2=1)
+  ijkpp_configure_target(ijkpp_platform_sdl2)
 endif()
 if(IJKPP_ENABLE_LINUX_NATIVE)
   message(FATAL_ERROR "IJKPP_ENABLE_LINUX_NATIVE is scheduled for milestone M12")

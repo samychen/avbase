@@ -2,130 +2,222 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// The public API surface is FROZEN as of this commit (milestone M8 gate in
-// docs/08 §2); the bodies below are the M8 implementation skeleton. Every
-// method that is not yet wired to the pipeline returns ErrorCode::kNotImplemented
-// with an actionable message rather than silently doing nothing, so an early
-// adopter sees exactly which milestone is missing.
+// The public API surface is FROZEN (milestone M8 gate in docs/08 §2); every
+// method forwards to PlayerImpl (player/player_impl.cc), which owns the
+// threads, the pipeline and the event hub. Methods that remain unwired return
+// ErrorCode::kNotImplemented with an actionable message rather than silently
+// doing nothing -- the M8 skeleton's contract, kept for the ones M9+ still
+// owes (snapshots, track selection, reconnect).
 
 #include "player/public/player.h"
 
 #include "base/check.h"
 #include "base/logging.h"
+#include "player/player_impl.h"
 
 namespace ijkpp {
-namespace {
-
-base::unexpected<MediaError> NotImplemented(std::string_view api,
-                                            std::string_view milestone) {
-  return Err(ErrorCode::kNotImplemented,
-             std::string(api) + " is not wired up yet",
-             "this Player was built from the M8 API skeleton; the pipeline it "
-             "would drive lands in " + std::string(milestone),
-             "build against a release at or after " + std::string(milestone) +
-                 ", or check the milestone table in docs/08 §1");
-}
-
-}  // namespace
 
 // ---------------------------------------------------------------------------
 // Player
 // ---------------------------------------------------------------------------
 class Player::Impl {
  public:
-  explicit Impl(PlayerConfig config) : config_(std::move(config)) {}
-  PlayerConfig config_;
-  PlayerState state_{PlayerState::kIdle};
+  Impl(const PlayerConfig& config, std::unique_ptr<Deps> deps)
+      : core(config, std::move(deps)) {}
+
+  PlayerImpl core;
 };
 
-Player::Player() : impl_(std::make_unique<Impl>(PlayerConfig{})) { GlobalInit(); }
-Player::Player(const PlayerConfig& config)
-    : impl_(std::make_unique<Impl>(config)) {
+Player::Player() : impl_(std::make_unique<Impl>(PlayerConfig(), nullptr)) {
   GlobalInit();
-  const std::vector<ConfigIssue> issues = ValidateConfig(config);
-  for (const ConfigIssue& issue : issues) {
-    LOG(ERROR) << "PlayerConfig problem: " << issue.field << " " << issue.problem
-               << " — " << issue.suggestion;
-  }
+}
+Player::Player(const PlayerConfig& config)
+    : impl_(std::make_unique<Impl>(config, nullptr)) {
+  GlobalInit();
 }
 Player::Player(const PlayerConfig& config, std::unique_ptr<Deps> deps)
-    : impl_(std::make_unique<Impl>(config)) {
+    : impl_(std::make_unique<Impl>(config, std::move(deps))) {
   GlobalInit();
-  deps_ = std::move(deps);
 }
 Player::~Player() = default;
 
 Status Player::SetDataSource(std::string_view uri) {
-  return SetDataSource(DataSourceDescriptor::FromUri(uri));
+  return impl_->core.SetDataSource(uri);
 }
-Status Player::SetDataSource(const DataSourceDescriptor&) {
-  return NotImplemented("Player::SetDataSource", "M4");
+Status Player::SetDataSource(const DataSourceDescriptor& descriptor) {
+  return impl_->core.SetDataSource(descriptor);
 }
-Status Player::PrepareAsync() { return NotImplemented("Player::PrepareAsync", "M8"); }
-Status Player::PrepareSync(base::TimeDelta) {
-  return NotImplemented("Player::PrepareSync", "M8");
+Status Player::PrepareAsync() {
+  return impl_->core.PrepareAsync();
 }
-void Player::Start() { LOG(ERROR) << NotImplemented("Player::Start", "M8").value().ToString(); }
-void Player::Pause() { LOG(ERROR) << NotImplemented("Player::Pause", "M8").value().ToString(); }
-void Player::Stop() { LOG(ERROR) << NotImplemented("Player::Stop", "M8").value().ToString(); }
-void Player::StopSync(base::TimeDelta) {}
-void Player::Reset() {}
-void Player::RunUntilIdle() {}
+Status Player::PrepareSync(base::TimeDelta timeout) {
+  return impl_->core.PrepareSync(timeout);
+}
+void Player::Start() {
+  impl_->core.Start();
+}
+void Player::Pause() {
+  impl_->core.Pause();
+}
+void Player::Stop() {
+  impl_->core.Stop();
+}
+void Player::StopSync(base::TimeDelta timeout) {
+  impl_->core.StopSync(timeout);
+}
+void Player::Reset() {
+  impl_->core.Reset();
+}
+void Player::RunUntilIdle() {
+  // The Level-0 convenience loop. The real one needs the L2->L0 task-runner
+  // upgrade (base/threading/message_pump_epoll, R2 debt); until then a caller
+  // that drives its own loop -- or the SDL2 examples' poll loop -- is the way
+  // to stay evented.
+  LOG(WARNING) << "Player::RunUntilIdle is not wired to a message pump yet; "
+                  "drive your own loop or wait on events";
+}
 
-Result<int64_t> Player::SeekTo(base::TimeDelta, SeekMode, SeekCB) {
-  return base::unexpected(MediaError(
-      ErrorCode::kNotImplemented, "Player::SeekTo is not wired up yet",
-      "the pipeline lands in M8", "see docs/08 §1"));
+Result<int64_t> Player::SeekTo(base::TimeDelta position, SeekMode mode,
+                               SeekCB cb) {
+  return impl_->core.SeekTo(position, mode, std::move(cb));
 }
-void Player::SeekTo(base::TimeDelta) {}
-void Player::StepOnce() {}
-void Player::SetPlaybackRate(double) {}
-void Player::SetVolume(double) {}
-void Player::SetMuted(bool) {}
-void Player::SetLoopCount(int) {}
+void Player::SeekTo(base::TimeDelta position) {
+  impl_->core.SeekTo(position, SeekMode::kPreviousKeyframe, Player::SeekCB());
+}
+void Player::StepOnce() {
+  LOG(ERROR) << MediaError(
+                    ErrorCode::kNotImplemented, "StepOnce is not wired up yet",
+                    "single-frame stepping needs the compositor's step mode "
+                    "exposed through the pipeline, which lands with M9's "
+                    "seek controller",
+                    "pause and seek by one frame duration instead")
+                    .ToString();
+}
+void Player::SetPlaybackRate(double rate) {
+  impl_->core.SetPlaybackRate(rate);
+}
+void Player::SetVolume(double volume) {
+  impl_->core.SetVolume(volume);
+}
+void Player::SetMuted(bool muted) {
+  impl_->core.SetMuted(muted);
+}
+void Player::SetLoopCount(int count) {
+  impl_->core.SetLoopCount(count);
+}
 Status Player::SelectTrack(media::DemuxerStreamType, int) {
-  return NotImplemented("Player::SelectTrack", "M8");
+  // Track switching needs sub-renderer re-initialisation (M9); reporting
+  // success here would show a toggle that does nothing, which is worse.
+  return base::unexpected(MediaError(
+      ErrorCode::kNotImplemented, "track selection is not wired up yet",
+      "switching tracks requires re-initialising the matching sub-renderer "
+      "(milestone M9)",
+      "select the stream via PlayerConfig before PrepareAsync "
+      "(video.selected_stream / audio.selected_stream)"));
 }
-void Player::SetVideoSurface(base::scoped_refptr<NativeDisplay>) {}
+void Player::SetVideoSurface(base::scoped_refptr<NativeDisplay> display) {
+  impl_->core.SetVideoSurface(std::move(display));
+}
 Status Player::TakeSnapshot(base::TimeDelta, std::string) {
-  return NotImplemented("Player::TakeSnapshot", "M8");
+  return base::unexpected(MediaError(
+      ErrorCode::kNotImplemented, "TakeSnapshot is not wired up yet",
+      "snapshots need a compositor frame grab exposed through the pipeline "
+      "(post-M9)",
+      "read the frame from a custom VideoRendererSink instead"));
 }
-void Player::ReconnectNow() {}
+void Player::ReconnectNow() {
+  LOG(WARNING) << "Player::ReconnectNow lands with M9's RetryDataSource";
+}
 
-PlayerState Player::state() const { return impl_->state_; }
-std::optional<MediaInfo> Player::media_info() const { return std::nullopt; }
-base::TimeDelta Player::GetMediaTime() const { return base::TimeDelta(); }
-base::TimeDelta Player::GetBufferedTime() const { return base::TimeDelta(); }
-base::TimeDelta Player::GetDuration() const { return base::TimeDelta(); }
-bool Player::is_live() const { return false; }
-bool Player::IsPlaying() const { return false; }
-media::Size Player::video_natural_size() const { return {}; }
-media::Size Player::video_coded_size() const { return {}; }
-int Player::video_rotation() const { return 0; }
-double Player::playback_rate() const { return 1.0; }
-double Player::volume() const { return 1.0; }
-bool Player::muted() const { return false; }
-PlaybackStats Player::GetPlaybackStats() const { return {}; }
-
+PlayerState Player::state() const {
+  return impl_->core.state();
+}
+std::optional<MediaInfo> Player::media_info() const {
+  return impl_->core.media_info();
+}
+base::TimeDelta Player::GetMediaTime() const {
+  return impl_->core.GetMediaTime();
+}
+base::TimeDelta Player::GetBufferedTime() const {
+  return impl_->core.GetBufferedTime();
+}
+base::TimeDelta Player::GetDuration() const {
+  return impl_->core.GetDuration();
+}
+bool Player::is_live() const {
+  return impl_->core.is_live();
+}
+bool Player::IsPlaying() const {
+  return impl_->core.IsPlaying();
+}
+media::Size Player::video_natural_size() const {
+  return impl_->core.video_natural_size();
+}
+media::Size Player::video_coded_size() const {
+  return impl_->core.video_coded_size();
+}
+int Player::video_rotation() const {
+  return impl_->core.video_rotation();
+}
+double Player::playback_rate() const {
+  return impl_->core.playback_rate();
+}
+double Player::volume() const {
+  return impl_->core.volume();
+}
+bool Player::muted() const {
+  return impl_->core.muted();
+}
+PlaybackStats Player::GetPlaybackStats() const {
+  return impl_->core.GetPlaybackStats();
+}
 std::string Player::DumpDiagnostics() const {
-  return std::string("{\"state\":\"") + GetPlayerStateName(impl_->state_) +
-         "\",\"note\":\"M8 API skeleton; pipeline not yet wired\"}";
+  return impl_->core.DumpDiagnostics();
 }
 
-void Player::SetEventHandler(EventHandler) {}
-Player::Subscription Player::AddObserver(PlayerObserver*) { return Subscription(); }
+void Player::SetEventHandler(EventHandler handler) {
+  impl_->core.SetEventHandler(std::move(handler));
+}
+
+class Player::Subscription::Impl {
+ public:
+  Impl(PlayerImpl* player, int id) : player(player), id(id) {}
+  base::raw_ptr<PlayerImpl> player;
+  int id{0};
+};
+
+Player::Subscription Player::AddObserver(PlayerObserver* observer) {
+  Subscription sub;
+  sub.impl_ = std::make_unique<Subscription::Impl>(
+      &impl_->core, impl_->core.AddObserver(observer));
+  return sub;
+}
 Status Player::UpdateConfig(const PlayerConfig&) {
-  return NotImplemented("Player::UpdateConfig", "M8");
+  return base::unexpected(MediaError(
+      ErrorCode::kNotImplemented, "UpdateConfig is not wired up yet",
+      "runtime reconfiguration needs the whitelist of hot fields defined "
+      "against a running pipeline (M9's BufferController is the first "
+      "consumer)",
+      "build a new Player with PlayerBuilder::SetConfig instead"));
 }
-const PlayerConfig& Player::config() const { return impl_->config_; }
+const PlayerConfig& Player::config() const {
+  return impl_->core.config();
+}
 
-class Player::Subscription::Impl {};
 Player::Subscription::Subscription() = default;
 Player::Subscription::Subscription(Subscription&&) noexcept = default;
-Player::Subscription& Player::Subscription::operator=(Subscription&&) noexcept = default;
+Player::Subscription& Player::Subscription::operator=(Subscription&&) noexcept =
+    default;
 Player::Subscription::~Subscription() = default;
-void Player::Subscription::Reset() {}
-bool Player::Subscription::active() const { return false; }
+void Player::Subscription::Reset() {
+  if (impl_ && impl_->player && impl_->id > 0) {
+    impl_->player->RemoveObserver(impl_->id);
+  }
+  impl_.reset();
+}
+bool Player::Subscription::active() const {
+  return impl_ != nullptr && impl_->id > 0;
+}
 
 // ---------------------------------------------------------------------------
 // PlayerBuilder
@@ -175,14 +267,14 @@ Result<std::unique_ptr<Player>> PlayerBuilder::Build() {
   if (!issues.empty()) {
     std::string detail;
     for (size_t i = 0; i < issues.size(); ++i) {
-      detail += "\n           [" + std::to_string(i + 1) + "] " + issues[i].field +
-                " " + issues[i].problem;
+      detail += "\n           [" + std::to_string(i + 1) + "] " +
+                issues[i].field + " " + issues[i].problem;
     }
     return base::unexpected(MediaError(
         ErrorCode::kConfigInvalid,
         std::to_string(issues.size()) + " configuration problems found", detail,
-        "fix the fields above, or start from PlayerConfig{} defaults and change "
-        "only what you need"));
+        "fix the fields above, or start from PlayerConfig{} defaults and "
+        "change only what you need"));
   }
 
   if (impl_->deps) {
