@@ -37,9 +37,12 @@ add_library(ijkpp_media
     filters/decoder_stream.cc
     filters/null_audio_sink.cc
     filters/null_video_sink.cc
+    filters/pipeline_impl.cc
+    filters/pipeline_impl_host.cc
     filters/renderer_impl.cc
     filters/video_renderer_impl.cc
     filters/wsola_internals.cc
+    renderers/default_renderer_factory.cc
     # LGPL-2.1 quarantine: line-by-line ports of ff_ffplay.c algorithms.
     # See media/filters/legacy/README.md and root LICENSE section 1.
     filters/legacy/av_sync_controller.cc

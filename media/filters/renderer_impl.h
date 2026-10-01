@@ -110,12 +110,21 @@ class IJKPP_MEDIA_EXPORT RendererImpl final : public Renderer {
     std::unique_ptr<VideoRendererSink> video_sink;
     base::scoped_refptr<AudioRendererSink> audio_sink;
     VideoFrameCompositor::Thresholds compositor_thresholds;
+    // The controller is constructed by the owner (PipelineImpl) and shared
+    // with it, so PipelineImpl::GetMediaTime() can answer through the seqlock
+    // even while the renderer is being torn down. |sync_thresholds| and
+    // |sync_master| below document how it was built; RendererImpl no longer
+    // constructs one itself.
+    std::shared_ptr<AvSyncController> av_sync;
     AvSyncController::Thresholds sync_thresholds;
     AvSyncController::MasterType sync_master{
         AvSyncController::MasterType::kAudio};
     // Device period used until media/audio/ exists (gap 2). 1024 frames at
     // 48 kHz is ~21 ms, which is what ALSA and PulseAudio both default to.
     int audio_frames_per_buffer = 1024;
+    // config.video.disabled / config.audio.disabled ("vn"/"an").
+    bool video_disabled = false;
+    bool audio_disabled = false;
   };
 
   explicit RendererImpl(Deps deps);

@@ -20,7 +20,8 @@ if(IJKPP_ENABLE_FFMPEG)
       ../media/filters/ffmpeg_glue.cc
       ../media/filters/ffmpeg_demuxer.cc
       ../media/filters/ffmpeg_audio_decoder.cc
-      ../media/filters/ffmpeg_video_decoder.cc)
+      ../media/filters/ffmpeg_video_decoder.cc
+      ../media/filters/ffmpeg_decoder_factories.cc)
   add_library(ijkpp::platform_ffmpeg ALIAS ijkpp_platform_ffmpeg)
 
   target_include_directories(ijkpp_platform_ffmpeg PUBLIC
