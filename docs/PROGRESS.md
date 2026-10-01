@@ -2,11 +2,14 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M8 ✅ · 端到端播放 ✅ · 管线级 seek 夹具 ✅ · M9 进行中（限速假件 + 三级 HWM ✅）**
+## 当前状态：**M0–M8 ✅ · 端到端播放 ✅ · M9 进行中（限速假件 + 三级 HWM + 精确 seek ✅）**
 
-最后更新：2026-10-02（第十一轮）—— **M9 开篇：限速假件 + 三级 HWM 决策核心。** 全量测试
-401/401（FFmpeg 配置）与 366/366（no-ffmpeg）全绿，`check_invariants` 全过（249 文件，
-门禁收敛为 7 条结构规则）。
+最后更新：2026-10-02（第十二轮）—— **M9 第二步：精确 seek 全链落地。** `SeekTo(kAccurate)`
+从"警告 + 关键帧"变成真实现：媒体层丢弃窗口 + 呈现帧到达检测 + facade 侧
+`SeekController` 超时/取代策略。全量测试 407/407（FFmpeg 配置）与 372/372（no-ffmpeg）
+全绿，`check_invariants` 全过（252 文件）。
+> 第十一轮：M9 开篇（限速假件 + 三级 HWM + 管线级 seek 夹具，401/401）
+> 第十轮：播放链路打通（M7 收尾 + M8 接线，359/359，macOS 首建）
 > 第十轮：播放链路打通（M7 收尾 + M8 接线，359/359，macOS 首建）
 > 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
 > 27 个文件转正进构建）
@@ -16,6 +19,52 @@
 `check_invariants` 全过（220 文件）且 C23 列宽基线 323→310（只降不升）。本轮在 **macOS / AppleClang 21 / FFmpeg 7.1.1 (Homebrew) / SDL2 2.32** 上开发——这是项目第一次在 Linux 之外构建，见 §10.1 的四项 macOS 修复。
 > 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
 > 27 个文件转正进构建）
+
+## 第十二轮（本轮）：M9 精确 seek——丢弃窗口 · 到达检测 · SeekController
+
+`SeekMode::kAccurate` 的 DoD（"精确 seek ±1 帧"）全链落地。此前它按桩返回警告并降级
+关键帧 seek；本轮把它做成真实现。
+
+### (1) 设计与接线
+
+| 层 | 内容 |
+|---|---|
+| `media/base/renderer.h` | + `BeginAccurateSeek(target, reached_cb)` / `EndAccurateSeek()`（纯追加，默认 no-op，与 SetPaused 同例）。**窗口在 Flush() 中存活**（compositor 的 Flush 刻意不重置 accurate 状态），所以允许在关键帧 seek 之前开窗——解码重启时新世代已经被框住 |
+| `renderer_impl_controls.cc` | RendererImpl 实现：S1 开窗（S3 打开 compositor 规则）、S6 呈现钩子 `OnVideoFramePresented` 同时喂视频时钟与目标检测（原子 target 只被观察，判定全在 S1）、**无视频流时立即回报 reached**（否则只能靠超时）；End 的每条路径（到达/超时/取代）都必须关窗，否则窗口会永远吃帧 |
+| `pipeline_impl.{h,cc}` | 具体侧转发（不入冻结的 Pipeline 接口——Seek() 的"只做关键帧"契约保持精确，框帧策略属于 facade） |
+| `player/seek_controller.{h,cc}` | 策略核（照 BufferController 的纯函数模式）：`Evaluate(reached, deadline, now)` 纯决策——**到达胜过过期**（期限瞬间落地是成功不是竞态）；单槽规则（新 seek 取代在等 seek，旧回调以 kAborted 完成而非悬空）；全部状态在媒体序列 |
+| `player_impl.cc/events` | `SeekTo(kAccurate)`：登记目标 → S1 上 BeginAccurateWaitOnMedia（先取代旧的）→ pipeline Seek；`OnMediaSeekDone` 对 accurate 请求**不完成**（显示还在追赶）；到达 hop / 超时任务汇入 `CompleteAccurateSeek`：先关窗（帧恢复流动）再发事件——kAccurateSeekCompleted + kSeekCompleted（result 携带 kTimeout，Δ10 可观测），用户回调以 Ok/kTimeout 收尾 |
+
+### (2) 验证
+
+```
+✅ seek_controller_unittest 5 例（到达胜过期、期限边界、Begin/End 身份、取代覆盖）
+✅ 管线级 AccurateSeekPresentsNothingBeforeTheTarget：从开窗起**没有任何 < 目标帧的
+   帧到达显示**（比关键帧 seek 测试更强——那只能约束上界），reached 回调必须触发
+✅ headless --seek 1.5 --accurate（真实 FFmpeg）：落地后首个采样 1.52s（关键帧落在
+   1.33s 之前），继续播到 kCompleted；--seek 1.4 → 1.42s
+✅ 407/407（FFmpeg）· 372/372（no-ffmpeg）· invariants 252 文件全过
+```
+
+### (3) 发现与修正
+
+- `End()` 之后读 `request_id()/target()` 拿到的是重置值——先取值再 End（首版两处顺序
+  反了，编译期发现不了，单测的 ReplacingAWaitReplacesItsIdentity 钉住）。
+- 取代路径首版漏发用户回调（只清表）——"新 seek 取代旧的"必须以 kAborted 回答，
+  与 demuxer 层被取代 seek 的契约同形。
+
+### (4) 遗留（接第十一轮的 M9 清单）
+
+1. ~~SeekController 精确 seek~~ → **本轮完成**。金色验证（与原版对齐）仍等 M10/Q8。
+2. `RetryDataSource` / `LiveDataSource` / `UrlRewriteInterceptor`（故障注入假件已就绪）。
+3. **管线级 HWM 集成用例的前置缺口（本轮确认）**：ThrottledDataSource 是
+   `media::DataSource`，而 `DataSource → demuxer 的 AVIOContext 桥`（M4 余项）未建，
+   合成 demuxer 也不收 DataSource——用例要等桥落地；更深一层，`kHaveNothing` 饥饿信号
+   还没有从 renderer 端到端接线（BufferController 的 OnBufferingStart 目前没有真实触发者）。
+   桥 + 信号两者是下一轮的第一优先。
+4. docs/07 §5 其余管线级断言（丢帧数、变速、故障注入、循环、纯音/纯视频）。
+
+---
 
 ## 第十一轮（本轮）：M9 开篇——限速假件 · 三级 HWM · 管线级 seek 夹具
 
