@@ -166,10 +166,11 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
    `IJKPP_ENABLE_FFMPEG` 的默认 OFF——FFmpeg 适配层从未被严格配置编过，所以"零警告"
    只覆盖了不含 FFmpeg 的那半棵树，而那一层恰恰是 `-Wthread-safety` 最常说话的地方之一。
    `debug` 现在打开 FFmpeg（实测 Debug + 严格告警 + `-Werror` + FFmpeg：0 警告、
-   373/373 通过），理由写进 BUILDING §3.3。**仍未做的**：CI 矩阵里没有任何 job 打开
-   `IJKPP_STRICT_WARNINGS`（`debug` 不在矩阵中）；而给 `ffmpeg` 预设加 `-Werror` 会连带
-   打开 GCC 专有的 `-Wuseless-cast`，按 R12"不要上线一门必红的门禁"，这一步留给能在
-   GCC 上实测的人。
+   373/373 通过），理由写进 BUILDING §3.3。**strict job 已进 CI**（`strict`，clang 编译，
+   从零 configure + 构建 + `ctest --preset debug` 384/384 且 DCHECK 开启——这条配置此前
+   从未跑过完整测试）：用 clang 而非发行版 GCC 是有意的，严格集会连带打开 GCC 专有的
+   `-Wuseless-cast`，该旗标从未对本树实测过，按 R12"不要上线一门必红的门禁"，GCC 半边
+   留给能在本地实测的人（job 注释写明了缘由）。
 8. glob 改的是"新增文件不用改 CMake"，代价落在 DRAFT 的放法上（docs/06 §7.6）：留在一个
    被 glob 目录里的 DRAFT `.cc` 会被编译，所以它要待在没有任何 glob 能到达的子目录里
    （glob 不递归）直到能编译为止，并在 `DRAFT_FILES` 里登记。显式列表的四个目录不受此限。

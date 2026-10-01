@@ -224,6 +224,13 @@
       }
     },
     {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
       "name": "asan",
       "configurePreset": "asan",
       "output": {

@@ -113,6 +113,31 @@ jobs:
       - run: cmake --preset linux-sdl2
       - run: cmake --build build/linux-sdl2
 
+  # The strict-warnings gate: Debug + DCHECKs + -Wconversion/-Wold-style-cast +
+  # -Werror, over the FFmpeg layer too. The compiler is clang on purpose: the
+  # strict set adds GCC's -Wuseless-cast (cmake/IjkppCompilerFlags.cmake),
+  # which has never been vetted against this tree, and a gate that arrives red
+  # teaches people to ignore gates. The GCC half of this job waits for someone
+  # who can vet that flag locally first.
+  strict:
+    needs: ffmpeg
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain and FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config clang \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+      - run: cmake --preset debug
+      - run: cmake --build --preset debug
+      - run: python3 tools/check_invariants.py --root .
+      - run: ctest --preset debug
+
   full:
     needs: quick
     strategy:
