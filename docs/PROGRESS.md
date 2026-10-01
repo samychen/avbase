@@ -28,9 +28,25 @@
 | `renderer_impl` 饥饿信号 | `CheckBufferingTransitions()`（10ms 时钟节拍，S1）：所辖流全部干涸 → kHaveNothing，数据恢复 → kHaveEnough，只有边沿过界。**这是 BufferController 循环的第一个真实触发者**——此前 `OnBufferingStart` 没有任何调用方，三级 HWM 永远停在第一步 | 无新增用例（管线 seek 夹具的手动泵天然制造干涸边沿，409 全绿即回归证据）；防滞回（trickle 振荡）留待限速源用例观察 |
 | `player` 侧 | `CreateDemuxer` 接受全部描述符种类；demuxer 内部对不支持的种类报可操作错误 | |
 
+### 本轮补强：饥饿边沿的确定性 + 管线级断言
+
+首版饥饿检测纯靠 10ms 采样，管线 seek 夹具证明它会漏掉短于采样周期的干涸窗口
+（关键帧 seek 的边沿捕到了，精确 seek 的没捕到）。修正分两层：
+
+- **Flush 即边沿**：flush 按定义清空所有队列，kHaveNothing 在 Flush 里同步发射，
+  不与 demuxer 的回填竞速；恢复边沿仍由采样报告。
+- **管线级断言**：`PipelineSeekTest` 两个用例现在都断言 seek 后
+  kHaveNothing→kHaveEnough 边沿到达客户端——没有渲染器的饥饿信号，
+  `have_nothing` 永远为假，facade 的 HWM 永远不前进（本断言就是防回归的哨兵）。
+- 过程教训（同类第三次）：一次多段 python 补丁在中间 assert 失败时**整脚本不落盘**，
+  重试脚本只补了报错之后的两段，漏掉了报错之前已"看起来成功"的第一段——
+  `rendering_` 标志静默丢失，测试失败信息（have_nothing=false）与根因（标志未置位）
+  相距十万八千里。**多段编辑必须每段独立落盘验证。**
+
 ### 遗留（M9 内，更新）
 
-1. **限速源卡顿-恢复集成用例**：前置已齐（桥 + 饥饿信号），差夹具——
+1. **限速源卡顿-恢复集成用例**：断言层已就位（边沿到达客户端），差的是
+   FFmpeg+ThrottledDataSource 的夹具变体（进 media_ffmpeg_unittests）——
    FFmpegDemuxer(ThrottledDataSource(Memory(file))) + 假 sink 的管线级驱动，
    断言 kHaveNothing→kHaveEnough 的边沿与 hwm_step 递进。下一轮第一优先。
 2. RetryDataSource / LiveDataSource / UrlRewriteInterceptor（故障注入假件就绪）。

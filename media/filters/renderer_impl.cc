@@ -306,6 +306,11 @@ void RendererImpl::StartPlayingFrom(base::TimeDelta time) {
   if (!initialized_) {
     return;
   }
+  // The buffering-starvation check only applies while rendering, so the dry
+  // pipeline between Initialize and Play does not report kHaveNothing on top
+  // of kHaveMetadata.
+  rendering_ = true;
+  starved_reported_ = false;
   start_time_ = time;
   ended_ = false;
   video_ended_ = false;
@@ -441,6 +446,17 @@ void RendererImpl::Flush(base::OnceClosure flush_cb) {
   ended_ = false;
   video_ended_ = false;
   audio_ended_ = false;
+  // A flush empties every queue by definition, so the starvation edge is
+  // deterministic here -- emitting it directly rather than letting the 10 ms
+  // sampler race the demuxer's refill (a sub-10ms dry window is invisible to
+  // a sample, and the facade's HWM must see every seek's fresh cycle).
+  if (rendering_ && !starved_reported_) {
+    starved_reported_ = true;
+    if (client_) {
+      client_->OnBufferingStateChange(BufferingState::kHaveNothing,
+                                      base::TimeDelta());
+    }
+  }
   if (audio_) {
     deps_.audio_task_runner->PostTask(
         FROM_HERE,

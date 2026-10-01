@@ -50,6 +50,7 @@ void FakePipelineClient::OnBufferingStateChange(BufferingState state,
     ++buffering_count_;
     have_metadata_ = have_metadata_ || state == BufferingState::kHaveMetadata;
     have_enough_ = have_enough_ || state == BufferingState::kHaveEnough;
+    have_nothing_ = have_nothing_ || state == BufferingState::kHaveNothing;
   }
   Record("buffering: state=" + std::to_string(static_cast<int>(state)) +
          " bytes=" + std::to_string(memory_usage.InMilliseconds()));

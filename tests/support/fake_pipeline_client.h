@@ -52,6 +52,10 @@ class FakePipelineClient final : public Pipeline::Client {
     std::scoped_lock scoped(lock_);
     return ended_;
   }
+  // True once a kHaveNothing edge reached the client (M9: the starvation
+  // signal has a real trigger now; without it this stays false forever).
+  bool have_nothing() const { return have_nothing_; }
+  bool have_enough() const { return have_enough_; }
   int buffering_count() const {
     std::scoped_lock scoped(lock_);
     return buffering_count_;
@@ -88,6 +92,7 @@ class FakePipelineClient final : public Pipeline::Client {
   bool duration_seen_ = false;
   bool have_metadata_ = false;
   bool have_enough_ = false;
+  bool have_nothing_ = false;
   bool ended_ = false;
   int buffering_count_ = 0;
   int waiting_count_ = 0;

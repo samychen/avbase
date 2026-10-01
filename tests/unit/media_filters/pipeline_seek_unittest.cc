@@ -377,6 +377,16 @@ TEST_F(PipelineSeekTest, AccurateSeekPresentsNothingBeforeTheTarget) {
     return reached.load();
   })) << "accurate-seek window never reported reaching the target";
 
+  // The seek's flush drains both queues; the starvation signal (M9) must
+  // have reported the dry edge and the recovery to the client, in that
+  // order of causality. Without the renderer's CheckBufferingTransitions,
+  // have_nothing stays false forever and the facade's HWM never advances.
+  EXPECT_TRUE(client_.have_nothing())
+      << "no kHaveNothing edge after the seek; events:\n"
+      << client_.EventLog();
+  EXPECT_TRUE(client_.have_enough())
+      << "no kHaveEnough edge after the seek; events:\n"
+      << client_.EventLog();
   EXPECT_FALSE(client_.HasError())
       << client_.error().ToString() << "\n" << client_.EventLog();
 }
