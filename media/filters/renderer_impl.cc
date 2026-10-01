@@ -234,6 +234,11 @@ void RendererImpl::CheckBufferingTransitions() {
     return;
   }
   starved_reported_ = starved;
+  LOG(INFO) << "[hwm] edge " << (starved ? "DRY" : "RECOVER")
+            << " video_pending="
+            << (video_ ? video_->frames_pending() : -1)
+            << " audio_buffered="
+            << (audio_ ? audio_->buffered_frames() : -1);
   if (client_) {
     client_->OnBufferingStateChange(
         starved ? BufferingState::kHaveNothing : BufferingState::kHaveEnough,
@@ -306,11 +311,13 @@ void RendererImpl::StartPlayingFrom(base::TimeDelta time) {
   if (!initialized_) {
     return;
   }
-  // The buffering-starvation check only applies while rendering, so the dry
-  // pipeline between Initialize and Play does not report kHaveNothing on top
-  // of kHaveMetadata.
+  // The buffering-starvation check only applies while rendering. NOT
+  // resetting starved_reported_ here: after a seek's Flush (which publishes
+  // the deterministic DRY edge), clearing the flag would swallow the
+  // RECOVER edge whenever data refills before the first 10 ms tick -- and a
+  // dry moment right after Play is a legitimate kHaveNothing anyway
+  // (buffering before the first frame, ffplay semantics).
   rendering_ = true;
-  starved_reported_ = false;
   start_time_ = time;
   ended_ = false;
   video_ended_ = false;

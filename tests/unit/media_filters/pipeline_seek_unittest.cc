@@ -312,11 +312,11 @@ TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
 // pre-seek generation, not the post-seek frames before the target. That is
 // strictly stronger than the keyframe seek above, whose landing assertion
 // had to tolerate frames beyond the target but could not bound the floor.
-// DISABLED pending diagnosis: the kHaveEnough recovery edge is sampled and
-// still races (1-in-6 misses) even with per-present checks -- the flush-side
-// kHaveNothing is deterministic, the recovery is not yet. R12: no flaky test
-// stays in the gate. The keyframe-seek case keeps both edges asserted.
-TEST_F(PipelineSeekTest, DISABLED_AccurateSeekPresentsNothingBeforeTheTarget) {
+// The 1-in-6 recovery miss was the rendering_ flag never being set (a lost
+// patch hunk, see PROGRESS round 13) -- with it fixed and the per-present
+// check in place, 10 stress runs are clean. The throttle test's "EOS before
+// starvation" was the same bug.
+TEST_F(PipelineSeekTest, AccurateSeekPresentsNothingBeforeTheTarget) {
   StartPipeline();
   ASSERT_TRUE(PumpUntil([this] { return client_.Started(); }))
       << "pipeline never started; events:\n" << client_.EventLog();
