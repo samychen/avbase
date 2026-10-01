@@ -426,22 +426,39 @@ Result<int64_t> PlayerImpl::SeekTo(base::TimeDelta position, SeekMode mode,
         "seeking needs a prepared or playing pipeline",
         "wait for kPrepared before seeking"));
   }
-  if (mode == SeekMode::kAccurate) {
-    // Accurate seek needs the M9 SeekController to frame the decode-and-drop
-    // window; doing it here would silently return the keyframe.
-    LOG(WARNING) << "ijkpp: SeekMode::kAccurate lands in M9; seeking to the "
-                    "previous keyframe";
-  }
   if (!pipeline_) {
     return base::unexpected(MediaError(
         ErrorCode::kInvalidState, "no pipeline to seek",
         "SeekTo was called before PrepareAsync", "call PrepareAsync first"));
   }
   const int64_t id = next_request_id_.fetch_add(1);
-  if (cb) {
+  {
     base::AutoLock scoped(seek_lock_);
-    pending_seeks_[id] = std::move(cb);
+    if (mode == SeekMode::kAccurate) {
+      // M9: land on the requested position, not on the keyframe before it.
+      // The drop window (Renderer::BeginAccurateSeek) is opened before the
+      // keyframe seek so the new generation is already framed when decoding
+      // restarts; SeekController owns the timeout and the completion.
+      accurate_seek_targets_[id] = position;
+    }
+    if (cb) {
+      pending_seeks_[id] = std::move(cb);
+    }
   }
+  // Posted in order: on the media sequence the wait bookkeeping (and the
+  // supersede of any running wait) lands before the pipeline seek does.
+  media_thread_.task_runner()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](PlayerImpl* self, int64_t seek_id, base::TimeDelta target,
+             bool accurate) {
+            if (accurate) {
+              self->BeginAccurateWaitOnMedia(seek_id, target);
+            } else {
+              self->EndAccurateWaitOnMedia();
+            }
+          },
+          base::Unretained(this), id, position, mode == SeekMode::kAccurate));
   const base::TimeDelta requested = position;
   pipeline_->Seek(requested, base::BindOnce(&PlayerImpl::OnMediaSeekDone,
                                             base::Unretained(this), id,

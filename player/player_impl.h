@@ -21,6 +21,7 @@
 #include "player/event_hub.h"
 #include "player/public/player.h"
 #include "player/public/player_config.h"
+#include "player/seek_controller.h"
 #include "player/state_machine.h"
 
 namespace ijkpp {
@@ -111,6 +112,19 @@ class PlayerImpl final : public media::Pipeline::Client {
   void OnPipelineReady();
   void OnMediaSeekDone(int64_t request_id, base::TimeDelta requested);
 
+  // ---- accurate seek (M9, player/seek_controller.cc + events TU) ----------
+  // All of these run on the media sequence. BeginAccurateWait supersedes any
+  // running wait; CheckAccurateSeekExpiry is the posted deadline; the reached
+  // hop comes from the renderer's presented-frame hook.
+  void BeginAccurateWaitOnMedia(int64_t request_id, base::TimeDelta target);
+  void EndAccurateWaitOnMedia();   // Keyframe seek supersedes the wait.
+  void OnAccurateSeekTargetReached();
+  void CheckAccurateSeekExpiry();
+  // Publishes kAccurateSeekCompleted + kSeekCompleted and runs the user's
+  // callback. |result| is ok on reach, kTimeout on expiry (Δ10: playback
+  // continues either way).
+  void CompleteAccurateSeek(bool reached);
+
   PlayerConfig config_;
   std::unique_ptr<Deps> deps_;
 
@@ -157,6 +171,11 @@ class PlayerImpl final : public media::Pipeline::Client {
   // sequence (docs/05 table 5's request_id fix).
   mutable base::Lock seek_lock_;
   std::map<int64_t, Player::SeekCB> pending_seeks_ GUARDED_BY(seek_lock_);
+  // Which pending requests asked for an accurate landing, and to where.
+  // Written on the caller's thread in SeekTo, consumed on the media sequence
+  // in OnMediaSeekDone.
+  std::map<int64_t, base::TimeDelta> accurate_seek_targets_
+      GUARDED_BY(seek_lock_);
 
   // Three-tier HWM policy (M9). All of its inputs -- buffering transitions,
   // statistics ticks, seek completions -- arrive on the media sequence via
@@ -164,6 +183,10 @@ class PlayerImpl final : public media::Pipeline::Client {
   // the sequence checker is what makes that claim checkable.
   SEQUENCE_CHECKER(buffer_controller_sequence_);
   player::BufferController buffer_controller_;
+
+  // The accurate-seek policy state (M9). Same discipline as the buffer
+  // controller: every mutation and decision happens on the media sequence.
+  player::SeekController accurate_seek_;
 };
 
 }  // namespace ijkpp
