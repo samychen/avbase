@@ -4,6 +4,7 @@
 
 #include "base/synchronization/lock.h"
 
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -49,6 +50,50 @@ TEST(LockTest, AutoUnlockReacquiresOnScopeExit) {
   }
   // |scoped| still owns the lock here, so a plain Try() must fail.
   EXPECT_FALSE(lock.Try());
+}
+
+// The lock-order checker records, per thread, the orderings of the locks that
+// thread acquired. Both of its containers have to be per-thread: recording an
+// ordering from two threads at once is a data race on a std::vector. That is
+// what TSan reports here, and it is not theoretical -- in a RelWithDebInfo
+// build the same race corrupted the heap and aborted a playback run in about
+// one attempt out of thirty under load (libmalloc: "pointer being freed was
+// not allocated"), which is how the missing thread_local was found.
+TEST(LockTest, ConcurrentOrderRecordingIsRaceFree) {
+  // The checker only *writes* its ordering table until it has seen a given
+  // pair, so a test that takes the same two locks over and over stops
+  // exercising the write path immediately -- and then no race shows up. Each
+  // thread gets its own set of locks and walks every (i, j) pair with i < j,
+  // which keeps producing new pairs for a while.
+  //
+  // Two properties matter and both are load-bearing:
+  //   * the locks are allocated once per thread, so their addresses are
+  //     stable. Allocating per iteration recycles addresses, and a recycled
+  //     pair can look like the *reverse* of one already recorded -- the
+  //     inversion check then fires and aborts the test (which is how this
+  //     version was found).
+  //   * every thread acquires in ascending index order, so its own records are
+  //     never reversed either.
+  constexpr int kLocksPerThread = 24;
+  std::vector<std::thread> threads;
+  for (int t = 0; t < 4; ++t) {
+    threads.emplace_back([] {
+      std::vector<std::unique_ptr<Lock>> locks;
+      locks.reserve(static_cast<size_t>(kLocksPerThread));
+      for (int i = 0; i < kLocksPerThread; ++i) {
+        locks.push_back(std::make_unique<Lock>());
+      }
+      for (int i = 0; i < kLocksPerThread; ++i) {
+        for (int j = i + 1; j < kLocksPerThread; ++j) {
+          AutoLock first(*locks[static_cast<size_t>(i)]);
+          AutoLock second(*locks[static_cast<size_t>(j)]);
+        }
+      }
+    });
+  }
+  for (std::thread& thread : threads) {
+    thread.join();
+  }
 }
 
 TEST(ConditionVariableTest, SignalWakesOneWaiter) {

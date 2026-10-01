@@ -31,8 +31,22 @@ std::vector<const Lock*>& HeldStack() {
   return stack;
 }
 
+// Per-thread for the same reason as the held stack above -- and this one was a
+// real bug, not a formality: a plain function-local static is shared by every
+// thread that takes a lock, and AssertAcquiredInOrder() records an ordering
+// *before* the lock itself is acquired. Two threads pushing into one
+// std::vector is a data race; in a RelWithDebInfo build it corrupted the heap
+// and aborted rather than misbehaving politely ("libmalloc: pointer being
+// freed was not allocated", about one playback run in thirty under load), and
+// in a TSan build it is LockTest.ConcurrentOrderRecordingIsRaceFree that
+// reports it.
+//
+// The cost of per-thread state: an ordering is only remembered by the thread
+// that observed it, so a pattern where every thread takes its pair in its own
+// fixed (and mutually opposite) order goes undetected. That is the price of
+// not putting a global lock inside the lock-order checker.
 std::vector<std::pair<const void*, const void*>>& ObservedOrder() {
-  static std::vector<std::pair<const void*, const void*>> orders;
+  static thread_local std::vector<std::pair<const void*, const void*>> orders;
   return orders;
 }
 
