@@ -53,6 +53,7 @@ ijkpp_add_unittest(media_unittests
         unit/media_filters/renderer_impl_unittest.cc
         unit/media_filters/audio_renderer_impl_unittest.cc
         unit/media_filters/synthetic_demuxer_unittest.cc
+        unit/media_filters/synthetic_decoders_unittest.cc
         unit/media_filters/video_renderer_impl_unittest.cc
         unit/media_filters/video_frame_compositor_unittest.cc
         unit/media_filters/audio_renderer_algorithm_unittest.cc

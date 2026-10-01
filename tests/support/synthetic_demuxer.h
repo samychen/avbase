@@ -93,6 +93,11 @@ class SyntheticDemuxer final : public Demuxer {
   void SetPosition(base::TimeDelta time);
   base::TimeDelta position() const { return position_; }
   int seek_count() const { return seek_count_; }
+  // The current seek generation. Both streams report it and every packet
+  // carries it, which is what lets a consumer drop a buffer from before a seek
+  // (media/base/demuxer_stream.h: "a consumer must drop any whose serial is
+  // older than the value returned here after a Flush").
+  int32_t serial() const { return serial_; }
   int64_t packets_read() const { return packets_read_; }
 
   // The frame a keyframe seek to |time| lands on: the last keyframe at or
@@ -140,8 +145,7 @@ class SyntheticDemuxer final : public Demuxer {
     }
     int32_t stream_index() const override { return 0; }
     bool SupportsConfigChanges() const override { return false; }
-    int32_t serial() const override { return serial_; }
-    void set_serial(int32_t serial) { serial_ = serial; }
+    int32_t serial() const override { return owner_->serial_; }
     size_t buffered_buffers() const override;
     size_t buffered_bytes() const override { return 0; }
     base::TimeDelta buffered_duration() const override;
@@ -150,7 +154,6 @@ class SyntheticDemuxer final : public Demuxer {
     SyntheticDemuxer* const owner_;
     const VideoDecoderConfig config_;
     const AudioDecoderConfig empty_audio_config_;
-    int32_t serial_ = 0;
   };
 
   class AudioStream final : public DemuxerStream {
@@ -168,8 +171,7 @@ class SyntheticDemuxer final : public Demuxer {
     }
     int32_t stream_index() const override { return 1; }
     bool SupportsConfigChanges() const override { return false; }
-    int32_t serial() const override { return serial_; }
-    void set_serial(int32_t serial) { serial_ = serial; }
+    int32_t serial() const override { return owner_->serial_; }
     size_t buffered_buffers() const override;
     size_t buffered_bytes() const override { return 0; }
     base::TimeDelta buffered_duration() const override;
@@ -178,14 +180,13 @@ class SyntheticDemuxer final : public Demuxer {
     SyntheticDemuxer* const owner_;
     const AudioDecoderConfig config_;
     const VideoDecoderConfig empty_video_config_;
-    int32_t serial_ = 0;
   };
 
   // Packet factories. The index travels in the payload, the geometry in the
   // timestamp and the keyframe flag. Not const: producing a packet is what
   // advances the cursor.
-  base::scoped_refptr<DecoderBuffer> MakeVideoPacket(int32_t serial);
-  base::scoped_refptr<DecoderBuffer> MakeAudioPacket(int32_t serial);
+  base::scoped_refptr<DecoderBuffer> MakeVideoPacket();
+  base::scoped_refptr<DecoderBuffer> MakeAudioPacket();
 
   const SyntheticSpec spec_;
   MediaInfo media_info_;
@@ -196,6 +197,7 @@ class SyntheticDemuxer final : public Demuxer {
   int64_t next_frame_ = 0;
   int64_t next_audio_packet_ = 0;
   base::TimeDelta position_;
+  int32_t serial_ = 0;
   int seek_count_ = 0;
   int64_t packets_read_ = 0;
 };

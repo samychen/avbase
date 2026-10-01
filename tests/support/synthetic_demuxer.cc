@@ -192,6 +192,10 @@ void SyntheticDemuxer::Initialize(
 
 void SyntheticDemuxer::StartPlayingFrom(base::TimeDelta time, SeekCB cb) {
   ++seek_count_;
+  // A seek is a new generation: consumers drop anything stamped with the old
+  // serial, which is the whole mechanism behind "no frame from the flushed
+  // generation reaches the display".
+  ++serial_;
   // A physical seek lands on a keyframe at or before the request, which is what
   // FFmpegDemuxer does and what the cb's "actual" reports.
   SetPosition(KeyframeAtOrBefore(time));
@@ -230,30 +234,28 @@ DemuxerStats SyntheticDemuxer::GetStats() const {
   return stats;
 }
 
-base::scoped_refptr<DecoderBuffer> SyntheticDemuxer::MakeVideoPacket(
-    int32_t serial) {
+base::scoped_refptr<DecoderBuffer> SyntheticDemuxer::MakeVideoPacket() {
   const int64_t index = next_frame_++;
   const std::vector<uint8_t> payload =
       IndexPayload(static_cast<uint32_t>(index));
   auto buffer = DecoderBuffer::CopyFrom(payload.data(), payload.size(),
                                         DemuxerStreamType::kVideo, 0);
   buffer->set_timestamp(TimeOfFrame(spec_, index));
-  buffer->set_serial(serial);
+  buffer->set_serial(serial_);
   buffer->set_keyframe(spec_.keyframe_interval > 0 &&
                        index % spec_.keyframe_interval == 0);
   ++packets_read_;
   return buffer;
 }
 
-base::scoped_refptr<DecoderBuffer> SyntheticDemuxer::MakeAudioPacket(
-    int32_t serial) {
+base::scoped_refptr<DecoderBuffer> SyntheticDemuxer::MakeAudioPacket() {
   const int64_t index = next_audio_packet_++;
   const std::vector<uint8_t> payload =
       IndexPayload(static_cast<uint32_t>(index));
   auto buffer = DecoderBuffer::CopyFrom(payload.data(), payload.size(),
                                         DemuxerStreamType::kAudio, 1);
   buffer->set_timestamp(TimeOfAudioPacket(spec_, index));
-  buffer->set_serial(serial);
+  buffer->set_serial(serial_);
   // Every audio packet is a sync point: there is no inter-frame dependency to
   // resume from, which is also true of AAC and Opus.
   buffer->set_keyframe(true);
@@ -270,7 +272,7 @@ void SyntheticDemuxer::VideoStream::Read(uint32_t count, ReadCB read_cb) {
   DecoderBufferVector out;
   while (out.size() < count &&
          owner_->next_frame_ < owner_->spec_.frame_count()) {
-    out.push_back(owner_->MakeVideoPacket(serial_));
+    out.push_back(owner_->MakeVideoPacket());
   }
   if (out.empty()) {
     out.push_back(DecoderBuffer::CreateEOSBuffer());
@@ -297,7 +299,7 @@ void SyntheticDemuxer::AudioStream::Read(uint32_t count, ReadCB read_cb) {
   DecoderBufferVector out;
   while (out.size() < count &&
          owner_->next_audio_packet_ < owner_->spec_.audio_packet_count()) {
-    out.push_back(owner_->MakeAudioPacket(serial_));
+    out.push_back(owner_->MakeAudioPacket());
   }
   if (out.empty()) {
     out.push_back(DecoderBuffer::CreateEOSBuffer());
