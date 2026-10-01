@@ -1128,41 +1128,29 @@ ijkpp_add_example(ijkpp_inspect SOURCES examples/ijkpp_inspect/main.cc
 C18/C20 本就是编译器必报的错，其余只是把"taste"写成了门禁——一条会误伤的门禁教人无视门禁。
 
 ```cmake
-add_custom_target(check-invariants
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_invariants.py
-            --root ${CMAKE_SOURCE_DIR}
-            --config ${CMAKE_SOURCE_DIR}/tools/invariants.yaml
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Checking architecture & style invariants")
+# cmake/IjkppCheckInvariants.cmake（实际内容）
+find_package(Python3 COMPONENTS Interpreter QUIET)
 
-add_custom_target(check-format
-    COMMAND ${CMAKE_SOURCE_DIR}/tools/check_format.sh
-    COMMENT "Checking clang-format compliance")
+if(Python3_Interpreter_FOUND)
+  add_custom_target(check-invariants
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_invariants.py
+              --root ${CMAKE_SOURCE_DIR}
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+      COMMENT "Checking structural invariants (C1, C4, C5, C22, C23, C24, C25)")
 
-add_custom_target(check-no-vendor-leak
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_symbols.py
-            $<TARGET_FILE:ijkpp_shared>
-            --forbid-regex "^[TDBRWV] (av_|avcodec_|avformat_|swr_|sws_|SDL_|gl[A-Z]|wl_|xcb_)"
-    DEPENDS ijkpp_shared
-    COMMENT "Verifying no vendor symbols are exported")
-
-add_custom_target(check-cpplint
-    COMMAND ${Python3_EXECUTABLE} -m cpplint
-            --linelength=80 --quiet --recursive
-            ${CMAKE_SOURCE_DIR}/base ${CMAKE_SOURCE_DIR}/media
-            ${CMAKE_SOURCE_DIR}/player ${CMAKE_SOURCE_DIR}/platform)
-
-if(IJKPP_IS_TOP_LEVEL)
-  add_custom_target(ci-quick DEPENDS check-invariants check-format)
-  add_custom_target(ci-full  DEPENDS ci-quick check-cpplint check-no-vendor-leak)
+  if(IJKPP_IS_TOP_LEVEL)
+    add_custom_target(ci-quick DEPENDS check-invariants)
+  endif()
+else()
+  message(STATUS "Python3 not found; check-invariants target disabled")
 endif()
 ```
 
-`tools/invariants.yaml`（C1–C19）：
+设计期的规则目录（C1–C25，实现范围见上注；`tools/invariants.yaml` 这个配置文件从未存在——规则直接实现在 `tools/check_invariants.py` 里）。表中数字是设计初值，现行白名单以脚本内的 `LINE_LIMIT_ALLOWLIST` 为准：
 
 | # | 规则 | 实现 |
 |---|---|---|
-| C1 | 单文件 ≤ 500 行（白名单：`video_frame_compositor.cc` 700、`ffmpeg_demuxer.cc` 600） | 统计 |
+| C1 | 单文件 ≤ 500 行（白名单以 `LINE_LIMIT_ALLOWLIST` 为准：`ffmpeg_demuxer.cc` 1100、`audio_renderer_algorithm.cc` 660 等，每条须附理由） | 统计 |
 | C2 | 单函数 ≤ 80 行 | libclang AST |
 | C3 | 单类 public 方法 ≤ 12（接口类白名单） | libclang AST |
 | C4 | `base/` `media/base/` `player/public/` 不含 `libav`/`libsw` include | grep |
@@ -1186,115 +1174,21 @@ endif()
 
 ## 10. CI 矩阵（GitHub Actions）
 
-```yaml
-name: ci
-on: [push, pull_request]
+单一事实来源是 `.github/workflows/ci.yml`——本节曾内嵌 YAML 样例，随实现推进必然漂移，已删，
+只留每个 job 证明的命题：
 
-jobs:
-  # ---------- 快速门禁：< 3 分钟，不装 FFmpeg、不装 X11 ----------
-  quick:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build python3-pip
-      - run: pip install libclang cpplint
-      - run: cmake --preset no-ffmpeg
-      - run: cmake --build --preset no-ffmpeg -j
-      - run: cmake --build build/no-ffmpeg --target ci-quick
-      - run: ctest --preset no-ffmpeg --output-on-failure
+| job | 证明的命题 |
+|---|---|
+| `quick` | **G2**：只有 C++20 编译器（无 FFmpeg/X11/SDL2）也能编译核心、全过测试，且门禁通过 |
+| `ffmpeg` | 发行版 FFmpeg 可用（**A14**：不 vendor、不 patch），FFmpeg 层可编译、384 用例全过 |
+| `e2e-headless` | 端到端：5 个样本真实播到 kCompleted；`--seek` 走通；损坏文件**以可操作错误失败**且退出码正确 |
+| `sdl2-build` | SDL2 后端在 Linux（发行版 SDL2 + 音频栈）上可编译可链接 |
+| `strict` | Debug + DCHECK + 严格告警 + `-Werror` 覆盖含 FFmpeg 的整棵树（clang；GCC 半边等 `-Wuseless-cast` 实测，理由见 job 注释） |
+| `full` | 矩阵：ubuntu 22.04/24.04 双 GCC（G2 跨编译器）、asan / tsan / ubsan / coverage、macOS（no-ffmpeg + Homebrew FFmpeg——第十轮两处平台坑的回归位） |
+| `e2e-linux` | `if: false` 骨架：xvfb + llvmpipe 双后端真窗口出画，M11/M12 落地 |
 
-  # ---------- 完整矩阵 ----------
-  build:
-    needs: quick
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-22.04, preset: linux-all,    ffmpeg: "5.1", label: ffmpeg51 }
-          - { os: ubuntu-24.04, preset: linux-all,    ffmpeg: "6.1", label: ffmpeg61 }
-          - { os: ubuntu-24.04, preset: linux-all,    ffmpeg: "7.1", label: ffmpeg71 }
-          - { os: ubuntu-24.04, preset: linux-native, ffmpeg: "7.1", label: native-only }
-          - { os: ubuntu-24.04, preset: linux-sdl2,   ffmpeg: "7.1", label: sdl2-only }
-          - { os: ubuntu-24.04, preset: asan,         ffmpeg: "7.1", label: asan }
-          - { os: ubuntu-24.04, preset: tsan,         ffmpeg: "7.1", label: tsan }
-          - { os: ubuntu-24.04, preset: ubsan,        ffmpeg: "7.1", label: ubsan }
-          - { os: ubuntu-24.04, preset: coverage,     ffmpeg: "7.1", label: coverage }
-          - { os: ubuntu-24.04, preset: release,      ffmpeg: "7.1", label: release-shared }
-          - { os: macos-14,     preset: default,      ffmpeg: "7.1", label: macos }
-          - { os: windows-2022, preset: default,      ffmpeg: "7.1", label: windows }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-deps
-        with: { ffmpeg: "${{ matrix.ffmpeg }}", linux_native: "true" }
-      - run: cmake --preset ${{ matrix.preset }}
-      - run: cmake --build --preset ${{ contains(matrix.preset,'linux') && matrix.preset || 'default' }} -j
-      - run: cmake --build build/${{ matrix.preset }} --target ci-full || true
-      - run: xvfb-run -a ctest --preset ${{ matrix.preset }} --output-on-failure
-      - if: matrix.label == 'coverage'
-        run: |
-          lcov --capture --directory build/coverage -o cov.info \
-               --exclude '*/tests/*' --exclude '*/third_party/*'
-          genhtml cov.info -o cov-html
-      - uses: actions/upload-artifact@v4
-        if: matrix.label == 'coverage'
-        with: { name: coverage, path: cov-html }
-      - name: Symbol leak check
-        if: matrix.label == 'release-shared'
-        run: |
-          ! nm -D --defined-only build/release/lib/libijkpp.so \
-              | grep -E ' T (av_|avcodec_|avformat_|swr_|sws_|SDL_|wl_|xcb_)'
-
-  # ---------- 交叉编译 ----------
-  cross:
-    strategy:
-      matrix: { preset: [android-arm64, android-armv7, ios-device, ios-simulator] }
-    runs-on: ${{ contains(matrix.preset, 'ios') && 'macos-14' || 'ubuntu-24.04' }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-cross@v1
-      - run: cmake --preset ${{ matrix.preset }}
-      - run: cmake --build --preset ${{ matrix.preset }} -j
-
-  # ---------- 端到端播放验收（Linux，xvfb + 软渲染） ----------
-  e2e-linux:
-    needs: quick
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-deps
-        with: { ffmpeg: "7.1", linux_native: "true" }
-      - run: sudo apt-get install -y xvfb mesa-utils libgl1-mesa-dri
-      - run: cmake --preset linux-all && cmake --build --preset linux-all -j
-      - name: SDL2 backend, 5s playback, verify frame count
-        run: |
-          xvfb-run -a -s "-screen 0 1280x720x24" \
-            ./build/linux-all/bin/play_sdl2 \
-            --url tests/testdata/small_h264_aac_3s.mp4 \
-            --duration 5s --stats-json /tmp/sdl2.json --exit-code-on-error
-          python3 tools/verify_e2e.py /tmp/sdl2.json --min-frames 140 --max-av-diff-ms 40
-      - name: Native GL backend (llvmpipe software rasterizer)
-        run: |
-          export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
-          xvfb-run -a -s "-screen 0 1280x720x24" \
-            ./build/linux-all/bin/play_native \
-            --url tests/testdata/small_h264_aac_3s.mp4 \
-            --duration 5s --stats-json /tmp/native.json --exit-code-on-error
-          python3 tools/verify_e2e.py /tmp/native.json --min-frames 100 --max-av-diff-ms 60
-
-  # ---------- Fuzz（每日） ----------
-  fuzz:
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: cmake --preset fuzz && cmake --build --preset fuzz -j
-      - run: ./build/fuzz/bin/fuzz_demux tests/testdata/corpus -max_total_time=3600 -jobs=4
-```
-
-**`e2e-linux` 是"最终要实现 Linux 播放视频"的自动化验收**：用 xvfb + llvmpipe 软渲染，在无显卡的 CI 机器上真实跑起两个后端并断言帧数与 av_diff。这是本设计与纯文档设计最大的差别 —— 目标可被机器验证。
-
----
+`check-format` / cpplint / clang-tidy **有意缺席**：C23 棘轮就是因为今天还有 310 行超 80 列——
+第一天就红的门禁教人无视门禁（R12），见 STYLE.md 的"工具落地状态"。
 
 ## 11. Install / Export
 
@@ -1374,11 +1268,9 @@ sudo apt install -y \
   libwayland-dev wayland-protocols libxkbcommon-dev libwayland-bin \
   libasound2-dev libpulse-dev \
   libdrm-dev xvfb mesa-utils
-pip3 install libclang cpplint
 
 # 最小（只跑核心单测，无需 FFmpeg / X11 / SDL2）
-sudo apt install -y build-essential cmake ninja-build python3 python3-pip
-pip3 install libclang
+sudo apt install -y build-essential cmake ninja-build python3
 
 cmake --preset no-ffmpeg && cmake --build --preset no-ffmpeg && ctest --preset no-ffmpeg
 
