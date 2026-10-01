@@ -7,7 +7,7 @@
 最后更新：2026-10-01（第十轮）—— **播放轮：M7 收尾 + M8 接线，第一次真正播放了视频。**
 `Player` 的 10 个桩方法接通 9 个（SetDataSource/Prepare/Start/Pause/Stop/SeekTo/音量/倍速/事件全部可用）；
 `headless` 示例对 5 个测试媒体完成"prepare→play→EOS→kCompleted"全流程（退出码 0），
-`play_sdl2` 在真实窗口带音频出画。全量测试 358/358（FFmpeg 配置）与 323/323（no-ffmpeg）全绿，
+`play_sdl2` 在真实窗口带音频出画。全量测试 359/359（FFmpeg 配置）与 324/324（no-ffmpeg）全绿，
 `check_invariants` 全过（220 文件）且 C23 列宽基线 323→310（只降不升）。本轮在 **macOS / AppleClang 21 / FFmpeg 7.1.1 (Homebrew) / SDL2 2.32** 上开发——这是项目第一次在 Linux 之外构建，见 §10.1 的四项 macOS 修复。
 > 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
 > 27 个文件转正进构建）
@@ -47,6 +47,8 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | `base/synchronization/lock.h` | `Lock` 补 `CAPABILITY("mutex")`、`AutoLock` 补 `SCOPED_LOCKABLE` + `EXCLUSIVE_LOCK_FUNCTION`；新增 `EXCLUSIVE_LOCKS_REQUIRED` 宏 | 注解此前不成立：`GUARDED_BY` 从未真正生效，且每处 `GUARDED_BY` 自己又产生一条诊断 |
 | `cmake/IjkppCompilerFlags.cmake` | `-Wuseless-cast` 移入 GCC 专有列表 | clang 报 unknown warning option，`-Werror` 下 debug 预设无法编译 |
 | 24 个文件的头注释 | 修复第十轮脚本把新段落插进旧句子中间留下的断句、重复的 `(promoted from DRAFT, tenth round)` 与重复空注释行 | 纯重排与合并，除重复片段外未改字面 |
+| `.github/workflows/ci.yml` · `CMakePresets.json` | 骨架 job 变真：新增 `ffmpeg`（发行版 FFmpeg，359 用例）、`e2e-headless`（5 个样本播到结束）、`sdl2-build`（Linux 上编译 SDL2 后端）；新增 `ffmpeg` 预设，`linux-sdl2` 补上 FFmpeg | 带 FFmpeg 的配置与端到端此前从未在 CI 跑过（`ffmpeg-matrix` / `e2e-linux` 一直是 `if: false`）；`linux-sdl2` 因缺 FFmpeg 连 `play_sdl2` 都建不出来 |
+| `base/synchronization/lock.cc` · `tests/unit/base/synchronization_unittest.cc` | `ObservedOrder()` 补 `thread_local`；新增 `LockTest.ConcurrentOrderRecordingIsRaceFree` | #44 |
 
 ### (3) 本轮抓到的 bug（接通播放 = 第一条真正跑全链路的路径，收获很大）
 
@@ -61,6 +63,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | 41 | 解码泵内联递归：DecoderStream 缓存同步交付时每帧一层栈，真实文件直接栈溢出（SIGBUS on S4） | 🔴 |
 | 42 | 泵在背压处停止后无人唤醒（消费方清空压力没有人通知生产者）——ffplay 用 condvar，这里用 Render 回调里的 post | 🔴 逻辑缺口 |
 | 43 | RendererImpl::Flush 给音频路径传空 closure，AudioRendererImpl::Flush 无条件 Run → "null callback" CHECK | 🟠 |
+| 44 | 锁序检查器的"已观测顺序"表是**所有线程共享**的 `std::vector`（旁边那张 held 栈写了 `thread_local`，这张漏了），而记录发生在取锁之前 → 并发 `push_back` 直接踩坏堆。表现：`headless` 在 6 路并发下约 1/36 次**静默** `SIGABRT`/`SIGTRAP`（`libmalloc: pointer being freed was not allocated`，栈落 `TaskQueue::PostDelayedTaskImpl` → `AutoLock` → `AssertAcquiredInOrder`），播放本身看不出任何异常 | 🔴 数据竞争（**早于第十轮**，由"把 CI e2e 变成真 job"时的抖动调查发现） |
 | 44 | RendererImpl::Flush 完成回调从 S3 直达 PipelineImpl | 🔴 跨 sequence |
 | 45 | PipelineImpl 并行初始化 demuxer 和 renderer，后者拿到零条流报 kMissingDemuxerStreams（首跑的"StreamNotFound"假象） | 🔴 编排顺序 |
 | 46 | **macOS 移植四件**：根目录 `VERSION` 文件在大小写不敏感 FS 上遮蔽 libc++ 的 `<version>`（改名 VERSION.txt）；`pthread_setname_np` 平台差异（统一截断 15 字符）；FindFFmpeg 的 pkg-config 分支 include 目录经 `PkgConfig::` 中转后丢失（改为从 PC_* 变量直构）；`ijkpp-inspect` 因 FFmpeg PRIVATE 链接拿不到头（显式链接） | 🟠 平台 |
@@ -76,7 +79,7 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 ✅ headless: truncated_tail.mp4    → completed at 2.88s（截断文件优雅播到 EOF）
 ✅ corrupt_header.mp4              → prepare 失败，错误含 DecodeFailed/建议（不崩溃）
 ✅ play_sdl2（真窗口 + 音频）       → 播完 kCompleted，退出码 0
-✅ ctest: 358/358（mac 配置，+5 状态机用例）· 323/323（no-ffmpeg）
+✅ ctest: 359/359（mac 配置）· 324/324（no-ffmpeg）——第十轮末尾各 +1：锁序竞态回归用例（#44）
 ✅ check_invariants 全过（220 文件）；C23 列宽基线 323 → 310（净减 13 行，棘轮只降不升）
 ✅ 零警告（编译器 + 链接器）：RelWithDebInfo 的 no-ffmpeg / FFmpeg+SDL2 与
    Debug + 严格告警 + `-Werror` 三套配置实测。这份成绩单在第十轮末尾一度是虚的：
@@ -88,15 +91,17 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 ### (5) 本轮未做 / 遗留
 
 1. **渲染三件套的直接单测仍欠**（tests/support/ 假件未建）——本轮的验证是 headless
-   端到端 + 既有 358 用例；RendererImpl 的暂停恢复、seek 后串号隔离、环形交接内存序
+   端到端 + 既有 359 用例；RendererImpl 的暂停恢复、seek 后串号隔离、环形交接内存序
    仍只有推理与 TSan 待跑。
 2. 首播 seek 曾触发一次 NAL 损坏（改为首播不重复寻址后消失）——根因未深究，
    真实 seek 已验证干净，但 seek 后串号隔离的黄金验证要等 M10。
 3. `RunUntilIdle`（需要 message_pump_epoll，R2 降级债）、精确 seek（M9
    SeekController）、轨选切换、快照、UpdateConfig 白名单、`option_registry.inc`
    接线（A10 仍 9/66）——全部按桩返回 kNotImplemented 并指明里程碑。
-4. SDL2 后端只在 macOS 验证；Linux 真机 X11/Wayland、CI `e2e-linux`、ASan/TSan
-   对新代码的完整跑、覆盖率门禁——下一轮。
+4. SDL2 后端现在**在 CI 的 Linux 上编译**（`sdl2-build` job），但"跑起来"仍只有
+   macOS：Linux 真机 X11/Wayland 与 `e2e-linux`（xvfb + llvmpipe + 双后端）留到
+   M11/M12。带 FFmpeg 的 359 用例与 headless 端到端已进 CI（`ffmpeg` / `e2e-headless`
+   两个 job）；覆盖率门禁仍欠。
 5. macOS 首次构建暴露的文档失真已按本轮实测修正 README/BUILDING 的对应行。
 6. C1/C2 清理把三个实现文件各拆成两个 TU（`pipeline_impl_host` · `renderer_impl_controls`
    · `player_impl_events`），并把音频取环、渲染器装配与两个示例的 `main` 抽成辅助函数。

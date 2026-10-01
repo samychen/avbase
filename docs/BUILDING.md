@@ -51,7 +51,7 @@ ctest --preset no-ffmpeg --output-on-failure
 ```
 
 这条验证设计目标 **G2**：核心只用一个 C++20 编译器就能构建并通过测试。
-预期 **287 个用例全绿**（不含需要 FFmpeg 的 35 个）。
+预期 **324 个用例全绿**（不含需要 FFmpeg 的 35 个）。
 
 ### 3.2 带真实媒体的完整测试
 
@@ -61,7 +61,7 @@ cmake --build --preset linux-ffmpeg711
 ctest --test-dir build/linux-ffmpeg711 --output-on-failure
 ```
 
-预期 **322 = 287 + 35** 全绿。`IJKPP_FFMPEG_ROOT` 指向一个 FFmpeg 安装前缀；
+预期 **359 = 324 + 35** 全绿。`IJKPP_FFMPEG_ROOT` 指向一个 FFmpeg 安装前缀；
 用 `tools/setup_ffmpeg.sh` 生成一个版本锁定的：
 
 ```bash
@@ -70,8 +70,18 @@ export IJKPP_FFMPEG_ROOT=/opt/ffmpeg-7.1.1
 ```
 
 也可以直接用发行版 FFmpeg（这正是设计目标之一，验收标准 A14）：
-把 `IJKPP_ENABLE_FFMPEG=ON` 配到 `default` preset 上，或
-`cmake -B build/dev -G Ninja -DIJKPP_ENABLE_FFMPEG=ON && cmake --build build/dev`。
+
+```bash
+cmake --preset ffmpeg                 # 系统 FFmpeg，不开窗口后端
+cmake --build --preset ffmpeg
+ctest --preset ffmpeg
+
+cmake --preset linux-sdl2             # FFmpeg + SDL2 双后端（需要 SDL2 开发包）
+cmake --build build/linux-sdl2        # 唯一能建出 play_sdl2 的 preset
+```
+
+`ffmpeg` 与 `linux-sdl2` 都只需要发行版/Homebrew 的 FFmpeg，不需要
+`IJKPP_FFMPEG_ROOT`；`linux-sdl2` 也是 CI 里用来验证 SDL2 后端能在 Linux 上编译的那份配置。
 
 ### 3.3 Debug + `-Werror`（第一次构建应该跑这个）
 
@@ -175,18 +185,26 @@ python3 tools/gen_options.py --root . --emit     # 生成 player/option_registry
 > 且 mtime 落在同一秒，Python 的 pyc 校验（mtime + size，秒级精度）会判定源码未变而
 > 继续用旧字节码，于是测试结果与实际源码不符。这个坑在第九轮真实发生过一次。
 
-CI（`.github/workflows/ci.yml`）目前跑的是 `quick`（no-ffmpeg + 两个工具）与
-`full` 矩阵（GCC 11/13 · asan · tsan · ubsan · coverage · macOS）。
-**`ffmpeg-matrix` 与 `e2e-linux` 两个 job 仍是 `if: false`**，所以带 FFmpeg 的
-322/322 只在本地验证过，CI 上不可复现。
+CI（`.github/workflows/ci.yml`）跑五组：`quick`（no-ffmpeg + `check_invariants`）、
+`ffmpeg`（发行版 FFmpeg，359 个用例，验证 A14）、`e2e-headless`（`examples/headless`
+把 testdata 的 4 个正常样本 + 1 次 seek 播到 `kCompleted`，并断言损坏文件以可操作错误
+退出）、`sdl2-build`（Linux 上编译 SDL2 后端与 `play_sdl2`）、`full` 矩阵
+（GCC 11/13 · asan · tsan · ubsan · coverage · macOS no-ffmpeg · macOS + Homebrew FFmpeg）。
+
+**仍未开的是 `e2e-linux`（`if: false`）**：它要的是 xvfb + llvmpipe 把两个 Linux 后端
+真跑起来（G12/A16，M11/M12），还需要尚未存在的 `verify_e2e.py`。`check-format`、
+`check-cpplint`、`check-clang-tidy` 三个门禁也刻意没开——见下文 §7 的说明。
 
 ---
 
-## 6. ★19 个 DRAFT 文件：怎么让第一次编译不痛苦
+## 6. [历史] 19 个 DRAFT 文件是怎么转正的
 
-当前分支有 **19 个标着 `STATUS: DRAFT — NOT YET IN THE BUILD` 的文件，约 3,000 行，
-全部从未编译过**。它们**不在任何 CMake target 里**，所以 §3 的构建与测试**不受影响、
-现在就是绿的**。这是项目自己的规矩：不能编译的文件绝不可从构建可达。
+> **状态：第十轮已完成。** 现在仓库里**没有任何 DRAFT 文件**——下文那 19 个文件全部
+> 进了构建，`STATUS: DRAFT` 的横幅按项目决定留在文件头作为历史。本节保留，因为它是
+> 下一次"从 DRAFT 到构建"的现成流程，下面所有数字与命令都是当时的实测记录。
+
+当时的规矩是：**19 个 DRAFT 文件不在任何 CMake target 里**，所以 §3 的构建与测试
+不受影响、始终是绿的——不能编译的文件绝不可从构建可达。
 
 要转正，**按这个顺序**（依赖关系决定的，不是随意排的）：
 
@@ -211,7 +229,7 @@ done
 | `renderer_factory.h` 的前置声明够不够 | 我为了缩小传递闭包把 5 个类型改成了前置声明（33 → 27 个头）。只以指针出现的类型够用，但任何 include 它的 TU 若要**调用** `Create*()` 就必须自己 include 完整类型 |
 | `base::BindOnce` 能不能搬 `unique_ptr` | `renderer_impl.cc` 的 `Initialize()` 把 `unique_ptr<VideoRendererSink>` 绑进了 `BindOnce`。`bind.h` 自称是 R2 降级的 **L1 层**，明确列出不支持 `Passed()`/`Owned()`/变参包，**但没说 move-only 绑定参数支不支持**。若不支持，改成"任务体内读成员字段" |
 | `pipeline_controller.h` 的抽象声明 | 我把它声明为抽象类，而 docs/03 §6 与 Chromium 都是持有 `unique_ptr<Pipeline>` 的具体类。这是刻意偏离，编译期不会有意见，但 M8 接线时要认账 |
-| 80 列 / 命名 / `-Wshadow` | `check_invariants.py` **没有列宽规则**，`.clang-tidy` 与 `check-format` job 也都不存在，所以这三样目前**完全没有门禁**，只有 `debug` preset 的 `-Werror` 会抓到一部分 |
+| 80 列 / 命名 / `-Wshadow` | 列宽已由 C23 棘轮守着（基线 310 行），`-Wshadow` 与其余编译告警由 `debug` preset 的 `-Werror` 全量守；但**命名规则没有任何门禁**——`.clang-tidy` 已落盘却未接线，`check-format` / `check-cpplint` 两个 job 也刻意没开（见 §7 末） |
 
 ```bash
 # 第 2 步：语法过了再进构建。media/base 的 7 个头加入 ijkpp_media

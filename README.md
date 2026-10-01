@@ -9,8 +9,8 @@
 >
 > | 配置 | 结果 |
 > |---|---|
-> | `no-ffmpeg`（无 FFmpeg / SDL2 / X11） | ✅ 323/323 |
-> | mac 配置（FFmpeg 7.1.1 + SDL2 + 示例） | ✅ 358/358，`headless`/`play_sdl2` 真实播放到 kCompleted |
+> | `no-ffmpeg`（无 FFmpeg / SDL2 / X11） | ✅ 324/324 |
+> | mac 配置（FFmpeg 7.1.1 + SDL2 + 示例） | ✅ 359/359，`headless`/`play_sdl2` 真实播放到 kCompleted |
 > | `debug`（Debug + DCHECK + `-Werror`） | ✅ 全绿，零警告 |
 > | `asan`（ASan + UBSan + **LSan**） | ✅ 全绿，**0 泄漏** |
 > | `tsan`（**ThreadSanitizer**） | ✅ 全绿，**0 data race** |
@@ -18,7 +18,7 @@
 > | `extract_constants.py --selftest` | ✅ 24 个移植常量与 docs/05 表 7 一致 |
 >
 > ⚠️ **用例数以 [docs/PROGRESS.md](docs/PROGRESS.md) 为准**（活文档，第十轮为
-> 358/358 与 323/323，macOS / AppleClang 21 / Homebrew FFmpeg 7.1.1 实测）。
+> 359/359 与 324/324，macOS / AppleClang 21 / Homebrew FFmpeg 7.1.1 实测）。
 > **能播放了**：`examples/headless <url>` 完整播到 kCompleted，`examples/play_sdl2
 > --url <url>` 真窗口带音频出画（SDL2 后端，M11 代码提前落地）。
 > Sanitizer 历史战果与第十轮抓到的 12 个真 bug → [docs/PROGRESS.md](docs/PROGRESS.md)
@@ -267,7 +267,7 @@ ijkpp/
 │                               FindFFmpeg · FindSDL2 · IjkppCheckInvariants
 │                               BuildConfig.h.in · Version.h.in
 │                            ⬜ FindLinuxMediaDeps(M12) · IjkppInstall(M8) · ijkpp.map(R18)
-├── base/                    ✅ 44 文件 / 3,785 行
+├── base/                    ✅ 44 文件 / 3,799 行
 │   ├── functional/ memory/ time/ synchronization/ task/ threading/ types/ test/
 │   └── ⬜ containers/ files/ strings/ trace_event/ · feature_list.h
 │         threading/message_pump_epoll.cc（R2 的 L2 降级：现为 TaskQueue 驱动）
@@ -296,7 +296,7 @@ ijkpp/
 │   ├── sdl2/                ✅ 5 文件 / 592 行 —— M11 的双后端提前落地（M8 轮）
 │   └── null/ · linux/       ⬜ M10 / M12 —— null 仍是空目录；linux 开关在
 │                               platform/CMakeLists.txt 里是有意的 FATAL_ERROR
-├── tests/                   ✅ unit/ 26 文件 / 6,743 行 · 323 用例 · testdata/ 5 个样本
+├── tests/                   ✅ unit/ 26 文件 / 6,773 行 · 324 用例 · testdata/ 5 个样本
 │                               （两个曾被记为"未计入总数"的测试文件均已进构建并跑绿）
 │                            ⬜ contract/ integration/ golden/ e2e/ stress/ fuzz/
 │                               bench/ support/
@@ -311,13 +311,13 @@ ijkpp/
 ├── examples/                ✅ 2 个 / 328 行（headless · play_sdl2）；⬜ 其余 10 个
 ├── third_party/             ⬜ 按设计保持为空（不 vendor）
 └── docs/                    ✅ 13 篇（01–10 + PROGRESS + BUILDING + 项目架构与能力分析，
-                             约 49.3 万字符）
+                             约 49.5 万字符）
                              ⬜ API · COOKBOOK · MIGRATION · TROUBLESHOOTING
                                 EXTENDING · PERFORMANCE · CHANGELOG（M13 发版 blocker）
 ```
 
 合计：**220 个 `.h`/`.cc`**（无 DRAFT：第九轮冻结的 DRAFT 文件第十轮全部转正）、
-C++ **32,110 行**（实现 25,367 / 测试 6,743）、`tools/*.py` **3,224 行**。逐项进度以 [docs/PROGRESS.md](docs/PROGRESS.md) 的
+C++ **32,154 行**（实现 25,381 / 测试 6,773）、`tools/*.py` **3,224 行**。逐项进度以 [docs/PROGRESS.md](docs/PROGRESS.md) 的
 "未完成（按里程碑）"与"工具与门禁现状"两张表为准。
 
 ### 8.2 规划（目标布局，docs/02 §2 的完整版）
