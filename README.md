@@ -65,6 +65,7 @@
 | 08 | [实施路线图与风险](docs/08-实施路线图与风险.md) | M0–M12 里程碑与 DoD、双人并行方案、工作量估算、砍掉/后置清单、**16 条风险登记册**、"平替"验收标准 A1–A16 |
 | 09 | [Linux 平台实现方案](docs/09-Linux平台实现方案.md) | **双后端详细设计**：SDL2 后端、原生 OpenGL 后端（GLX/EGL + X11/Wayland）、ALSA/PulseAudio/PipeWire、vsync 与 Present 扩展、零拷贝 dmabuf、色彩空间、嵌入模式窗口协议 |
 | 10 | [SDK 易用性设计](docs/10-SDK易用性设计.md) | **面向二次开发者**：10 行 quick-start、可操作错误信息规范、API 人体工学清单、文档体系、示例矩阵、打包与集成方式、常见任务 cookbook |
+| 12 | [剩余工作清单](docs/12-剩余工作清单.md) | **执行快照**(2026-10-03,第十八轮后):Phase 0–4 逐阶段完成度、剩余项(直播追帧/零拷贝显示/Qt 门面/corpus/soak/Windows CI)、环境事项与开放决策点 |
 | 11 | [行为规范卷](docs/11-行为规范卷.md) | **验收依据**（自 avbase_design.md §5/§7/§8 并入）：线程与任务模型、背压级联与 seek 序列、三级水位表。Phase 1–2 的验收标准引用本章 |
 
 ---
@@ -315,7 +316,7 @@ avbase/
 │                               inspect 的 doctor/play/dump/golden 子命令
 ├── examples/                ✅ 2 个 / 328 行（headless · play_sdl2）；⬜ 其余 10 个
 ├── third_party/             ⬜ 按设计保持为空（不 vendor）
-└── docs/                    ✅ 14 篇（01–11 + PROGRESS + BUILDING + 项目架构与能力分析，
+└── docs/                    ✅ 15 篇（01–12 + PROGRESS + BUILDING + 项目架构与能力分析，
                              约 49.5 万字符）
                              ⬜ API · COOKBOOK · MIGRATION · TROUBLESHOOTING
                                 EXTENDING · PERFORMANCE · CHANGELOG（M13 发版 blocker）
