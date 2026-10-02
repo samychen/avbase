@@ -86,6 +86,7 @@
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/legacy/video_frame_compositor.h"
 #include "media/filters/video_renderer_impl.h"
+#include "media/base/text_decoder.h"
 #include "media/media_export.h"
 
 namespace avbase::media {
@@ -110,6 +111,9 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
     const base::TickClock* tick_clock = nullptr;
     std::vector<base::scoped_refptr<VideoDecoderFactory>> video_factories;
     std::vector<base::scoped_refptr<AudioDecoderFactory>> audio_factories;
+    // Text leg (Phase 4.2). Null = text selection is not available in this
+    // build (no-ffmpeg): SelectTrack(kText) then reports kNotImplemented.
+    base::scoped_refptr<TextDecoderFactory> text_decoder_factory;
     std::unique_ptr<VideoRendererSink> video_sink;
     base::scoped_refptr<AudioRendererSink> audio_sink;
     VideoFrameCompositor::Thresholds compositor_thresholds;
@@ -199,6 +203,11 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
                                   SwitchedAudioSettings settings,
                                   base::OnceClosure change_completed_cb,
                                   PipelineStatus status);
+  // Text leg pump (Phase 4.2). All S1; Read replies are posted there by the
+  // demuxer stream.
+  void PumpText();
+  void OnTextRead(int generation, DemuxerStream::Status status,
+                  DemuxerStream::DecoderBufferVector buffers);
   void FinishAudioSwitch(bool was_rendering, base::TimeDelta resume_at,
                          SwitchedAudioSettings settings,
                          base::OnceClosure change_completed_cb,
@@ -259,6 +268,15 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // for the "same track, nothing to do" no-op in OnTracksChanged. Lifetime is
   // the MediaResource's (same contract as the sub-renderer's stream pointer).
   DemuxerStream* audio_stream_{nullptr};
+  // Text leg (Phase 4.2): the base renders nothing -- it decodes subtitle
+  // packets on S1 and hands cues to the client. |text_generation_| invalidates
+  // in-flight Read replies across switches and flushes (the stream aborts
+  // them, but only the generation knows which reply belongs to which leg).
+  DemuxerStream* text_stream_{nullptr};
+  std::unique_ptr<TextDecoder> text_decoder_;
+  bool text_read_outstanding_{false};
+  bool text_ended_{false};
+  int text_generation_{0};
   // Switched-out audio renderers. They are stopped and drained on S4 but NOT
   // deleted there: control tasks bound with Unretained may still be queued
   // behind the teardown task, and deleting would turn them into use-after-free

@@ -78,6 +78,13 @@ class AVBASE_MEDIA_EXPORT DecoderBufferQueue {
   // Never blocks. Returns false when full, aborted, or closed.
   bool TryPush(base::scoped_refptr<DecoderBuffer> buffer);
 
+  // Text-stream variant: when the queue is at a limit, drop the OLDEST
+  // buffer instead of failing. Subtitle packets arrive once and are small;
+  // a text leg that selects late must still see the track, and a full text
+  // queue must never wedge the demux loop (nobody else would drain it).
+  // Returns false only on abort/closed, like TryPush.
+  bool TryPushDropOldest(base::scoped_refptr<DecoderBuffer> buffer);
+
   // Blocks until a buffer is available. Returns the reason it stopped.
   PopStatus Pop(base::scoped_refptr<DecoderBuffer>* out);
   // Non-blocking; takes up to |max| buffers. Returns kEmpty when none are ready.

@@ -97,6 +97,8 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   void Seek(base::TimeDelta time, base::OnceClosure seeked_cb) override;
   void SelectAudioTrack(int stream_index,
                         PipelineStatusCallback cb) override;
+  void SelectTextTrack(int stream_index,
+                       PipelineStatusCallback cb) override;
   bool CanSeekForward() const override;
   bool CanSeekBackward() const override;
   int GetAudioStreamId() const override;
@@ -131,6 +133,11 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   void DoPause();
   void DoSeek(base::TimeDelta time, base::OnceClosure seeked_cb);
   void DoSelectAudioTrack(int stream_index, PipelineStatusCallback cb);
+  void SelectTrack(DemuxerStreamType type, int stream_index,
+                   PipelineStatusCallback cb);
+  void DoSelectTrack(DemuxerStreamType type, int stream_index,
+                     PipelineStatusCallback cb);
+  void FinishStop();
   void OnSeekDemuxerDone(Status status, base::TimeDelta actual);
   void OnRendererFlushed();
   void FinishSeekIfBothDone();
@@ -154,6 +161,7 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   void OnDurationChange(base::TimeDelta duration) override;
   void OnStatisticsUpdate(const PipelineStatistics& stats) override;
   void OnVideoConfigChange(const VideoDecoderConfig& config) override;
+  void OnTimedText(const TimedTextCue& cue) override;
   // RendererClient-only hooks (Pipeline::Client has neither): the device
   // change is logged, and there is no overlay sequence in this build.
   void OnAudioOutputDeviceChanged(const std::string& device_id, bool is_default,

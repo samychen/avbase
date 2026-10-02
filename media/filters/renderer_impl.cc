@@ -46,6 +46,26 @@ RendererImpl::RendererImpl(Deps deps) : deps_(std::move(deps)) {
   CHECK(deps_.av_sync);
 }
 
+// Audio-specific teardown: stop + drain inline, then destroy, in ONE task on
+// the owning sequence. See the comment at the call site in ~RendererImpl.
+static void QuiesceAndDestroyOn(
+    const base::scoped_refptr<base::SequencedTaskRunner>& runner,
+    std::unique_ptr<AudioRendererImpl>* member) {
+  base::WaitableEvent done;
+  runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](std::unique_ptr<AudioRendererImpl>* m, base::WaitableEvent* e) {
+            if (*m) {
+              (*m)->StopAndDrainForTeardown(base::DoNothing());
+              m->reset();
+            }
+            e->Signal();
+          },
+          member, &done));
+  done.Wait();
+}
+
 template <typename T>
 static void DestroyOn(
     const base::scoped_refptr<base::SequencedTaskRunner>& runner,
@@ -76,11 +96,17 @@ RendererImpl::~RendererImpl() {
   if (video_) {
     DestroyOn(deps_.video_task_runner.get(), &video_);
   }
-  if (audio_) {
-    DestroyOn(deps_.audio_task_runner.get(), &audio_);
-  }
+  // The audio renderer must QUIESCE on S4 before its memory goes away: a
+  // pump task whose read reply was still in flight would otherwise run after
+  // the destroy and lock a freed mutex (ASan/abort caught exactly that in the
+  // text-leg tests). StopAndDrainForTeardown completes the outstanding read
+  // INLINE (DecoderStream::Flush -> Deliver runs the callback on the caller),
+  // and after stopping_ is set no self-post can name this object again -- so
+  // the same task that drains can safely destroy. DestroyOn alone has the
+  // documented hole: tasks queued behind its reset run on freed memory.
+  QuiesceAndDestroyOn(deps_.audio_task_runner.get(), &audio_);
   for (auto& retired : retired_audio_) {
-    DestroyOn(deps_.audio_task_runner.get(), &retired);
+    QuiesceAndDestroyOn(deps_.audio_task_runner.get(), &retired);
   }
   av_sync_.reset();
 }
@@ -363,6 +389,7 @@ void RendererImpl::StartPlayingFrom(base::TimeDelta time) {
                        weak_factory_.GetWeakPtr()),
         kStatsInterval);
   }
+  PumpText();
 }
 
 void RendererImpl::PushMasterClock() {
@@ -460,6 +487,12 @@ void RendererImpl::Flush(base::OnceClosure flush_cb) {
   ended_ = false;
   video_ended_ = false;
   audio_ended_ = false;
+  // The text leg's pending Read is aborted by the demuxer flush; the
+  // generation bump makes the reply a no-op, and the pump re-arms at
+  // StartPlayingFrom.
+  ++text_generation_;
+  text_read_outstanding_ = false;
+  text_ended_ = false;
   // A flush empties every queue by definition, so the starvation edge is
   // deterministic here -- emitting it directly rather than letting the 10 ms
   // sampler race the demuxer's refill (a sub-10ms dry window is invisible to

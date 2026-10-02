@@ -257,52 +257,6 @@ void PipelineImpl::Seek(base::TimeDelta time, base::OnceClosure seeked_cb) {
                      std::move(seeked_cb)));
 }
 
-void PipelineImpl::SelectAudioTrack(int stream_index,
-                                    PipelineStatusCallback cb) {
-  if (!media_runner_) {
-    std::move(cb).Run(PipelineStatus::kTrackSwitchError);
-    return;
-  }
-  media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&PipelineImpl::DoSelectAudioTrack,
-                     base::Unretained(this), stream_index, std::move(cb)));
-}
-
-void PipelineImpl::DoSelectAudioTrack(int stream_index,
-                                      PipelineStatusCallback cb) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (state_ != State::kReady || !renderer_ || !demuxer_) {
-    std::move(cb).Run(PipelineStatus::kTrackSwitchError);
-    return;
-  }
-  DemuxerStream* target = nullptr;
-  const std::vector<DemuxerStream*> audio =
-      demuxer_->GetStreams(DemuxerStreamType::kAudio);
-  for (DemuxerStream* stream : audio) {
-    if (stream->stream_index() == stream_index) {
-      target = stream;
-      break;
-    }
-  }
-  if (!target) {
-    std::move(cb).Run(PipelineStatus::kTrackSwitchError);
-    return;
-  }
-  // Re-point routing BEFORE the handover: the moment the old renderer stops
-  // draining its stream, that stream's queue would wedge the demux loop on
-  // its own watermark and starve the very track we are switching to.
-  demuxer_->SetActiveStream(DemuxerStreamType::kAudio, stream_index);
-  // The renderer reports a failed handover through Client::OnError and still
-  // runs the completion closure; the closure itself only means "the attempt
-  // finished and the pipeline is consistent".
-  renderer_->OnTracksChanged(DemuxerStreamType::kAudio, target,
-                             base::BindOnce(
-                                 [](PipelineStatusCallback cb) {
-                                   std::move(cb).Run(PipelineStatus::kOk);
-                                 },
-                                 std::move(cb)));
-}
 
 void PipelineImpl::DoSeek(base::TimeDelta time, base::OnceClosure seeked_cb) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -386,6 +340,21 @@ void PipelineImpl::DoStop() {
   // Order (docs/03 §10.1): renderer first -- destroying it stops both sinks,
   // which guarantees no further Render() calls -- then the demuxer, whose
   // Stop() interrupts the demux thread's blocking av_read_frame and joins it.
+  //
+  // Flushed, not just dropped: the Flush completes every in-flight decoder
+  // read inline and closes the demuxer->S1->S4 reply chain, so no task
+  // naming renderer internals can be queued after destruction. A bare reset
+  // let a read reply land on a freed AudioRendererImpl (text-leg tests).
+  if (renderer_) {
+    renderer_->Flush(base::BindOnce(&PipelineImpl::FinishStop,
+                                    base::Unretained(this)));
+    return;
+  }
+  FinishStop();
+}
+
+void PipelineImpl::FinishStop() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   renderer_.reset();
   if (demuxer_) {
     demuxer_->Stop();
@@ -396,7 +365,12 @@ void PipelineImpl::DoStop() {
 
 bool PipelineImpl::IsRunning() const {
   const State s = state_.load();
-  return s == State::kStarting || s == State::kReady;
+  // kStopping counts: Stop() completes asynchronously (the renderer flush
+  // hops back before the teardown), and every waiter on "!IsRunning()" --
+  // the test teardowns, Player::StopSync's polling -- means "safe to
+  // destroy", which is only true at kStopped.
+  return s == State::kStarting || s == State::kReady ||
+         s == State::kStopping;
 }
 
 // The Set* family posts a task that reads |renderer_| on the media sequence

@@ -64,6 +64,11 @@ class FakePipelineClient final : public Pipeline::Client {
     std::scoped_lock scoped(lock_);
     return waiting_count_;
   }
+  // Cues delivered by the text leg, in arrival order.
+  std::vector<TimedTextCue> cues() const {
+    std::scoped_lock scoped(lock_);
+    return cues_;
+  }
   base::TimeDelta duration() const {
     std::scoped_lock scoped(lock_);
     return duration_;
@@ -81,6 +86,7 @@ class FakePipelineClient final : public Pipeline::Client {
   void OnWaiting(WaitingReason reason) override;
   void OnStatisticsUpdate(const PipelineStatistics& stats) override;
   void OnVideoConfigChange(const VideoDecoderConfig& config) override;
+  void OnTimedText(const TimedTextCue& cue) override;
 
  private:
   void Record(const std::string& line);
@@ -96,6 +102,7 @@ class FakePipelineClient final : public Pipeline::Client {
   bool ended_ = false;
   int buffering_count_ = 0;
   int waiting_count_ = 0;
+  std::vector<TimedTextCue> cues_;
 };
 
 }  // namespace avbase::media::test

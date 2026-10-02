@@ -86,6 +86,7 @@ if(AVBASE_ENABLE_FFMPEG)
       ../media/filters/ffmpeg_audio_decoder.cc
       ../media/filters/ffmpeg_video_decoder.cc
       ../media/filters/ffmpeg_decoder_factories.cc
+      ../media/filters/ffmpeg_text_decoder.cc
       ffmpeg/data_source_io.cc)
   add_library(avbase::platform_ffmpeg ALIAS avbase_platform_ffmpeg)
 

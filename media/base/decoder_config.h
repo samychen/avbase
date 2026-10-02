@@ -66,6 +66,21 @@ struct AVBASE_MEDIA_EXPORT VideoDecoderConfig {
   }
 };
 
+// Subtitle/text track description (Phase 4.2: the base carries text + time,
+// the host renders). FFmpeg text decoders initialise from the codec name and
+// whatever private data the container attached (tx3g default track header,
+// ASS style header).
+struct AVBASE_MEDIA_EXPORT TextDecoderConfig {
+  std::string codec_name;        // "subrip"/"srt", "mov_text", "ass", "webvtt".
+  std::string language;          // ISO-639-2, empty when unknown.
+  std::vector<uint8_t> extra_data;
+
+  bool IsValidConfig() const { return !codec_name.empty(); }
+
+  constexpr friend bool operator==(const TextDecoderConfig&,
+                                   const TextDecoderConfig&) = default;
+};
+
 struct AVBASE_MEDIA_EXPORT AudioDecoderConfig {
   AudioCodec codec{AudioCodec::kUnknown};
   std::string codec_name;

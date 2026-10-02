@@ -4,14 +4,16 @@
 
 ## 当前状态：**M0–M8 ✅ · 端到端播放 ✅ · M9 进行中（三级 HWM + 精确 seek + DataSource 桥 + 饥饿信号 ✅）**
 
-最后更新：2026-10-02（第十六轮）—— **Phase 4.2 运行时音轨切换落地。**
-`Player::SelectTrack(kAudio, index)` 全链打通：MediaResource 流枚举 → demuxer 活跃流
-路由(只对被消费的流施加背压) → RendererImpl 音频渲染器异步交接(停止→排干→重建→
-时钟续接) → `kTrackChanged` 事件。过程中排掉三颗雷：demux 循环被孤儿队列自锁
-(切轨必现)、S1 阻塞等待 S4 死锁(首稿)、退役渲染器的 Unretained 在途任务 UAF。
-新增 `tests/testdata/two_audio_tracks.m4a` + 5 个管线级测试；顺带修复 throttle 夹具
-的 MemoryDataSource 悬垂字节雷与 sink 拉取竞态。ffmpeg 435/435、no-ffmpeg 376/376、
-asan 435/435 全绿，invariant 全过(278 文件)。
+最后更新：2026-10-03（第十七轮）—— **Phase 4.2 字幕文本腿落地。**
+`Player::SelectTrack(kText, index)` 全链打通：基座只出文本+时间（avbase 升级计划的
+定位），解码后的 cue 以 `kTimedText` 事件上行。新增 `TimedTextCue`/`TextDecoderConfig`/
+`TextDecoder`（同步接口）+ FFmpeg 字幕解码器（avcodec_decode_subtitle2）；demuxer 对
+文本流改用**常驻有界丢弃最旧队列**——字幕包一次性到达且不参与水位背压，迟到订阅仍能
+看到全轨。过程中封了三颗生命周期雷：Stop 异步化后 IsRunning 语义、管线停止需先 Flush
+渲染器再销毁、AudioRendererImpl 泵自续任务改弱绑定。新增 `audio_two_subs.mkv`
+（双 srt 轨）+ 4 个管线级测试。ffmpeg 439/439、no-ffmpeg 376/376、asan 439/439
+全绿，invariant 全过（280 文件）。
+> 第十六轮：Phase 4.2 运行时音轨切换——SelectAudioTrack 全链
 > 第十五轮：Phase 3 硬解与零拷贝——NativeBuffer · VideoToolbox 全链实测 · 颜色空间
 > 第十四轮：Phase 0 仓库改造——更名 avbase · LGPL 清点（决策 A）· 文档合并
 > 第十三轮：DataSource 桥（M4 余项收口）+ 饥饿信号（M9 第三块）
@@ -62,6 +64,42 @@ asan 435/435 全绿，invariant 全过(278 文件)。
   invariant 全过（278 文件）；headless 回归正常。
 - 未做：字幕轨(kText，基座只出文本+时间的文本腿)、视频轨切换、
   `kHardwareOnly` 生产语义、直播追帧（需直播源基建）。
+
+## 第十七轮（本轮）：Phase 4.2 字幕文本腿——kText 轨选择与 TimedText 事件
+
+### 落地面
+
+| 层 | 改动 |
+|---|---|
+| media/base | `TimedTextCue{text,ass,pts,duration}`（基座只出文本+时间，渲染归宿主）；`TextDecoderConfig{codec_name,language,extra_data}`；`TextDecoder`/`TextDecoderFactory`——**刻意同步**：字幕包极小、解码器直通，S1 上无节流问题，异步契约是无消费者的仪式 |
+| DemuxerStream | `text_decoder_config()` 虚函数（基类默认空配置，单字幕-free 实现零改动）；FFmpegDemuxerStream 从 codecpar 填充（含语言元数据） |
+| FFmpegTextDecoder | avcodec_decode_subtitle2；ASS 括号标记剥离出纯文本，原始 markup 进 `cue.ass` 供会排版的宿主；pts 取 **buffer 时间戳**（demuxer 已按容器时基盖戳——MKV 的 packet time_base 不可信，实测差 1000 倍）；时长回退到容器 BlockDuration |
+| Demuxer 路由 | 文本流**常驻**有界丢弃最旧队列（`DecoderBufferQueue::TryPushDropOldest`），不参与水位背压：字幕包一次性到达，按 A/V 路由要么楔死循环要么让迟到订阅全失 |
+| RendererImpl | S1 文本泵（Read→解码→`client_->OnTimedText`）；世代号使跨切换/flush 的在途读回复失效；kText 选择分支替换"谎报桩" |
+| 事件链 | RendererClient/Pipeline::Client 新 `OnTimedText`（默认 no-op）；PlayerImpl 转成 `kTimedText` payload；`SelectTrack(kText)` 接线（`player/track_selection.cc` 与 `media/filters/pipeline_track_select.cc` 各自独立成文件，宿主都在 C1 天花板） |
+
+### 生命周期三连雷（teardown 的历史债，本轮一并封口）
+
+1. **Stop 异步化 vs IsRunning 语义**：FinishStop 在 Flush 完成后才落 kStopped，
+   `IsRunning()` 必须包含 kStopping，否则测试在 kStopping 就销毁管线（DCHECK 抓的）。
+2. **管线停止需先 Flush 渲染器**：裸 reset 留下 demuxer→S1→S4 回复链在途，落在已释放
+   的 AudioRendererImpl 上锁已释放互斥量。DoStop 改为先 Flush（内联完成全部在途读）
+   再销毁；~RendererImpl 的音频销毁合并为"排干+销毁"单任务。
+3. **泵自续任务弱绑定**：AudioRendererImpl 的 pump_again 以 Unretained 入队，可与销毁
+   任意交错（DecoderStream 内部早已全弱绑定，唯独渲染器自己的泵漏了）。改 WeakPtr 后
+   该类任务在对象销毁后自动变空操作——这是对这一族竞态的**类级封口**，不依赖调用方顺序。
+
+（另：`FakePipelineClient::OnTimedText` 持锁调 Record 自死锁，样例采样器抓的；已修。）
+
+### 验证
+
+- 新 `audio_two_subs.mkv`（1 音轨 + eng/chi 双 srt）+ 4 个管线级测试 × 重复 4 遍全过：
+  未选轨零 cue 且音频正常 EOS、选轨后 cue 文本/顺序/pts/时长逐项断言、往复切换、
+  非法索引干净失败。
+- ffmpeg 439/439（+4）；no-ffmpeg 376/376；asan 439/439 连续 4 轮全绿；
+  invariant 全过（280 文件）；headless 回归正常。
+- 未做：WebVTT/ASS 样本覆盖（解码路径同型）、字幕样式信息透传（raw_ass 已带原文）、
+  直播字幕的过期 cue 丢弃策略。
 
 ## 第十五轮（本轮）：Phase 3 硬解与零拷贝——NativeBuffer · VideoToolbox 全链 · 颜色空间
 

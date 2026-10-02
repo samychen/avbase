@@ -209,16 +209,52 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
                                    DemuxerStream* enabled_track,
                                    base::OnceClosure change_completed_cb) {
   if (track_type == DemuxerStreamType::kText) {
-    // Gap 3. Succeeding here would make Player::SelectTrack(kText) report
-    // success while nothing happens, which is worse than failing: a UI would
-    // show a subtitle toggle that does nothing. Fail loudly until TextRenderer
-    // exists.
-    LOG(WARNING) << "avbase.text: text tracks are not implemented yet";
-    ReportError(MediaError(
-        ErrorCode::kNotImplemented, "text track selection is not supported",
-        "this build has no TextRenderer (milestone M7)",
-        "select an audio or video track, or build against a release that "
-        "includes text rendering"));
+    // Phase 4.2 text leg: the base renders nothing, it decodes cue packets on
+    // S1 and hands TimedTextCues to the client (kTimedText events). Disabling
+    // (|enabled_track| == nullptr) tears the leg down.
+    if (!deps_.text_decoder_factory) {
+      ReportError(MediaError(
+          ErrorCode::kNotImplemented, "text track selection is not available",
+          "this build has no text decoder factory (the FFmpeg layer provides "
+          "one; a no-ffmpeg build has none)",
+          "build with AVBASE_ENABLE_FFMPEG for subtitle support"));
+      std::move(change_completed_cb).Run();
+      return;
+    }
+    ++text_generation_;
+    text_read_outstanding_ = false;
+    text_ended_ = false;
+    text_stream_ = enabled_track;
+    text_decoder_.reset();
+    if (enabled_track) {
+      const TextDecoderConfig& config = enabled_track->text_decoder_config();
+      if (!config.IsValidConfig()) {
+        ReportError(MediaError(
+            ErrorCode::kInvalidArgument,
+            "that stream carries no subtitle codec description",
+            "text_decoder_config() has an empty codec_name",
+            "pick an index from media_info().streams whose kind is kText"));
+        std::move(change_completed_cb).Run();
+        return;
+      }
+      text_decoder_ =
+          deps_.text_decoder_factory->CreateTextDecoder(config);
+      if (!text_decoder_) {
+        ReportError(MediaError(
+            ErrorCode::kNotImplemented,
+            "cannot decode that subtitle codec (\"" + config.codec_name +
+                "\")",
+            "the text decoder factory declined the config; see the log for "
+            "the FFmpeg-side reason",
+            "re-encode the subtitle track as srt/ass/mov_text, or use an "
+            "FFmpeg build with that decoder enabled"));
+        std::move(change_completed_cb).Run();
+        return;
+      }
+      PumpText();
+    } else {
+      text_decoder_.reset();
+    }
     std::move(change_completed_cb).Run();
     return;
   }
@@ -388,6 +424,54 @@ void RendererImpl::FinishAudioSwitch(bool was_rendering,
     }
   }
   std::move(change_completed_cb).Run();
+}
+
+void RendererImpl::PumpText() {
+  if (!text_stream_ || !text_decoder_ || text_read_outstanding_ ||
+      text_ended_) {
+    return;
+  }
+  text_read_outstanding_ = true;
+  const int generation = text_generation_;
+  text_stream_->Read(1, base::BindOnce(&RendererImpl::OnTextRead,
+                                       weak_factory_.GetWeakPtr(), generation));
+}
+
+void RendererImpl::OnTextRead(int generation, DemuxerStream::Status status,
+                              DemuxerStream::DecoderBufferVector buffers) {
+  text_read_outstanding_ = false;
+  if (generation != text_generation_) {
+    return;   // Reply from a leg that was switched away or flushed.
+  }
+  if (status == DemuxerStream::Status::kAborted) {
+    return;   // A flush invalidates the leg; the next PumpText re-arms.
+  }
+  if (status != DemuxerStream::Status::kOk) {
+    LOG(ERROR) << "avbase.text: read failed ("
+             << DemuxerStream::GetStatusName(status) << ")";
+    return;
+  }
+  for (auto& buffer : buffers) {
+    if (buffer->IsEndOfStream()) {
+      text_ended_ = true;
+      return;
+    }
+    if (text_stream_ && buffer->serial() < text_stream_->serial()) {
+      continue;   // Pre-seek generation; docs/04 §4 R1.
+    }
+    std::vector<TimedTextCue> cues;
+    if (const Status decode = text_decoder_->Decode(*buffer, &cues);
+        !decode) {
+      LOG(ERROR) << "avbase.text: decode failed: " << decode.error().ToString();
+      continue;
+    }
+    if (client_) {
+      for (TimedTextCue& cue : cues) {
+        client_->OnTimedText(cue);
+      }
+    }
+  }
+  PumpText();
 }
 
 RendererType RendererImpl::GetRendererType() {

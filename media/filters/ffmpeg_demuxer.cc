@@ -128,6 +128,19 @@ AudioDecoderConfig MakeAudioConfig(const AVStream* stream) {
   return config;
 }
 
+TextDecoderConfig MakeTextConfig(const AVStream* stream) {
+  TextDecoderConfig config;
+  const AVCodecParameters* par = stream->codecpar;
+  const AVCodec* codec = avcodec_find_decoder(par->codec_id);
+  config.codec_name = codec ? codec->name : "unknown";
+  if (par->extradata && par->extradata_size > 0) {
+    config.extra_data.assign(
+        par->extradata,
+        par->extradata + static_cast<size_t>(par->extradata_size));
+  }
+  return config;
+}
+
 StreamKind ToStreamKind(AVMediaType type) {
   switch (type) {
     case AVMEDIA_TYPE_VIDEO:    return StreamKind::kVideo;
@@ -182,13 +195,15 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
     base::scoped_refptr<MediaLog> media_log,
     base::scoped_refptr<base::SequencedTaskRunner> media_runner,
     const VideoDecoderConfig& video_config,
-    const AudioDecoderConfig& audio_config, StreamLiveness liveness)
+    const AudioDecoderConfig& audio_config,
+    const TextDecoderConfig& text_config, StreamLiveness liveness)
     : type_(type),
       index_(index),
       media_log_(std::move(media_log)),
       media_runner_(std::move(media_runner)),
       video_config_(video_config),
       audio_config_(audio_config),
+      text_config_(text_config),
       liveness_(liveness),
       queue_(std::make_unique<DecoderBufferQueue>(
           std::string(GetDemuxerStreamTypeName(type)) + "#" +
@@ -578,10 +593,20 @@ void FFmpegDemuxer::AddStream(void* av_stream_raw, uint32_t index,
   }
   VideoDecoderConfig video_config;
   AudioDecoderConfig audio_config;
+  TextDecoderConfig text_config;
   if (type == DemuxerStreamType::kVideo) {
     video_config = MakeVideoConfig(av_stream);
   } else if (type == DemuxerStreamType::kAudio) {
     audio_config = MakeAudioConfig(av_stream);
+  } else if (type == DemuxerStreamType::kText) {
+    text_config = MakeTextConfig(av_stream);
+    // Language is stream metadata the text leg should carry for hosts that
+    // offer "English / 中文" pickers.
+    AVDictionaryEntry* lang =
+        av_dict_get(av_stream->metadata, "language", nullptr, 0);
+    if (lang && lang->value) {
+      text_config.language = lang->value;
+    }
   }
 
   StreamInfo info;
@@ -625,7 +650,7 @@ void FFmpegDemuxer::AddStream(void* av_stream_raw, uint32_t index,
 
   streams_.push_back(std::make_unique<FFmpegDemuxerStream>(
       type, static_cast<int32_t>(index), media_log_, media_runner_,
-      video_config, audio_config, liveness));
+      video_config, audio_config, text_config, liveness));
 }
 
 void FFmpegDemuxer::BuildMediaInfo() {
@@ -724,7 +749,13 @@ bool FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw, void* packet_raw) {
     return true;
   }
   FFmpegDemuxerStream* stream = streams_[slot].get();
-  if (!IsActiveRoutingTarget(index, stream->type())) {
+  // Text packets are NEVER dropped here and NEVER wait on a watermark: they
+  // arrive once and are tiny, so they take the stream's bounded drop-oldest
+  // queue unconditionally (see the enqueue branch below). A leg that selects
+  // late still sees the track, and an unconsumed text stream cannot wedge
+  // the demux loop. Audio/video keep the active-routing drop.
+  if (!IsActiveRoutingTarget(index, stream->type()) &&
+      stream->type() != DemuxerStreamType::kText) {
     // An inactive alternate (the audio track a switch orphaned, or a text
     // stream with no consumer). Drop instead of enqueueing: its queue has no
     // reader, and the backpressure wait below would wedge the demux loop on
@@ -762,6 +793,12 @@ bool FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw, void* packet_raw) {
   // without bound. resume_event_ has exactly three signallers — Flush, Stop and
   // a seek — which is what replaced ijkplayer's continue_read_thread that had
   // to be signalled from five places (docs/01 病灶 10).
+  if (stream->type() == DemuxerStreamType::kText) {
+    // Bounded drop-oldest; never blocks the demux thread. Returns false only
+    // on abort/closed, and the buffer going away releases the packet ref.
+    stream->EnqueueTextFromDemuxThread(std::move(buffer));
+    return true;
+  }
   while (!stream->EnqueueFromDemuxThread(buffer) && !stop_flag_.IsSet()) {
     resume_event_.TimedWait(base::Milliseconds(10));
     if (SeekRequest* pending = pending_seek_.exchange(nullptr)) {
@@ -1027,10 +1064,14 @@ DemuxerStream* FFmpegDemuxer::GetStream(DemuxerStreamType type) {
 
 bool FFmpegDemuxer::IsActiveRoutingTarget(int index,
                                           DemuxerStreamType type) const {
-  const int active =
-      type == DemuxerStreamType::kVideo
-          ? active_video_.load(std::memory_order_relaxed)
-          : active_audio_.load(std::memory_order_relaxed);
+  int active = -1;
+  if (type == DemuxerStreamType::kVideo) {
+    active = active_video_.load(std::memory_order_relaxed);
+  } else if (type == DemuxerStreamType::kAudio) {
+    active = active_audio_.load(std::memory_order_relaxed);
+  } else if (type == DemuxerStreamType::kText) {
+    active = active_text_.load(std::memory_order_relaxed);
+  }
   return index == active;
 }
 
@@ -1045,6 +1086,16 @@ std::vector<DemuxerStream*> FFmpegDemuxer::GetStreams(DemuxerStreamType type) {
   return out;
 }
 
+bool FFmpegDemuxerStream::EnqueueTextFromDemuxThread(
+    base::scoped_refptr<DecoderBuffer> buffer) {
+  if (!queue_->TryPushDropOldest(std::move(buffer))) {
+    return false;   // Aborted/closed: the caller drops the packet.
+  }
+  base::AutoLock scoped(lock_);
+  FulfilPendingReadLocked();
+  return true;
+}
+
 void FFmpegDemuxer::SetActiveStream(DemuxerStreamType type,
                                     int stream_index) {
   // Relaxed is enough: the demux thread re-reads the value per packet, and a
@@ -1054,6 +1105,8 @@ void FFmpegDemuxer::SetActiveStream(DemuxerStreamType type,
     active_video_.store(stream_index, std::memory_order_relaxed);
   } else if (type == DemuxerStreamType::kAudio) {
     active_audio_.store(stream_index, std::memory_order_relaxed);
+  } else if (type == DemuxerStreamType::kText) {
+    active_text_.store(stream_index, std::memory_order_relaxed);
   }
 }
 

@@ -14,6 +14,7 @@
 #include "media/base/audio_decoder_factory.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/renderer_factory.h"
+#include "media/base/text_decoder.h"
 #include "media/base/video_decoder_factory.h"
 #include "media/base/video_renderer_sink.h"
 #include "media/filters/legacy/av_sync_controller.h"
@@ -50,6 +51,7 @@ class AVBASE_MEDIA_EXPORT DefaultRendererFactory final
         video_decoder_factories;
     std::vector<base::scoped_refptr<AudioDecoderFactory>>
         audio_decoder_factories;
+    base::scoped_refptr<TextDecoderFactory> text_decoder_factory;
     std::shared_ptr<VideoRendererSinkFactory> video_sink_factory;
     std::shared_ptr<AudioRendererSinkFactory> audio_sink_factory;
     VideoFrameCompositor::Thresholds compositor_thresholds;

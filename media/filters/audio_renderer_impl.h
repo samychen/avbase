@@ -91,6 +91,7 @@
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
@@ -301,6 +302,10 @@ class AVBASE_MEDIA_EXPORT AudioRendererImpl final
   // recoverable, so the pump tracks it explicitly rather than inferring it from
   // the ring's fullness.
   bool read_outstanding_{false};
+  // Invalidates the pump's self-posted tasks at destruction. The factory is
+  // destroyed on S4 (where the dtor runs and where every task that uses the
+  // weak pointers runs), so invalidation and the checks are serialized.
+  base::WeakPtrFactory<AudioRendererImpl> weak_factory_{this};
 
   // S4-only: where the next pre-stretched chunk starts, in media time.
   base::TimeDelta next_chunk_media_time_;

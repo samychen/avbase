@@ -51,6 +51,13 @@ class AVBASE_MEDIA_EXPORT DemuxerStream {
 
   virtual const AudioDecoderConfig& audio_decoder_config() const = 0;
   virtual const VideoDecoderConfig& video_decoder_config() const = 0;
+  // Text tracks only. The base returns an invalid config so single-text-free
+  // demuxers need no override; FFmpegDemuxerStream populates it from the
+  // container's subtitle track header.
+  virtual const TextDecoderConfig& text_decoder_config() const {
+    static const TextDecoderConfig empty;
+    return empty;
+  }
   virtual DemuxerStreamType type() const = 0;
   virtual int32_t stream_index() const = 0;
   virtual StreamLiveness liveness() const;

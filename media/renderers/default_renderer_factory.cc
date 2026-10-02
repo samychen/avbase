@@ -38,6 +38,7 @@ std::unique_ptr<Renderer> DefaultRendererFactory::CreateRenderer(
   impl_deps.tick_clock = deps_.tick_clock;
   impl_deps.video_factories = deps_.video_decoder_factories;
   impl_deps.audio_factories = deps_.audio_decoder_factories;
+  impl_deps.text_decoder_factory = deps_.text_decoder_factory;
   impl_deps.video_sink = CreateVideoRendererSink(display_);
   impl_deps.audio_sink = CreateAudioRendererSink();
   impl_deps.compositor_thresholds = deps_.compositor_thresholds;

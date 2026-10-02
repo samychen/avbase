@@ -49,42 +49,41 @@ Status PlayerImpl::SelectTrack(media::DemuxerStreamType type,
         "pick an index from media_info().streams; StreamsOfKind(kAudio) "
         "lists the audio tracks with their index, language and title"));
   }
-  if (type != media::DemuxerStreamType::kAudio) {
-    // kText has no TextRenderer (RendererImpl gap 3); kVideo needs the
-    // video-side handover, which lands after the audio one proves the
-    // mechanism.
+  if (type != media::DemuxerStreamType::kAudio &&
+      type != media::DemuxerStreamType::kText) {
+    // kVideo needs the video-side handover with live sink retarget; text and
+    // audio are wired (Phase 4.2).
     return base::unexpected(MediaError(
-        ErrorCode::kNotImplemented,
-        type == media::DemuxerStreamType::kText
-            ? "subtitle track selection is not supported yet"
-            : "video track selection is not supported yet",
-        type == media::DemuxerStreamType::kText
-            ? "this build has no TextRenderer; the base exposes text as "
-              "events only once the text leg lands"
-            : "the video-side renderer handover is not wired yet",
-        "for subtitles, an external renderer can consume the text stream; "
-        "for video, restart playback with video.selected_stream set"));
+        ErrorCode::kNotImplemented, "video track selection is not supported",
+        "switching the video stream needs a video renderer re-initialisation "
+        "with live sink retarget, which is not wired yet",
+        "restart playback with PlayerConfig's video.selected_stream set"));
   }
 
-  const int old_index = audio_track_index_.exchange(stream_index);
-  pipeline_->SelectAudioTrack(
-      stream_index,
-      base::BindOnce(
-          [](EventHub* hub, media::DemuxerStreamType type, int old_index,
-             int new_index, media::PipelineStatus status) {
-            if (status != media::PipelineStatus::kOk) {
-              // The renderer already reported the actionable reason through
-              // Client::OnError; nothing further to add here.
-              return;
-            }
-            TrackChangedPayload payload;
-            payload.type = type;
-            payload.old_index = old_index;
-            payload.new_index = new_index;
-            hub->Post(EventType::kTrackChanged, std::move(payload),
-                      media::kNoTimestamp);
-          },
-          &event_hub_, type, old_index, stream_index));
+  const bool is_audio = type == media::DemuxerStreamType::kAudio;
+  const int old_index =
+      is_audio ? audio_track_index_.exchange(stream_index) : -1;
+  auto select_cb = base::BindOnce(
+      [](EventHub* hub, media::DemuxerStreamType type, int old_index,
+         int new_index, media::PipelineStatus status) {
+        if (status != media::PipelineStatus::kOk) {
+          // The renderer already reported the actionable reason through
+          // Client::OnError; nothing further to add here.
+          return;
+        }
+        TrackChangedPayload payload;
+        payload.type = type;
+        payload.old_index = old_index;
+        payload.new_index = new_index;
+        hub->Post(EventType::kTrackChanged, std::move(payload),
+                  media::kNoTimestamp);
+      },
+      &event_hub_, type, old_index, stream_index);
+  if (is_audio) {
+    pipeline_->SelectAudioTrack(stream_index, std::move(select_cb));
+  } else {
+    pipeline_->SelectTextTrack(stream_index, std::move(select_cb));
+  }
   return Status();
 }
 

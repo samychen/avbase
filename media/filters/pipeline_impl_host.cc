@@ -144,6 +144,11 @@ void PipelineImpl::OnStatisticsUpdate(const PipelineStatistics& stats) {
   client_->OnStatisticsUpdate(merged);
 }
 
+void PipelineImpl::OnTimedText(const TimedTextCue& cue) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  client_->OnTimedText(cue);
+}
+
 void PipelineImpl::OnVideoConfigChange(const VideoDecoderConfig& config) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   client_->OnVideoConfigChange(config);

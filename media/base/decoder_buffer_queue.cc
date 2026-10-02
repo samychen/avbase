@@ -101,6 +101,34 @@ bool DecoderBufferQueue::TryPush(base::scoped_refptr<DecoderBuffer> buffer) {
   return true;
 }
 
+bool DecoderBufferQueue::TryPushDropOldest(
+    base::scoped_refptr<DecoderBuffer> buffer) {
+  if (!buffer || abort_flag_.IsSet()) {
+    return false;
+  }
+  base::AutoLock scoped(lock_);
+  if (closed_ || abort_flag_.IsSet()) {
+    return false;
+  }
+  if (IsFullLocked()) {
+    // Drop-oldest: the front of the deque. bytes_ and the cached duration
+    // are maintained by the erase below through the same accounting Push
+    // uses, so recompute after dropping.
+    buffers_.pop_front();
+    bytes_ = 0;
+    for (const auto& b : buffers_) {
+      bytes_ += b->data_size();
+    }
+  }
+  buffer->set_serial(serial_.Get());
+  bytes_ += buffer->data_size();
+  buffers_.push_back(std::move(buffer));
+  pushed_.fetch_add(1, std::memory_order_relaxed);
+  UpdateCachedDurationLocked();
+  not_empty_.Signal();
+  return true;
+}
+
 DecoderBufferQueue::PopStatus DecoderBufferQueue::Pop(
     base::scoped_refptr<DecoderBuffer>* out) {
   DCHECK(out);

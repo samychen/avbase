@@ -32,6 +32,7 @@ add_library(avbase_media
     filters/null_audio_sink.cc
     filters/null_video_sink.cc
     filters/pipeline_impl.cc
+    filters/pipeline_track_select.cc
     filters/pipeline_impl_host.cc
     filters/retry_data_source.cc
     filters/renderer_impl.cc

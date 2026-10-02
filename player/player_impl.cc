@@ -24,6 +24,7 @@
 #include "media/base/media_log.h"
 #if AVBASE_ENABLE_FFMPEG
 #include "media/filters/ffmpeg_decoder_factories.h"
+#include "media/filters/ffmpeg_text_decoder.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #endif
 namespace avbase {
@@ -87,6 +88,13 @@ PlayerImpl::PlayerImpl(const PlayerConfig& config, std::unique_ptr<Deps> deps)
     deps_->audio_decoder_factories.push_back(
         base::MakeRefCounted<media::FFmpegAudioDecoderFactory>(
             audio_thread_.task_runner()));
+  }
+  // The text leg rides on the FFmpeg layer like the other decoders; a
+  // host-injected factory keeps its place (there is no fallback for text:
+  // without a factory SelectTrack(kText) reports kNotImplemented).
+  if (!deps_->text_decoder_factory) {
+    deps_->text_decoder_factory =
+        base::MakeRefCounted<media::FFmpegTextDecoderFactory>();
   }
 #endif
   media_log_ = base::MakeRefCounted<media::MediaLog>();
@@ -206,6 +214,7 @@ Status PlayerImpl::PrepareAsync() {
   factory_deps.tick_clock = deps_->tick_clock.get();
   factory_deps.video_decoder_factories = deps_->video_decoder_factories;
   factory_deps.audio_decoder_factories = deps_->audio_decoder_factories;
+  factory_deps.text_decoder_factory = deps_->text_decoder_factory;
   factory_deps.video_sink_factory = deps_->video_sink_factory;
   factory_deps.audio_sink_factory = deps_->audio_sink_factory;
   factory_deps.av_sync = std::move(av_sync);

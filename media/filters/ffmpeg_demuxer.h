@@ -47,6 +47,7 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
                       base::scoped_refptr<base::SequencedTaskRunner> media_runner,
                       const VideoDecoderConfig& video_config,
                       const AudioDecoderConfig& audio_config,
+                      const TextDecoderConfig& text_config,
                       StreamLiveness liveness);
   FFmpegDemuxerStream(const FFmpegDemuxerStream&) = delete;
   FFmpegDemuxerStream& operator=(const FFmpegDemuxerStream&) = delete;
@@ -56,6 +57,9 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
   void Read(uint32_t count, ReadCB read_cb) override;
   const AudioDecoderConfig& audio_decoder_config() const override { return audio_config_; }
   const VideoDecoderConfig& video_decoder_config() const override { return video_config_; }
+  const TextDecoderConfig& text_decoder_config() const override {
+    return text_config_;
+  }
   DemuxerStreamType type() const override { return type_; }
   int32_t stream_index() const override { return index_; }
   StreamLiveness liveness() const override { return liveness_; }
@@ -70,6 +74,11 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
   // sequence. This is what keeps the media sequence free of blocking calls: the
   // producer does the fulfilling, the consumer only ever receives callbacks.
   bool EnqueueFromDemuxThread(base::scoped_refptr<DecoderBuffer> buffer);
+  // Text-stream enqueue: drop-oldest, never blocks the demux thread. Text
+  // packets arrive once and are tiny; routing them like A/V (watermark or
+  // drop) would either wedge the demux loop or lose the track for a leg that
+  // selects late.
+  bool EnqueueTextFromDemuxThread(base::scoped_refptr<DecoderBuffer> buffer);
   void NotifyEosFromDemuxThread();
   void FlushFromDemuxThread(base::OnceClosure done);
   void AbortFromDemuxThread();
@@ -86,6 +95,7 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
   const base::scoped_refptr<base::SequencedTaskRunner> media_runner_;
   const VideoDecoderConfig video_config_;
   const AudioDecoderConfig audio_config_;
+  const TextDecoderConfig text_config_;
   const StreamLiveness liveness_;
   const std::unique_ptr<DecoderBufferQueue> queue_;
 
@@ -191,6 +201,9 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   // Initialize() selects the first stream of each type.
   std::atomic<int> active_video_{-1};
   std::atomic<int> active_audio_{-1};
+  // Text tracks default to -1: nothing consumes them until a text leg is
+  // selected, and routing them before that would wedge the demux loop.
+  std::atomic<int> active_text_{-1};
 
   // Cross-thread control. Exactly three writers of interrupt_flag_, all
   // documented in the .cc — replacing ijkplayer's abort_request, which had to

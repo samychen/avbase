@@ -12,11 +12,14 @@
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/tick_clock.h"
+#include "media/base/text_decoder.h"
 #include "player/public/player_event.h"
 #include "player/public/player_export.h"
 
 namespace avbase {
 namespace media {
+
+class TextDecoderFactory;
 class AudioDecoderFactory;
 class AudioRendererSinkFactory;
 class DataSource;
@@ -84,6 +87,9 @@ struct AVBASE_PLAYER_EXPORT Deps {
       video_decoder_factories;
   std::vector<base::scoped_refptr<media::AudioDecoderFactory>>
       audio_decoder_factories;
+  // Text leg factory (Phase 4.2). scoped_refptr: TextDecoderFactory is
+  // refcounted like the decoder factories above.
+  base::scoped_refptr<media::TextDecoderFactory> text_decoder_factory;
   std::shared_ptr<media::VideoRendererSinkFactory> video_sink_factory;
   std::shared_ptr<media::AudioRendererSinkFactory> audio_sink_factory;
 

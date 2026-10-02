@@ -56,6 +56,14 @@ void FakePipelineClient::OnBufferingStateChange(BufferingState state,
          " bytes=" + std::to_string(memory_usage.InMilliseconds()));
 }
 
+void FakePipelineClient::OnTimedText(const TimedTextCue& cue) {
+  // One lock scope for both stores: Record() takes the same mutex, so calling
+  // it while holding the lock would self-deadlock.
+  std::scoped_lock scoped(lock_);
+  cues_.push_back(cue);
+  events_.push_back("timed-text pts=" + cue.pts.ToString());
+}
+
 void FakePipelineClient::OnWaiting(WaitingReason /*reason*/) {
   std::scoped_lock scoped(lock_);
   ++waiting_count_;

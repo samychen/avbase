@@ -53,6 +53,7 @@
 #include "base/time/time.h"
 #include "media/base/decoder_config.h"
 #include "media/base/media_error.h"
+#include "media/base/timed_text.h"
 #include "media/base/media_types.h"
 #include "media/base/waiting.h"
 #include "media/media_export.h"
@@ -169,6 +170,10 @@ class AVBASE_MEDIA_EXPORT RendererClient {
   // owner only needs to tell the UI, which becomes EventType::
   // kVideoSizeChanged (Δ8 merges the legacy SAR and SIZE messages into it).
   virtual void OnVideoConfigChange(const VideoDecoderConfig& config) = 0;
+
+  // Text leg (Phase 4.2): one decoded subtitle cue, base renders nothing.
+  // Default no-op so clients that do not care never see it.
+  virtual void OnTimedText(const TimedTextCue& cue) {}
 
   // Audio output device switched, or the attempt failed. No caller until
   // media/audio/ exists (M7); see gap 2 in the file header.

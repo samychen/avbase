@@ -107,6 +107,7 @@ class PlayerImpl final : public media::Pipeline::Client {
                               base::TimeDelta memory_usage) override;
   void OnWaiting(media::WaitingReason reason) override;
   void OnStatisticsUpdate(const media::PipelineStatistics& stats) override;
+  void OnTimedText(const media::TimedTextCue& cue) override;
   void OnVideoConfigChange(const media::VideoDecoderConfig& config) override;
 
   // State transitions; publishes kStateChanged. Returns the previous state.

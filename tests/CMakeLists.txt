@@ -82,6 +82,7 @@ if(AVBASE_ENABLE_FFMPEG)
               unit/media_filters/ffmpeg_video_decoder_unittest.cc
               unit/media_filters/pipeline_throttle_unittest.cc
               unit/media_filters/pipeline_track_unittest.cc
+              unit/media_filters/pipeline_text_unittest.cc
       DEPS avbase::platform_ffmpeg avbase::media_test_support
            avbase::base_test_support)
   target_compile_definitions(media_ffmpeg_unittests PRIVATE

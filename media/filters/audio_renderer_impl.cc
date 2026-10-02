@@ -307,10 +307,16 @@ void AudioRendererImpl::PumpDecoder() {
     }
   }
   read_outstanding_ = true;
+  // Weak-bound on purpose: the reply hop back into this object can be the
+  // LAST task in a chain that outlives a teardown decision made on S1, and
+  // the pump self-post that OnDecoderOutput schedules must not name a freed
+  // object (the text-leg tests' teardown caught exactly that: a queued
+  // pump task ran after the renderer was destroyed and locked its freed
+  // handoff mutex). The weak factory lives on S4, same as these tasks.
   decoder_stream_.Read(base::BindOnce(
-      &AudioRendererImpl::OnDecoderOutput, base::Unretained(this),
+      &AudioRendererImpl::OnDecoderOutput, weak_factory_.GetWeakPtr(),
       base::BindOnce(&AudioRendererImpl::PumpDecoder,
-                     base::Unretained(this))));
+                     weak_factory_.GetWeakPtr())));
 }
 
 void AudioRendererImpl::OnDecoderOutput(

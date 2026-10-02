@@ -147,6 +147,15 @@ void PlayerImpl::OnEnded() {
                               GetMediaTime());
 }
 
+void PlayerImpl::OnTimedText(const media::TimedTextCue& cue) {
+  TimedTextPayload payload;
+  payload.text = cue.text;
+  payload.pts = cue.pts;
+  payload.duration = cue.duration;
+  payload.raw_ass.assign(cue.ass.begin(), cue.ass.end());
+  event_hub_.Post(EventType::kTimedText, std::move(payload), cue.pts);
+}
+
 void PlayerImpl::OnDurationChange(base::TimeDelta duration) {
   base::AutoLock scoped(snapshot_lock_);
   media_info_.duration = duration;
