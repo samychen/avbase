@@ -12,15 +12,13 @@ target_include_directories(avbase_player PUBLIC
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/avbase>)
 target_link_libraries(avbase_player PUBLIC avbase::media)
-# The facade assembles the default decoder-factory list (player_impl.cc), so
-# it links the enabled hardware factories. Each requires FFmpeg; the options
-# enforce that in platform/CMakeLists.
-foreach(_hw IN ITEMS VIDEOTOOLBOX VAAPI D3D11)
-  if(AVBASE_ENABLE_${_hw})
-    string(TOLOWER "${_hw}" _hw_dir)
-    target_link_libraries(avbase_player PUBLIC avbase::platform_${_hw_dir})
-  endif()
-endforeach()
+# The facade assembles the default decoder-factory list (player_impl.cc),
+# including the FFmpeg-hwaccel hardware factory whose specs live in
+# platform/{videotoolbox,vaapi,d3d11} (header-only; the factory class itself
+# is in avbase_platform_ffmpeg).
+if(AVBASE_ENABLE_FFMPEG)
+  target_link_libraries(avbase_player PUBLIC avbase::platform_ffmpeg)
+endif()
 target_compile_definitions(avbase_player PRIVATE AVBASE_PLAYER_IMPLEMENTATION=1)
 avbase_configure_target(avbase_player)
 
