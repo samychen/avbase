@@ -114,6 +114,9 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   void Reset(base::OnceClosure reset_cb) override;
   void Stop() override;
   DemuxerStream* GetStream(DemuxerStreamType type) override;
+  std::vector<DemuxerStream*> GetStreams(DemuxerStreamType type) override;
+  void SetActiveStream(DemuxerStreamType type, int stream_index) override;
+  bool IsActiveRoutingTarget(int index, DemuxerStreamType type) const;
   const MediaInfo& media_info() const override { return media_info_; }
   base::TimeDelta GetStartTime() const override { return start_time_; }
   bool IsLive() const override { return media_info_.is_live; }
@@ -184,6 +187,10 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   DemuxerStats stats_ GUARDED_BY(stats_lock_);
 
   std::vector<std::unique_ptr<FFmpegDemuxerStream>> streams_;
+  // The actively-consumed stream per type (Phase 4 track switching). -1 until
+  // Initialize() selects the first stream of each type.
+  std::atomic<int> active_video_{-1};
+  std::atomic<int> active_audio_{-1};
 
   // Cross-thread control. Exactly three writers of interrupt_flag_, all
   // documented in the .cc — replacing ijkplayer's abort_request, which had to

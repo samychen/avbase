@@ -159,6 +159,16 @@ class AVBASE_MEDIA_EXPORT AudioRendererImpl final
   // be called again (AudioRendererSink's own contract), and only then releases
   // the decoder.
   void Stop();
+  // Runtime track-switch teardown: Stop() plus the guarantee that the
+  // completion closure runs on S4 only after every self-posted task of this
+  // object has drained -- the outstanding decoder read (whose reply task
+  // would otherwise outlive the object) is completed with kDecodingAborted
+  // through DecoderStream::Flush, and the pump cannot repost from Stop()'s
+  // stopping_ flag. The closure is where the caller deletes the object.
+  // Deliberately NOT AudioRendererImpl::Flush(): that would call
+  // av_sync_->Flush() and disturb the live clock the replacement renderer
+  // is about to drive.
+  void StopAndDrainForTeardown(base::OnceClosure on_quiescent);
 
   // Runs on S4. Pausing gates the device path, not the decoder path: the
   // device callback returns 0 (the sink plays silence and consumes nothing),
@@ -184,6 +194,14 @@ class AVBASE_MEDIA_EXPORT AudioRendererImpl final
   // the mechanical review checked that every used *type* was visible, not
   // that every called *member* existed, which is a gap only a compiler
   // closes.
+  // Current user-facing settings, so a renderer replacement (track switch)
+  // can re-apply what the user had set on the outgoing instance. All four are
+  // sequence-independent (atomics).
+  float volume() const { return volume_.load(); }
+  bool muted() const { return muted_.load(); }
+  double playback_rate() const { return playback_rate_.load(); }
+  bool preserves_pitch() const { return preserves_pitch_.load(); }
+
   void SetLatencyHint(std::optional<base::TimeDelta> latency_hint);
 
   // Media time of the last sample handed to the device. Read through

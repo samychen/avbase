@@ -53,6 +53,11 @@ class PlayerImpl final : public media::Pipeline::Client {
   void Reset();
   Result<int64_t> SeekTo(base::TimeDelta position, SeekMode mode,
                          Player::SeekCB cb);
+  // Runtime track switch (Phase 4). Accepted from any thread; the switch
+  // itself is asynchronous and reports through the kTrackChanged event (or a
+  // kError event when the handover failed). Only kAudio is wired; kText and
+  // kVideo return kNotImplemented with the reason.
+  Status SelectTrack(media::DemuxerStreamType type, int stream_index);
   void SetVideoSurface(base::scoped_refptr<NativeDisplay> display);
 
   // ---- Control -------------------------------------------------------------
@@ -134,6 +139,9 @@ class PlayerImpl final : public media::Pipeline::Client {
   base::Thread video_thread_;
   base::Thread audio_thread_;
   EventHub event_hub_;
+  // The audio track SelectTrack last switched to (-1 = the container default),
+  // so kTrackChanged can report old/new without re-probing.
+  std::atomic<int> audio_track_index_{-1};
 
   std::unique_ptr<media::DefaultRendererFactory> renderer_factory_;
   std::unique_ptr<media::PipelineImpl> pipeline_;

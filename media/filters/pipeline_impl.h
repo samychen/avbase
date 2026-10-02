@@ -95,6 +95,8 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   base::TimeDelta GetDuration() const override;
   Statistics GetStatistics() const override;
   void Seek(base::TimeDelta time, base::OnceClosure seeked_cb) override;
+  void SelectAudioTrack(int stream_index,
+                        PipelineStatusCallback cb) override;
   bool CanSeekForward() const override;
   bool CanSeekBackward() const override;
   int GetAudioStreamId() const override;
@@ -128,6 +130,7 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   void OnDemuxerStarted(Status status);
   void DoPause();
   void DoSeek(base::TimeDelta time, base::OnceClosure seeked_cb);
+  void DoSelectAudioTrack(int stream_index, PipelineStatusCallback cb);
   void OnSeekDemuxerDone(Status status, base::TimeDelta actual);
   void OnRendererFlushed();
   void FinishSeekIfBothDone();

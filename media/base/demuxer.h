@@ -102,6 +102,14 @@ class AVBASE_MEDIA_EXPORT Demuxer : public MediaResource {
   // must answer it. |override| (not just |virtual|) is what the style rule
   // asks for, and the base class is the reason it is an override at all.
   DemuxerStream* GetStream(DemuxerStreamType type) override = 0;
+  // Tells the demuxer which stream of |type| the renderer consumes (runtime
+  // track switching, Phase 4). Only the active stream's queue exerts
+  // backpressure: packets routed to inactive alternates of the same type are
+  // dropped, because nobody will ever drain them -- leaving them queued would
+  // wedge the demux loop on its own watermark the moment a track switch
+  // orphans the old consumer. Default: no alternates, nothing to do.
+  virtual void SetActiveStream(DemuxerStreamType type, int stream_index) {}
+
   virtual const MediaInfo& media_info() const = 0;
   virtual base::TimeDelta GetStartTime() const = 0;
   virtual bool IsLive() const = 0;

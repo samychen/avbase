@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "media/base/media_constants.h"
 
@@ -221,17 +222,171 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
     std::move(change_completed_cb).Run();
     return;
   }
-  (void)enabled_track;
-  // Audio and video track switching means re-initialising the corresponding
-  // sub-renderer with a different DemuxerStream. That is real work (stop the
-  // sink, tear down the decoder, rebuild) and is not done here yet.
-  ReportError(MediaError(ErrorCode::kNotImplemented,
-                         "track switching is not wired up yet",
-                         "RendererImpl::OnTracksChanged is a stub for "
-                         "audio/video as well as text",
-                         "restart playback with PlayerConfig's selected_stream "
-                         "set instead (video.selected_stream / "
-                         "audio.selected_stream)"));
+  if (track_type == DemuxerStreamType::kVideo) {
+    // Video switching means re-initialising the video renderer AND retargeting
+    // the sink's expectations (size/format change mid-playback); audio first,
+    // video lands with the track-switch follow-up.
+    ReportError(MediaError(
+        ErrorCode::kNotImplemented, "video track selection is not supported",
+        "switching the video stream needs a video renderer re-initialisation "
+        "with live sink retarget, which is not wired yet",
+        "restart playback with PlayerConfig's video.selected_stream set"));
+    std::move(change_completed_cb).Run();
+    return;
+  }
+
+  // ---- audio: the wired path ------------------------------------------------
+  if (!initialized_ || ended_) {
+    ReportError(MediaError(
+        ErrorCode::kInvalidState, "cannot switch the audio track now",
+        "the switch hands over the audio renderer, which needs an "
+        "initialised, still-playing pipeline",
+        "switch while prepared, playing or paused (Reset() first after an "
+        "error or completion)"));
+    std::move(change_completed_cb).Run();
+    return;
+  }
+  if (!audio_ || !enabled_track) {
+    ReportError(MediaError(
+        ErrorCode::kNotImplemented,
+        "enabling or disabling the audio track at runtime is not supported",
+        "runtime switching only covers swapping between existing audio "
+        "streams; the enable/disable path needs the sink lifecycle, which "
+        "media/audio/ (M7 follow-up) owns",
+        "restart playback with the audio track enabled (or "
+        "config.audio.disabled false)"));
+    std::move(change_completed_cb).Run();
+    return;
+  }
+  if (enabled_track->type() != DemuxerStreamType::kAudio) {
+    ReportError(MediaError(
+        ErrorCode::kInvalidArgument, "that stream is not an audio stream",
+        "SelectTrack(kAudio) was given a stream of a different type",
+        "pick an index from media_info().streams whose kind is kAudio"));
+    std::move(change_completed_cb).Run();
+    return;
+  }
+  if (enabled_track == audio_stream_) {
+    std::move(change_completed_cb).Run();   // Same track: nothing to do.
+    return;
+  }
+  SwitchAudioRenderer(enabled_track, std::move(change_completed_cb));
+}
+
+void RendererImpl::SwitchAudioRenderer(DemuxerStream* new_stream,
+                                       base::OnceClosure change_completed_cb) {
+  const bool was_rendering = rendering_;
+  base::TimeDelta resume_at = GetMediaTime();
+  if (resume_at == kNoTimestamp || resume_at < base::TimeDelta()) {
+    resume_at = start_time_;
+  }
+  // Capture the user-facing settings on the sequence that mutates them (the
+  // atomics would also make an S1 read data-race-free, but the values must be
+  // taken BEFORE the outgoing renderer dies, and the teardown below runs on
+  // S4 -- capture there).
+  // The settings are atomics on AudioRendererImpl, so reading them here (S1)
+  // is data-race-free; they must be captured before the object is handed to
+  // its teardown task.
+  const SwitchedAudioSettings settings{audio_->volume(), audio_->muted(),
+                                       audio_->playback_rate(),
+                                       audio_->preserves_pitch()};
+  // NO blocking here: S4's pending decoder replies are delivered through the
+  // media runner, so waiting on S4 from S1 deadlocks (the first draft did
+  // exactly that). Instead: release the old renderer from the member, queue
+  // its quiescent teardown on S4 (StopAndDrainForTeardown deletes it there
+  // once no task naming it can be created), and build the replacement
+  // immediately. Playback gaps for the duration of the handover are the
+  // accepted cost of a mid-flight switch; the clock falls back to the
+  // external source for the gap and re-anchors at StartPlayingFrom below.
+  retired_audio_.emplace_back(audio_.release());
+  AudioRendererImpl* old = retired_audio_.back().get();
+  deps_.audio_task_runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(&AudioRendererImpl::StopAndDrainForTeardown,
+                     base::Unretained(old), base::DoNothing()));
+  audio_stream_ = new_stream;
+  audio_params_ = MakeAudioParameters(new_stream->audio_decoder_config(),
+                                      deps_.audio_frames_per_buffer);
+  audio_ = std::make_unique<AudioRendererImpl>(
+      deps_.audio_task_runner, deps_.audio_factories, av_sync_.get());
+  audio_->set_ended_cb(base::BindRepeating(&RendererImpl::PostAudioEnded,
+                                           base::Unretained(this)));
+  audio_initialized_ = false;
+  deps_.audio_task_runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(&AudioRendererImpl::Initialize,
+                     base::Unretained(audio_.get()), new_stream, audio_params_,
+                     deps_.audio_sink,
+                     base::BindOnce(&RendererImpl::OnSwitchedAudioInitialized,
+                                    base::Unretained(this), was_rendering,
+                                    resume_at, settings,
+                                    std::move(change_completed_cb))));
+}
+
+void RendererImpl::OnSwitchedAudioInitialized(
+    bool was_rendering, base::TimeDelta resume_at,
+    SwitchedAudioSettings settings, base::OnceClosure change_completed_cb,
+    PipelineStatus status) {
+  // The InitializeCB fires on S4 (AudioRendererImpl::Initialize runs it
+  // inline); the decision and the completion belong to S1.
+  deps_.media_task_runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](RendererImpl* self, bool was_rendering, base::TimeDelta resume_at,
+             SwitchedAudioSettings settings, base::OnceClosure cb,
+             PipelineStatus s) {
+            self->FinishAudioSwitch(was_rendering, resume_at, settings,
+                                    std::move(cb), s);
+          },
+          base::Unretained(this), was_rendering, resume_at, settings,
+          std::move(change_completed_cb), status));
+}
+
+void RendererImpl::FinishAudioSwitch(bool was_rendering,
+                                     base::TimeDelta resume_at,
+                                     SwitchedAudioSettings settings,
+                                     base::OnceClosure change_completed_cb,
+                                     PipelineStatus status) {
+  if (status != PipelineStatus::kOk) {
+    // The switch failed with the old renderer already gone: continue as
+    // video-only and let the clock fall back, rather than tearing playback
+    // down over a track switch. The error carries the actionable detail.
+    audio_initialized_ = false;
+    ReportError(PipelineStatusToMediaError(status));
+    std::move(change_completed_cb).Run();
+    return;
+  }
+  audio_initialized_ = true;
+  // Re-apply what the user had set on the outgoing renderer (these post to
+  // S4 themselves).
+  audio_->SetVolume(settings.volume);
+  audio_->SetMuted(settings.muted);
+  audio_->SetPlaybackRate(settings.playback_rate);
+  audio_->SetPreservesPitch(settings.preserves_pitch);
+  if (was_rendering) {
+    rendering_ = true;
+    ended_ = false;
+    audio_ended_ = false;
+    deps_.audio_task_runner->PostTask(
+        FROM_HERE, base::BindOnce(&AudioRendererImpl::StartPlayingFrom,
+                                  base::Unretained(audio_.get()), resume_at));
+    if (!clock_push_scheduled_) {
+      clock_push_scheduled_ = true;
+      deps_.media_task_runner->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&RendererImpl::PushMasterClock,
+                         weak_factory_.GetWeakPtr()),
+          kClockPushInterval);
+    }
+    if (!stats_scheduled_) {
+      stats_scheduled_ = true;
+      deps_.media_task_runner->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&RendererImpl::PushStatistics,
+                         weak_factory_.GetWeakPtr()),
+          kStatsInterval);
+    }
+  }
   std::move(change_completed_cb).Run();
 }
 

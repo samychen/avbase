@@ -105,15 +105,10 @@ void Player::SetMuted(bool muted) {
 void Player::SetLoopCount(int count) {
   impl_->core.SetLoopCount(count);
 }
-Status Player::SelectTrack(media::DemuxerStreamType, int) {
-  // Track switching needs sub-renderer re-initialisation (M9); reporting
-  // success here would show a toggle that does nothing, which is worse.
-  return base::unexpected(MediaError(
-      ErrorCode::kNotImplemented, "track selection is not wired up yet",
-      "switching tracks requires re-initialising the matching sub-renderer "
-      "(milestone M9)",
-      "select the stream via PlayerConfig before PrepareAsync "
-      "(video.selected_stream / audio.selected_stream)"));
+Status Player::SelectTrack(media::DemuxerStreamType type, int stream_index) {
+  // Asynchronous by nature: this returns once the request is accepted, and
+  // the outcome arrives as kTrackChanged (or kError) on the event handler.
+  return impl_->core.SelectTrack(type, stream_index);
 }
 void Player::SetVideoSurface(base::scoped_refptr<NativeDisplay> display) {
   impl_->core.SetVideoSurface(std::move(display));

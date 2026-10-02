@@ -48,6 +48,7 @@ const char* PipelineStatusToString(PipelineStatus status) {
     case PipelineStatus::kAborted: return "aborted";
     case PipelineStatus::kFailedToCreatePipeline:
       return "failed-to-create-pipeline";
+    case PipelineStatus::kTrackSwitchError: return "track-switch-error";
     // kMaxValue aliases kFailedToCreatePipeline, so it has no case of its own
     // (same convention as DemuxerStreamType::kMaxValue in media_types.cc).
   }
@@ -186,12 +187,24 @@ MediaError PipelineStatusToMediaError(PipelineStatus status) {
           "audio_decoder_factories must be non-empty or left null for "
           "auto-detection, and a custom video_sink_factory must return a "
           "working sink for the NativeDisplay in use");
+
+    case PipelineStatus::kTrackSwitchError:
+      return MediaError(
+          ErrorCode::kInvalidState, "cannot switch to that track",
+          "the requested stream does not exist, is not of the requested "
+          "type, or the renderer cannot hand over while in this state; "
+          "playback itself is unaffected",
+          "pick an index from media_info().streams, switch only while "
+          "prepared/playing/paused, and note that switching needs an audio "
+          "sink (config.audio.disabled must be false)");
   }
+
   // Unreachable for every declared enumerator. Kept because a caller can cast
   // an arbitrary integer into the enum, and returning a default-constructed
   // MediaError (which reports kOk) would turn a failure into a success.
   return MediaError(
       ErrorCode::kInvalidArgument, "unknown pipeline status",
+
       "PipelineStatusToMediaError received a value outside the declared range",
       "this is a programming error in the caller; report the value from "
       "PipelineStatusToString()");

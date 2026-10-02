@@ -171,6 +171,11 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   PipelineStatistics GetStatistics() const;
   bool ended() const { return ended_; }
 
+  // Cadence of the S1 clock/statistics push loops; shared by the start path
+  // and the audio-switch resumption.
+  static constexpr base::TimeDelta kClockPushInterval = base::Milliseconds(10);
+  static constexpr base::TimeDelta kStatsInterval = base::Seconds(1);
+
  private:
   // Handed to the sub-renderers; they run it on S3 and S4 respectively, so it
   // only hops -- the flags it flips are S1 state. Same split as the ended
@@ -179,6 +184,25 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // version as a data race between S3, S4 and S1.
   void PostVideoInitialized(PipelineStatus status);
   void PostAudioInitialized(PipelineStatus status);
+  // Runtime audio-track switch (Phase 4). Runs on S1; |settings| carries what
+  // the outgoing renderer had, captured on S4 during teardown.
+  struct SwitchedAudioSettings {
+    float volume;
+    bool muted;
+    double playback_rate;
+    bool preserves_pitch;
+  };
+  void SwitchAudioRenderer(DemuxerStream* new_stream,
+                           base::OnceClosure change_completed_cb);
+  void OnSwitchedAudioInitialized(bool was_rendering,
+                                  base::TimeDelta resume_at,
+                                  SwitchedAudioSettings settings,
+                                  base::OnceClosure change_completed_cb,
+                                  PipelineStatus status);
+  void FinishAudioSwitch(bool was_rendering, base::TimeDelta resume_at,
+                         SwitchedAudioSettings settings,
+                         base::OnceClosure change_completed_cb,
+                         PipelineStatus status);
   void OnVideoInitialized(PipelineStatus status);
   void OnAudioInitialized(PipelineStatus status);
   void MaybeReportInitialized();
@@ -231,6 +255,19 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   bool initialized_{false};
   bool video_initialized_{false};
   bool audio_initialized_{false};
+  // The audio stream the current AudioRendererImpl was built with; identity
+  // for the "same track, nothing to do" no-op in OnTracksChanged. Lifetime is
+  // the MediaResource's (same contract as the sub-renderer's stream pointer).
+  DemuxerStream* audio_stream_{nullptr};
+  // Switched-out audio renderers. They are stopped and drained on S4 but NOT
+  // deleted there: control tasks bound with Unretained may still be queued
+  // behind the teardown task, and deleting would turn them into use-after-free
+  // (a real one: the first draft's "delete on quiescence" aborted inside a
+  // mutex of the freed object). Every AudioRendererImpl entry point
+  // early-returns on stopping_, so a retired object is inert; the graveyard
+  // is destroyed on S4 from ~RendererImpl, after the sequences' own teardown
+  // ordering drains those in-flight tasks.
+  std::vector<std::unique_ptr<AudioRendererImpl>> retired_audio_;
   bool has_video_{false};
   bool has_audio_{false};
   bool ended_{false};

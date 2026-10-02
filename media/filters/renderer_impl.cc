@@ -32,11 +32,9 @@ namespace {
 // 30 Hz frame interval, so a frame's lateness is never judged against a clock
 // more than a third of a frame stale -- tighter than that buys nothing the
 // compositor can use, and looser starts to show up as judder.
-constexpr base::TimeDelta kClockPushInterval = base::Milliseconds(10);
 
 // Statistics period. Matches PlayerConfig::stats_interval's default so that the
 // SDK's kStats event and the pipeline's OnStatisticsUpdate agree.
-constexpr base::TimeDelta kStatsInterval = base::Seconds(1);
 
 }  // namespace
 
@@ -80,6 +78,9 @@ RendererImpl::~RendererImpl() {
   }
   if (audio_) {
     DestroyOn(deps_.audio_task_runner.get(), &audio_);
+  }
+  for (auto& retired : retired_audio_) {
+    DestroyOn(deps_.audio_task_runner.get(), &retired);
   }
   av_sync_.reset();
 }
@@ -155,6 +156,7 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
         deps_.compositor_thresholds);
   }
   if (has_audio_) {
+    audio_stream_ = audio_stream;
     audio_params_ = MakeAudioParameters(audio_stream->audio_decoder_config(),
                                         deps_.audio_frames_per_buffer);
     audio_ = std::make_unique<AudioRendererImpl>(

@@ -89,6 +89,12 @@ void FakeAudioSink::Start() {
 void FakeAudioSink::Stop() {
   ++stop_count_;
   running_.store(false);
+  // Clear the callback, honouring the real sink contract ("Render() is never
+  // called after Stop() returns") against this fixture's own PullPeriod(),
+  // which pulls from the test thread and can run between a renderer teardown
+  // and the replacement's Initialize(). Without this, the callback pointer is
+  // a dangling reference into the deleted renderer.
+  callback_.store(nullptr);
 }
 
 void FakeAudioSink::Pause() {

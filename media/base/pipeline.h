@@ -62,6 +62,7 @@
 #include "media/base/media_error.h"
 #include "media/base/renderer.h"
 #include "media/base/renderer_client.h"
+#include "media/base/pipeline_status.h"
 #include "media/base/renderer_factory.h"
 #include "media/base/waiting.h"
 #include "media/media_export.h"
@@ -179,6 +180,18 @@ class AVBASE_MEDIA_EXPORT Pipeline {
   // sequence once the demuxer and every renderer have flushed to the new
   // serial. Accurate seek is layered above this by player/seek_controller.
   virtual void Seek(base::TimeDelta time, base::OnceClosure seeked_cb) = 0;
+
+  // Runtime audio-track switch (Phase 4). |stream_index| is the CONTAINER
+  // stream index -- the same value MediaInfo::streams reports and
+  // DemuxerStream::stream_index() carries. The request is accepted on the
+  // caller's thread; |cb| runs on the media sequence (never inline) once the
+  // sub-renderer handover finished, kOk meaning playback continues on the new
+  // track. A failed switch keeps the current one playing and reports the
+  // reason through Client::OnError; this default answers for pipelines that
+  // do not support switching at all.
+  virtual void SelectAudioTrack(int stream_index, PipelineStatusCallback cb) {
+    std::move(cb).Run(PipelineStatus::kTrackSwitchError);
+  }
 
   virtual bool CanSeekForward() const = 0;
   virtual bool CanSeekBackward() const = 0;

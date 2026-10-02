@@ -219,6 +219,22 @@ void AudioRendererImpl::Stop() {
   started_ = false;
 }
 
+void AudioRendererImpl::StopAndDrainForTeardown(
+    base::OnceClosure on_quiescent) {
+  Stop();
+  // Complete the outstanding read (if any) with kDecodingAborted and run the
+  // closure once the reply has been delivered: after this, no task that names
+  // this object can be created, so the closure may delete it. Flush also
+  // discards decoder state and the ring, which a dying object does not need;
+  // the closure runs on this sequence (S4), where the delete is safe.
+  const int32_t serial = decoder_stream_.demuxer_stream()->serial();
+  decoder_stream_.Flush(
+      serial,
+      base::BindOnce(
+          [](base::OnceClosure quiescent) { std::move(quiescent).Run(); },
+          std::move(on_quiescent)));
+}
+
 void AudioRendererImpl::SetVolume(float volume) {
   volume_ = std::clamp(volume, 0.0f, 1.0f);
 }

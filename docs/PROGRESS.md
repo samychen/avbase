@@ -4,14 +4,15 @@
 
 ## 当前状态：**M0–M8 ✅ · 端到端播放 ✅ · M9 进行中（三级 HWM + 精确 seek + DataSource 桥 + 饥饿信号 ✅）**
 
-最后更新：2026-10-02（第十五轮）—— **Phase 3 硬解与零拷贝：VideoToolbox 全链实测打通。**
-`VideoFrame` 落地 NativeBuffer 分支（强类型 GPU 句柄 + 释放回调 + 显式 `ToI420()` 回读，
-avbase §6.2 契约）；`FFmpegHwVideoDecoder`（hw_device_ctx + get_format，platform/ffmpeg）
-+ VideoToolbox/VAAPI/D3D11 三个工厂 target；硬解工厂默认插在软解之前，回退链不变；
-颜色空间元数据从零到全（VideoColorSpace + 容器信息兜底表 + 单测）；`examples/pull_frames`
-零拷贝取帧示例。本机实测：pull_frames 8 帧全部 `handle=cvpixelbuffer`（GPU 帧直出），
-headless 全部测试媒体到 kCompleted。ffmpeg 430/430、no-ffmpeg 376/376 全绿，
-invariant 全过（276 文件）。
+最后更新：2026-10-02（第十六轮）—— **Phase 4.2 运行时音轨切换落地。**
+`Player::SelectTrack(kAudio, index)` 全链打通：MediaResource 流枚举 → demuxer 活跃流
+路由(只对被消费的流施加背压) → RendererImpl 音频渲染器异步交接(停止→排干→重建→
+时钟续接) → `kTrackChanged` 事件。过程中排掉三颗雷：demux 循环被孤儿队列自锁
+(切轨必现)、S1 阻塞等待 S4 死锁(首稿)、退役渲染器的 Unretained 在途任务 UAF。
+新增 `tests/testdata/two_audio_tracks.m4a` + 5 个管线级测试；顺带修复 throttle 夹具
+的 MemoryDataSource 悬垂字节雷与 sink 拉取竞态。ffmpeg 435/435、no-ffmpeg 376/376、
+asan 435/435 全绿，invariant 全过(278 文件)。
+> 第十五轮：Phase 3 硬解与零拷贝——NativeBuffer · VideoToolbox 全链实测 · 颜色空间
 > 第十四轮：Phase 0 仓库改造——更名 avbase · LGPL 清点（决策 A）· 文档合并
 > 第十三轮：DataSource 桥（M4 余项收口）+ 饥饿信号（M9 第三块）
 > 第十二轮：M9 精确 seek——丢弃窗口 · 到达检测 · SeekController（407/407 FFmpeg · 372/372 no-ffmpeg）
@@ -19,6 +20,48 @@ invariant 全过（276 文件）。
 > 第十轮：播放链路打通（M7 收尾 + M8 接线，359/359，macOS 首建）
 > 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
 > 27 个文件转正进构建）
+
+## 第十六轮（本轮）：Phase 4.2 运行时音轨切换——SelectAudioTrack 全链
+
+### 落地面
+
+| 层 | 改动 |
+|---|---|
+| MediaResource | 新 `GetStreams(type)` 虚函数（默认单流实现向后兼容），FFmpegDemuxer 覆写为容器序全枚举。流身份 = `DemuxerStream::stream_index()`（容器流号，与 MediaInfo::streams 一致） |
+| Demuxer 路由 | 新 `SetActiveStream(type, index)`：**只对被消费的流施加背压**，其余同型流的包直接丢弃。这是切轨的前置——否则旧流的孤儿队列把自己灌到水位线上，demux 循环自锁，新流饿死 |
+| RendererImpl | `OnTracksChanged(kAudio, stream, cb)` 从桩变真实现：S1 编排——旧音频渲染器 S4 上停止+排干（`StopAndDrainForTeardown`：经 DecoderStream::Flush 以 kDecodingAborted 完成未决读）→ 重建（新 AudioParameters 取自新流配置，音量/静音/倍速/变速不变调设置从旧实例的原子量捕获重放）→ StartPlayingFrom(当前媒体时间) 续接时钟。kText/kVideo 维持可操作的 kNotImplemented |
+| Pipeline | facade 新 `SelectAudioTrack(index, cb)`（默认实现如实回报 kTrackSwitchError）；PipelineImpl 编排流查找 + `SetActiveStream` 先行 + 渲染器交接 |
+| 状态码 | `PipelineStatus::kTrackSwitchError` + 全映射（"切轨失败不是播放失败"），ToString/ToMediaError 同步 |
+| Player | `SelectTrack` 接线：状态门（kPrepared/kStarted/kPaused）→ MediaInfo 索引校验 → 异步交接；结果以 `kTrackChanged{type,old,new}` 事件上行（实现独立成 `player/track_selection.cc`，两个既有文件都在 C1 天花板上） |
+
+### 排掉的三颗雷（每颗都是测试抓的，不是读代码读出来的）
+
+1. **demux 循环孤儿队列自锁**（切轨必现）：背压等待的三个唤醒者（Flush/Stop/seek）不含
+   "消费者消失"。修复即上面的活跃流路由；`PlaysAudioOnlyTwoTrackFileToEosWithoutSwitch`
+   是它的无切轨回归锚。
+2. **S1 阻塞等待 S4 死锁**（首稿）：切轨的拆除在 S4，而 S4 的未决读回复经 media runner
+   投回 S1——S1 等待即死锁。改为全异步交接，S1 零等待。
+3. **退役渲染器 UAF**（ASan 抓的）：`delete on quiescence` 之后，更早排队、以
+   Unretained 绑定旧对象的控制任务（StartPlayingFrom/SetVolume…）才执行。改为退役表：
+   旧对象停止后转入 graveyard（所有入口在 stopping_ 下早退，成为惰性对象），
+   ~RendererImpl 在 S4 统一销毁。AudioRendererImpl 析构的生命周期纪律从此与切轨解耦。
+
+### 连带修复的夹具雷（throttle 夹具同样携带，靠 DISABLED 躲着）
+
+- `MemoryDataSource` 不拷贝字节，throttle/track 夹具把局部 vector 传进去即悬垂——
+  ASan 在切轨测试上炸出来。字节改挂 fixture 成员。
+- 夹具 `PumpRound` 在 pipeline 停止后继续拉取已随 renderer 销毁的 sink——加
+  IsRunning 门 + `set_render_runner` 把拉取序列化到渲染线程（seek 夹具早有此步）。
+- `FakeAudioSink::Stop` 现在清回调指针，兑现"Stop 后不再 Render"的真 sink 契约。
+
+### 验证
+
+- 新 `two_audio_tracks.m4a`（双 AAC 轨，lavfi 合成）+ 5 个管线级测试 × 重复 4 遍全过：
+  枚举、无切轨播放到 EOS、中途切换后到 EOS、往复切换、非法索引失败但管线健康。
+- ffmpeg 435/435（+5）；no-ffmpeg 376/376；**asan 435/435（0 泄漏）**；
+  invariant 全过（278 文件）；headless 回归正常。
+- 未做：字幕轨(kText，基座只出文本+时间的文本腿)、视频轨切换、
+  `kHardwareOnly` 生产语义、直播追帧（需直播源基建）。
 
 ## 第十五轮（本轮）：Phase 3 硬解与零拷贝——NativeBuffer · VideoToolbox 全链 · 颜色空间
 

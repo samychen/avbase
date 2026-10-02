@@ -656,6 +656,20 @@ void FFmpegDemuxer::BuildMediaInfo() {
   for (uint32_t i = 0; i < ctx->nb_streams; ++i) {
     AddStream(ctx->streams[i], i, liveness);
   }
+  // The default active streams are the first of each type -- the ones
+  // GetStream() has always returned. A track switch re-points these.
+  for (auto& stream : streams_) {
+    if (stream->type() == DemuxerStreamType::kVideo) {
+      active_video_.store(stream->stream_index(), std::memory_order_relaxed);
+      break;
+    }
+  }
+  for (auto& stream : streams_) {
+    if (stream->type() == DemuxerStreamType::kAudio) {
+      active_audio_.store(stream->stream_index(), std::memory_order_relaxed);
+      break;
+    }
+  }
 }
 
 void FFmpegDemuxer::OnOpened(Status status, InitializeCB init_cb) {
@@ -710,6 +724,15 @@ bool FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw, void* packet_raw) {
     return true;
   }
   FFmpegDemuxerStream* stream = streams_[slot].get();
+  if (!IsActiveRoutingTarget(index, stream->type())) {
+    // An inactive alternate (the audio track a switch orphaned, or a text
+    // stream with no consumer). Drop instead of enqueueing: its queue has no
+    // reader, and the backpressure wait below would wedge the demux loop on
+    // its own watermark -- which is exactly how a track switch starved the
+    // new track before this existed.
+    av_packet_unref(packet);
+    return true;
+  }
 
   // Zero-copy: the AVPacket is ref'd into the storage, not memcpy'd.
   auto storage = std::make_unique<ff::AvPacketStorage>();
@@ -1000,6 +1023,38 @@ DemuxerStream* FFmpegDemuxer::GetStream(DemuxerStreamType type) {
     }
   }
   return nullptr;
+}
+
+bool FFmpegDemuxer::IsActiveRoutingTarget(int index,
+                                          DemuxerStreamType type) const {
+  const int active =
+      type == DemuxerStreamType::kVideo
+          ? active_video_.load(std::memory_order_relaxed)
+          : active_audio_.load(std::memory_order_relaxed);
+  return index == active;
+}
+
+std::vector<DemuxerStream*> FFmpegDemuxer::GetStreams(DemuxerStreamType type) {
+  std::vector<DemuxerStream*> out;
+  out.reserve(streams_.size());
+  for (auto& stream : streams_) {
+    if (stream->type() == type) {
+      out.push_back(stream.get());
+    }
+  }
+  return out;
+}
+
+void FFmpegDemuxer::SetActiveStream(DemuxerStreamType type,
+                                    int stream_index) {
+  // Relaxed is enough: the demux thread re-reads the value per packet, and a
+  // packet routed to the just-retired active stream around the switch is
+  // harmless (it lands in a queue whose consumer is draining or gone).
+  if (type == DemuxerStreamType::kVideo) {
+    active_video_.store(stream_index, std::memory_order_relaxed);
+  } else if (type == DemuxerStreamType::kAudio) {
+    active_audio_.store(stream_index, std::memory_order_relaxed);
+  }
 }
 
 DemuxerStats FFmpegDemuxer::GetStats() const {

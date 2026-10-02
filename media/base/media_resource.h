@@ -33,6 +33,8 @@
 #ifndef AVBASE_MEDIA_BASE_MEDIA_RESOURCE_H_
 #define AVBASE_MEDIA_BASE_MEDIA_RESOURCE_H_
 
+#include <vector>
+
 #include "media/base/demuxer_stream.h"
 #include "media/media_export.h"
 
@@ -68,6 +70,18 @@ class AVBASE_MEDIA_EXPORT MediaResource {
   // nullptr is not an error: RendererImpl must fall back to the external clock
   // when there is no audio stream, exactly as ffplay does.
   virtual DemuxerStream* GetStream(DemuxerStreamType type) = 0;
+
+  // All streams of |type|, in container order (index 0 = first container
+  // stream of that type). The default covers resources that carry at most one
+  // stream per type; demuxers that keep alternates for runtime track
+  // switching override it. Stream identity is DemuxerStream::stream_index()
+  // (the container stream index, which is what MediaInfo::streams reports).
+  virtual std::vector<DemuxerStream*> GetStreams(DemuxerStreamType type) {
+    if (DemuxerStream* stream = GetStream(type)) {
+      return {stream};
+    }
+    return {};
+  }
 
  protected:
   MediaResource() = default;

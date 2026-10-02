@@ -75,7 +75,12 @@ enum class PipelineStatus {
   kAborted,                 // Stopped or destroyed mid-initialisation.
   kFailedToCreatePipeline,  // Backend or factory could not provide a part.
 
-  kMaxValue = kFailedToCreatePipeline,
+  // Runtime track switching (Phase 4: SelectAudioTrack). Distinct from the
+  // renderer-initialization codes because the pipeline was healthy and stays
+  // healthy: a failed switch must not be confused with "playback failed".
+  kTrackSwitchError,
+
+  kMaxValue = kTrackSwitchError,
 };
 
 AVBASE_MEDIA_EXPORT const char* PipelineStatusToString(PipelineStatus status);
