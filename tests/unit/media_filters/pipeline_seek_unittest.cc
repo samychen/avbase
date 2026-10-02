@@ -40,12 +40,12 @@
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
 #include "gtest/gtest.h"
-#include "media/base/audio_bus.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/video_frame.h"
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/pipeline_impl.h"
 #include "media/renderers/default_renderer_factory.h"
+#include "tests/support/pipeline_fixture.h"
 #include "tests/support/fake_pipeline_client.h"
 #include "tests/support/fake_renderer_sinks.h"
 #include "tests/support/fake_sink_factories.h"
@@ -77,130 +77,23 @@ bool WaitFor(Pred pred) {
   return pred();
 }
 
-class PipelineSeekTest : public ::testing::Test {
+class PipelineSeekTest : public PipelineTestFixture {
  protected:
-  PipelineSeekTest()
-      : env_(base::test::TaskEnvironment::TimeSource::kRealTime),
-        video_thread_("avbase-test-S3"),
-        audio_thread_("avbase-test-S4") {}
-
-  void SetUp() override {
-    runner_ = env_.GetMainThreadTaskRunnerRef();
-    ASSERT_TRUE(video_thread_.Start());
-    ASSERT_TRUE(audio_thread_.Start());
-  }
-
-  // Every wait pumps S1 as it polls: PipelineImpl posts its whole graph
-  // build onto the media runner (Start is "posted, not run inline"), so a
-  // test that only sleeps would wait forever with an empty event log.
-  template <typename Pred>
-  bool PumpUntil(Pred pred) {
-    const auto deadline = std::chrono::steady_clock::now() + kWaitTimeout;
-    while (std::chrono::steady_clock::now() < deadline) {
-      env_.RunUntilIdle();
-      if (pred()) {
-        return true;
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    }
-    env_.RunUntilIdle();
-    return pred();
-  }
+  PipelineSeekTest() : PipelineTestFixture(/*ffmpeg_mode=*/false) {}
 
  public:
   // Bound as the seek callback, hence public.
   void OnSeeked() { seeked_.store(true); }
 
  protected:
-  void TearDown() override {
-    if (pipeline_ && pipeline_->IsRunning()) {
-      pipeline_->Stop();
-      EXPECT_TRUE(PumpUntil([this] { return !pipeline_->IsRunning(); }))
-          << "pipeline did not stop";
-    }
-    // Drain whatever teardown posted to S1 before the sub-renderer threads
-    // die underneath it.
-    env_.RunUntilIdle();
-    video_thread_.Stop();
-    audio_thread_.Stop();
-  }
-
-  // Builds the graph over the synthetic source and starts it.
-  void StartPipeline() {
-    av_sync_ = std::make_shared<AvSyncController>(
-        AvSyncController::MasterType::kAudio, &tick_clock_,
-        AvSyncController::Thresholds());
-
-    DefaultRendererFactory::Deps deps;
-    deps.video_task_runner = video_thread_.task_runner();
-    deps.audio_task_runner = audio_thread_.task_runner();
-    deps.tick_clock = &tick_clock_;
-    deps.video_decoder_factories.push_back(video_decoders_);
-    deps.audio_decoder_factories.push_back(audio_decoders_);
-    deps.video_sink_factory = video_sinks_;
-    deps.audio_sink_factory = audio_sinks_;
-    deps.audio_frames_per_buffer = kFramesPerBuffer;
-    deps.av_sync = av_sync_;
-    renderer_factory_ = std::make_unique<DefaultRendererFactory>(deps);
-
-    pipeline_ = std::make_unique<PipelineImpl>();
-    pipeline_->SetTickClock(&tick_clock_);
-    pipeline_->SetClock(av_sync_);
-    pipeline_->Start(std::make_unique<test::SyntheticDemuxer>(spec_),
-                     renderer_factory_.get(), RendererType::kRendererImpl,
-                     runner_, &client_);
-  }
-
-  void PlayAndWaitForSinks(AudioBus* bus) {
-    // kReady is signalled by kHaveMetadata (pipeline_impl.cc sets the state
-    // right before emitting it). Play() before that is a documented no-op --
-    // and OnDurationChange, which the Start() contract also names, arrives
-    // *before* kReady, so it must not be waited on here.
-    ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }))
-        << "never reached kHaveMetadata; events:\n" << client_.EventLog();
-    pipeline_->Play();
-    ASSERT_TRUE(PumpUntil([this, bus] {
-      PumpRound(bus);
+  void PlayAndWaitForSinks() {
+    Play();
+    ASSERT_TRUE(PumpUntil([this] {
       return video_sinks_->last_sink() && audio_sinks_->last_sink() &&
              video_sinks_->last_sink()->start_count() > 0 &&
              audio_sinks_->last_sink()->start_count() > 0;
     })) << "sinks never started; events:\n" << client_.EventLog();
-    // The audio renderer's pump lives on S4; a render callback running inline
-    // on this thread would touch decoder state from two sequences at once
-    // (TSan caught it). Marshal pulls onto S4, like a real device thread.
-    audio_sinks_->last_sink()->set_render_runner(audio_thread_.task_runner());
-  }
-
-  // Advances playback the way a device would: one audio period and one
-  // display interval per round. Safe before the sinks exist (it only drains
-  // S1); returns the number of frames stored this round.
-  int PumpRound(AudioBus* bus) {
-    // Play()/seek callbacks/state transitions all move through S1, so a
-    // pump round is also an S1 drain.
-    env_.RunUntilIdle();
-    // Breathing room for the real S3/S4 threads, but deliberately SHORTER
-    // than one display interval: the audio clock extrapolates media time by
-    // the wall clock between consumption updates, so wall time running AHEAD
-    // of consumed media time makes the compositor drop early post-seek frames
-    // as late (measured: landing frame drifted to 155..158 at a 16 ms sleep).
-    // Lagging is the safe direction -- a held frame is presented when due.
-    std::this_thread::sleep_for(std::chrono::milliseconds(4));
-    test::FakeAudioSink* audio = audio_sinks_->last_sink();
-    test::FakeVideoSink* video = video_sinks_->last_sink();
-    if (!audio || !video) {
-      return 0;
-    }
-    // Three periods of |kFramesPerBuffer| at 48 kHz are ~16 ms of media time
-    // -- one display interval. If the audio clock advances slower than the
-    // display cadence, the compositor sees every frame as "not yet due" and
-    // the landing frame never presents (that was 18% of the first stress
-    // run).
-    for (int i = 0; i < 3; ++i) {
-      audio->PullPeriod(bus);
-    }
-    const size_t before = video->frames().size();
-    video->PullFrames(1);
-    return static_cast<int>(video->frames().size() - before);
+    // Marshalled pulls: the base PumpRound arms the render runner.
   }
 
   // First stored frame whose index is >= |floor|, or nullptr.
@@ -217,24 +110,6 @@ class PipelineSeekTest : public ::testing::Test {
     return nullptr;
   }
 
-  base::test::TaskEnvironment env_;
-  base::Thread video_thread_;
-  base::Thread audio_thread_;
-  base::DefaultTickClock tick_clock_;
-  test::SyntheticSpec spec_;
-  std::shared_ptr<AvSyncController> av_sync_;
-  base::scoped_refptr<base::SequencedTaskRunner> runner_;
-  base::scoped_refptr<test::SyntheticVideoDecoderFactory> video_decoders_ =
-      base::MakeRefCounted<test::SyntheticVideoDecoderFactory>(spec_);
-  base::scoped_refptr<test::SyntheticAudioDecoderFactory> audio_decoders_ =
-      base::MakeRefCounted<test::SyntheticAudioDecoderFactory>(spec_);
-  std::shared_ptr<test::FakeVideoSinkFactory> video_sinks_ =
-      std::make_shared<test::FakeVideoSinkFactory>();
-  std::shared_ptr<test::FakeAudioSinkFactory> audio_sinks_ =
-      std::make_shared<test::FakeAudioSinkFactory>();
-  std::unique_ptr<DefaultRendererFactory> renderer_factory_;
-  test::FakePipelineClient client_;
-  std::unique_ptr<PipelineImpl> pipeline_;
   std::atomic<bool> seeked_{false};
 };
 
@@ -244,15 +119,14 @@ TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
       << "pipeline never started; events:\n" << client_.EventLog();
   ASSERT_FALSE(client_.HasError())
       << client_.error().ToString() << "\n" << client_.EventLog();
-  auto bus = AudioBus::Create(kAudioChannels, kFramesPerBuffer);
-  PlayAndWaitForSinks(bus.get());
+  PlayAndWaitForSinks();
 
   // Get playback under way: pump roughly a second, and require that real
   // frames came out -- a renderer that never presented would make the seek
   // assertions below vacuous.
   int presented_before = 0;
   for (int round = 0; round < 60; ++round) {
-    presented_before += PumpRound(bus.get());
+    presented_before += PumpRound();
   }
   ASSERT_GT(presented_before, 0) << client_.EventLog();
 
@@ -260,8 +134,8 @@ TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
   seeked_.store(false);
   pipeline_->Seek(base::Seconds(5), base::BindOnce(&PipelineSeekTest::OnSeeked,
                                                    base::Unretained(this)));
-  ASSERT_TRUE(PumpUntil([this, &bus] {
-    PumpRound(bus.get());
+  ASSERT_TRUE(PumpUntil([this] {
+    PumpRound();
     return seeked_.load();
   })) << "seek callback never ran; events:\n" << client_.EventLog();
   EXPECT_GE(video_sinks_->last_sink()->flush_count(), 1);
@@ -269,7 +143,7 @@ TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
   // The landing frame: the first presented frame at or after frame 150.
   const test::FakeVideoSink* video = video_sinks_->last_sink();
   ASSERT_TRUE(PumpUntil([&] {
-    PumpRound(bus.get());
+    PumpRound();
     return LandingFrame(*video, kSeekFrame, first_batch) != nullptr;
   })) << "no frame >= " << kSeekFrame
       << " presented after the seek; events:\n" << client_.EventLog()
@@ -291,7 +165,7 @@ TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
   const size_t landed_at =
       static_cast<size_t>(landed - video->frames().data());
   for (int round = 0; round < 120; ++round) {
-    PumpRound(bus.get());
+    PumpRound();
   }
   const std::vector<base::scoped_refptr<VideoFrame>>& frames =
       video->frames();
@@ -320,11 +194,10 @@ TEST_F(PipelineSeekTest, AccurateSeekPresentsNothingBeforeTheTarget) {
   StartPipeline();
   ASSERT_TRUE(PumpUntil([this] { return client_.Started(); }))
       << "pipeline never started; events:\n" << client_.EventLog();
-  auto bus = AudioBus::Create(kAudioChannels, kFramesPerBuffer);
-  PlayAndWaitForSinks(bus.get());
+  PlayAndWaitForSinks();
   int presented_before = 0;
   for (int round = 0; round < 60; ++round) {
-    presented_before += PumpRound(bus.get());
+    presented_before += PumpRound();
   }
   ASSERT_GT(presented_before, 0) << client_.EventLog();
 
@@ -342,14 +215,14 @@ TEST_F(PipelineSeekTest, AccurateSeekPresentsNothingBeforeTheTarget) {
   seeked_.store(false);
   pipeline_->Seek(base::Seconds(5), base::BindOnce(&PipelineSeekTest::OnSeeked,
                                                    base::Unretained(this)));
-  ASSERT_TRUE(PumpUntil([this, &bus] {
-    PumpRound(bus.get());
+  ASSERT_TRUE(PumpUntil([this] {
+    PumpRound();
     return seeked_.load();
   })) << "seek callback never ran; events:\n" << client_.EventLog();
 
   const test::FakeVideoSink* video = video_sinks_->last_sink();
   ASSERT_TRUE(PumpUntil([&] {
-    PumpRound(bus.get());
+    PumpRound();
     return LandingFrame(*video, kSeekFrame, window_batch) != nullptr;
   })) << "no frame >= " << kSeekFrame
       << " presented after the accurate seek; events:\n"
@@ -377,7 +250,7 @@ TEST_F(PipelineSeekTest, AccurateSeekPresentsNothingBeforeTheTarget) {
   // SeekController completes the user's seek on it, so a silent window would
   // hang every accurate seek.
   ASSERT_TRUE(PumpUntil([&] {
-    PumpRound(bus.get());
+    PumpRound();
     return reached.load();
   })) << "accurate-seek window never reported reaching the target";
 
