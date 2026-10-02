@@ -187,6 +187,33 @@ jobs:
     runs-on: ubuntu-24.04
     steps: [{ run: echo "xvfb + llvmpipe playback verification lands at M11/M12" }]
 
+  # The fuzz harness (Phase 4.5): coverage-guided where the runner has the
+  # libFuzzer runtime (Ubuntu clang does), corpus seeds re-run every push so
+  # a regression found by mutation cannot sneak back in. macOS runners are
+  # excluded on purpose: Xcode's clang ships without libFuzzer.
+  fuzz-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain and FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config clang             libavformat-dev libavcodec-dev libavutil-dev             libswscale-dev libswresample-dev
+      - name: Configure (fuzzer + ASan)
+        run: |
+          cmake -B build/fuzz -G Ninja -DAVBASE_ENABLE_FFMPEG=ON \
+            -DAVBASE_BUILD_TESTS=OFF -DAVBASE_BUILD_EXAMPLES=OFF \
+            -DAVBASE_BUILD_FUZZ=ON \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_FLAGS="-fsanitize=fuzzer,address" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=fuzzer,address"
+      - run: cmake --build build/fuzz
+      - name: Corpus seeds + 60s coverage-guided run
+        run: |
+          timeout 60 ./build/fuzz/bin/avbase_fuzz_demuxer \
+            tests/fuzz/seeds -max_total_time=60 -rss_limit_mb=2048 || [ $? -eq 124 ]
+          ./build/fuzz/bin/avbase_fuzz_demuxer_standalone --iters 16
+
   # Deliberately absent, and it should stay that way until the tree is clean:
   # check-format (clang-format), check-cpplint and check-clang-tidy would all
   # be red on the first run -- the C23 ratchet exists precisely because 310

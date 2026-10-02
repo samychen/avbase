@@ -35,6 +35,7 @@ avbase_configure_target(avbase_media_test_support)
 # beside the three FFmpeg ones that only media_ffmpeg_unittests may compile, so a
 # glob there would drag those into the no-ffmpeg gate (G2).
 
+if(AVBASE_BUILD_TESTS)
 # ---- base ----
 file(GLOB AVBASE_BASE_UNITTEST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/unit/base/*.cc")
@@ -87,4 +88,51 @@ if(AVBASE_ENABLE_FFMPEG)
            avbase::base_test_support)
   target_compile_definitions(media_ffmpeg_unittests PRIVATE
       AVBASE_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata")
+endif()
+endif()
+
+# ---- fuzz targets (Phase 4.5 / G8) -----------------------------------------
+# The harness (fuzz_demuxer.cc) is shared by two drivers: the libFuzzer binary
+# (coverage-guided, for CI on Linux and long local runs -- needs a clang with
+# the libFuzzer runtime, feature-tested below) and a standalone deterministic
+# mutator driver (fixed-seed mutations over the seed corpus, no runtime
+# dependency, runs under the asan/tsan presets like any test). Corpus seeds
+# are real containers under fuzz/seeds/ and grow in-repo.
+if(AVBASE_BUILD_FUZZ AND AVBASE_ENABLE_FFMPEG)
+  include(CheckCXXSourceCompiles)
+  set(CMAKE_REQUIRED_FLAGS "-fsanitize=fuzzer")
+  check_cxx_source_compiles("int main(){return 0;}"
+      AVBASE_HAVE_LIBFUZZER_RUNTIME)
+  unset(CMAKE_REQUIRED_FLAGS)
+
+  add_executable(avbase_fuzz_demuxer fuzz/fuzz_demuxer.cc)
+  target_include_directories(avbase_fuzz_demuxer PRIVATE
+      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+  target_link_libraries(avbase_fuzz_demuxer PRIVATE avbase::platform_ffmpeg)
+  target_compile_definitions(avbase_fuzz_demuxer PRIVATE
+      AVBASE_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata")
+  avbase_configure_target(avbase_fuzz_demuxer)
+
+  # The harness has no main(); the two drivers link it separately. The
+  # libFuzzer binary may be EXCLUDE_FROM_ALL (no runtime on this host), so the
+  # standalone compiles the source itself rather than sharing an object.
+  add_executable(avbase_fuzz_demuxer_standalone
+      fuzz/fuzz_standalone_main.cc fuzz/fuzz_demuxer.cc)
+  target_include_directories(avbase_fuzz_demuxer_standalone PRIVATE
+      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+  target_link_libraries(avbase_fuzz_demuxer_standalone PRIVATE
+      avbase::platform_ffmpeg)
+  target_compile_definitions(avbase_fuzz_demuxer_standalone PRIVATE
+      AVBASE_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata"
+      AVBASE_SEEDS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fuzz/seeds")
+  avbase_configure_target(avbase_fuzz_demuxer_standalone)
+
+  if(AVBASE_HAVE_LIBFUZZER_RUNTIME)
+    target_compile_options(avbase_fuzz_demuxer PRIVATE -fsanitize=fuzzer)
+    target_link_options(avbase_fuzz_demuxer PRIVATE -fsanitize=fuzzer)
+  else()
+    message(STATUS "libFuzzer runtime unavailable; building the standalone "
+                   "fuzz driver only (CI Linux has the runtime)")
+    set_target_properties(avbase_fuzz_demuxer PROPERTIES EXCLUDE_FROM_ALL ON)
+  endif()
 endif()

@@ -63,12 +63,18 @@ if(AVBASE_BUILD_EXAMPLES)
 endif()
 if(AVBASE_BUILD_TESTS)
   enable_testing()
+endif()
+# The fuzz targets live beside the tests and reuse their support; building
+# them alone (AVBASE_BUILD_FUZZ with AVBASE_BUILD_TESTS=OFF) is a valid
+# configuration, so the directory follows either option.
+if(AVBASE_BUILD_TESTS OR AVBASE_BUILD_FUZZ)
   add_subdirectory(tests)
-  # Developer CLI. Only meaningful with FFmpeg: it drives the real demuxer and
-  # decoders, and a version built on fakes would prove nothing.
-  if(AVBASE_ENABLE_FFMPEG)
-    add_subdirectory(tools/inspect)
-  endif()
+endif()
+if(AVBASE_BUILD_TESTS AND AVBASE_ENABLE_FFMPEG)
+  # Developer CLI. Only meaningful with FFmpeg: it drives the real demuxer
+  # and decoders, and a version built on fakes would prove nothing. Kept
+  # under the tests gate (its asan/coverage runs are test infrastructure).
+  add_subdirectory(tools/inspect)
 endif()
 
 include(AvbaseCheckInvariants)

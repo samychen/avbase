@@ -18,16 +18,25 @@
 #include <type_traits>
 #include <utility>
 
+// Self-contained detection, deliberately NOT the AVBASE_HAVE_STD_EXPECTED
+// name from BuildConfig.h: that one is #cmakedefine01, i.e. always defined
+// (as 0 on toolchains without <expected>), and a TU that includes
+// BuildConfig.h before this header would otherwise be pushed into the
+// std::expected branch by a bare `#if defined(...)` guard. The value-check
+// below makes the include order irrelevant.
 #if defined(__has_include)
 #if __has_include(<expected>) && defined(__cpp_lib_expected)
-#define AVBASE_HAVE_STD_EXPECTED 1
+#define AVBASE_USE_STD_EXPECTED 1
 #include <expected>
 #endif
+#endif
+#ifndef AVBASE_USE_STD_EXPECTED
+#define AVBASE_USE_STD_EXPECTED 0
 #endif
 
 namespace avbase::base {
 
-#if defined(AVBASE_HAVE_STD_EXPECTED)
+#if AVBASE_USE_STD_EXPECTED
 
 template <class T, class E>
 using expected = std::expected<T, E>;

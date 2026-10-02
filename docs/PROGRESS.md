@@ -2,26 +2,43 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M11 ✅（播放链路 + SDL2 出画）· M9 收口中（三级 HWM/精确 seek/RetryDataSource/饥饿信号 ✅）· Phase 0 更名 avbase ✅ · Phase 3 硬解零拷贝 ✅（VideoToolbox 实测）· 音/字幕轨切换 ✅**
+## 当前状态：**M0–M11 ✅（播放链路 + SDL2 出画）· M9 收口中（三级 HWM/精确 seek/RetryDataSource/饥饿信号 ✅）· Phase 0 更名 avbase ✅ · Phase 3 硬解零拷贝 ✅（VideoToolbox 实测）· 音/字幕轨切换 ✅ · fuzz 目标 ✅**
 
-最后更新：2026-10-03（第十七轮）—— **Phase 4.2 字幕文本腿落地。**
-`Player::SelectTrack(kText, index)` 全链打通：基座只出文本+时间（avbase 升级计划的
-定位），解码后的 cue 以 `kTimedText` 事件上行。新增 `TimedTextCue`/`TextDecoderConfig`/
-`TextDecoder`（同步接口）+ FFmpeg 字幕解码器（avcodec_decode_subtitle2）；demuxer 对
-文本流改用**常驻有界丢弃最旧队列**——字幕包一次性到达且不参与水位背压，迟到订阅仍能
-看到全轨。过程中封了三颗生命周期雷：Stop 异步化后 IsRunning 语义、管线停止需先 Flush
-渲染器再销毁、AudioRendererImpl 泵自续任务改弱绑定。新增 `audio_two_subs.mkv`
-（双 srt 轨）+ 4 个管线级测试。ffmpeg 439/439、no-ffmpeg 376/376、asan 439/439
-全绿，invariant 全过（280 文件）。
-> 第十六轮：Phase 4.2 运行时音轨切换——SelectAudioTrack 全链
-> 第十五轮：Phase 3 硬解与零拷贝——NativeBuffer · VideoToolbox 全链实测 · 颜色空间
-> 第十四轮：Phase 0 仓库改造——更名 avbase · LGPL 清点（决策 A）· 文档合并
-> 第十三轮：DataSource 桥（M4 余项收口）+ 饥饿信号（M9 第三块）
-> 第十二轮：M9 精确 seek——丢弃窗口 · 到达检测 · SeekController（407/407 FFmpeg · 372/372 no-ffmpeg）
-> 第十一轮：M9 开篇（限速假件 + 三级 HWM + 管线级 seek 夹具，401/401）
-> 第十轮：播放链路打通（M7 收尾 + M8 接线，359/359，macOS 首建）
-> 第九轮：工程治理（LICENSE/LGPL 隔离、extract_constants、管线接口 DRAFT 冻结、
-> 27 个文件转正进构建）
+最后更新：2026-10-03（第十八轮）—— **Phase 4.5 开篇：libFuzzer 目标 + 确定性 standalone 驱动。**
+`tests/fuzz/fuzz_demuxer.cc` 把每份输入推过真实的 demux 前门（MemoryDataSource →
+AVIOContext 桥 → avformat 探测 → 有界 Read → Stop），全部等待限时、字节拷贝与
+demuxer 同批在 media 线程上销毁（harness 特意泄漏，避开退出期静态析构顺序雷）。
+驱动双轨：libFuzzer（CI Linux，覆盖引导）+ 固定种子 standalone（本机 asan 可跑，
+325 输入全干净）。CI 新增 fuzz-smoke job。顺带修复 `expected.h` 的
+`#if defined()` 宏序雷（BuildConfig 恒定义 0 的名字会劫持 include 顺序敏感的 TU）。
+ffmpeg 439/439、no-ffmpeg 376/376、asan 439/439 连续两轮全绿，invariant 全过
+（282 文件）。
+> 第十七轮：Phase 4.2 字幕文本腿——kText 轨选择与 TimedText 事件
+
+## 第十八轮（本轮）：Phase 4.5 开篇——libFuzzer 目标 · 确定性驱动 · CI smoke
+
+依据 avbase 升级计划 Phase 4.5（"对 platform/ffmpeg 输入做结构模糊，语料入库常跑"）。
+
+### 落地面
+
+| 项 | 说明 |
+|---|---|
+| `tests/fuzz/fuzz_demuxer.cc` | 共享 harness（无 main）：每份输入 = MemoryDataSource（**堆拷贝**——MemoryDataSource 不复制字节，libFuzzer 输入缓冲返回即失效）→ FFmpegDemuxer::Initialize → 对存在的音/视频流各做 ≤8 轮有界 Read → Stop → 与字节拷贝同批在 media 线程 FIFO 销毁。所有等待限时（init 10s / read 5s / drain 5s），挂死的输入被跳过而不是楔死 fuzzer |
+| 双驱动 | `avbase_fuzz_demuxer`（libFuzzer，覆盖引导；运行时按 `check_cxx_source_compiles` 探测，没有则 EXCLUDE_FROM_ALL——AppleClang 不带 libFuzzer runtime）+ `avbase_fuzz_demuxer_standalone`（固定种子 mt19937 四类确定性变异：位翻转/截断/填字节/拼接，65 输入/种子，本机任何 sanitizer 配置可跑，崩溃可从命令行复现） |
+| 语料 | `tests/fuzz/seeds/` 入库：3 个完整容器 + 截断头 + 损坏前缀；每次 run 先原样回放全部种子（回归即阻断） |
+| CI | `fuzz-smoke` job（ubuntu-24.04，clang + fuzzer+asan）：60 秒覆盖引导 run + 种子回放；macOS 排除（无 runtime） |
+| CMake | 根 CMake 的 tests 目录门控放宽为 `AVBASE_BUILD_TESTS OR AVBASE_BUILD_FUZZ`（fuzz-only 构建是合法配置）；测试套件段按 BUILD_TESTS 收进守卫 |
+
+### 过程中抓到并修掉的两颗雷
+
+1. **`base/types/expected.h` 的宏序雷**：命名空间分支用 `#if defined(AVBASE_HAVE_STD_EXPECTED)`，而 BuildConfig.h 的同名 `#cmakedefine01` **恒被定义（无 <expected> 的工具链上恒为 0）**——先含 BuildConfig 再含 expected.h 的 TU 会被推进 std::expected 分支后编译失败。改为带值判断的自包含 `AVBASE_USE_STD_EXPECTED`（include 顺序不再敏感）。
+2. **退出期静态析构顺序**：harness 静态 Thread 在 logging 静态互斥量之后销毁，Stop() 里的 LOG 拿已销毁的锁（abort）。fuzzer 基建改为刻意泄漏（`new` 不 delete）——进程级资源的标准处置。
+
+### 验证
+
+- standalone 驱动：默认构建 + asan 配置各一轮，**325 输入全部干净退出**。
+- libFuzzer 二进制本机不可链接（无 runtime），由 CI Linux 验证；fuzz-smoke job 已入 workflow。
+- 回归：ffmpeg 439/439、no-ffmpeg 376/376、asan 439/439 ×2；invariant 全过（282 文件）。
 
 ## 第十六轮（本轮）：Phase 4.2 运行时音轨切换——SelectAudioTrack 全链
 
