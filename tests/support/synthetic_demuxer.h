@@ -61,6 +61,10 @@ struct SyntheticSpec {
   int channels = 2;
   int audio_frames_per_packet = 1024;
   base::TimeDelta duration = base::Seconds(10);
+  // Live simulation: IsLive() reports true, so the pipeline's live-edge
+  // chase (docs/12 section 2.1) evaluates against the finite duration as a
+  // stand-in edge. The growing-edge demuxer is the follow-up.
+  bool live = false;
   double base_tone_hz = 440.0;
   int keyframe_interval = 30;
 
@@ -128,7 +132,7 @@ class SyntheticDemuxer final : public Demuxer {
   DemuxerStream* GetStream(DemuxerStreamType type) override;
   const MediaInfo& media_info() const override { return media_info_; }
   base::TimeDelta GetStartTime() const override { return base::TimeDelta(); }
-  bool IsLive() const override { return false; }
+  bool IsLive() const override { return media_info_.is_live; }
   bool IsSeekable() const override { return true; }
   DemuxerStats GetStats() const override;
   const char* name() const override { return "SyntheticDemuxer"; }

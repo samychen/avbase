@@ -268,5 +268,41 @@ TEST_F(PipelineSeekTest, AccurateSeekPresentsNothingBeforeTheTarget) {
       << client_.error().ToString() << "\n" << client_.EventLog();
 }
 
+// The live chase (docs/12 section 2.1), end to end through the pipeline:
+// a live-marked source whose duration stands in for the edge, a 2 s latency
+// hint, and a playhead that starts 10 s behind. The first statistics tick
+// (1 s) must trip the chase, land near the edge (edge - hint/2), and leave
+// playback running with no deadlock. The growing-edge demuxer is the
+// follow-up; this pins the trigger, the skip and the resume.
+TEST_F(PipelineSeekTest, LiveSourceChasesToTheEdge) {
+  spec_.live = true;
+  spec_.duration = base::Seconds(10);
+  StartPipeline();
+  ASSERT_TRUE(PumpUntil([this] { return client_.Started(); }))
+      << "pipeline never started; events:\n" << client_.EventLog();
+  pipeline_->SetLatencyHint(base::Seconds(2));
+  PlayAndWaitForSinks();
+
+  // The first statistics tick (1 s) evaluates behind=10s > 2s and chases to
+  // duration - hint/2 = 9 s. Poll until the playhead is past 8.5 s.
+  ASSERT_TRUE(PumpUntil([this] {
+    PumpRound();
+    return pipeline_->GetMediaTime() >= base::Seconds(8) + base::Milliseconds(500);
+  })) << "the playhead never chased to the live edge; media_time="
+      << pipeline_->GetMediaTime().ToString() << "; events:\n"
+      << client_.EventLog();
+
+  // Playback continues after the chase: frames keep presenting.
+  const size_t frames_at_chase = video_sinks_->last_sink()->frames().size();
+  for (int i = 0; i < 30; ++i) {
+    PumpRound();
+  }
+  EXPECT_GT(video_sinks_->last_sink()->frames().size(), frames_at_chase)
+      << "no frames presented after the chase; events:\n"
+      << client_.EventLog();
+  EXPECT_FALSE(client_.HasError())
+      << client_.error().ToString() << "\n" << client_.EventLog();
+}
+
 }  // namespace
 }  // namespace avbase::media

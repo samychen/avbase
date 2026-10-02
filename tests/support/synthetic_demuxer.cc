@@ -113,6 +113,7 @@ SyntheticDemuxer::SyntheticDemuxer(SyntheticSpec spec)
       video_(std::make_unique<VideoStream>(this)),
       audio_(std::make_unique<AudioStream>(this)) {
   media_info_.duration = spec_.duration;
+  media_info_.is_live = spec_.live;
   media_info_.seekable = true;
   media_info_.format_name = "synthetic";
   media_info_.uri = "synthetic://test";

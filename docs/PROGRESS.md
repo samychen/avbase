@@ -15,6 +15,17 @@ ffmpeg 439/439、no-ffmpeg 376/376、asan 439/439 连续两轮全绿，invariant
 （282 文件）。
 > 第十七轮：Phase 4.2 字幕文本腿——kText 轨选择与 TimedText 事件
 
+## 第二十一轮（本轮）：直播追帧端到端验收（docs/12 §2.1 闭合）
+
+`PipelineSeekTest.LiveSourceChasesToTheEdge`：合成源标记 live（duration 10s 作为
+边缘替身）、延迟目标 2s、播放头起步落后 10s——**首个统计节拍触发追帧**（日志：
+behind=7942ms, skipping to 9s），播放头落到边缘附近（断言 ≥8.5s），随后帧持续
+呈现（无死锁、无错误）。此为 docs/12 §2.1 的端到端验收路径；真"增长边缘"demuxer
+（时戳随墙钟推进）留作增强，当前用有限边缘替身先钉住触发→skip→续播全链。
+过程修正：共享夹具（dcc876c）的 PumpRound/PlayAndWaitForSinks 已无 bus 参数。
+
+**§2.1 状态：✅ 闭合**（判定核 + 接线 + 端到端验收；协议覆盖验收见 §2.4，另列）。
+
 ## 第二十轮（本轮）：直播追帧判定核（docs/12 §2.1 判定侧）
 
 `media/filters/live_edge_policy.{h,cc}`：追帧决策纯函数（DecideNextFrame 模式）——
