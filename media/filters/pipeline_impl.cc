@@ -10,6 +10,8 @@
 
 #include "media/filters/pipeline_impl.h"
 
+#include "media/filters/live_edge_policy.h"
+
 #include <utility>
 
 #include "base/check.h"
@@ -404,6 +406,7 @@ void PipelineImpl::SetPlaybackRate(double rate) {
 }
 
 void PipelineImpl::SetLatencyHint(base::TimeDelta hint) {
+  latency_hint_ = hint;
   if (!media_runner_) {
     return;
   }
@@ -442,6 +445,10 @@ base::TimeDelta PipelineImpl::GetBufferedTime() const {
 
 base::TimeDelta PipelineImpl::GetDuration() const {
   return base::TimeDelta::FromMicroseconds(duration_micros_.load());
+}
+
+bool PipelineImpl::ShouldChaseToLiveEdge(base::TimeDelta behind) const {
+  return LiveEdgePolicy::ShouldChase(true, latency_hint_, behind);
 }
 
 Pipeline::Statistics PipelineImpl::GetStatistics() const {

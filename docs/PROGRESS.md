@@ -15,6 +15,20 @@ ffmpeg 439/439、no-ffmpeg 376/376、asan 439/439 连续两轮全绿，invariant
 （282 文件）。
 > 第十七轮：Phase 4.2 字幕文本腿——kText 轨选择与 TimedText 事件
 
+## 第二十轮（本轮）：直播追帧判定核（docs/12 §2.1 判定侧）
+
+`media/filters/live_edge_policy.{h,cc}`：追帧决策纯函数（DecideNextFrame 模式）——
+`ShouldChase(is_live, latency_hint, behind)`：仅直播 + 正向延迟目标 + 严格大于
+（规范卷 §3"落后 >8s"）才追；`SuggestedTarget` 落点在边缘减去半个目标（留出
+整个目标的余量，防止统计节拍上乒乓）。接线：`PipelineImpl::SetLatencyHint` 现在记录
+hint（此前只转发渲染器）；统计节拍（1s，host TU）上检测 直播边缘(duration)−播放头
+超过目标即自发起两阶段 skip（renderer flush + demuxer 从最新处续读——**非物理 seek**，
+直播容器不能回退），复用既有 seek_in_flight_ 防重入与完成汇合。4 个纯函数单测。
+
+**验收边界**：判定核 + 接线已测；docs/12 §2.1 的端到端验收（合成直播源落后 8s
+一个阈值周期内追平、无死锁）需要合成直播 demuxer 假件（定时产流、时戳随墙钟
+增长），是下一轮主体。
+
 ## 第十九轮（本轮）：LiveDataSource——直播字节源基建（docs/12 §2.2 前半）
 
 `media/filters/live_data_source.{h,cc}`：可增长的直播字节源——生产者 `Append()`

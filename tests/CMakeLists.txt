@@ -51,6 +51,7 @@ avbase_add_unittest(media_unittests
         ${AVBASE_MEDIA_UNITTEST_SOURCES}
         unit/media_filters/av_sync_controller_unittest.cc
         unit/media_filters/decoder_stream_unittest.cc
+        unit/media_filters/live_edge_policy_unittest.cc
         unit/media_filters/live_data_source_unittest.cc
         unit/media_filters/retry_data_source_unittest.cc
         unit/media_filters/pipeline_seek_unittest.cc

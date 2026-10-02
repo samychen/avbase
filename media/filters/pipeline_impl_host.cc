@@ -11,11 +11,14 @@
 
 #include "media/filters/pipeline_impl.h"
 
+#include "media/filters/live_edge_policy.h"
+
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "base/check.h"
+#include "base/functional/bind.h"
 #include "base/logging.h"
 
 namespace avbase::media {
@@ -140,6 +143,32 @@ void PipelineImpl::OnStatisticsUpdate(const PipelineStatistics& stats) {
   {
     base::AutoLock scoped(snapshot_lock_);
     last_stats_ = merged;
+  }
+  // Live-edge chase (docs/12 section 2.1), evaluated on the 1 s statistics
+  // tick: behind = live edge (a live stream's growing duration) minus
+  // playhead. The action is the pipeline's own two-phase skip (renderer
+  // flush + demuxer resume-from-newest), NOT a physical seek -- live
+  // containers cannot seek backward.
+  if (demuxer_ && demuxer_->IsLive() && playing_ && !seek_in_flight_) {
+    const base::TimeDelta edge =
+        base::TimeDelta::FromMicroseconds(duration_micros_.load());
+    const base::TimeDelta behind = edge - GetMediaTime();
+    if (ShouldChaseToLiveEdge(behind)) {
+      const base::TimeDelta target =
+          LiveEdgePolicy::SuggestedTarget(edge, latency_hint_);
+      LOG(WARNING) << "ijkpp.pipeline: live chase, behind="
+                   << behind.InMillisecondsF() << "ms, skipping to "
+                   << target.InSecondsF() << "s";
+      seek_in_flight_ = true;
+      seek_time_ = target;
+      seek_demuxer_done_ = false;
+      seek_renderer_flushed_ = false;
+      renderer_->Flush(base::BindOnce(&PipelineImpl::OnRendererFlushed,
+                                      base::Unretained(this)));
+      demuxer_->StartPlayingFrom(
+          target, base::BindOnce(&PipelineImpl::OnSeekDemuxerDone,
+                                 base::Unretained(this)));
+    }
   }
   client_->OnStatisticsUpdate(merged);
 }

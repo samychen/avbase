@@ -63,6 +63,13 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   // pipeline (Player::Impl owns it via Deps).
   void SetSource(DataSourceDescriptor source, DemuxerOptions options);
   void SetTickClock(const base::TickClock* clock);
+  // Self-initiated live-edge fast-forward (docs/12 §2.1): when a live
+  // source's playhead falls further behind the edge than the latency hint,
+  // the pipeline drops its buffers and skips to the edge. Not a demuxer
+  // seek: live containers cannot seek backward; the "skip" is a generation
+  // bump plus resume-from-newest.
+  bool ShouldChaseToLiveEdge(base::TimeDelta behind) const;
+
   // The shared clock controller; the facade constructs it per playback and
   // hands the same instance to the renderer factory, so the master clock has
   // exactly one owner chain and GetMediaTime() survives renderer teardown.
@@ -204,6 +211,7 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   // media sequence while any thread may read them.
   std::atomic<int64_t> duration_micros_{0};
   std::atomic<int64_t> buffered_micros_{0};
+  base::TimeDelta latency_hint_ = base::Milliseconds(3000);
   std::atomic<bool> seekable_{false};
   mutable base::Lock snapshot_lock_;
   PipelineStatistics last_stats_ GUARDED_BY(snapshot_lock_);
