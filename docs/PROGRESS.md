@@ -15,6 +15,21 @@ ffmpeg 439/439、no-ffmpeg 376/376、asan 439/439 连续两轮全绿，invariant
 （282 文件）。
 > 第十七轮：Phase 4.2 字幕文本腿——kText 轨选择与 TimedText 事件
 
+## 第十九轮（本轮）：LiveDataSource——直播字节源基建（docs/12 §2.2 前半）
+
+`media/filters/live_data_source.{h,cc}`：可增长的直播字节源——生产者 `Append()`
+（网络回调/测试 rig），消费者经 DataSource 桥顺序读，**在直播边缘阻塞等待**；
+`Close()` 把边缘变成 EOF；`Abort()` 以 10ms 分片及时解锁（Δ15）。三个语义决定：
+**部分读立即返回**（直播消费者不能等可能永远不来的整段——只读请求超出已有字节且
+未 Close 时若整读阻塞会饿死）；非 seekable + streaming（mpegts 组合，可自动化）；
+异步 Read 走私有 worker（契约：回调绝不内联）。6 个单测（模式校验/边缘阻塞直至
+生产者追加/部分读不等待/Close 变 EOF/Abort 界定等待/异步投递），无 FFmpeg 依赖走
+no-ffmpeg 门禁。
+
+过程坑（更名轮的连锁）：导出宏已是 `AVBASE_MEDIA_EXPORT`、命名空间已是
+`avbase::media`、filters 列表是手写的（base/legacy/renderers 才 GLOB）、
+ConditionVariable 需显式以锁地址构造——四处全部撞了一遍。
+
 ## 第十八轮（本轮）：Phase 4.5 开篇——libFuzzer 目标 · 确定性驱动 · CI smoke
 
 依据 avbase 升级计划 Phase 4.5（"对 platform/ffmpeg 输入做结构模糊，语料入库常跑"）。

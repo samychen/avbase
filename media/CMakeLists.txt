@@ -28,6 +28,7 @@ add_library(avbase_media
     filters/audio_renderer_impl.cc
     filters/audio_renderer_ring.cc
     filters/decoder_selector.cc
+    filters/live_data_source.cc
     filters/decoder_stream.cc
     filters/null_audio_sink.cc
     filters/null_video_sink.cc
