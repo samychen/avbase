@@ -285,13 +285,34 @@ TEST_F(PipelineVideoTrackTest, DemuxerEnumeratesBothVideoTracks) {
 //
 // So the handover mechanics are sound and the OUTPUT DOES NOT RESUME. The
 // open questions, in the order I would check them:
-//   1. does the replacement ever get SetMasterClock? PushMasterClock targets
-//      video_ and is re-armed on a 10 ms loop, so it should -- but only if
-//      rendering_ is still true, which the handover reads once at the start;
-//   2. is the replacement's StartPlayingFrom landing BEFORE its Initialize
-//      callback, i.e. is the S3 post order actually preserved;
-//   3. is the new stream actually being demuxed into, given
-//      SetActiveStream runs before the handover rather than after.
+// MEASURED, by instrumenting VideoRendererImpl and reading the log: the
+// replacement IS started and DOES pump -- exactly ONCE per handover, then never
+// again. Two renderers, two handovers, two single PumpDecoder calls and no
+// continuation.
+//
+//   probe: StartPlayingFrom renderer=0x...6400 initialized=1 stopping=0
+//   probe: PumpDecoder        renderer=0x...6400
+//   probe: StartPlayingFrom renderer=0x...6800 initialized=1 stopping=0
+//   probe: PumpDecoder        renderer=0x...6800
+//
+// So StartPlayingFrom lands (initialized and not stopping), and the pump arms
+// -- but the Read it issues never completes, because VideoRendererImpl only
+// re-posts the pump when a frame comes back. THAT is the symptom: the new
+// stream never delivers a buffer, i.e. the demux loop is not feeding it.
+//
+// Hypothesis 1 is RULED OUT (checked by reading, not by experiment):
+// PushMasterClock posts SetMasterClock to video_.get() on a 10 ms loop that
+// re-arms while initialized_ && !ended_, so after the swap the target IS the
+// replacement and it is being driven. Do not re-check this one.
+//
+//   NEXT: the demux loop. SetActiveStream runs BEFORE the handover, so from
+//      that moment the demuxer routes to the new stream while the old
+//      renderer's read is still outstanding. The demuxer drops packets for a
+//      non-active stream, so that alone should not wedge it -- but something
+//      between the demux loop and the new stream's queue is not completing the
+//      new Read. Log in FFmpegDemuxer::ReadAndRouteOnePacket and in
+//      FFmpegDemuxerStream::Read for the new stream index, and check whether
+//      the loop is still turning at all after the switch.
 //
 // Until one of those is answered, "the switch returned success" and "the
 // picture came back" are different claims, and only the first is tested.
