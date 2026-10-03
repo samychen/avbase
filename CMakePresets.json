@@ -71,6 +71,15 @@
       }
     },
     {
+      "name": "macos-sdl2",
+      "inherits": "default",
+      "displayName": "macOS windowed player (SDL2); see docs/12 4.2",
+      "cacheVariables": {
+        "AVBASE_ENABLE_FFMPEG": "ON",
+        "AVBASE_ENABLE_SDL2": "ON"
+      }
+    },
+    {
       "name": "linux-native",
       "inherits": "default",
       "cacheVariables": {
@@ -163,6 +172,13 @@
     {
       "name": "linux-sdl2",
       "configurePreset": "linux-sdl2",
+      "targets": [
+        "play_sdl2"
+      ]
+    },
+    {
+      "name": "macos-sdl2",
+      "configurePreset": "macos-sdl2",
       "targets": [
         "play_sdl2"
       ]

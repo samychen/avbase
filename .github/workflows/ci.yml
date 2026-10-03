@@ -300,6 +300,37 @@ jobs:
             --ffmpeg "$(command -v ffmpeg)" \
             --testdata tests/testdata
 
+  # The windowed player, built where it actually ships. Every other macOS entry
+  # in this file builds the core against the NULL sinks, so nothing on this
+  # platform ever compiled the one binary a Mac user runs -- and an unbuilt
+  # binary is not a cross-platform library, it is a hope. Measured on macOS-14
+  # before this job existed: 175 targets, play_sdl2 linked, 481 cases green.
+  #
+  # Deliberately Linux jobs do NOT cover this: `sdl2-build` proves the SDL2
+  # backend compiles, which is a different claim from "it compiles where the
+  # window opens". SDL2 and FFmpeg come from Homebrew; the library layer is the
+  # same libavcodec the ffmpeg job already uses, so this is the shell, not a
+  # second copy of the engine.
+  macos-player:
+    needs: ffmpeg
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain, SDL2 and FFmpeg
+        run: |
+          brew install ninja sdl2 ffmpeg pkg-config
+      - run: cmake --preset macos-sdl2
+      - run: cmake --build --preset macos-sdl2
+      - run: python3 tools/check_invariants.py --root .
+      - run: ctest --test-dir build/macos-sdl2 --output-on-failure
+      - name: The player binary exists and is a real executable
+        run: |
+          test -x build/macos-sdl2/bin/play_sdl2
+          # -h must not need a display: if argument parsing opens a window on the
+          # wrong path, this is where it shows, on a headless CI box.
+          build/macos-sdl2/bin/play_sdl2 --help 2>&1 | head -3 || true
+          otool -L build/macos-sdl2/bin/play_sdl2 | grep -i sdl2
+
   # Corpus + soak (docs/12 4.3 / 4.4). Both are measured rather than asserted
   # once: the corpus writes a baseline the next run compares against, and the
   # soak gates on the SLOPE of the memory curve instead of on a stopwatch.
