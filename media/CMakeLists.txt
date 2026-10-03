@@ -7,10 +7,10 @@
 # -- every .cc there belongs to avbase_media, and none is selected per platform
 # or per build option, so a new file needs no edit here. filters/ stays a
 # hand-written list for the opposite reason: it holds the core filters next to
-# the five ffmpeg_*.cc that only avbase_platform_ffmpeg may compile (G2), and a
-# glob there would sweep libav* into the core target. Invariant C25 fails the
-# gate when a .cc lands in no target at all, so "forgot to list it" cannot stay
-# silent.
+# the ffmpeg_*.cc files that only avbase_platform_ffmpeg may compile (G2), and
+# a glob there would sweep libav* into the core target. Invariant C25 fails
+# the gate when a .cc lands in no target at all, so "forgot to list it" cannot
+# stay silent.
 file(GLOB AVBASE_MEDIA_BASE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/base/*.cc")
 file(GLOB AVBASE_MEDIA_LEGACY_SOURCES CONFIGURE_DEPENDS

@@ -83,7 +83,7 @@ void RendererImpl::EndAccurateSeek() {
   if (accurate_reached_cb_) {
     deps_.media_task_runner->PostTask(
         FROM_HERE, base::BindOnce(&RendererImpl::OnAccurateSeekTargetReached,
-                                  base::Unretained(this)));
+                                  weak_factory_.GetWeakPtr()));
   }
   if (video_) {
     deps_.video_task_runner->PostTask(
@@ -105,16 +105,21 @@ void RendererImpl::OnVideoFramePresented(base::TimeDelta timestamp,
   if (target > 0 && timestamp >= base::TimeDelta::FromMicroseconds(target)) {
     deps_.media_task_runner->PostTask(
         FROM_HERE, base::BindOnce(&RendererImpl::OnAccurateSeekTargetReached,
-                                  base::Unretained(this)));
+                                  weak_factory_.GetWeakPtr()));
   }
   // The recovery edge must not depend on the 10 ms sampler either: a frame
   // just left for the display, which is exactly when starvation may have
   // ended. 30 hops/s is nothing; a missed kHaveEnough leaves the facade's
   // HWM stuck mid-cycle.
+  //
+  // S6 posting into S1 is the same shape as the ended/init hops in
+  // renderer_impl.cc, and gets the same weak binding: a frame handed to the
+  // display just before teardown must not be able to name a destroyed
+  // renderer.
   deps_.media_task_runner->PostTask(
       FROM_HERE,
       base::BindOnce(&RendererImpl::CheckBufferingTransitions,
-                     base::Unretained(this)));
+                     weak_factory_.GetWeakPtr()));
 }
 
 void RendererImpl::OnAccurateSeekTargetReached() {

@@ -49,7 +49,10 @@ LINE_LIMIT_ALLOWLIST = {
               "media/filters/ffmpeg_demuxer.cc is ~2500 lines for the same "
               "job; splitting ours by line count would scatter one contiguous "
               "AVFormatContext lifecycle across files, which is how "
-              "use-after-free bugs get introduced."),
+              "use-after-free bugs get introduced. Track selection and the "
+              "text leg were split out to ffmpeg_demuxer_track_select.cc "
+              "(1137 -> 1080), so this ceiling is now ratcheted: it may only "
+              "move down."),
     "media/filters/legacy/video_frame_compositor.cc": (
         700, "Port of ffplay video_refresh(); splitting it would obscure the "
              "provenance comments that map each branch to the original. "

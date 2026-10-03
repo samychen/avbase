@@ -27,7 +27,8 @@ endif()
 if(AVBASE_ENABLE_FFMPEG)
   # ffmpeg/ qualifies for a glob: every .cc in it belongs to this one target and
   # none is selected per platform (av_includes.h absorbs version differences).
-  # The five ffmpeg_*.cc below are the half that cannot be globbed -- they live
+  # The ffmpeg_*.cc files listed below are the half that cannot be globbed --
+  # they live
   # in media/filters/ beside the core filters, which is why that directory stays
   # a hand-written list in media/CMakeLists.txt. docs/06 §7.6.
   file(GLOB AVBASE_FFMPEG_DIR_SOURCES CONFIGURE_DEPENDS
@@ -36,6 +37,7 @@ if(AVBASE_ENABLE_FFMPEG)
       ${AVBASE_FFMPEG_DIR_SOURCES}
       ../media/filters/ffmpeg_glue.cc
       ../media/filters/ffmpeg_demuxer.cc
+      ../media/filters/ffmpeg_demuxer_track_select.cc
       ../media/filters/ffmpeg_audio_decoder.cc
       ../media/filters/ffmpeg_video_decoder.cc
       ../media/filters/ffmpeg_decoder_factories.cc

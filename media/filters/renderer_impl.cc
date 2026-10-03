@@ -227,18 +227,28 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
   }
 }
 
+// The two ended hops, and the two init hops below, are the class-level
+// closure of the "task outlives its target" race for this class. They used to
+// be Unretained, which made the renderer's destruction depend on every
+// in-flight hop having already run -- a property no caller can establish, and
+// which the suites could only approximate by waiting for the whole S1 queue to
+// go quiet (tests/unit/media_filters/renderer_impl_unittest.cc, where a test
+// that never reached EOS sat in that wait for its full 15 s ceiling). Binding
+// the WeakPtr moves the guarantee into the binding layer: a hop that runs after
+// ~RendererImpl is a no-op instead of a use-after-free, so teardown no longer
+// has to be timed.
 void RendererImpl::PostVideoEnded() {
   deps_.media_task_runner->PostTask(
       FROM_HERE,
       base::BindOnce(&RendererImpl::OnVideoStreamEnded,
-                     base::Unretained(this)));
+                     weak_factory_.GetWeakPtr()));
 }
 
 void RendererImpl::PostAudioEnded() {
   deps_.media_task_runner->PostTask(
       FROM_HERE,
       base::BindOnce(&RendererImpl::OnAudioStreamEnded,
-                     base::Unretained(this)));
+                     weak_factory_.GetWeakPtr()));
 }
 
 void RendererImpl::OnVideoStreamEnded() {
@@ -295,13 +305,13 @@ void RendererImpl::CheckForEnded() {
 void RendererImpl::PostVideoInitialized(PipelineStatus status) {
   deps_.media_task_runner->PostTask(
       FROM_HERE, base::BindOnce(&RendererImpl::OnVideoInitialized,
-                                base::Unretained(this), status));
+                                weak_factory_.GetWeakPtr(), status));
 }
 
 void RendererImpl::PostAudioInitialized(PipelineStatus status) {
   deps_.media_task_runner->PostTask(
       FROM_HERE, base::BindOnce(&RendererImpl::OnAudioInitialized,
-                                base::Unretained(this), status));
+                                weak_factory_.GetWeakPtr(), status));
 }
 
 void RendererImpl::OnVideoInitialized(PipelineStatus status) {

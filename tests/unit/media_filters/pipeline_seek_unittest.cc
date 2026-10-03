@@ -287,7 +287,8 @@ TEST_F(PipelineSeekTest, LiveSourceChasesToTheEdge) {
   // duration - hint/2 = 9 s. Poll until the playhead is past 8.5 s.
   ASSERT_TRUE(PumpUntil([this] {
     PumpRound();
-    return pipeline_->GetMediaTime() >= base::Seconds(8) + base::Milliseconds(500);
+    return pipeline_->GetMediaTime() >=
+           base::Seconds(8) + base::Milliseconds(500);
   })) << "the playhead never chased to the live edge; media_time="
       << pipeline_->GetMediaTime().ToString() << "; events:\n"
       << client_.EventLog();

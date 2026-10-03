@@ -67,6 +67,11 @@ class PipelineTestFixture : public ::testing::Test {
  protected:
   static constexpr int kFramesPerBuffer = 256;
   static constexpr int kAudioChannels = 2;
+  // Media time one pump round consumes: three audio device periods of
+  // kFramesPerBuffer at 48 kHz. 3 * 256 / 48000 = 16 ms, which is also one
+  // display interval at 60 Hz -- the two endpoints advance together in a
+  // real player, so a realtime-paced round advances both by the same amount.
+  static constexpr int kRealtimeRoundMs = 16;
   static constexpr auto kWaitTimeout = std::chrono::seconds(60);
 
   explicit PipelineTestFixture(bool ffmpeg_mode) : ffmpeg_mode_(ffmpeg_mode) {}
@@ -135,14 +140,25 @@ class PipelineTestFixture : public ::testing::Test {
   test::SyntheticSpec spec_;
   // Member, not a local: MemoryDataSource references the bytes without
   // copying them, so a local vector would dangle the moment the builder
-  // returned.
+  // returned. The same hazard applies to REASSIGNING it, which is why
+  // StartPipeline() below loads only when it is still empty.
   std::vector<uint8_t> media_bytes_;
 
   // Loads |media_file_| into |media_bytes_| for tests that wrap the source
   // (throttled sources etc.) before calling StartPipeline(custom).
+  //
+  // Idempotent on purpose. A test that wraps the bytes builds its
+  // MemoryDataSource over media_bytes_.data() and then calls
+  // StartPipeline(custom_source); if the fixture reloaded the file at that
+  // point, the vector would reallocate and every pointer the caller already
+  // held would dangle. The throttle suite hit exactly that -- reading freed
+  // memory, which FFmpeg duly reported as 46 rounds of "Invalid data found
+  // when processing input" and the suite misread as a pacing bug.
   void LoadMediaBytes() {
 #if AVBASE_PIPELINE_FIXTURE_HAS_TESTDATA
-    media_bytes_ = ReadMediaFile(media_file_.c_str());
+    if (media_bytes_.empty()) {
+      media_bytes_ = ReadMediaFile(media_file_.c_str());
+    }
 #endif
   }
 
@@ -186,7 +202,12 @@ class PipelineTestFixture : public ::testing::Test {
     pipeline_->SetClock(av_sync_);
     if (ffmpeg_mode_) {
 #if AVBASE_ENABLE_FFMPEG && AVBASE_PIPELINE_FIXTURE_HAS_TESTDATA
-      media_bytes_ = ReadMediaFile(media_file_.c_str());
+      // Load only when nobody has yet: a caller that wrapped the bytes (see
+      // LoadMediaBytes) is holding pointers INTO media_bytes_, and
+      // reassigning the vector here would reallocate it out from under them.
+      if (media_bytes_.empty()) {
+        media_bytes_ = ReadMediaFile(media_file_.c_str());
+      }
       ASSERT_GT(media_bytes_.size(), 10000u)
           << "testdata file too small: " << media_file_;
       auto source = base::MakeRefCounted<MemoryDataSource>(
@@ -236,6 +257,49 @@ class PipelineTestFixture : public ::testing::Test {
       return 0;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(4));
+    return PullOneInterval();
+  }
+
+  // The same pull, but paced so that WALL time tracks MEDIA time -- a device
+  // and a display consume at the rate the content runs, and the shared
+  // PumpRound deliberately does not (see its 4 ms note above).
+  //
+  // Why the throttle suite needs it: a throttled DataSource refills at its
+  // configured byte rate, so a pump that drains three audio periods per 4 ms
+  // (~4x realtime) empties the queues far faster than the source can fill
+  // them. Playback then ends in permanent starvation and kHaveEnough is
+  // unreachable -- the recovery edge the test is asserting cannot occur at any
+  // speed the fixture can assert deterministically. Pacing the pull to the
+  // media clock makes consumption and refill comparable, which is the regime
+  // a stall-recovery cycle actually lives in.
+  //
+  // |media_per_round| is how much media time one round consumes (three audio
+  // periods of kFramesPerBuffer at 48 kHz = 16 ms by default). The sleep is
+  // computed from the round's own media cost, so the caller does not have to
+  // restate the audio parameters.
+  int PumpRoundRealtime(int media_ms_per_round = kRealtimeRoundMs) {
+    env_.RunUntilIdle();
+    if (!pipeline_ || !pipeline_->IsRunning()) {
+      return 0;
+    }
+    const auto start = std::chrono::steady_clock::now();
+    const int frames = PullOneInterval();
+    // Pace to the media cost, minus what the pull itself already took, so a
+    // slow round does not push the schedule permanently behind. Never
+    // negative: a round that overran sleeps not at all.
+    const auto spent = std::chrono::steady_clock::now() - start;
+    const auto target =
+        std::chrono::milliseconds(media_ms_per_round) - spent;
+    if (target > std::chrono::milliseconds(0)) {
+      std::this_thread::sleep_for(target);
+    }
+    return frames;
+  }
+
+  // One display interval's worth of video plus three audio device periods,
+  // marshalled onto the render threads. Factored out of PumpRound so the
+  // realtime-paced variant pulls exactly the same work.
+  int PullOneInterval() {
     test::FakeAudioSink* audio = audio_sinks_->last_sink();
     test::FakeVideoSink* video = video_sinks_->last_sink();
     if (!audio) {

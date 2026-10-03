@@ -1053,63 +1053,6 @@ void FFmpegDemuxer::Stop() {
   pending_seek_cbs_.clear();   // Dropping these is correct: the owner is going.
 }
 
-DemuxerStream* FFmpegDemuxer::GetStream(DemuxerStreamType type) {
-  for (auto& stream : streams_) {
-    if (stream->type() == type) {
-      return stream.get();
-    }
-  }
-  return nullptr;
-}
-
-bool FFmpegDemuxer::IsActiveRoutingTarget(int index,
-                                          DemuxerStreamType type) const {
-  int active = -1;
-  if (type == DemuxerStreamType::kVideo) {
-    active = active_video_.load(std::memory_order_relaxed);
-  } else if (type == DemuxerStreamType::kAudio) {
-    active = active_audio_.load(std::memory_order_relaxed);
-  } else if (type == DemuxerStreamType::kText) {
-    active = active_text_.load(std::memory_order_relaxed);
-  }
-  return index == active;
-}
-
-std::vector<DemuxerStream*> FFmpegDemuxer::GetStreams(DemuxerStreamType type) {
-  std::vector<DemuxerStream*> out;
-  out.reserve(streams_.size());
-  for (auto& stream : streams_) {
-    if (stream->type() == type) {
-      out.push_back(stream.get());
-    }
-  }
-  return out;
-}
-
-bool FFmpegDemuxerStream::EnqueueTextFromDemuxThread(
-    base::scoped_refptr<DecoderBuffer> buffer) {
-  if (!queue_->TryPushDropOldest(std::move(buffer))) {
-    return false;   // Aborted/closed: the caller drops the packet.
-  }
-  base::AutoLock scoped(lock_);
-  FulfilPendingReadLocked();
-  return true;
-}
-
-void FFmpegDemuxer::SetActiveStream(DemuxerStreamType type,
-                                    int stream_index) {
-  // Relaxed is enough: the demux thread re-reads the value per packet, and a
-  // packet routed to the just-retired active stream around the switch is
-  // harmless (it lands in a queue whose consumer is draining or gone).
-  if (type == DemuxerStreamType::kVideo) {
-    active_video_.store(stream_index, std::memory_order_relaxed);
-  } else if (type == DemuxerStreamType::kAudio) {
-    active_audio_.store(stream_index, std::memory_order_relaxed);
-  } else if (type == DemuxerStreamType::kText) {
-    active_text_.store(stream_index, std::memory_order_relaxed);
-  }
-}
-
 DemuxerStats FFmpegDemuxer::GetStats() const {
   base::AutoLock scoped(stats_lock_);
   DemuxerStats stats = stats_;

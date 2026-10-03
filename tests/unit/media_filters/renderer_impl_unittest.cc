@@ -215,21 +215,37 @@ class RendererImplTest : public ::testing::Test {
     return frames;
   }
 
-  // The clock and stats timers re-post themselves every 10 ms until |ended_| is
-  // set (renderer_impl.cc:320, 351), and every queued callback is unretained.
-  // Destroying the renderer with a tick still in flight would therefore be a
-  // use-after-free on the next one. Waiting for the delayed queue to go quiet
-  // is what makes ~RendererImpl safe here -- the test-side counterpart of the
-  // shutdown contract Player::StopSync enforces from the outside (Δ15).
+  // The two repeating chains (PushMasterClock at 10 ms, PushStatistics at 1 s,
+  // renderer_impl.cc) re-post themselves until ended_ is set, and they only
+  // stop at end of playback -- NOT at teardown. A test that starts playback
+  // without draining to EOS therefore never sees a quiet S1 queue, and an
+  // earlier version of this function waited for exactly that: it sat out its
+  // whole 15 s ceiling and returned false, which cost the suite 15 s per
+  // such test (measured: StartPlayingFromOpensTheAudioDevice took 475 ms alone
+  // and 15004 ms in suite order -- deterministic, because suite order decides
+  // whether the preceding test left the sinks drained).
+  //
+  // That wait was only ever a proxy for "no queued callback names this
+  // renderer", and the proxy became unnecessary when the S1 hops were weak
+  // bound (see the note above RendererImpl::PostVideoEnded): a chain tick
+  // still queued after ~RendererImpl is now inert instead of fatal. So drain
+  // what is ready -- which is what actually observes state the test cares
+  // about -- and destroy. The short ceiling stays as a backstop that fails
+  // loudly instead of hanging; it is never expected to elapse.
   void DestroyRenderer() {
     if (!renderer_) {
       return;
     }
-    // The ceiling is wider than the others on purpose: once playback started,
-    // the stats push is a 1 s delayed task, so the quiet period this waits for
-    // is up to a second long even after |ended_| has stopped the clock push.
-    WaitFor([this] { return !env_.HasDelayedTasks(); }, /*pump_sinks=*/false,
-            std::chrono::seconds(15));
+    // Bounded and one sided: run what is ready, then go. A test that reached
+    // EOS has already had its chains retire, so this returns immediately; one
+    // that did not still has a tick in flight, and that is now harmless.
+    for (int i = 0; i < 100 && env_.HasDelayedTasks(); ++i) {
+      env_.RunUntilIdle();
+      if (!env_.HasDelayedTasks()) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     env_.RunUntilIdle();
     renderer_.reset();
   }

@@ -54,8 +54,23 @@ class FakePipelineClient final : public Pipeline::Client {
   }
   // True once a kHaveNothing edge reached the client (M9: the starvation
   // signal has a real trigger now; without it this stays false forever).
-  bool have_nothing() const { return have_nothing_; }
-  bool have_enough() const { return have_enough_; }
+  //
+  // These two take the lock like every other accessor. They used to read the
+  // flags bare, which was both a data race against OnBufferingStateChange
+  // (the pipeline-level suites poll them from the test thread while the media
+  // sequence writes) and the direct cause of a throttle-suite misread: the
+  // RECOVER edge had already arrived -- it is in the event log -- and the
+  // unsynchronised read kept returning the stale value, so the test waited out
+  // its whole timeout and reported "no kHaveEnough" for a cycle that had
+  // actually happened.
+  bool have_nothing() const {
+    std::scoped_lock scoped(lock_);
+    return have_nothing_;
+  }
+  bool have_enough() const {
+    std::scoped_lock scoped(lock_);
+    return have_enough_;
+  }
   int buffering_count() const {
     std::scoped_lock scoped(lock_);
     return buffering_count_;
