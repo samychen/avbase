@@ -1,0 +1,38 @@
+{
+  "core": {
+    "branch": 58.78872258962757,
+    "line": 75.47507265817124
+  },
+  "modules": {
+    "base/": {
+      "branch": 67.12328767123287,
+      "line": 93.52226720647774
+    },
+    "media/base/": {
+      "branch": 62.29050279329609,
+      "line": 67.68100734522561
+    },
+    "media/filters/": {
+      "branch": 56.32458233890215,
+      "line": 75.6544502617801
+    },
+    "media/filters/ffmpeg_": {
+      "branch": 52.287581699346404,
+      "line": 72.88686605981795
+    },
+    "player/": {
+      "branch": 70.0,
+      "line": 88.52459016393442
+    }
+  },
+  "per_file": {
+    "media/filters/legacy/av_sync_controller.cc": {
+      "branch": 80.32786885245902,
+      "line": 96.36363636363636
+    },
+    "media/filters/legacy/video_frame_compositor.cc": {
+      "branch": 86.88524590163935,
+      "line": 85.3211009174312
+    }
+  }
+}

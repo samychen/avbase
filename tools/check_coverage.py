@@ -15,12 +15,26 @@ construction. This script is the difference between reporting a number and
 holding a line.
 
 USAGE
-    tools/check_coverage.py --info <cov.info> [--baseline <file>]
+    tools/check_coverage.py --info <cov.info> [--baseline <file>] [--ratchet]
 
     --info      an lcov tracefile (what `lcov --capture` writes)
-    --baseline  optional JSON of recorded per-module coverage, written on a
-                passing run. Used only to report IMPROVEMENT; the thresholds
-                are absolute and never relaxed from a baseline.
+    --baseline  JSON of recorded per-module coverage, written after the run.
+    --ratchet   enforce the recorded baseline as a FLOOR (fail on any
+                regression) instead of the absolute docs/07 §12 thresholds.
+
+TWO MODES, AND WHY THE SECOND ONE EXISTS
+    Default (absolute) is the spec's executable form: it fails until every
+    module reaches its docs/07 §12 number. That is the target state.
+
+    --ratchet is how you get there without shipping a red pipeline. It holds
+    today's measured numbers as the floor, so coverage can only go up, and
+    prints how far each module still is from spec. It is a TEMPORARY mode: the
+    moment a module reaches its docs/07 §12 number the ratchet is redundant
+    for it, and the gate should be switched back to absolute.
+
+    The reason this is not "just make the numbers smaller": the spec
+    thresholds are still printed on every ratchet run and still enforced in
+    absolute mode, so the gap stays visible instead of being normalised away.
 
 EXIT CODES
     0  every threshold met
@@ -205,11 +219,41 @@ def collect(modules, root):
     return buckets, per_file, core
 
 
+def _fmt(value):
+    return "n/a" if value is None else "%g" % value
+
+
+def _lookup(previous, label):
+    """Reads one entry out of a baseline snapshot.
+
+    |label| carries the "* " display prefix for per-file rules, so it is
+    stripped before the lookup -- otherwise every per-file rule would miss its
+    own baseline and be reported as new, silently disabling the ratchet for
+    exactly the two files docs/07 §12 cares most about.
+    """
+    if not previous:
+        return None
+    key = label[2:] if label.startswith("* ") else label
+    if key.endswith(".cc"):
+        entry = (previous.get("per_file") or {}).get(key)
+    else:
+        entry = (previous.get("modules") or {}).get(key)
+    if entry is None:
+        return None
+    if isinstance(entry, dict):
+        return entry
+    # An older snapshot recorded a bare float for the line percentage.
+    return {"line": entry, "branch": None}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--info", required=True, help="lcov tracefile")
     parser.add_argument("--root", default=os.getcwd())
     parser.add_argument("--baseline")
+    parser.add_argument("--ratchet", action="store_true",
+                        help="enforce the recorded baseline as a floor instead "
+                             "of the docs/07 §12 absolute thresholds")
     args = parser.parse_args()
 
     if not os.path.exists(args.info):
@@ -229,6 +273,10 @@ def main():
     print("check_coverage: docs/07 section 12 thresholds")
     print("")
 
+    # One flat list of everything judged, so the two modes below differ only in
+    # the comparison they apply and not in what they walk. Absolute mode asks
+    # "did we reach the spec"; ratchet mode asks "did we lose ground".
+    judged = []
     ordered = sorted(THRESHOLDS.items(), key=lambda kv: -len(kv[0]))
     for prefix, (min_line, min_branch) in ordered:
         if prefix.endswith(".cc"):
@@ -241,86 +289,122 @@ def main():
                 "%s: no instrumented file under this prefix in this build -- "
                 "threshold NOT checked" % prefix)
             continue
-        line = cov.line_pct()
-        status = "ok"
-        if line + 1e-9 < min_line:
-            status = "FAIL"
-            failures.append("%s: line %.1f%% < %.1f%%" % (prefix, line, min_line))
-        branch_text = "  n/a"
-        if min_branch is not None and cov.br_found:
-            branch = cov.branch_pct()
-            branch_text = "%6.1f%%" % branch
-            if branch + 1e-9 < min_branch:
-                status = "FAIL"
-                failures.append(
-                    "%s: branch %.1f%% < %.1f%%" % (prefix, branch, min_branch))
-        print("  %-42s line %6.1f%% (>=%d)  branch %s   %s"
-              % (prefix, line, min_line, branch_text, status))
+        judged.append((prefix, cov, min_line, min_branch))
 
     for path, cov in per_file.items():
         if cov.files == 0:
             # This is the failure mode the THRESHOLDS comment warns about.
-            # A named file that never appears is either a stale path or a file
-            # the preset never built; either way the rule is not being held, and
-            # saying nothing about it is the one thing that must not happen.
+        # A named file that never appears is either a stale path or a file
+        # the preset never built; either way the rule is not being held, and
+        # saying nothing about it is the one thing that must not happen.
             failures.append(
                 "%s: per-file threshold matched no instrumented file -- the "
                 "path in docs/07 §12 is stale, or the coverage preset does not "
                 "build it" % path)
             continue
-        line = cov.line_pct()
         min_line, min_branch = THRESHOLDS[path]
-        status = "ok"
-        if line + 1e-9 < min_line:
-            status = "FAIL"
-            failures.append("%s: line %.1f%% < %.1f%%" % (path, line, min_line))
+        judged.append(("* " + path, cov, min_line, min_branch))
+
+    previous = None
+    if args.baseline and os.path.exists(args.baseline):
+        try:
+            with open(args.baseline, "r", encoding="utf-8") as handle:
+                previous = json.load(handle)
+        except (ValueError, OSError):
+            previous = None
+
+    for label, cov, min_line, min_branch in judged:
+        line = cov.line_pct()
         branch_text = "  n/a"
-        if cov.br_found and min_branch is not None:
+        branch = None
+        if cov.br_found:
             branch = cov.branch_pct()
             branch_text = "%6.1f%%" % branch
-            if branch + 1e-9 < min_branch:
+
+        status = "ok"
+        gap = ""
+        if args.ratchet:
+            before = _lookup(previous, label)
+            if before is None:
+                # Not recorded yet: today's number becomes the floor. Failing
+                # here would mean a new module can never appear.
+                gap = "  (new: recorded as the floor)"
+            else:
+                if line + 1e-9 < (before or {}).get("line", line):
+                    status = "FAIL"
+                    failures.append(
+                        "%s: line %.1f%% regressed from %.1f%%"
+                        % (label, line, before["line"]))
+                if (branch is not None and before
+                        and before.get("branch") is not None
+                        and branch + 1e-9 < before["branch"]):
+                    status = "FAIL"
+                    failures.append(
+                        "%s: branch %.1f%% regressed from %.1f%%"
+                        % (label, branch, before["branch"]))
+                if before:
+                    gap = "  (spec: line >=%g, branch >=%s)"
+                    gap = gap % (min_line, _fmt(min_branch))
+        else:
+            if line + 1e-9 < min_line:
                 status = "FAIL"
-                failures.append(
-                    "%s: branch %.1f%% < %.1f%%" % (path, branch, min_branch))
-        print("  %-42s line %6.1f%% (>=%d)  branch %s   %s"
-              % ("* " + path, line, min_line, branch_text, status))
+                failures.append("%s: line %.1f%% < %.1f%%"
+                                % (label, line, min_line))
+            if branch is not None and min_branch is not None:
+                if branch + 1e-9 < min_branch:
+                    status = "FAIL"
+                    failures.append("%s: branch %.1f%% < %.1f%%"
+                                    % (label, branch, min_branch))
+
+        print("  %-42s line %6.1f%% (>=%d)  branch %s   %s%s"
+              % (label, line, min_line, branch_text, status, gap))
 
     core_line = core.line_pct()
+    core_branch = core.branch_pct() if core.br_found else None
+    core_branch_text = "%6.1f%%" % core_branch if core.br_found else "  n/a"
     core_status = "ok"
-    if core_line + 1e-9 < CORE_OVERALL[0]:
-        core_status = "FAIL"
-        failures.append(
-            "core overall: line %.1f%% < %.1f%%" % (core_line, CORE_OVERALL[0]))
-    core_branch_text = "  n/a"
-    if core.br_found:
-        core_branch = core.branch_pct()
-        core_branch_text = "%6.1f%%" % core_branch
-        if core_branch + 1e-9 < CORE_OVERALL[1]:
+    core_gap = ""
+    if args.ratchet:
+        before = (previous or {}).get("core")
+        if before is None:
+            core_gap = "  (new: recorded as the floor)"
+        else:
+            if core_line + 1e-9 < before.get("line", core_line):
+                core_status = "FAIL"
+                failures.append("core overall: line %.1f%% regressed from %.1f%%"
+                                % (core_line, before["line"]))
+            if (core_branch is not None and before.get("branch") is not None
+                    and core_branch + 1e-9 < before["branch"]):
+                core_status = "FAIL"
+                failures.append("core overall: branch %.1f%% regressed from %.1f%%"
+                                % (core_branch, before["branch"]))
+            core_gap = "  (spec: line >=%g, branch >=%g)" % CORE_OVERALL
+    else:
+        if core_line + 1e-9 < CORE_OVERALL[0]:
             core_status = "FAIL"
-            failures.append(
-                "core overall: branch %.1f%% < %.1f%%"
-                % (core_branch, CORE_OVERALL[1]))
-    print("  %-42s line %6.1f%% (>=%d)  branch %s   %s"
+            failures.append("core overall: line %.1f%% < %.1f%%"
+                            % (core_line, CORE_OVERALL[0]))
+        if core_branch is not None and core_branch + 1e-9 < CORE_OVERALL[1]:
+            core_status = "FAIL"
+            failures.append("core overall: branch %.1f%% < %.1f%%"
+                            % (core_branch, CORE_OVERALL[1]))
+    print("  %-42s line %6.1f%% (>=%d)  branch %s   %s%s"
           % ("CORE OVERALL (excl. sdl2/linux)", core_line, CORE_OVERALL[0],
-             core_branch_text, core_status))
+             core_branch_text, core_status, core_gap))
 
     if args.baseline:
+        # Both metrics are recorded, not just line: a ratchet that only watches
+        # lines would let branch coverage fall away unnoticed, and branch is
+        # where the sync and error paths live.
         snapshot = {
-            "core_line": core_line,
-            "modules": {k: v.line_pct() for k, v in buckets.items() if v.files},
+            "core": {"line": core_line, "branch": core_branch},
+            "modules": {
+                k: {"line": v.line_pct(), "branch": v.branch_pct()}
+                for k, v in buckets.items() if v.files},
+            "per_file": {
+                k: {"line": v.line_pct(), "branch": v.branch_pct()}
+                for k, v in per_file.items() if v.files},
         }
-        previous = None
-        if os.path.exists(args.baseline):
-            try:
-                with open(args.baseline, "r", encoding="utf-8") as handle:
-                    previous = json.load(handle)
-            except (ValueError, OSError):
-                previous = None
-        if previous and "core_line" in previous:
-            delta = core_line - previous["core_line"]
-            print("")
-            print("  core line coverage %+.1f%% vs recorded baseline"
-                  % delta)
         try:
             with open(args.baseline, "w", encoding="utf-8") as handle:
                 json.dump(snapshot, handle, indent=2, sort_keys=True)

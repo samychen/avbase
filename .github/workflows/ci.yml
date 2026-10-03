@@ -161,7 +161,7 @@ jobs:
       - run: |
           if [ "${{ runner.os }}" = "Linux" ]; then
             sudo apt-get update
-            sudo apt-get install -y ninja-build python3 lcov
+            sudo apt-get install -y ninja-build python3
           else
             brew install ninja python3
             if [ "${{ matrix.preset }}" = "ffmpeg" ]; then
@@ -174,9 +174,16 @@ jobs:
       - run: ctest --test-dir build/${{ matrix.preset }} --output-on-failure
       - if: matrix.label == 'coverage'
         run: |
-          lcov --capture --directory build/coverage -o cov.info \
-               --exclude '*/tests/*' --exclude '*/third_party/*' || true
-          lcov --summary cov.info || true
+          # The tracefile is produced by tools/gcov_to_lcov.py on EVERY
+          # platform, including Linux where lcov is also installed. One
+          # producer is deliberate: the ratchet compares today's numbers
+          # against coverage_baseline.json, and two different producers
+          # (lcov vs gcov) disagree on branch accounting and path spelling
+          # enough to manufacture phantom regressions.
+          python3 tools/gcov_to_lcov.py --root build/coverage --source . \
+              -o cov.info --exclude 'third_party/'
+          python3 tools/check_coverage.py --info cov.info \
+              --baseline coverage_baseline.json --ratchet
 
   # Still a stub, and enabling it is the milestone's job: G12/A16 ask for both
   # Linux backends playing 1080p30 under xvfb + llvmpipe, which needs the
