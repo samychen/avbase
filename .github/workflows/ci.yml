@@ -282,14 +282,12 @@ jobs:
             libswscale-dev libswresample-dev
       - run: cmake --preset ffmpeg
       - run: cmake --build --preset ffmpeg
-      # A crash is a defect on its own, not only as a regression, so this gate
-      # is red today. That is deliberate and is the opposite of R12's "never
-      # ship a red gate": R12 is about not opening a gate that fails for
-      # avoidable reasons, and these files are already broken. Leaving this
-      # non-blocking until the shutdown race is fixed would mean the first
-      # person to fix it cannot prove they did.
+      # BLOCKING as of this commit. It was continue-on-error while the shutdown
+      # race was open; that race is fixed (0 crashes over 29 samples, three
+      # consecutive runs), so the gate can go green and a regression can now
+      # actually block. Leaving it non-blocking after the fix would mean the
+      # next regression is reported by a person rather than by CI.
       - name: Dimensional corpus and its four metrics
-        continue-on-error: true
         run: |
           python3 tools/check_corpus.py \
             --headless build/ffmpeg/bin/headless \
