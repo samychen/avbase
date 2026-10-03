@@ -2,7 +2,37 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// DISABLED, and the reason is specific: the harness hangs, not the assertions.
+// DISABLED, but NOT for the original reason any more, and the difference is
+// the useful part.
+//
+// THE HANG IS FIXED. The suite used to declare its OWN S3/S4, build its own
+// DefaultRendererFactory and drive its own pump, while inheriting a fixture
+// whose pump drives a DIFFERENT pair. It now goes through the base fixture's
+// StartPipeline() and PumpRound() like every other pipeline suite -- the fix
+// this file's own header recommended two commits ago and I had not applied.
+//
+// It runs now, and the numbers say something new:
+//     presented 30 frames after 3.56 s of a 10 s clip (expected 300 +/- 2)
+//     emitted 74752 samples of 480000
+// So it is not losing frames to a broken pipeline. The SYNTHETIC demuxer hands
+// out packets as fast as the decoder asks, with no relation to the wall clock,
+// so the media clock runs AHEAD of real time (3.56 s of media in ~2.5 s of
+// wall) and the compositor -- correctly -- presents only the frames the master
+// clock says are due. The count is low because the SOURCE races, not because
+// frames go missing.
+//
+// That makes these assertions a statement about how the synthetic source is
+// paced, not about the pipeline: "10 s of media produces 300 frames" is only
+// true if the source is fed at 1x. Fixing it means pacing the synthetic demuxer
+// to the clock (the same lesson the throttle suite learned the hard way: a
+// fixed-rate fake cannot express a real-time regime), which is a change to the
+// SYNTHETIC SOURCE, not to this suite.
+//
+// Kept disabled rather than re-tuned: the assertions are written and argued
+// above, and loosening a tolerance until a racing source passes would make
+// them measure nothing.
+//
+// (The original note follows for history.)
 //
 // The counting is right and the tolerances are argued above; what does not work
 // is standing the graph up on this suite's OWN S3/S4 while inheriting a fixture
@@ -72,10 +102,7 @@ class PipelineCountsTest : public PipelineTestFixture {
   // Real threads and a real clock: the compositor decides what is "due" against
   // the master clock, and a mock clock would make the count an assertion about
   // the test rather than about the pipeline.
-  PipelineCountsTest()
-      : PipelineTestFixture(/*ffmpeg_mode=*/false),
-        video_thread_("avbase-count-S3"),
-        audio_thread_("avbase-count-S4") {
+  PipelineCountsTest() : PipelineTestFixture(/*ffmpeg_mode=*/false) {
     spec_.width = 320;
     spec_.height = 240;
     spec_.fps_num = kFps;
@@ -83,71 +110,26 @@ class PipelineCountsTest : public PipelineTestFixture {
     spec_.duration = base::Seconds(kTargetSeconds);
   }
 
-  void SetUp() override {
-    // The base SetUp also assigns runner_, which PipelineImpl::Start needs.
-    // Overriding SetUp without calling it leaves that null, and the resulting
-    // CHECK fires inside scoped_refptr long before anything says "runner".
-    PipelineTestFixture::SetUp();
-    ASSERT_TRUE(video_thread_.Start());
-    ASSERT_TRUE(audio_thread_.Start());
-  }
+  void SetUp() override { PipelineTestFixture::SetUp(); }
 
-  // The base fixture's S3/S4 are only pumped on its ffmpeg path; this suite
-  // builds its graph directly, so it drives the ones declared here.
-  void BuildPipeline() {
-    av_sync_ = std::make_shared<AvSyncController>(
-        AvSyncController::MasterType::kAudio, &tick_clock_,
-        AvSyncController::Thresholds());
-    DefaultRendererFactory::Deps deps;
-    deps.video_task_runner = video_thread_.task_runner();
-    deps.audio_task_runner = audio_thread_.task_runner();
-    deps.tick_clock = &tick_clock_;
-    deps.video_sink_factory = video_sinks_;
-    deps.audio_sink_factory = audio_sinks_;
-    deps.audio_frames_per_buffer = kFramesPerBuffer;
-    deps.av_sync = av_sync_;
-    renderer_factory_ = std::make_unique<DefaultRendererFactory>(deps);
-    pipeline_ = std::make_unique<PipelineImpl>();
-    pipeline_->SetTickClock(&tick_clock_);
-    pipeline_->SetClock(av_sync_);
-    source_.reset();
-    pipeline_->Start(std::make_unique<test::SyntheticDemuxer>(spec_),
-                     renderer_factory_.get(), RendererType::kRendererImpl,
-                     runner_, &client_);
-  }
+  // The BASE fixture's synthetic path, not a hand-built graph. The first
+  // version declared its own S3/S4, built its own DefaultRendererFactory and
+  // drove its own pump, while inheriting a fixture that pumps a DIFFERENT pair
+  // -- and it hung every time. Every other pipeline suite here goes through
+  // StartPipeline(); so does this now, which is the whole fix.
+  void BuildPipeline() { StartPipeline(); }
 
-  // Plays for |wall|, pumping as a device would. Returns how many media
-  // seconds elapsed, so a caller can tell "played the whole clip" from
-  // "stopped early".
   base::TimeDelta PlayFor(base::TimeDelta wall) {
     const auto deadline = std::chrono::steady_clock::now() +
                           std::chrono::milliseconds(wall.InMilliseconds());
     while (std::chrono::steady_clock::now() < deadline) {
-      env_.RunUntilIdle();
-      PumpSinks();
+      PumpRound();  // the base pump: sleeps 4 ms, which is load-bearing
       if (client_.ended()) {
         break;
       }
-      std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     env_.RunUntilIdle();
     return pipeline_->GetMediaTime();
-  }
-
-  // The graph is built on THIS suite's S3/S4, so the sinks have to be pulled
-  // through those. The base fixture's PumpRound pulls its own, which is why a
-  // suite that builds its own pipeline must not use it.
-  void PumpSinks() {
-    if (test::FakeAudioSink* audio = audio_sinks_->last_sink()) {
-      audio->set_render_runner(audio_thread_.task_runner());
-      if (!bus_) {
-        bus_ = AudioBus::Create(kAudioChannels, kFramesPerBuffer);
-      }
-      audio->PullPeriod(bus_.get());
-    }
-    if (test::FakeVideoSink* video = video_sinks_->last_sink()) {
-      video->PullFrames(1);
-    }
   }
 
   std::unique_ptr<AudioBus> bus_;
@@ -163,11 +145,6 @@ class PipelineCountsTest : public PipelineTestFixture {
     test::FakeAudioSink* sink = audio_sinks_->last_sink();
     return sink ? sink->frames_rendered() : 0;
   }
-
-  base::Thread video_thread_{"avbase-count-video"};
-  base::Thread audio_thread_{"avbase-count-audio"};
-  std::shared_ptr<AvSyncController> av_sync_;
-  std::unique_ptr<DefaultRendererFactory> renderer_factory_;
 };
 
 // The headline count. A pipeline that drops frames anywhere between demux and
