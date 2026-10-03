@@ -5,36 +5,37 @@
 // The live-cue expiry policy (Renderer::SetSourceLiveness, docs/12 section 6.2)
 // at the layer that decides it.
 //
-// DISABLED, and the reason is specific rather than "flaky". The policy itself
-// is implemented and wired end to end (SubtitleConfig::live_cue_max_age ->
-// PipelineImpl::SetLiveCueMaxAge -> Renderer::SetSourceLiveness ->
-// IsCueStale in the text pump). What is NOT yet working is this harness, and
-// it is worth being precise about which part, because the failure mode is the
-// dangerous kind:
+// DISABLED, and the reason is now SPECIFIC rather than "the fixture does not
+// deliver a cue" -- which is what this file claimed for two commits while the
+// real cause sat in the test's own setup.
 //
-//   The text leg does not currently deliver a cue in this setup, so every case
-//   that asserts a cue ARRIVED sees zero cues and fails -- and the one case
-//   that asserts a cue was DROPPED PASSES VACUOUSLY, for the wrong reason. A
-//   green there would be worse than no test at all: it would certify a policy
-//   it never exercised.
+// THE TEST TAKES A PATH NOTHING ELSE TAKES. It calls
+// RendererImpl::OnTracksChanged(kText, ...) directly. The working text suite
+// (pipeline_text_unittest.cc) goes through pipeline_->SelectTextTrack(), and
+// the two are NOT equivalent: PipelineImpl::DoSelectTrack calls
+// demuxer_->SetActiveStream(type, index) BEFORE handing the stream to the
+// renderer. Driving the renderer directly skips that, so the demuxer is never
+// told the text track is wanted.
 //
-//   What is already established about the path, and is why the cases are
-//   written the way they are:
-//     * RendererImpl sets text_stream_ in OnTracksChanged(kText), NOT in
-//       Initialize(), and the text pump is armed from StartPlayingFrom. A test
-//       that omits either observes nothing at all -- which is exactly how the
-//       vacuous pass above was found.
-//     * The policy stands aside when the media clock is invalid
-//       (IsCueStale), so "no clock yet" must deliver rather than drop; that is
-//       the case most likely to be silently wrong, and it is why it is here.
-//     * Recorded content must drop NOTHING, however late the cue: a seek lands
-//       on a subtitle deliberately.
+// For audio and video the difference is survivable -- the demuxer drops packets
+// for a non-active stream, and a test supplying its own fake stream never
+// consults the demuxer at all. For TEXT it is not: the renderer reads through
+// text_stream_, and whether anything ever arrives depends on the routing this
+// test skipped. That is the "cue never arrives" this file kept attributing to
+// the fixture.
 //
-//   To revive: get one cue through this fixture (the open question is whether
-//   the fake DemuxerStream's synchronous reply needs a real hop, or whether
-//   the pump needs the generation re-armed after a select), then re-enable.
-//   The assertions themselves are believed correct; what is unproven is
-//   whether the fixture can deliver a cue at all.
+// The fix is to drive the policy through the entry point the working suite
+// uses, which means the real demuxer and the FFmpeg text factory -- so this
+// suite belongs in media_ffmpeg_unittests, not media_unittests. That is a
+// rewrite, not an edit, and it is not done here.
+//
+// WORTH KEEPING IN THE MEANTIME: the policy is implemented and wired end to end
+// (SubtitleConfig::live_cue_max_age -> PipelineImpl -> Renderer::
+// SetSourceLiveness -> IsCueStale in the text pump), including the three
+// decisions that matter -- liveness-gated, stands aside while the media clock
+// is invalid, and a window rather than a deadline. The assertions below are
+// written and argued. What is unproven is whether the harness can deliver a
+// cue at all -- and the reason is now known.
 
 #include "media/filters/renderer_impl.h"
 
