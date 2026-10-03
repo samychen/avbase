@@ -239,6 +239,33 @@ jobs:
   # FFmpeg is NOT built here on purpose. vcpkg's ffmpeg would add an hours-long
   # dependency build to every run for a layer that is orthogonal to "does our
   # own code compile on MSVC".
+  # Protocol coverage (docs/12 2.4). HLS VOD and HTTP progressive over a REAL
+  # socket, with the media generated locally at run time -- so this is a network
+  # test that needs no network, and no test asset has to be committed.
+  #
+  # RTMP/RTSP/SRT are deliberately absent: they cannot be served from a file,
+  # so they need a real peer. Leaving them out is honest; a fake local stand-in
+  # would be theatre.
+  protocols:
+    needs: ffmpeg
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain, FFmpeg and the CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config ffmpeg \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+      - run: cmake --preset ffmpeg
+      - run: cmake --build --preset ffmpeg
+      - name: HLS VOD and HTTP progressive
+        run: |
+          python3 tools/check_protocols.py \
+            --headless build/ffmpeg/bin/headless \
+            --ffmpeg "$(command -v ffmpeg)" \
+            --testdata tests/testdata
+
   windows-msvc:
     runs-on: windows-2022
     steps:
