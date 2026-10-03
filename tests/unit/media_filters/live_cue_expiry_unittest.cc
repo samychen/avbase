@@ -56,7 +56,16 @@ class LiveCueExpiryTest : public ::testing::Test {
       live_->Close();
     }
     if (pipeline_) {
-      for (int i = 0; i < 200 && pipeline_ && pipeline_->IsRunning(); ++i) {
+      // Stop() has to be ASKED for. It is asynchronous -- it posts DoStop to
+      // the media sequence, which flushes the renderer before it reaches
+      // kStopped -- so the destructor cannot do it: by the time ~PipelineImpl
+      // runs, the sequence that would have run the teardown is already going
+      // away. The wait below used to be the whole of the teardown, which meant
+      // it polled a state nobody was moving: the pipeline sat in kReady for
+      // 200 iterations and was then destroyed while still running, tripping
+      // the DCHECK in ~PipelineImpl that this test was disabled to hide.
+      pipeline_->Stop();
+      for (int i = 0; i < 500 && pipeline_->IsRunning(); ++i) {
         env_.RunUntilIdle();
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
       }
@@ -177,6 +186,16 @@ class LiveCueExpiryTest : public ::testing::Test {
 // A cue that is further behind than the window is dropped, not shown. The
 // client must see FEWER cues than the demuxer produced -- that difference is
 // the policy, asserted as an observable rather than as a log line.
+//
+// STILL DISABLED, and the reason is narrower than "the pump does not work".
+// IsCueStale() compares the cue's pts against AvSyncController's master clock,
+// and on this fixture the master clock never advances far enough for any cue to
+// be stale: the synthetic live source parks its reads at the edge and nothing
+// moves the edge, so no media flows, so the clock sits near zero, so
+// |master - pts| is negative for every cue and IsCueStale() is right to say no.
+// The assertion below is correct; what is missing is a producer for the live
+// source (docs/12 §6.2). Enabling this before that lands would assert a
+// policy against a clock that cannot move.
 TEST_F(LiveCueExpiryTest, DISABLED_CuesBeyondTheWindowAreDropped) {
   StartLivePipeline(/*window=*/base::Milliseconds(200));
   ASSERT_TRUE(client_.HaveMetadata());
@@ -191,10 +210,18 @@ TEST_F(LiveCueExpiryTest, DISABLED_CuesBeyondTheWindowAreDropped) {
       << "no cues arrived at all, so nothing was exercised";
   // The window is 200 ms and the run is 2 s, so the cues that survive are the
   // recent ones. What must NOT happen is the early ones being shown.
+  //
+  // The direction here was inverted for a while, and the inversion is worth
+  // naming because it is the kind that survives review: EXPECT_LT was
+  // asserting that every SURVIVOR carries a LOW timestamp, which is the
+  // opposite of the policy -- the policy drops the low ones. It failed on
+  // exactly the cues that prove the policy works, and it would have passed
+  // on the one cue that proves it does not. Read the loop as "no cue from
+  // the first second may still be on this list".
   const std::vector<TimedTextCue> cues = client_.cues();
   ASSERT_FALSE(cues.empty());
   for (const TimedTextCue& cue : cues) {
-    EXPECT_LT(cue.pts, base::Seconds(1))
+    EXPECT_GE(cue.pts, base::Seconds(1))
         << "a cue from the first second survived a 200ms window after 2s of "
            "playback: the expiry policy is not being applied";
   }
@@ -203,7 +230,7 @@ TEST_F(LiveCueExpiryTest, DISABLED_CuesBeyondTheWindowAreDropped) {
 // The inverse, and the case that keeps the policy from being a bug: on RECORDED
 // content nothing is dropped, however far behind the cue is. A seek lands on a
 // subtitle on purpose, and deleting it would be a regression.
-TEST_F(LiveCueExpiryTest, DISABLED_RecordedContentDropsNothing) {
+TEST_F(LiveCueExpiryTest, RecordedContentDropsNothing) {
   // A zero window is the documented "policy off" value, and the pipeline
   // applies it to any source; asserting the recorded case through the same code
   // path is what proves the policy is liveness-gated rather than unconditional.
@@ -221,7 +248,7 @@ TEST_F(LiveCueExpiryTest, DISABLED_RecordedContentDropsNothing) {
 // through. With a generous window and a short run, the earliest cue must
 // survive -- otherwise the policy would be "drop everything" wearing a
 // threshold.
-TEST_F(LiveCueExpiryTest, DISABLED_CuesInsideTheWindowStillArrive) {
+TEST_F(LiveCueExpiryTest, CuesInsideTheWindowStillArrive) {
   StartLivePipeline(/*window=*/base::Seconds(30));
   ASSERT_TRUE(client_.HaveMetadata());
   RunFor(base::Seconds(1));

@@ -58,8 +58,33 @@ SEEK_TOLERANCE = 0.20
 # small and explicit rather than combinatorial: the point is that every
 # DIMENSION is represented, not that every pair is.
 def build_matrix(ffmpeg, src, outdir, video_src):
-    """Returns [(name, path)] -- writes every sample, returns what exists."""
+    """Returns (made, failed).
+
+    |made| is [(name, path)] for every sample that was written and is non-empty;
+    |failed| is [(name, reason)] for the ones that were not. Returning both is
+    the point: an earlier version returned only |made| and dropped the rest
+    silently, so a sample whose encode failed simply vanished from the corpus.
+    That is how the matrix reached 29 generated against a target of 300 with no
+    indication that eight encodes had errored -- one of them because it asked a
+    container for a codec it cannot hold (mpegts defaults to mp2 audio, which the
+    audio decoder does not support).
+    """
     made = []
+    failed = []
+    skipped = []
+
+    # Which audio encoders this ffmpeg build actually has. Asking beats
+    # assuming: this one has no libmp3lame and no libvorbis, so an mp3 or ogg
+    # container cannot be produced here at all. That is a property of the
+    # machine, so it is reported as SKIPPED -- whereas a container we CAN encode
+    # that still errors is a real failure and fails the gate.
+    probe = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error",
+                            "-encoders"], capture_output=True, text=True)
+    available_encoders = set()
+    for line in (probe.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and len(parts[0]) == 6:
+            available_encoders.add(parts[1])
 
     def emit(name, args):
         path = os.path.join(outdir, name)
@@ -69,6 +94,17 @@ def build_matrix(ffmpeg, src, outdir, video_src):
         if result.returncode == 0 and os.path.exists(path) \
                 and os.path.getsize(path) > 0:
             made.append((name, path))
+            return path
+
+        if result.returncode != 0:
+            detail = (result.stderr or "").strip().splitlines()
+            reason = "encode failed: %s" % (detail[-1] if detail
+                                           else "exit %d" % result.returncode)
+        elif not os.path.exists(path):
+            reason = "encode produced no output file"
+        else:
+            reason = "encode produced an empty file"
+        failed.append((name, reason))
         return path
 
     def enc(ext, extra, video=True):
@@ -76,18 +112,52 @@ def build_matrix(ffmpeg, src, outdir, video_src):
         return ext, extra
 
     # --- dimension: codec -------------------------------------------------
-    for codec, ext in (("h264", ".mp4"), ("hevc", ".mp4"), ("vp9", ".webm"),
-                       ("mpeg4", ".mp4")):
+    for codec, ext, acodec_args in (
+            ("h264", ".mp4", ["aac"]),
+            ("hevc", ".mp4", ["aac"]),
+            ("vp9", ".webm", ["opus", "-strict", "-2"]),
+            ("mpeg4", ".mp4", ["aac"])):
+        if acodec_args[0] not in available_encoders:
+            skipped.append(("codec_%s%s" % (codec, ext),
+                            "no encoder for %s in this ffmpeg build"
+                            % acodec_args[0]))
+            continue
         emit("codec_%s%s" % (codec, ext),
-             ["-i", video_src, "-c:v", codec, "-c:a", "aac", "-t", "2"])
+             ["-i", video_src, "-c:v", codec, "-c:a"] + acodec_args
+             + ["-t", "2"])
 
     # --- dimension: container ---------------------------------------------
-    for ext, muxer in ((".mp4", "mp4"), (".mkv", "matroska"),
-                       (".mov", "mov"), (".ts", "mpegts"),
-                       (".avi", "avi"), (".flv", "flv"),
-                       (".webm", "webm"), (".m4a", "ipod"),
-                       ((".mp3"), "mp3"), (".ogg", "ogg")):
-        emit("container%s" % ext, ["-i", src, "-t", "2", "-f", muxer])
+    # The audio codec is pinned per container on purpose. Leaving it to the
+    # muxer's default is what silently cost this dimension its coverage:
+    # mpegts defaults to mp2, which the audio decoder does not support, so
+    # container.ts failed its encode, emit() dropped it, and the run still
+    # printed a clean total. webm cannot hold h264 at all, so it is re-encoded
+    # to vp9/opus rather than muxed.
+    for ext, muxer, acodec_args, vcodec in (
+            (".mp4", "mp4", ["aac"], "libx264"),
+            (".mkv", "matroska", ["aac"], "libx264"),
+            (".mov", "mov", ["aac"], "libx264"),
+            (".ts", "mpegts", ["aac"], "libx264"),
+            (".avi", "avi", ["aac"], "libx264"),
+            (".flv", "flv", ["aac"], "libx264"),
+            (".webm", "webm", ["opus", "-strict", "-2"], "libvpx-vp9"),
+            (".m4a", "ipod", ["aac"], None),
+            (".mp3", "mp3", ["libmp3lame"], None),
+            (".ogg", "ogg", ["vorbis", "-strict", "-2"], None)):
+        if acodec_args[0] not in available_encoders:
+            # Not a defect: this ffmpeg build has no such encoder, so the
+            # container cannot be produced here. Counted apart from failures.
+            skipped.append(("container%s" % ext,
+                            "no encoder for %s in this ffmpeg build"
+                            % acodec_args[0]))
+            continue
+        args = ["-i", src, "-t", "2"]
+        if vcodec is None:
+            args += ["-vn"]
+        else:
+            args += ["-c:v", vcodec]
+        args += ["-c:a"] + acodec_args + ["-f", muxer]
+        emit("container%s" % ext, args)
 
     # --- dimension: resolution / bitrate (decode-path coverage) ------------
     for label, args in (
@@ -109,16 +179,35 @@ def build_matrix(ffmpeg, src, outdir, video_src):
                              "-map", "0:a:0", "-map", "0:v:0",
                              "-c:a", "aac", "-metadata:s:a:0", "language=eng",
                              "-metadata:s:a:1", "language=chi"])
-    emit("multi_subs.mkv", ["-i", video_src, "-t", "2", "-f", "lavfi",
-                            "-i", "subtitles=tests/testdata/none.srt"])
+    # The subtitle source is generated at run time rather than committed. The
+    # recipe used to point at tests/testdata/none.srt, a file that has never
+    # existed in this repository -- so this sample was never produced, and
+    # nothing complained, because a failed encode was indistinguishable from
+    # "this container does not need one". It is two lines of SRT; committing it
+    # would imply it has content worth reviewing.
+    srt_path = os.path.join(outdir, "_subtitle.srt")
+    with open(srt_path, "w", encoding="utf-8") as handle:
+        handle.write("1\n00:00:00,000 --> 00:00:02,000\navbase\n\n")
+    emit("multi_subs.mkv", ["-i", video_src, "-t", "2", "-i", srt_path,
+                            "-map", "0:v:0", "-map", "0:a:0?",
+                            "-map", "1:s:0",
+                            "-c:v", "libx264", "-c:a", "aac", "-c:s", "srt",
+                            "-metadata:s:s:0", "language=eng"])
     emit("multi_video.mkv", ["-i", video_src, "-t", "2", "-map", "0:v:0",
                              "-map", "0:v:0", "-c:v", "libx264"])
 
     # --- dimension: audio only --------------------------------------------
+    # Same reason as the container dimension: opus and vorbis need -strict -2
+    # here, and an encoder this build lacks is a SKIP rather than a failure.
     for codec, ext in (("aac", ".m4a"), ("mp3", ".mp3"), ("opus", ".ogg"),
                        ("flac", ".flac"), ("vorbis", ".ogg"), ("ac3", ".ac3")):
-        emit("audio_%s%s" % (codec, ext), ["-i", src, "-t", "2", "-vn",
-                                           "-c:a", codec])
+        if codec not in available_encoders:
+            skipped.append(("audio_%s%s" % (codec, ext),
+                            "no encoder for %s in this ffmpeg build" % codec))
+            continue
+        extra = ["-strict", "-2"] if codec in ("opus", "vorbis") else []
+        emit("audio_%s%s" % (codec, ext),
+             ["-i", src, "-t", "2", "-vn", "-c:a", codec] + extra)
 
     # --- dimension: damage ------------------------------------------------
     emit("damage_truncated.mp4", ["-i", video_src, "-t", "1"])
@@ -150,7 +239,7 @@ def build_matrix(ffmpeg, src, outdir, video_src):
     open(path, "wb").close()
     made.append(("damage_empty.mp4", path))
 
-    return made
+    return made, failed, skipped
 
 
 def first_frame_seconds(output):
@@ -211,10 +300,25 @@ def main():
     os.makedirs(workdir, exist_ok=True)
     try:
         print("check_corpus: generating the dimensional matrix in %s" % workdir)
-        made = build_matrix(ffmpeg, audio_src, workdir, video_src)
+        made, failed, skipped = build_matrix(ffmpeg, audio_src, workdir,
+                                              video_src)
         print("check_corpus: %d sample(s) generated across "
               "codec / container / resolution / rate / multitrack / audio / damage"
               % len(made))
+        if failed:
+            # These used to vanish without a word, which made a shrinking
+            # corpus look like a stable one. Name them and say why.
+            print("")
+            print("  %d encode(s) failed and are NOT in the corpus:" % len(failed))
+            for name, reason in failed:
+                print("    - %s: %s" % (name, reason))
+        if skipped:
+            # Not defects -- this machine's ffmpeg cannot build these at all.
+            # Listed so a smaller corpus is never mistaken for a green one.
+            print("")
+            print("  %d sample(s) SKIPPED (unavailable here):" % len(skipped))
+            for name, reason in skipped:
+                print("    - %s: %s" % (name, reason))
         if len(made) < args.min_samples:
             # Said out loud rather than papered over: the matrix above is a
             # SAMPLE of each dimension, and the target is a number.
@@ -228,15 +332,24 @@ def main():
         crashed = 0
         first_frames = []
         seek_ok = 0
+        not_opened = []
+        not_seeked = []
         for name, path in made:
             ok, first, seeked, was_crashed = measure(args.headless, path,
                                                     args.timeout)
             if ok:
                 opened_count += 1
+            else:
+                # Named, not just counted. A rate alone tells you something got
+                # worse but not what, and a helper file that is not media at all
+                # then looks identical to a container the player cannot open.
+                not_opened.append(name)
             if first is not None:
                 first_frames.append(first)
             if seeked:
                 seek_ok += 1
+            else:
+                not_seeked.append(name)
             if was_crashed:
                 crashed += 1
                 print("  CRASH  %s" % name)
@@ -259,6 +372,16 @@ def main():
         print("  seek success      %d/%d (%.1f%%)"
               % (seek_ok, len(made), 100 * metrics["seek_success_rate"]))
         print("  crashes           %d" % crashed)
+        if not_opened:
+            print("")
+            print("  %d sample(s) did NOT open:" % len(not_opened))
+            for name in not_opened:
+                print("    - %s" % name)
+        if not_seeked:
+            print("")
+            print("  %d sample(s) did not exit 0:" % len(not_seeked))
+            for name in not_seeked:
+                print("    - %s" % name)
 
         # A crash is a defect regardless of the trend, so it is checked on its
         # own and not only as a delta.

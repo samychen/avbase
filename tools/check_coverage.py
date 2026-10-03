@@ -41,11 +41,20 @@ import sys
 
 # docs/07 §12. "core" excludes platform/sdl2 and platform/linux, which have no
 # threshold because they are covered by contract + e2e + human acceptance.
+#
+# The two per-file keys carry the path the file ACTUALLY lives at. docs/07 §12
+# spells them `media/filters/video_frame_compositor.cc` and
+# `media/filters/av_sync_controller.cc`, but those paths do not exist in the
+# tree -- the files were moved under `media/filters/legacy/` when the ffplay port
+# was separated for LGPL provenance (see docs/archive/PROGRESS-rounds-1-9.md).
+# Left as written, both rules matched nothing and the gate reported them as
+# passing. UNMATCHED_THRESHOLDS below turns that class of mistake into a loud
+# failure instead.
 THRESHOLDS = {
     "base/": (95, 90),
     "media/base/": (95, 90),
-    "media/filters/video_frame_compositor.cc": (100, 95),
-    "media/filters/av_sync_controller.cc": (100, 95),
+    "media/filters/legacy/video_frame_compositor.cc": (100, 95),
+    "media/filters/legacy/av_sync_controller.cc": (100, 95),
     "media/filters/": (90, 85),
     "player/": (90, 85),
     "media/filters/ffmpeg_": (70, None),
@@ -54,10 +63,26 @@ THRESHOLDS = {
 
 CORE_OVERALL = (85, 80)
 
-# The legacy/ subtree is a line-by-line port of ffplay under LGPL-2.1
-# (media/filters/legacy/README.md). It is deliberately not held to a threshold:
-# its value is provenance, and reformatting or restructuring it to chase a
-# number would damage the thing that makes it auditable.
+# WHAT IS COUNTED AND WHAT IS NOT.
+#
+# An earlier note here claimed the legacy/ subtree is exempt from thresholds
+# because "reformatting or restructuring it to chase a number would damage the
+# thing that makes it auditable". That reasoning is sound for code kept purely as
+# provenance -- but it does not describe this subtree, and acting on it would
+# have silently un-gated the two files docs/07 §12 marks as most critical.
+# Checked rather than assumed: media/filters/legacy/ is reached from production
+# code, not only from tests --
+#     media/filters/video_renderer_impl.h   -> legacy/video_frame_compositor.h
+#     media/filters/pipeline_impl.h         -> legacy/av_sync_controller.h
+#     media/filters/renderer_impl.h         -> both
+#     media/filters/audio_renderer_impl.h   -> legacy/av_sync_controller.h
+#     media/renderers/default_renderer_factory.h -> both
+# It is the live sync/display path that happens to carry LGPL-2.1 provenance.
+# So legacy/ is counted like any other production directory, and the two files
+# docs/07 §12 singles out get their own stricter per-file rules above.
+#
+# What IS excluded: test code, vendored code, and the two platforms docs/07 §12
+# deliberately leaves to contract + e2e + human acceptance.
 EXCLUDED_PREFIXES = ("tests/", "third_party/", "platform/sdl2/", "platform/linux/")
 
 #  Coverage is computed only over instrumented code, so a file nobody built
@@ -111,13 +136,13 @@ def parse_lcov(path):
             if current is None:
                 continue
             if line.startswith("LF:"):
-                cov.found = int(line.split(":")[2])
+                cov.found = int(line.split(":", 1)[1])
             elif line.startswith("LH:"):
-                cov.hit = int(line.split(":")[2])
+                cov.hit = int(line.split(":", 1)[1])
             elif line.startswith("BRF:"):
-                cov.br_found = int(line.split(":")[2])
+                cov.br_found = int(line.split(":", 1)[1])
             elif line.startswith("BRH:"):
-                cov.br_hit = int(line.split(":")[2])
+                cov.br_hit = int(line.split(":", 1)[1])
             elif line == "end_of_record":
                 modules[current] = cov
                 current = None
@@ -157,10 +182,11 @@ def collect(modules, root):
     """
     buckets = {key: ModuleCoverage() for key in THRESHOLDS}
     core = ModuleCoverage()
-    per_file = {
-        "media/filters/video_frame_compositor.cc": ModuleCoverage(),
-        "media/filters/av_sync_controller.cc": ModuleCoverage(),
-    }
+    # Derived, never restated: a per-file rule is whatever THRESHOLDS key names
+    # a file. Keeping a second hand-written list here is how the two drifted
+    # apart, which is what let both rules go unenforced.
+    per_file = {key: ModuleCoverage()
+                for key in THRESHOLDS if key.endswith(".cc")}
     for path, cov in modules.items():
         rel = normalize(path, root)
         if is_excluded(rel):
@@ -199,13 +225,21 @@ def main():
     buckets, per_file, core = collect(modules, args.root)
 
     failures = []
+    warnings = []
     print("check_coverage: docs/07 section 12 thresholds")
     print("")
 
     ordered = sorted(THRESHOLDS.items(), key=lambda kv: -len(kv[0]))
     for prefix, (min_line, min_branch) in ordered:
+        if prefix.endswith(".cc"):
+            continue          # per-file rule; reported in its own section below
         cov = buckets[prefix]
         if cov.files == 0:
+            # A prefix that matches nothing is a gap in MEASUREMENT, not a pass.
+            # Reporting it as "ok" is how a gate ends up enforcing nothing.
+            warnings.append(
+                "%s: no instrumented file under this prefix in this build -- "
+                "threshold NOT checked" % prefix)
             continue
         line = cov.line_pct()
         status = "ok"
@@ -225,6 +259,14 @@ def main():
 
     for path, cov in per_file.items():
         if cov.files == 0:
+            # This is the failure mode the THRESHOLDS comment warns about.
+            # A named file that never appears is either a stale path or a file
+            # the preset never built; either way the rule is not being held, and
+            # saying nothing about it is the one thing that must not happen.
+            failures.append(
+                "%s: per-file threshold matched no instrumented file -- the "
+                "path in docs/07 §12 is stale, or the coverage preset does not "
+                "build it" % path)
             continue
         line = cov.line_pct()
         min_line, min_branch = THRESHOLDS[path]
@@ -285,6 +327,12 @@ def main():
                 handle.write("\n")
         except OSError as error:
             print("check_coverage: could not write baseline: %s" % error)
+
+    if warnings:
+        print("")
+        print("check_coverage: %d threshold(s) NOT CHECKED" % len(warnings))
+        for warning in warnings:
+            print("  ! %s" % warning)
 
     print("")
     if failures:
