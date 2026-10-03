@@ -2,8 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// DISABLED, but NOT for the original reason any more, and the difference is
-// the useful part.
+// DISABLED, and the pacing work landed underneath it: SyntheticSpec::paced
+// plus SyntheticDemuxer::set_tick_clock() now bound production to the clock
+// and park a read at the edge, which is what the counts actually needed (the
+// numbers below were measured with the source racing, at 3.56 s of media in
+// ~2.5 s of wall).
+//
+// It still does not run, and the reason is the seam the pacing exposed: the
+// parked read runs on the MEDIA sequence, which is the same sequence the
+// fixture's PumpRound drains inline on the test thread. A park that waits for
+// wall time therefore waits for the pump that is itself blocked inside the
+// park. SyntheticLiveDemuxer does not hit this because its suite pumps that
+// sequence from a separate thread.
+//
+// So the fix is the pump, not the source: this suite needs a pump thread (or a
+// tick clock the test can advance without draining S1). The source-side work
+// stays landed because it is correct and is what any such pump will need.
 //
 // THE HANG IS FIXED. The suite used to declare its OWN S3/S4, build its own
 // DefaultRendererFactory and drive its own pump, while inheriting a fixture
@@ -108,6 +122,9 @@ class PipelineCountsTest : public PipelineTestFixture {
     spec_.fps_num = kFps;
     spec_.fps_den = 1;
     spec_.duration = base::Seconds(kTargetSeconds);
+    // 1x realtime, so "10 s of media" and "10 s of wall" are the same thing
+    // and the counts below measure the pipeline rather than the source.
+    spec_.paced = true;
   }
 
   void SetUp() override { PipelineTestFixture::SetUp(); }

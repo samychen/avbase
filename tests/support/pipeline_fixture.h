@@ -226,9 +226,15 @@ class PipelineTestFixture : public ::testing::Test {
       pipeline_->SetSource(DataSourceDescriptor::FromSource(source_), options);
 #endif
     } else {
-      pipeline_->Start(std::make_unique<test::SyntheticDemuxer>(spec_),
-                       renderer_factory_.get(), RendererType::kRendererImpl,
-                       runner_, &client_);
+      auto synthetic = std::make_unique<test::SyntheticDemuxer>(spec_);
+      if (spec_.paced) {
+        // The source and the renderer must agree on what "now" means, or a
+        // count assertion measures the difference between their clocks rather
+        // than the pipeline.
+        synthetic->set_tick_clock(&tick_clock_);
+      }
+      pipeline_->Start(std::move(synthetic), renderer_factory_.get(),
+                       RendererType::kRendererImpl, runner_, &client_);
     }
   }
 
@@ -323,6 +329,9 @@ class PipelineTestFixture : public ::testing::Test {
   }
 
   base::scoped_refptr<DataSource> source_;
+  // Only to hand the synthetic demuxer its clock in paced mode; the pipeline
+  // takes ownership on Start.
+  std::unique_ptr<Demuxer> synthetic_;
 
  private:
 #if AVBASE_PIPELINE_FIXTURE_HAS_TESTDATA

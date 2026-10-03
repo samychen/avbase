@@ -38,7 +38,9 @@
 #include <mutex>
 
 #include "base/memory/scoped_refptr.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "media/base/data_source_descriptor.h"
 #include "media/base/decoder_buffer.h"
@@ -63,8 +65,25 @@ struct SyntheticSpec {
   base::TimeDelta duration = base::Seconds(10);
   // Live simulation: IsLive() reports true, so the pipeline's live-edge
   // chase (docs/12 section 2.1) evaluates against the finite duration as a
-  // stand-in edge. The growing-edge demuxer is the follow-up.
+  // stand-in edge. For an edge that genuinely MOVES, see
+  // synthetic_live_demuxer.h.
   bool live = false;
+  // Feed at 1x realtime, measured against a tick clock (see
+  // SyntheticDemuxer::set_tick_clock).
+  //
+  // WHY THIS EXISTS, and it is not a detail. Unpaced, this source hands out
+  // packets as fast as the decoder asks, so the media clock runs AHEAD of the
+  // wall clock -- measured 3.56 s of media in ~2.5 s of wall -- and the
+  // compositor correctly presents only the frames the master clock says are
+  // due. A test then counts 30 frames where it expected 300 and concludes the
+  // pipeline is dropping frames, when the pipeline is fine and the SOURCE is
+  // racing.
+  //
+  // The same lesson the throttle suite learned from the other end: a fake that
+  // delivers as fast as asked cannot express a real-time regime, and any
+  // assertion about counts or pacing silently becomes an assertion about the
+  // fake.
+  bool paced = false;
   // Stream enablement (docs/07 section 5's audio-only / video-only cases):
   // a disabled stream reports nullptr from GetStream and disappears from
   // MediaInfo, exactly as if the container had none. RendererImpl falls
@@ -98,6 +117,12 @@ class SyntheticDemuxer final : public Demuxer {
   ~SyntheticDemuxer() override;
 
   const SyntheticSpec& spec() const { return spec_; }
+
+  // The clock |paced| is measured against. Setting it also starts the clock:
+  // the first frame is available immediately, and availability grows from
+  // there. Null (the default) leaves the source unpaced, which is what the
+  // existing suites expect.
+  void set_tick_clock(const base::TickClock* clock);
 
   // Where both streams read from next. StartPlayingFrom() moves it; a test uses
   // this directly when it only needs to look at one stream.
@@ -174,6 +199,11 @@ class SyntheticDemuxer final : public Demuxer {
     SyntheticDemuxer* const owner_;
     const VideoDecoderConfig config_;
     const AudioDecoderConfig empty_audio_config_;
+    // Signalled on Close/teardown so a parked read wakes instead of waiting
+    // out the clock.
+    base::WaitableEvent parked_{
+        base::WaitableEvent::ResetPolicy::kManualReset,
+        base::WaitableEvent::InitialState::kNotSignaled};
   };
 
   class AudioStream final : public DemuxerStream {
@@ -203,17 +233,28 @@ class SyntheticDemuxer final : public Demuxer {
     SyntheticDemuxer* const owner_;
     const AudioDecoderConfig config_;
     const VideoDecoderConfig empty_video_config_;
+    base::WaitableEvent parked_{
+        base::WaitableEvent::ResetPolicy::kManualReset,
+        base::WaitableEvent::InitialState::kNotSignaled};
   };
 
   // Packet factories. The index travels in the payload, the geometry in the
   // timestamp and the keyframe flag. Not const: producing a packet is what
   // advances the cursor. The Locked variants require |lock_| held; the Read()
   // methods call them under one lock so a batch is a consistent snapshot.
+  // Packets available at the current edge. Unpaced that is the whole file;
+  // paced it is what the clock says exists, which is what makes a count
+  // assertion mean what it says.
+  int64_t VideoAvailableLocked() const;
+  int64_t AudioAvailableLocked() const;
   base::scoped_refptr<DecoderBuffer> MakeVideoPacketLocked();
   base::scoped_refptr<DecoderBuffer> MakeAudioPacketLocked();
   void SetPositionLocked(base::TimeDelta time);
 
   const SyntheticSpec spec_;
+  // Set by set_tick_clock(). Null leaves the source unpaced.
+  const base::TickClock* tick_clock_{nullptr};
+  base::TimeTicks started_ticks_;
   MediaInfo media_info_;
   std::unique_ptr<VideoStream> video_;
   std::unique_ptr<AudioStream> audio_;

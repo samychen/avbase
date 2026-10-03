@@ -291,12 +291,58 @@ SyntheticDemuxer::VideoStream::VideoStream(SyntheticDemuxer* owner)
   DCHECK(owner_);
 }
 
+void SyntheticDemuxer::set_tick_clock(const base::TickClock* clock) {
+  std::scoped_lock scoped(lock_);
+  tick_clock_ = clock;
+  started_ticks_ = clock ? clock->NowTicks() : base::TimeTicks();
+}
+
+int64_t SyntheticDemuxer::VideoAvailableLocked() const {
+  const int64_t total = spec_.frame_count();
+  if (!spec_.paced || !tick_clock_) {
+    return total;
+  }
+  const int64_t elapsed_us =
+      (tick_clock_->NowTicks() - started_ticks_).InMicroseconds();
+  const int64_t frames =
+      elapsed_us * spec_.fps_num / (1000000LL * std::max(1, spec_.fps_den));
+  return std::min<int64_t>(total, std::max<int64_t>(frames, 0));
+}
+
+int64_t SyntheticDemuxer::AudioAvailableLocked() const {
+  const int64_t total = spec_.audio_packet_count();
+  if (!spec_.paced || !tick_clock_) {
+    return total;
+  }
+  const int64_t elapsed_us =
+      (tick_clock_->NowTicks() - started_ticks_).InMicroseconds();
+  const int64_t samples = elapsed_us * spec_.sample_rate / 1000000;
+  const int64_t packets = samples / std::max(1, spec_.audio_frames_per_packet);
+  return std::min<int64_t>(total, std::max<int64_t>(packets, 0));
+}
+
 void SyntheticDemuxer::VideoStream::Read(uint32_t count, ReadCB read_cb) {
   DecoderBufferVector out;
   {
-    std::scoped_lock scoped(owner_->lock_);
+    // Paced: hand out only what the clock says exists, and PARK if that is
+    // nothing yet. Parking is what a real demuxer does at a live edge, and it
+    // is why a paced read must not be answered with an empty vector: the
+    // DemuxerStream contract is 1..count buffers, and an empty reply would be
+    // read as end of stream.
+    //
+    // The lock is RELEASED while parked: the edge advances on the clock, not
+    // on anything this lock protects, and holding it would deadlock the
+    // teardown path against a read that is waiting for time to pass.
+    if (owner_->spec_.paced && owner_->tick_clock_) {
+      while (owner_->VideoAvailableLocked() <= owner_->next_frame_ &&
+             owner_->next_frame_ < owner_->spec_.frame_count()) {
+        owner_->lock_.unlock();
+        parked_.TimedWait(base::Milliseconds(2));
+        owner_->lock_.lock();
+      }
+    }
     while (out.size() < count &&
-           owner_->next_frame_ < owner_->spec_.frame_count()) {
+           owner_->next_frame_ < owner_->VideoAvailableLocked()) {
       out.push_back(owner_->MakeVideoPacketLocked());
     }
     if (out.empty()) {
@@ -325,9 +371,21 @@ SyntheticDemuxer::AudioStream::AudioStream(SyntheticDemuxer* owner)
 void SyntheticDemuxer::AudioStream::Read(uint32_t count, ReadCB read_cb) {
   DecoderBufferVector out;
   {
-    std::scoped_lock scoped(owner_->lock_);
+    std::unique_lock<std::mutex> guard(owner_->lock_);
+    // Same contract as the video leg, and for the same reasons: a paced read
+    // that has nothing yet parks rather than answering with an empty vector,
+    // which DemuxerStream's 1..count rule would read as end of stream. The lock
+    // is released while parked because the edge advances on the clock.
+    if (owner_->spec_.paced && owner_->tick_clock_) {
+      while (owner_->AudioAvailableLocked() <= owner_->next_audio_packet_ &&
+             owner_->next_audio_packet_ < owner_->spec_.audio_packet_count()) {
+        guard.unlock();
+        parked_.TimedWait(base::Milliseconds(2));
+        guard.lock();
+      }
+    }
     while (out.size() < count &&
-           owner_->next_audio_packet_ < owner_->spec_.audio_packet_count()) {
+           owner_->next_audio_packet_ < owner_->AudioAvailableLocked()) {
       out.push_back(owner_->MakeAudioPacketLocked());
     }
     if (out.empty()) {
