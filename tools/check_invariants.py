@@ -54,7 +54,7 @@ LINE_LIMIT_ALLOWLIST = {
              "the audio-track switch and the text leg. Splitting the text leg "
              "into its own TU is the pending fix."),
     "player/player_impl.cc": (
-        505, "The facade: config validation, the source/pipeline lifecycle, "
+        530, "The facade: config validation, the source/pipeline lifecycle, "
              "track selection, options and the public event surface. Its "
              "difficulty is breadth rather than any one function."),
     "media/filters/ffmpeg_demuxer.cc": (

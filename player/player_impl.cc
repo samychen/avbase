@@ -401,17 +401,39 @@ void PlayerImpl::StopSync(base::TimeDelta timeout) {
   if (!media_thread_.IsRunning()) {
     return;
   }
-  // Wait (bounded) for the media sequence to have executed the Stop posted
-  // above, which is when the renderer and the demux thread are gone. On
-  // expiry: detach and log rather than hang the caller (Δ15).
-  base::WaitableEvent done;
-  media_thread_.task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce([](base::WaitableEvent* e) { e->Signal(); }, &done));
-  if (!done.TimedWait(timeout)) {
-    LOG(ERROR) << "avbase: StopSync timed out after "
-               << timeout.InMillisecondsF()
-               << "ms; detaching (delta 15: leak a thread, never hang)";
+  // Wait for the PIPELINE to stop, not for the media queue to drain.
+  //
+  // The previous version posted a barrier task and waited for that, which
+  // looks equivalent and is not. DoStop() completes ASYNCHRONOUSLY: it sets
+  // kStopping, hands the renderer a Flush, and RETURNS -- FinishStop() (which
+  // is what actually reaches kStopped) only runs once the flush has completed
+  // and hopped back to S1. So the barrier fires while the state is still
+  // kStopping, StopSync returns, and ~PipelineImpl then runs against a
+  // pipeline that has not finished tearing down.
+  //
+  // That is not a theoretical ordering. The corpus run hit it on 14 of 29
+  // generated samples, always AFTER a successful playback, and the symptom was
+  // ~PipelineImpl's DCHECK seeing kReady/kStopping. In a release build the
+  // DCHECK is compiled out, so the race is silent there -- the teardown
+  // ordering is simply not sound, and only the debug build was reporting it.
+  //
+  // IsRunning() is the predicate that means "safe to destroy" -- pipeline_impl
+  // .cc says so on IsRunning() itself, including that kStopping does NOT count
+  // as safe. So poll that, bounded, exactly as the test teardowns do.
+  const base::TimeTicks deadline = deps_->tick_clock->NowTicks() + timeout;
+  while (pipeline_ && pipeline_->IsRunning()) {
+    if (deps_->tick_clock->NowTicks() >= deadline) {
+      LOG(ERROR) << "avbase: StopSync timed out after "
+                 << timeout.InMillisecondsF()
+                 << "ms with the pipeline still running (state "
+                 << (pipeline_->IsRunning() ? "running" : "stopped")
+                 << "); detaching (delta 15: leak a thread, never hang). "
+                    "The renderer or demuxer did not finish tearing down, so "
+                    "~PipelineImpl will run against live state -- expect its "
+                    "shutdown DCHECK to fire in a debug build.";
+      return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 }
 
