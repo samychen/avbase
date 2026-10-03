@@ -13,25 +13,25 @@
 
 // Evaluates |rexpr|. If it is unexpected, returns the error from the enclosing
 // function, which must return base::expected<_, E>.
-#define RETURN_IF_ERROR(rexpr)                             \
+#define RETURN_IF_ERROR(rexpr) \
   AVBASE_RETURN_IF_ERROR_IMPL(AVBASE_CONCAT_(_avbase_err_, __LINE__), rexpr)
 
-#define AVBASE_RETURN_IF_ERROR_IMPL(name, rexpr)  \
-  decltype(auto) name = (rexpr);                 \
-  if (!name.has_value()) {                       \
+#define AVBASE_RETURN_IF_ERROR_IMPL(name, rexpr)                \
+  decltype(auto) name = (rexpr);                                \
+  if (!name.has_value()) {                                      \
     return ::avbase::base::unexpected(std::move(name).error()); \
   }
 
 // Assigns the value of |rexpr| to |lhs|, returning the error on failure.
-#define ASSIGN_OR_RETURN(lhs, rexpr)                       \
-  AVBASE_ASSIGN_OR_RETURN_IMPL(                             \
-      AVBASE_CONCAT_(_avbase_expected_, __LINE__), lhs, rexpr)
+#define ASSIGN_OR_RETURN(lhs, rexpr)                                        \
+  AVBASE_ASSIGN_OR_RETURN_IMPL(AVBASE_CONCAT_(_avbase_expected_, __LINE__), \
+                               lhs, rexpr)
 
-#define AVBASE_ASSIGN_OR_RETURN_IMPL(name, lhs, rexpr)      \
-  auto&& name = (rexpr);                                   \
-  if (!name.has_value()) {                                 \
+#define AVBASE_ASSIGN_OR_RETURN_IMPL(name, lhs, rexpr)          \
+  auto&& name = (rexpr);                                        \
+  if (!name.has_value()) {                                      \
     return ::avbase::base::unexpected(std::move(name).error()); \
-  }                                                        \
+  }                                                             \
   lhs = std::move(name).value()
 
 #define AVBASE_CONCAT_INNER_(a, b) a##b

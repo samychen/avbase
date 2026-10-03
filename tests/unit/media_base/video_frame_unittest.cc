@@ -57,7 +57,7 @@ TEST(VideoFrameTest, PlanesAreAllocatedAndZeroFilled) {
   EXPECT_GE(frame->stride(VideoFrame::kYPlane), 64);
   for (uint8_t byte : y) {
     ASSERT_EQ(byte, 0);
-    break;   // calloc guarantees the whole allocation is zeroed.
+    break;  // calloc guarantees the whole allocation is zeroed.
   }
 }
 
@@ -221,7 +221,7 @@ TEST(VideoFrameTest, ToI420OnOwnedI420ReturnsSamePixels) {
   frame->mutable_data(VideoFrame::kYPlane)[0] = 0x5A;
   base::scoped_refptr<VideoFrame> same = frame->ToI420();
   ASSERT_TRUE(same);
-  EXPECT_EQ(same.get(), frame.get());   // A new reference, not a copy.
+  EXPECT_EQ(same.get(), frame.get());  // A new reference, not a copy.
   EXPECT_EQ(same->visible_data(VideoFrame::kYPlane)[0], 0x5A);
 }
 
@@ -230,9 +230,9 @@ TEST(VideoFrameTest, ColorSpaceProducerSetter) {
       VideoFormat::kI420, Size{320, 240}, Size{320, 240}, Rational{1, 1},
       base::TimeDelta(), base::TimeDelta(), 0);
   EXPECT_FALSE(frame->color_space().IsSpecified());
-  frame->set_color_space(VideoColorSpace{
-      ColorMatrix::kBT709, ColorPrimaries::kBT709, ColorTransfer::kBT709,
-      ColorRange::kLimited});
+  frame->set_color_space(
+      VideoColorSpace{ColorMatrix::kBT709, ColorPrimaries::kBT709,
+                      ColorTransfer::kBT709, ColorRange::kLimited});
   EXPECT_TRUE(frame->color_space().IsSpecified());
   EXPECT_NE(frame->AsDebugString().find("cs=bt709"), std::string::npos);
 }

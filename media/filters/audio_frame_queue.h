@@ -107,7 +107,7 @@ class AVBASE_MEDIA_EXPORT AudioFrameQueue {
 
  private:
   std::deque<base::scoped_refptr<AudioBuffer>> buffers_;
-  int front_offset_{0};   // frames already consumed within buffers_.front()
+  int front_offset_{0};  // frames already consumed within buffers_.front()
   std::atomic<int> frames_{0};  // cached total, so frames() stays O(1)
 };
 

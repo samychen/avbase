@@ -22,18 +22,18 @@ DecoderBuffer::DecoderBuffer(std::unique_ptr<Storage> storage,
 DecoderBuffer::~DecoderBuffer() = default;
 
 // static
-base::scoped_refptr<DecoderBuffer> DecoderBuffer::CopyFrom(
-    const uint8_t* data, size_t size, DemuxerStreamType stream_type,
-    int32_t stream_index) {
-  return FromStorage(
-      std::make_unique<OwnedBufferStorage>(data, size), stream_type,
-      stream_index);
+base::scoped_refptr<DecoderBuffer>
+DecoderBuffer::CopyFrom(const uint8_t* data, size_t size,
+                        DemuxerStreamType stream_type, int32_t stream_index) {
+  return FromStorage(std::make_unique<OwnedBufferStorage>(data, size),
+                     stream_type, stream_index);
 }
 
 // static
-base::scoped_refptr<DecoderBuffer> DecoderBuffer::FromStorage(
-    std::unique_ptr<Storage> storage, DemuxerStreamType stream_type,
-    int32_t stream_index) {
+base::scoped_refptr<DecoderBuffer>
+DecoderBuffer::FromStorage(std::unique_ptr<Storage> storage,
+                           DemuxerStreamType stream_type,
+                           int32_t stream_index) {
   CHECK(storage);
   return base::scoped_refptr<DecoderBuffer>(
       new DecoderBuffer(std::move(storage), stream_type, stream_index));
@@ -50,7 +50,7 @@ base::TimeDelta DecoderBuffer::BestEffortTimestamp() const {
   if (!IsNoTimestamp(timestamp_)) {
     return timestamp_;
   }
-  return decode_timestamp_;   // May itself be kNoTimestamp.
+  return decode_timestamp_;  // May itself be kNoTimestamp.
 }
 
 size_t DecoderBuffer::data_size() const {

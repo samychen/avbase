@@ -11,8 +11,8 @@ FakeVideoSink* FakeVideoSinkFactory::last_sink() const {
   return last_;
 }
 
-std::unique_ptr<VideoRendererSink> FakeVideoSinkFactory::Create(
-    base::scoped_refptr<NativeDisplay> /*display*/) {
+std::unique_ptr<VideoRendererSink>
+FakeVideoSinkFactory::Create(base::scoped_refptr<NativeDisplay> /*display*/) {
   // The display is deliberately ignored: the fake has nowhere to draw, and
   // SetOutputTarget() is how a live swap would reach it anyway.
   auto sink = std::make_unique<FakeVideoSink>();

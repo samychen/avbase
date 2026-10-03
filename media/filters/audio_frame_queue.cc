@@ -135,7 +135,7 @@ int AudioFrameQueue::PeekFrames(int num_frames, int read_offset,
 }
 
 int AudioFrameQueue::ReadFrames(int num_frames, int write_offset,
-                               AudioBus* dest, AudioBus* scratch) {
+                                AudioBus* dest, AudioBus* scratch) {
   const int got = PeekFrames(num_frames, 0, write_offset, dest, scratch);
   SeekFrames(got);
   return got;

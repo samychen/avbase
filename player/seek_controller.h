@@ -65,7 +65,7 @@ class AVBASE_PLAYER_EXPORT SeekController {
   base::TimeTicks deadline_;
 };
 
-}  // namespace avbase::player
+}  // namespace player
 }  // namespace avbase
 
 #endif  // AVBASE_PLAYER_SEEK_CONTROLLER_H_

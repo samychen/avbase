@@ -47,8 +47,7 @@ void PipelineImpl::SetClock(std::shared_ptr<AvSyncController> av_sync) {
 }
 
 void PipelineImpl::Start(
-    std::unique_ptr<Demuxer> demuxer,
-    RendererFactory* renderer_factory,
+    std::unique_ptr<Demuxer> demuxer, RendererFactory* renderer_factory,
     RendererType renderer_type,
     base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
     Client* client) {
@@ -61,10 +60,9 @@ void PipelineImpl::Start(
   media_runner_ = std::move(media_task_runner);
   // Posted, not run inline: the caller may be on any thread, and every piece
   // of media state below is media-sequence-exclusive.
-  media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&PipelineImpl::DoStart, base::Unretained(this),
-                     renderer_type));
+  media_runner_->PostTask(FROM_HERE, base::BindOnce(&PipelineImpl::DoStart,
+                                                    base::Unretained(this),
+                                                    renderer_type));
 }
 
 void PipelineImpl::DoStart(RendererType renderer_type) {
@@ -83,8 +81,8 @@ void PipelineImpl::DoStart(RendererType renderer_type) {
     // No factory could serve this type; report through the client rather
     // than leaving the pipeline half-started.
     state_ = State::kError;
-    client_->OnError(PipelineStatusToMediaError(
-        PipelineStatus::kFailedToCreatePipeline));
+    client_->OnError(
+        PipelineStatusToMediaError(PipelineStatus::kFailedToCreatePipeline));
     return;
   }
   demuxer_->Initialize(source_, options_, this, media_runner_,
@@ -150,9 +148,8 @@ void PipelineImpl::MaybeReady() {
 
 void PipelineImpl::Play() {
   if (media_runner_) {
-    media_runner_->PostTask(
-        FROM_HERE,
-        base::BindOnce(&PipelineImpl::DoPlay, base::Unretained(this)));
+    media_runner_->PostTask(FROM_HERE, base::BindOnce(&PipelineImpl::DoPlay,
+                                                      base::Unretained(this)));
   }
 }
 
@@ -187,9 +184,8 @@ void PipelineImpl::OnDemuxerStarted(Status status) {
 
 void PipelineImpl::Pause() {
   if (media_runner_) {
-    media_runner_->PostTask(
-        FROM_HERE,
-        base::BindOnce(&PipelineImpl::DoPause, base::Unretained(this)));
+    media_runner_->PostTask(FROM_HERE, base::BindOnce(&PipelineImpl::DoPause,
+                                                      base::Unretained(this)));
   }
 }
 
@@ -205,9 +201,8 @@ void PipelineImpl::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
     return;
   }
   media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&PipelineImpl::DoSetOutputTarget, base::Unretained(this),
-                     std::move(display)));
+      FROM_HERE, base::BindOnce(&PipelineImpl::DoSetOutputTarget,
+                                base::Unretained(this), std::move(display)));
 }
 
 void PipelineImpl::DoSetOutputTarget(
@@ -224,10 +219,10 @@ void PipelineImpl::BeginAccurateSeek(base::TimeDelta target,
     std::move(reached_cb).Run();
     return;
   }
-  media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&PipelineImpl::DoBeginAccurateSeek, base::Unretained(this),
-                     target, std::move(reached_cb)));
+  media_runner_->PostTask(FROM_HERE,
+                          base::BindOnce(&PipelineImpl::DoBeginAccurateSeek,
+                                         base::Unretained(this), target,
+                                         std::move(reached_cb)));
 }
 
 void PipelineImpl::DoBeginAccurateSeek(base::TimeDelta target,
@@ -260,11 +255,9 @@ void PipelineImpl::Seek(base::TimeDelta time, base::OnceClosure seeked_cb) {
     return;
   }
   media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&PipelineImpl::DoSeek, base::Unretained(this), time,
-                     std::move(seeked_cb)));
+      FROM_HERE, base::BindOnce(&PipelineImpl::DoSeek, base::Unretained(this),
+                                time, std::move(seeked_cb)));
 }
-
 
 void PipelineImpl::DoSeek(base::TimeDelta time, base::OnceClosure seeked_cb) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -289,12 +282,11 @@ void PipelineImpl::DoSeek(base::TimeDelta time, base::OnceClosure seeked_cb) {
   // Flush the renderer and seek the demuxer in parallel (docs/04 §4.1); only
   // when both have finished is it safe to restart rendering, or a post-seek
   // frame could be scheduled against a pre-seek clock anchor.
-  renderer_->Flush(base::BindOnce(&PipelineImpl::OnRendererFlushed,
-                                  base::Unretained(this)));
+  renderer_->Flush(
+      base::BindOnce(&PipelineImpl::OnRendererFlushed, base::Unretained(this)));
   demuxer_->StartPlayingFrom(
       time,
-      base::BindOnce(&PipelineImpl::OnSeekDemuxerDone,
-                     base::Unretained(this)));
+      base::BindOnce(&PipelineImpl::OnSeekDemuxerDone, base::Unretained(this)));
 }
 
 void PipelineImpl::OnRendererFlushed() {
@@ -307,8 +299,8 @@ void PipelineImpl::OnSeekDemuxerDone(Status status, base::TimeDelta actual) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!status) {
     LOG(WARNING) << "avbase.pipeline: seek reported "
-                 << status.error().summary() << " at "
-                 << actual.InSecondsF() << "s";
+                 << status.error().summary() << " at " << actual.InSecondsF()
+                 << "s";
   }
   seek_demuxer_done_ = true;
   FinishSeekIfBothDone();
@@ -334,8 +326,7 @@ void PipelineImpl::Stop() {
     return;
   }
   media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&PipelineImpl::DoStop, base::Unretained(this)));
+      FROM_HERE, base::BindOnce(&PipelineImpl::DoStop, base::Unretained(this)));
 }
 
 void PipelineImpl::DoStop() {
@@ -354,8 +345,8 @@ void PipelineImpl::DoStop() {
   // naming renderer internals can be queued after destruction. A bare reset
   // let a read reply land on a freed AudioRendererImpl (text-leg tests).
   if (renderer_) {
-    renderer_->Flush(base::BindOnce(&PipelineImpl::FinishStop,
-                                    base::Unretained(this)));
+    renderer_->Flush(
+        base::BindOnce(&PipelineImpl::FinishStop, base::Unretained(this)));
     return;
   }
   FinishStop();
@@ -377,8 +368,7 @@ bool PipelineImpl::IsRunning() const {
   // hops back before the teardown), and every waiter on "!IsRunning()" --
   // the test teardowns, Player::StopSync's polling -- means "safe to
   // destroy", which is only true at kStopped.
-  return s == State::kStarting || s == State::kReady ||
-         s == State::kStopping;
+  return s == State::kStarting || s == State::kReady || s == State::kStopping;
 }
 
 // The Set* family posts a task that reads |renderer_| on the media sequence
@@ -389,26 +379,27 @@ void PipelineImpl::SetVolume(float volume) {
   if (!media_runner_) {
     return;
   }
-  media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce([](PipelineImpl* self, float v) {
-        if (self->renderer_) {
-          self->renderer_->SetVolume(v);
-        }
-      }, base::Unretained(this), volume));
+  media_runner_->PostTask(FROM_HERE, base::BindOnce(
+                                         [](PipelineImpl* self, float v) {
+                                           if (self->renderer_) {
+                                             self->renderer_->SetVolume(v);
+                                           }
+                                         },
+                                         base::Unretained(this), volume));
 }
 
 void PipelineImpl::SetPlaybackRate(double rate) {
   if (!media_runner_) {
     return;
   }
-  media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce([](PipelineImpl* self, double r) {
-        if (self->renderer_) {
-          self->renderer_->SetPlaybackRate(r);
-        }
-      }, base::Unretained(this), rate));
+  media_runner_->PostTask(FROM_HERE,
+                          base::BindOnce(
+                              [](PipelineImpl* self, double r) {
+                                if (self->renderer_) {
+                                  self->renderer_->SetPlaybackRate(r);
+                                }
+                              },
+                              base::Unretained(this), rate));
 }
 
 void PipelineImpl::SetLatencyHint(base::TimeDelta hint) {
@@ -416,26 +407,28 @@ void PipelineImpl::SetLatencyHint(base::TimeDelta hint) {
   if (!media_runner_) {
     return;
   }
-  media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce([](PipelineImpl* self, base::TimeDelta h) {
-        if (self->renderer_) {
-          self->renderer_->SetLatencyHint(h);
-        }
-      }, base::Unretained(this), hint));
+  media_runner_->PostTask(FROM_HERE,
+                          base::BindOnce(
+                              [](PipelineImpl* self, base::TimeDelta h) {
+                                if (self->renderer_) {
+                                  self->renderer_->SetLatencyHint(h);
+                                }
+                              },
+                              base::Unretained(this), hint));
 }
 
 void PipelineImpl::SetPreservesPitch(bool preserves_pitch) {
   if (!media_runner_) {
     return;
   }
-  media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce([](PipelineImpl* self, bool p) {
-        if (self->renderer_) {
-          self->renderer_->SetPreservesPitch(p);
-        }
-      }, base::Unretained(this), preserves_pitch));
+  media_runner_->PostTask(FROM_HERE,
+                          base::BindOnce(
+                              [](PipelineImpl* self, bool p) {
+                                if (self->renderer_) {
+                                  self->renderer_->SetPreservesPitch(p);
+                                }
+                              },
+                              base::Unretained(this), preserves_pitch));
 }
 
 base::TimeDelta PipelineImpl::GetMediaTime() {
@@ -460,8 +453,8 @@ bool PipelineImpl::ShouldChaseToLiveEdge(base::TimeDelta behind) const {
 Pipeline::Statistics PipelineImpl::GetStatistics() const {
   Pipeline::Statistics out;
   base::AutoLock scoped(snapshot_lock_);
-  out.buffered_time = base::TimeDelta::FromMicroseconds(
-      buffered_micros_.load());
+  out.buffered_time =
+      base::TimeDelta::FromMicroseconds(buffered_micros_.load());
   out.duration = base::TimeDelta::FromMicroseconds(duration_micros_.load());
   out.total_bytes_read = last_stats_.total_bytes_read;
   out.video_frames_presented = last_stats_.video_frames_presented;

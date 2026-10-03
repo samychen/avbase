@@ -31,10 +31,10 @@ class AVBASE_MEDIA_EXPORT TimeSource {
 
   // Maps each entry of |media_timestamps| to a wall-clock instant, using
   // |reference_time| as "now" for the media clock. Thread-safe.
-  virtual void GetWallClockTimes(
-      const std::vector<base::TimeDelta>& media_timestamps,
-      base::TimeTicks reference_time,
-      std::vector<WallClockTime>* wall_clock_times) = 0;
+  virtual void
+  GetWallClockTimes(const std::vector<base::TimeDelta>& media_timestamps,
+                    base::TimeTicks reference_time,
+                    std::vector<WallClockTime>* wall_clock_times) = 0;
 
  protected:
   TimeSource() = default;

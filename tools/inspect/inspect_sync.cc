@@ -28,8 +28,8 @@
 #include "media/base/decoder_buffer.h"
 #include "media/base/decoder_status.h"
 #include "media/base/media_log.h"
-#include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/ffmpeg_audio_decoder.h"
+#include "media/filters/legacy/av_sync_controller.h"
 #include "tools/inspect/inspect_common.h"
 
 namespace avbase {
@@ -46,9 +46,12 @@ using MasterType = media::AvSyncController::MasterType;
 
 const char* MasterName(MasterType type) {
   switch (type) {
-    case MasterType::kAudio: return "audio";
-    case MasterType::kVideo: return "video";
-    case MasterType::kExternal: return "external";
+  case MasterType::kAudio:
+    return "audio";
+  case MasterType::kVideo:
+    return "video";
+  case MasterType::kExternal:
+    return "external";
   }
   return "unknown";
 }
@@ -64,20 +67,20 @@ bool ReadBatch(DemuxerStream* stream, Pump* pump, bool* eos,
                DemuxerStream::DecoderBufferVector* pending) {
   bool answered = false;
   pending->clear();
-  stream->Read(8, base::BindOnce(
-                      [](bool* flag, bool* eos_flag,
-                         DemuxerStream::DecoderBufferVector* out,
-                         DemuxerStream::Status,
-                         DemuxerStream::DecoderBufferVector buffers) {
-                        *flag = true;
-                        for (const auto& b : buffers) {
-                          if (b->IsEndOfStream()) {
-                            *eos_flag = true;
-                          }
-                        }
-                        *out = std::move(buffers);
-                      },
-                      &answered, eos, pending));
+  stream->Read(
+      8, base::BindOnce(
+             [](bool* flag, bool* eos_flag,
+                DemuxerStream::DecoderBufferVector* out, DemuxerStream::Status,
+                DemuxerStream::DecoderBufferVector buffers) {
+               *flag = true;
+               for (const auto& b : buffers) {
+                 if (b->IsEndOfStream()) {
+                   *eos_flag = true;
+                 }
+               }
+               *out = std::move(buffers);
+             },
+             &answered, eos, pending));
   if (!pump->Until([&answered] { return answered; })) {
     fprintf(stderr, "error: demuxer read timed out\n");
     return false;
@@ -94,21 +97,22 @@ size_t SyncFromAudio(DemuxerStream* stream, AvSyncController* controller,
   std::vector<base::scoped_refptr<AudioBuffer>> out;
   DecoderStatus init_status;
   bool init_done = false;
-  decoder.Initialize(
-      config, /*has_pending_clear=*/false, /*serial=*/0,
-      base::BindOnce([](bool* flag, DecoderStatus* o, DecoderStatus s) {
-        *flag = true;
-        *o = s;
-      }, &init_done, &init_status),
-      base::BindRepeating(
-          [](std::vector<base::scoped_refptr<AudioBuffer>>* sink,
-             base::scoped_refptr<AudioBuffer> b) {
-            if (b && !b->end_of_stream()) {
-              sink->push_back(std::move(b));
-            }
-          },
-          &out),
-      media::WaitingCB());
+  decoder.Initialize(config, /*has_pending_clear=*/false, /*serial=*/0,
+                     base::BindOnce(
+                         [](bool* flag, DecoderStatus* o, DecoderStatus s) {
+                           *flag = true;
+                           *o = s;
+                         },
+                         &init_done, &init_status),
+                     base::BindRepeating(
+                         [](std::vector<base::scoped_refptr<AudioBuffer>>* sink,
+                            base::scoped_refptr<AudioBuffer> b) {
+                           if (b && !b->end_of_stream()) {
+                             sink->push_back(std::move(b));
+                           }
+                         },
+                         &out),
+                     media::WaitingCB());
   pump->Until([&init_done] { return init_done; });
   if (!init_status.is_ok()) {
     fprintf(stderr, "error: audio decoder init failed: %s\n",

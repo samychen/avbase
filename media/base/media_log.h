@@ -22,10 +22,10 @@
 #include <string_view>
 #include <vector>
 
+#include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/synchronization/lock.h"
-#include "base/logging.h"
 #include "base/time/time.h"
 #include "media/base/media_constants.h"
 #include "media/media_export.h"
@@ -61,10 +61,10 @@ struct AVBASE_MEDIA_EXPORT MediaLogEvent {
   base::TimeTicks wall_time;
 };
 
-AVBASE_MEDIA_EXPORT const char* GetMediaLogEventTypeName(
-    MediaLogEvent::Type type);
-AVBASE_MEDIA_EXPORT const char* GetMediaLogLevelName(
-    MediaLogEvent::Level level);
+AVBASE_MEDIA_EXPORT const char*
+GetMediaLogEventTypeName(MediaLogEvent::Type type);
+AVBASE_MEDIA_EXPORT const char*
+GetMediaLogLevelName(MediaLogEvent::Level level);
 
 class AVBASE_MEDIA_EXPORT MediaLog
     : public base::RefCountedThreadSafe<MediaLog> {
@@ -129,25 +129,27 @@ class AVBASE_MEDIA_EXPORT MediaLogRecord {
 class AVBASE_MEDIA_EXPORT NullMediaLogRecord {
  public:
   template <typename T>
-  NullMediaLogRecord& operator<<(const T&) { return *this; }
+  NullMediaLogRecord& operator<<(const T&) {
+    return *this;
+  }
   NullMediaLogRecord& With(std::string, std::string) { return *this; }
   NullMediaLogRecord& With(std::string, int64_t) { return *this; }
 };
 
 }  // namespace avbase::media
 
-#define MEDIA_LOG(level, log)                                          \
-  !(log) ? (void)0                                                     \
-         : ::avbase::base::logging::LogMessageVoidify() &               \
-               ::avbase::media::MediaLogRecord(                         \
-                   ::avbase::media::MediaLogEvent::Level::k##level,     \
+#define MEDIA_LOG(level, log)                                       \
+  !(log) ? (void)0                                                  \
+         : ::avbase::base::logging::LogMessageVoidify() &           \
+               ::avbase::media::MediaLogRecord(                     \
+                   ::avbase::media::MediaLogEvent::Level::k##level, \
                    ::avbase::media::MediaLogEvent::Type::kProperty, (log))
 
-#define MEDIA_LOG_EVENT(level, type, log)                              \
-  !(log) ? (void)0                                                     \
-         : ::avbase::base::logging::LogMessageVoidify() &               \
-               ::avbase::media::MediaLogRecord(                         \
-                   ::avbase::media::MediaLogEvent::Level::k##level,     \
+#define MEDIA_LOG_EVENT(level, type, log)                           \
+  !(log) ? (void)0                                                  \
+         : ::avbase::base::logging::LogMessageVoidify() &           \
+               ::avbase::media::MediaLogRecord(                     \
+                   ::avbase::media::MediaLogEvent::Level::k##level, \
                    ::avbase::media::MediaLogEvent::Type::k##type, (log))
 
 #endif  // AVBASE_MEDIA_BASE_MEDIA_LOG_H_

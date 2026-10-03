@@ -54,7 +54,7 @@ TEST_F(ScopedRefptrTest, CopySharesOwnership) {
     EXPECT_EQ(a.get(), b.get());
     EXPECT_EQ(g_live_count.load(), 1);
   }
-  EXPECT_EQ(g_live_count.load(), 1);   // |a| still holds it.
+  EXPECT_EQ(g_live_count.load(), 1);  // |a| still holds it.
 }
 
 TEST_F(ScopedRefptrTest, MoveTransfersOwnership) {
@@ -106,7 +106,8 @@ TEST_F(ScopedRefptrTest, ThreadSafeRefCounting) {
       }
     });
   }
-  for (auto& t : threads) t.join();
+  for (auto& t : threads)
+    t.join();
   EXPECT_EQ(g_live_count.load(), 1);
 }
 

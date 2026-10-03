@@ -75,19 +75,19 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/sequenced_task_runner.h"
-#include "base/time/time.h"
 #include "base/time/tick_clock.h"
+#include "base/time/time.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/media_resource.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/renderer.h"
 #include "media/base/renderer_client.h"
+#include "media/base/text_decoder.h"
 #include "media/filters/audio_renderer_impl.h"
 #include "media/filters/decoder_selector.h"
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/legacy/video_frame_compositor.h"
 #include "media/filters/video_renderer_impl.h"
-#include "media/base/text_decoder.h"
 #include "media/media_export.h"
 
 namespace avbase::media {
@@ -106,9 +106,9 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // (TextRenderer at M7, VAAPI at M14) does not change this constructor's
   // signature and therefore does not churn every call site.
   struct Deps {
-    base::scoped_refptr<base::SequencedTaskRunner> media_task_runner;   // S1
-    base::scoped_refptr<base::SequencedTaskRunner> video_task_runner;   // S3
-    base::scoped_refptr<base::SequencedTaskRunner> audio_task_runner;   // S4
+    base::scoped_refptr<base::SequencedTaskRunner> media_task_runner;  // S1
+    base::scoped_refptr<base::SequencedTaskRunner> video_task_runner;  // S3
+    base::scoped_refptr<base::SequencedTaskRunner> audio_task_runner;  // S4
     const base::TickClock* tick_clock = nullptr;
     std::vector<base::scoped_refptr<VideoDecoderFactory>> video_factories;
     // config.video.decoder_preference + hw_codecs, applied by
@@ -148,10 +148,10 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
 
   // ---- media::Renderer ----------------------------------------------------
   // All of these run on the media sequence unless the comment says otherwise.
-  void Initialize(MediaResource* media_resource, RendererClient* client,
-                  base::scoped_refptr<base::SequencedTaskRunner>
-                      media_task_runner,
-                  PipelineStatusCallback init_cb) override;
+  void
+  Initialize(MediaResource* media_resource, RendererClient* client,
+             base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
+             PipelineStatusCallback init_cb) override;
   void SetCdm(CdmContext* cdm_context,
               base::OnceCallback<void(bool)> cdm_attached_cb) override;
   void SetLatencyHint(std::optional<base::TimeDelta> latency_hint) override;
@@ -167,8 +167,7 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // Added with the M8 pipeline wiring (see Renderer::SetPaused): pauses both
   // sub-renderers and freezes the clocks. Runs on the media sequence.
   void SetPaused(bool paused) override;
-  void SetOutputTarget(
-      base::scoped_refptr<NativeDisplay> display) override;
+  void SetOutputTarget(base::scoped_refptr<NativeDisplay> display) override;
   void BeginAccurateSeek(base::TimeDelta target,
                          base::OnceClosure reached_cb) override;
   void EndAccurateSeek() override;
@@ -208,8 +207,7 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   };
   void SwitchAudioRenderer(DemuxerStream* new_stream,
                            base::OnceClosure change_completed_cb);
-  void OnSwitchedAudioInitialized(bool was_rendering,
-                                  base::TimeDelta resume_at,
+  void OnSwitchedAudioInitialized(bool was_rendering, base::TimeDelta resume_at,
                                   SwitchedAudioSettings settings,
                                   base::OnceClosure change_completed_cb,
                                   PipelineStatus status);

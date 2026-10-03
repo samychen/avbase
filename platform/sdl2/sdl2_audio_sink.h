@@ -48,8 +48,7 @@ class AVBASE_MEDIA_EXPORT Sdl2AudioSink final : public AudioRendererSink {
   const char* name() const override { return "Sdl2AudioSink"; }
 
  private:
-  static void AudioCallbackTrampoline(void* userdata, uint8_t* stream,
-                                      int len);
+  static void AudioCallbackTrampoline(void* userdata, uint8_t* stream, int len);
   void AudioCallback(uint8_t* stream, int len);
 
   base::raw_ptr<RenderCallback> callback_{nullptr};
@@ -58,8 +57,8 @@ class AVBASE_MEDIA_EXPORT Sdl2AudioSink final : public AudioRendererSink {
   // Owned here, used only from SDL's audio thread after Start().
   std::unique_ptr<float[]> interleaved_;
 
-  void* device_{nullptr};     // SDL_AudioDeviceID, kept as void* like the
-                              // video sink keeps its renderer.
+  void* device_{nullptr};  // SDL_AudioDeviceID, kept as void* like the
+                           // video sink keeps its renderer.
   std::atomic<bool> initialized_{false};
   std::atomic<bool> started_{false};
   std::atomic<bool> playing_{false};

@@ -37,8 +37,7 @@ TEST(GuessColorSpaceFallbackTest, SdContentIsBt601) {
 TEST(GuessColorSpaceFallbackTest, BoundaryHeight599And600) {
   // 599 stays SD, 600 is the first HD row. The table brackets are inclusive;
   // these two lines pin the seam.
-  EXPECT_EQ(Guess(599, false).matrix,
-            ColorMatrix::kSMPTE170M);
+  EXPECT_EQ(Guess(599, false).matrix, ColorMatrix::kSMPTE170M);
   EXPECT_EQ(Guess(600, false).matrix, ColorMatrix::kBT709);
 }
 
@@ -66,8 +65,7 @@ TEST(GuessColorSpaceFallbackTest, ResultIsNeverPartiallySpecified) {
 }
 
 TEST(GuessColorSpaceFallbackTest, FourKHdRowCoversUhd) {
-  EXPECT_EQ(Guess(2160, false).matrix,
-            ColorMatrix::kBT709);
+  EXPECT_EQ(Guess(2160, false).matrix, ColorMatrix::kBT709);
   EXPECT_EQ(Guess(4320, false).matrix, ColorMatrix::kBT709);
 }
 

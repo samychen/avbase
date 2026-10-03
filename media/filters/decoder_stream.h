@@ -124,7 +124,8 @@ struct AVBASE_MEDIA_EXPORT AudioDecoderStreamTraits {
 // Why a class rather than two threads (ffplay's model):
 //   * Selection and fallback become testable without a running pipeline: the
 //     decoder is chosen by ranking, and a failure re-ranks without it.
-//   * Back-pressure is explicit. ffplay's frame_queue_signal() blocks the decode
+//   * Back-pressure is explicit. ffplay's frame_queue_signal() blocks the
+//   decode
 //     thread on a condition variable; here Read() simply is not called again
 //     until the renderer wants more, so nothing blocks and nothing is dropped.
 //
@@ -253,8 +254,10 @@ class AVBASE_MEDIA_EXPORT DecoderStream {
 
 // Explicit instantiations only: keeping the definitions in the .cc means a
 // compile error in the template surfaces once, not in every translation unit.
-extern template class AVBASE_MEDIA_EXPORT DecoderStream<VideoDecoderStreamTraits>;
-extern template class AVBASE_MEDIA_EXPORT DecoderStream<AudioDecoderStreamTraits>;
+extern template class AVBASE_MEDIA_EXPORT
+    DecoderStream<VideoDecoderStreamTraits>;
+extern template class AVBASE_MEDIA_EXPORT
+    DecoderStream<AudioDecoderStreamTraits>;
 using VideoDecoderStream = DecoderStream<VideoDecoderStreamTraits>;
 using AudioDecoderStream = DecoderStream<AudioDecoderStreamTraits>;
 

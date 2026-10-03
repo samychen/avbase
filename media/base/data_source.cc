@@ -22,17 +22,16 @@ MemoryDataSource::~MemoryDataSource() = default;
 
 void MemoryDataSource::SetHost(Host*) {}
 
-DataSource::ReadResult MemoryDataSource::ReadBlocking(int64_t offset,
-                                                      size_t size,
-                                                      uint8_t* data) {
+DataSource::ReadResult
+MemoryDataSource::ReadBlocking(int64_t offset, size_t size, uint8_t* data) {
   if (aborted_) {
-    return base::unexpected(MediaError(
-        ErrorCode::kAborted, "read aborted",
-        "offset = " + std::to_string(offset),
-        "this source was aborted; create a new one to read again"));
+    return base::unexpected(
+        MediaError(ErrorCode::kAborted, "read aborted",
+                   "offset = " + std::to_string(offset),
+                   "this source was aborted; create a new one to read again"));
   }
   if (offset < 0 || static_cast<uint64_t>(offset) >= bytes_.size()) {
-    return 0;   // EOF.
+    return 0;  // EOF.
   }
   const size_t available = bytes_.size() - static_cast<size_t>(offset);
   const size_t n = std::min(size, available);
@@ -53,15 +52,17 @@ void MemoryDataSource::Read(int64_t offset, size_t size, uint8_t* data,
     // cannot call it directly.
     task_runner->PostTask(
         FROM_HERE,
-        base::BindOnce([](ReadCB cb, ReadResult r) {
-          std::move(cb).Run(std::move(r));
-        }, std::move(read_cb), std::move(result)));
+        base::BindOnce(
+            [](ReadCB cb, ReadResult r) { std::move(cb).Run(std::move(r)); },
+            std::move(read_cb), std::move(result)));
     return;
   }
   std::move(read_cb).Run(std::move(result));
 }
 
-void MemoryDataSource::Abort() { aborted_ = true; }
+void MemoryDataSource::Abort() {
+  aborted_ = true;
+}
 
 bool MemoryDataSource::GetSize(int64_t* size_out) {
   if (!size_out) {

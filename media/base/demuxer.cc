@@ -8,9 +8,12 @@ namespace avbase::media {
 
 const char* GetStreamLivenessName(StreamLiveness liveness) {
   switch (liveness) {
-    case StreamLiveness::kUnknown:  return "unknown";
-    case StreamLiveness::kRecorded: return "recorded";
-    case StreamLiveness::kLive:     return "live";
+  case StreamLiveness::kUnknown:
+    return "unknown";
+  case StreamLiveness::kRecorded:
+    return "recorded";
+  case StreamLiveness::kLive:
+    return "live";
   }
   return "invalid";
 }
@@ -18,10 +21,14 @@ const char* GetStreamLivenessName(StreamLiveness liveness) {
 // static
 const char* DemuxerStream::GetStatusName(Status status) {
   switch (status) {
-    case Status::kOk:            return "ok";
-    case Status::kAborted:       return "aborted";
-    case Status::kConfigChanged: return "config-changed";
-    case Status::kError:         return "error";
+  case Status::kOk:
+    return "ok";
+  case Status::kAborted:
+    return "aborted";
+  case Status::kConfigChanged:
+    return "config-changed";
+  case Status::kError:
+    return "error";
   }
   return "invalid";
 }

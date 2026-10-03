@@ -123,7 +123,7 @@ class PlayerImpl final : public media::Pipeline::Client {
   // running wait; CheckAccurateSeekExpiry is the posted deadline; the reached
   // hop comes from the renderer's presented-frame hook.
   void BeginAccurateWaitOnMedia(int64_t request_id, base::TimeDelta target);
-  void EndAccurateWaitOnMedia();   // Keyframe seek supersedes the wait.
+  void EndAccurateWaitOnMedia();  // Keyframe seek supersedes the wait.
   void OnAccurateSeekTargetReached();
   void CheckAccurateSeekExpiry();
   // Publishes kAccurateSeekCompleted + kSeekCompleted and runs the user's
@@ -183,8 +183,8 @@ class PlayerImpl final : public media::Pipeline::Client {
   // Which pending requests asked for an accurate landing, and to where.
   // Written on the caller's thread in SeekTo, consumed on the media sequence
   // in OnMediaSeekDone.
-  std::map<int64_t, base::TimeDelta> accurate_seek_targets_
-      GUARDED_BY(seek_lock_);
+  std::map<int64_t, base::TimeDelta>
+      accurate_seek_targets_ GUARDED_BY(seek_lock_);
 
   // Three-tier HWM policy (M9). All of its inputs -- buffering transitions,
   // statistics ticks, seek completions -- arrive on the media sequence via

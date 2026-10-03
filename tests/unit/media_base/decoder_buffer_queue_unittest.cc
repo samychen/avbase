@@ -16,7 +16,8 @@ namespace {
 const uint8_t kByte = 0x42;
 
 // |pts_ms| is intentionally unnamed: the queue orders by insertion, not by
-// timestamp, and -Wunused-parameter (debug preset, -Werror) rejects a named one.
+// timestamp, and -Wunused-parameter (debug preset, -Werror) rejects a named
+// one.
 base::scoped_refptr<DecoderBuffer> MakeBuffer(int64_t /*pts_ms*/,
                                               size_t size = 64) {
   std::vector<uint8_t> payload(size, kByte);
@@ -64,7 +65,7 @@ TEST_F(DecoderBufferQueueTest, TryPushFailsOnceTheByteLimitIsReached) {
   for (int i = 0; i < 4; ++i) {
     ASSERT_TRUE(queue_.TryPush(MakeBuffer(i, 300)));
   }
-  EXPECT_EQ(queue_.bytes(), 1200u);   // Over the 1024-byte mark.
+  EXPECT_EQ(queue_.bytes(), 1200u);  // Over the 1024-byte mark.
   EXPECT_FALSE(queue_.TryPush(MakeBuffer(4, 300)));
   // The count limit has not been reached (4 of 4 is at the limit), so either
   // cap alone is sufficient to refuse.
@@ -135,7 +136,7 @@ TEST_F(DecoderBufferQueueTest, FlushWakesBlockedProducer) {
   std::this_thread::sleep_for(std::chrono::milliseconds(20));
   EXPECT_FALSE(push_returned.load());
 
-  queue_.Flush();   // Frees every slot, so the producer must wake.
+  queue_.Flush();  // Frees every slot, so the producer must wake.
   producer.join();
   EXPECT_TRUE(push_returned.load());
   EXPECT_GE(queue_.GetStats().push_waits, 1u);
@@ -155,7 +156,8 @@ TEST_F(DecoderBufferQueueTest, AbortWakesBlockedProducerAndConsumer) {
   std::thread consumer([&]() {
     // Drain first so the consumer ends up blocked on an empty queue.
     base::scoped_refptr<DecoderBuffer> out;
-    for (int i = 0; i < 4; ++i) queue_.Pop(&out);
+    for (int i = 0; i < 4; ++i)
+      queue_.Pop(&out);
     queue_.Pop(&out);
     consumer_done.store(true);
   });
@@ -241,7 +243,8 @@ TEST_F(DecoderBufferQueueTest, ConcurrentProducersAndConsumersLoseNothing) {
   for (int p = 0; p < kProducers; ++p) {
     producers.emplace_back([&queue, &produced]() {
       for (int i = 0; i < kPerProducer; ++i) {
-        if (queue.Push(MakeBuffer(i))) produced.fetch_add(1);
+        if (queue.Push(MakeBuffer(i)))
+          produced.fetch_add(1);
       }
     });
   }
@@ -262,7 +265,8 @@ TEST_F(DecoderBufferQueueTest, ConcurrentProducersAndConsumersLoseNothing) {
       }
     });
   }
-  for (auto& t : producers) t.join();
+  for (auto& t : producers)
+    t.join();
 
   // Abort() discards whatever is still queued, by design: shutdown must not
   // wait for a consumer to catch up. So drain first, then abort — otherwise
@@ -277,7 +281,8 @@ TEST_F(DecoderBufferQueueTest, ConcurrentProducersAndConsumersLoseNothing) {
     consumed.fetch_add(static_cast<int>(batch.size()));
   }
   queue.Abort();
-  for (auto& t : consumers) t.join();
+  for (auto& t : consumers)
+    t.join();
 
   EXPECT_EQ(produced.load(), kProducers * kPerProducer);
   EXPECT_EQ(consumed.load(), kProducers * kPerProducer);

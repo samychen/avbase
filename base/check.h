@@ -19,8 +19,8 @@
 // CHECK() is active in all build configurations. Use it for conditions that
 // must never be false, including on untrusted input that has already been
 // validated by an earlier layer.
-#define CHECK(condition)                                        \
-  ::avbase::base::internal::CheckOpStreamHelper(!!(condition))    \
+#define CHECK(condition)                                       \
+  ::avbase::base::internal::CheckOpStreamHelper(!!(condition)) \
       << "Check failed: " #condition ". "
 
 #define CHECK_EQ(a, b) CHECK((a) == (b))
@@ -40,8 +40,7 @@
 #define DCHECK_GT(a, b) CHECK_GT(a, b)
 #define DCHECK_GE(a, b) CHECK_GE(a, b)
 #else
-#define DCHECK(condition) \
-  ::avbase::base::internal::NullCheckStream()
+#define DCHECK(condition) ::avbase::base::internal::NullCheckStream()
 #define DCHECK_EQ(a, b) DCHECK(true)
 #define DCHECK_NE(a, b) DCHECK(true)
 #define DCHECK_LT(a, b) DCHECK(true)
@@ -50,8 +49,8 @@
 #define DCHECK_GE(a, b) DCHECK(true)
 #endif
 
-#define NOTREACHED()                                          \
-  ::avbase::base::internal::CheckOpStreamHelper(false)          \
+#define NOTREACHED()                                   \
+  ::avbase::base::internal::CheckOpStreamHelper(false) \
       << "NOTREACHED() hit at " << __FILE__ << ":" << __LINE__ << ". "
 
 namespace avbase {

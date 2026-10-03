@@ -36,10 +36,10 @@ class AVBASE_MEDIA_EXPORT AudioBuffer
   REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
 
   // Builds a buffer owning |data| (already laid out per |sample_format|).
-  static base::scoped_refptr<AudioBuffer> Create(
-      SampleFormat sample_format, ChannelLayout channel_layout, int channels,
-      int sample_rate, int frame_count, base::TimeDelta timestamp,
-      base::TimeDelta duration, int32_t serial, std::vector<uint8_t> data);
+  static base::scoped_refptr<AudioBuffer>
+  Create(SampleFormat sample_format, ChannelLayout channel_layout, int channels,
+         int sample_rate, int frame_count, base::TimeDelta timestamp,
+         base::TimeDelta duration, int32_t serial, std::vector<uint8_t> data);
   static base::scoped_refptr<AudioBuffer> CreateEOSBuffer();
 
   AudioBuffer(const AudioBuffer&) = delete;

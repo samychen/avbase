@@ -90,7 +90,7 @@ class AVBASE_MEDIA_EXPORT PipelineController {
   virtual ~PipelineController();
 
   virtual State state() const = 0;
-  virtual bool IsRunning() const = 0;   // state() == kReady
+  virtual bool IsRunning() const = 0;  // state() == kReady
 
   // kCreated/kStopped -> kStarting. Returns immediately; readiness is observed
   // through Pipeline::Client.
@@ -105,8 +105,8 @@ class AVBASE_MEDIA_EXPORT PipelineController {
   PipelineController();
 };
 
-AVBASE_MEDIA_EXPORT const char* PipelineControllerStateToString(
-    PipelineController::State state);
+AVBASE_MEDIA_EXPORT const char*
+PipelineControllerStateToString(PipelineController::State state);
 
 }  // namespace avbase::media
 

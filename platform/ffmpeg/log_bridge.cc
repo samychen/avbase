@@ -57,16 +57,16 @@ void AvLogCallback(void* /*avcl*/, int level, const char* fmt, va_list args) {
       continue;
     }
     switch (MapAvLogLevel(g_pending_level)) {
-      case base::logging::LOG_FATAL:
-      case base::logging::LOG_ERROR:
-        LOG(ERROR) << "[ffmpeg] " << line;
-        break;
-      case base::logging::LOG_WARNING:
-        LOG(WARNING) << "[ffmpeg] " << line;
-        break;
-      default:
-        VLOG(1) << "[ffmpeg] " << line;
-        break;
+    case base::logging::LOG_FATAL:
+    case base::logging::LOG_ERROR:
+      LOG(ERROR) << "[ffmpeg] " << line;
+      break;
+    case base::logging::LOG_WARNING:
+      LOG(WARNING) << "[ffmpeg] " << line;
+      break;
+    default:
+      VLOG(1) << "[ffmpeg] " << line;
+      break;
     }
   }
 }
@@ -76,10 +76,14 @@ std::once_flag g_install_once;
 }  // namespace
 
 base::logging::LogSeverity MapAvLogLevel(int av_level) {
-  if (av_level <= AV_LOG_FATAL) return base::logging::LOG_FATAL;
-  if (av_level <= AV_LOG_ERROR) return base::logging::LOG_ERROR;
-  if (av_level <= AV_LOG_WARNING) return base::logging::LOG_WARNING;
-  if (av_level <= AV_LOG_INFO) return base::logging::LOG_INFO;
+  if (av_level <= AV_LOG_FATAL)
+    return base::logging::LOG_FATAL;
+  if (av_level <= AV_LOG_ERROR)
+    return base::logging::LOG_ERROR;
+  if (av_level <= AV_LOG_WARNING)
+    return base::logging::LOG_WARNING;
+  if (av_level <= AV_LOG_INFO)
+    return base::logging::LOG_INFO;
   return base::logging::LOG_VERBOSE;
 }
 

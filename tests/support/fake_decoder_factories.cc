@@ -45,8 +45,8 @@ void FakeAudioDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
                               DecodeCB decode_cb) {
   ++counters_->decode_calls;
   if (behaviour_.decode_fails) {
-    std::move(decode_cb).Run(DecoderStatus(
-        DecoderStatus::Codes::kDecodeError, "fake decode failure"));
+    std::move(decode_cb).Run(DecoderStatus(DecoderStatus::Codes::kDecodeError,
+                                           "fake decode failure"));
     return;
   }
   if (behaviour_.defer_decode) {
@@ -75,8 +75,8 @@ void FakeAudioDecoder::Reset(base::OnceClosure closure) {
   // Chromium's contract: Reset aborts pending Decode() calls, running their
   // callbacks with kDecodingAborted, before |closure| runs.
   for (DecodeCB& cb : deferred_) {
-    std::move(cb).Run(DecoderStatus(DecoderStatus::Codes::kDecodingAborted,
-                                    "reset"));
+    std::move(cb).Run(
+        DecoderStatus(DecoderStatus::Codes::kDecodingAborted, "reset"));
   }
   deferred_.clear();
   std::move(closure).Run();
@@ -117,8 +117,8 @@ void FakeVideoDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
                               DecodeCB decode_cb) {
   ++counters_->decode_calls;
   if (behaviour_.decode_fails) {
-    std::move(decode_cb).Run(DecoderStatus(
-        DecoderStatus::Codes::kDecodeError, "fake decode failure"));
+    std::move(decode_cb).Run(DecoderStatus(DecoderStatus::Codes::kDecodeError,
+                                           "fake decode failure"));
     return;
   }
   if (behaviour_.defer_decode) {
@@ -142,8 +142,8 @@ void FakeVideoDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
 void FakeVideoDecoder::Reset(base::OnceClosure closure) {
   ++counters_->reset_calls;
   for (DecodeCB& cb : deferred_) {
-    std::move(cb).Run(DecoderStatus(DecoderStatus::Codes::kDecodingAborted,
-                                    "reset"));
+    std::move(cb).Run(
+        DecoderStatus(DecoderStatus::Codes::kDecodingAborted, "reset"));
   }
   deferred_.clear();
   std::move(closure).Run();
@@ -157,8 +157,8 @@ void FakeVideoDecoder::RunDeferredDecodes() {
   }
 }
 
-FakeVideoDecoderFactory::FakeVideoDecoderFactory(
-    FakeDecoderBehaviour behaviour, std::string name)
+FakeVideoDecoderFactory::FakeVideoDecoderFactory(FakeDecoderBehaviour behaviour,
+                                                 std::string name)
     : behaviour_(behaviour), name_(std::move(name)) {}
 
 VideoDecoderCapability FakeVideoDecoderFactory::GetCapability() const {

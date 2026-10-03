@@ -27,8 +27,7 @@ namespace {
 
 int StreamIdFor(const std::unique_ptr<Demuxer>& demuxer,
                 DemuxerStreamType type) {
-  const DemuxerStream* stream =
-      demuxer ? demuxer->GetStream(type) : nullptr;
+  const DemuxerStream* stream = demuxer ? demuxer->GetStream(type) : nullptr;
   return stream ? stream->stream_index() : -1;
 }
 
@@ -195,8 +194,8 @@ void PipelineImpl::OnAudioOutputDeviceChanged(const std::string& device_id,
             << OutputDeviceStatusToString(status);
 }
 
-base::scoped_refptr<base::SequencedTaskRunner> PipelineImpl::
-    GetOverlayTaskRunner() {
+base::scoped_refptr<base::SequencedTaskRunner>
+PipelineImpl::GetOverlayTaskRunner() {
   // No overlay sequence exists in this build; the renderer must avoid the
   // work rather than run it inline (RendererClient's documented contract).
   return nullptr;

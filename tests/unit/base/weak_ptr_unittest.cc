@@ -19,7 +19,10 @@ class Target {
   ~Target() = default;
 
   void Increment() { ++calls_; }
-  int Add(int a, int b) { calls_ += a + b; return calls_; }
+  int Add(int a, int b) {
+    calls_ += a + b;
+    return calls_;
+  }
   int calls() const { return calls_; }
 
   WeakPtr<Target> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
@@ -101,7 +104,7 @@ TEST(WeakPtrBindTest, VoidCallbackIsSkippedAfterTargetDies) {
     EXPECT_EQ(target.calls(), 1);
   }
   OnceClosure stale = BindOnce(&Target::Increment, weak);
-  std::move(stale).Run();   // Must not dereference freed memory.
+  std::move(stale).Run();  // Must not dereference freed memory.
   SUCCEED();
 }
 
@@ -114,7 +117,7 @@ TEST(WeakPtrBindTest, NonVoidCallbackReturnsDefaultAfterTargetDies) {
     EXPECT_EQ(std::move(cb).Run(2, 3), 5);
   }
   OnceCallback<int(int, int)> stale = BindOnce(&Target::Add, weak);
-  EXPECT_EQ(std::move(stale).Run(2, 3), 0);   // Default-constructed int.
+  EXPECT_EQ(std::move(stale).Run(2, 3), 0);  // Default-constructed int.
 }
 
 }  // namespace

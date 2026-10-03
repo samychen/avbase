@@ -83,8 +83,8 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
 class AVBASE_MEDIA_EXPORT Sdl2VideoSinkFactory final
     : public VideoRendererSinkFactory {
  public:
-  std::unique_ptr<VideoRendererSink> Create(
-      base::scoped_refptr<NativeDisplay> display) override;
+  std::unique_ptr<VideoRendererSink>
+  Create(base::scoped_refptr<NativeDisplay> display) override;
   const char* name() const override { return "sdl2"; }
 };
 

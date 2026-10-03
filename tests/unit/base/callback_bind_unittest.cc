@@ -13,8 +13,12 @@
 namespace avbase::base {
 namespace {
 
-int FreeAdd(int a, int b) { return a + b; }
-void FreeSink(int* out, int v) { *out = v; }
+int FreeAdd(int a, int b) {
+  return a + b;
+}
+void FreeSink(int* out, int v) {
+  *out = v;
+}
 
 class RefCountedTarget : public RefCountedThreadSafe<RefCountedTarget> {
  public:
@@ -114,7 +118,8 @@ TEST(BindOnceTest, BoundScopedRefptrOutlivesOtherOwners) {
     auto target = MakeRefCounted<RefCountedTarget>();
     cb = BindOnce(&RefCountedTarget::Note, target, 99);
   }
-  std::move(cb).Run();   // Target is still alive because the callback owns a ref.
+  std::move(cb)
+      .Run();  // Target is still alive because the callback owns a ref.
   SUCCEED();
 }
 
@@ -149,7 +154,7 @@ TEST(RepeatingCallbackTest, CopiesShareBoundState) {
       BindRepeating([](int* out, int v) { *out += v; }, &total);
   RepeatingCallback<void(int)> copy = cb;
   copy.Run(4);
-  EXPECT_EQ(total, 4);   // Same captured pointer, by design.
+  EXPECT_EQ(total, 4);  // Same captured pointer, by design.
   cb.Run(1);
   EXPECT_EQ(total, 5);
 }
@@ -185,7 +190,7 @@ TEST(CallbackHelpersTest, ScopedClosureRunnerRunsOnlyOnce) {
   ScopedClosureRunner runner(BindOnce([](int* c) { ++*c; }, &count));
   runner.Run();
   EXPECT_EQ(count, 1);
-  runner.Reset();   // Scope exit must not run it again.
+  runner.Reset();  // Scope exit must not run it again.
   EXPECT_EQ(count, 1);
 }
 

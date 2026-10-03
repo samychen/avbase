@@ -55,21 +55,21 @@ enum class PipelineStatus {
   kOk = 0,
 
   // Demuxer stage.
-  kDemuxerError,            // Opening or probing the source failed.
+  kDemuxerError,  // Opening or probing the source failed.
   kDemuxerInitializationError,
-  kMissingDemuxerStreams,   // Container opened but selected no usable stream.
+  kMissingDemuxerStreams,  // Container opened but selected no usable stream.
 
   // Decoder stage.
   kAudioInitializationError,
   kVideoInitializationError,
-  kDecoderError,            // Fatal decode failure after a successful open.
+  kDecoderError,  // Fatal decode failure after a successful open.
   kVideoDecoderDoesNotSupportHardwareProtection,
 
   // Renderer / sink stage.
   kRendererError,
   kAudioRendererInitializationError,
   kVideoRendererInitializationError,
-  kInitializationError,     // Generic stage failure, kept last-resort.
+  kInitializationError,  // Generic stage failure, kept last-resort.
 
   // Whole-pipeline stage.
   kAborted,                 // Stopped or destroyed mid-initialisation.
@@ -90,8 +90,8 @@ AVBASE_MEDIA_EXPORT const char* PipelineStatusToString(PipelineStatus status);
 // MediaError, not this header). The mapping is total: no status may fall
 // through to a generic "playback failed", which is exactly the failure mode
 // docs/10 §4 exists to prevent.
-AVBASE_MEDIA_EXPORT MediaError PipelineStatusToMediaError(
-    PipelineStatus status);
+AVBASE_MEDIA_EXPORT MediaError
+PipelineStatusToMediaError(PipelineStatus status);
 
 // Runs on the media sequence. Never run inline by the callee: an initialising
 // pipeline holds locks that a synchronous callback would re-enter.

@@ -24,8 +24,8 @@
 #include "base/time/time.h"
 #include "media/base/decoder_config.h"
 #include "media/base/media_error.h"
-#include "media/base/timed_text.h"
 #include "media/base/renderer_client.h"
+#include "media/base/timed_text.h"
 
 namespace avbase::media::test {
 
@@ -49,9 +49,7 @@ class FakeRendererClient final : public RendererClient {
 
   const MediaError& last_error() const { return last_error_; }
   const PipelineStatistics& last_stats() const { return last_stats_; }
-  BufferingState last_buffering_state() const {
-    return last_buffering_state_;
-  }
+  BufferingState last_buffering_state() const { return last_buffering_state_; }
   base::TimeDelta last_duration() const { return last_duration_; }
   const VideoDecoderConfig& last_video_config() const {
     return last_video_config_;
@@ -74,13 +72,12 @@ class FakeRendererClient final : public RendererClient {
   void OnStatisticsUpdate(const PipelineStatistics& stats) override;
   void OnVideoConfigChange(const VideoDecoderConfig& config) override;
   void OnTimedText(const TimedTextCue& cue) override;
-  void OnAudioOutputDeviceChanged(const std::string& device_id,
-                                  bool is_default,
+  void OnAudioOutputDeviceChanged(const std::string& device_id, bool is_default,
                                   OutputDeviceStatus status) override;
   // nullptr is a legal answer ("no such sequence"), and the renderer must then
   // avoid the work rather than run it inline.
-  base::scoped_refptr<base::SequencedTaskRunner> GetOverlayTaskRunner()
-      override;
+  base::scoped_refptr<base::SequencedTaskRunner>
+  GetOverlayTaskRunner() override;
 
  private:
   std::vector<Event> events_;

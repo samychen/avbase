@@ -24,9 +24,13 @@ void DoGlobalInit() {
 
 }  // namespace
 
-void GlobalInit() { std::call_once(g_init_once, &DoGlobalInit); }
+void GlobalInit() {
+  std::call_once(g_init_once, &DoGlobalInit);
+}
 
-const char* GetVersion() { return AVBASE_VERSION_STRING; }
+const char* GetVersion() {
+  return AVBASE_VERSION_STRING;
+}
 
 const char* GetFFmpegVersion() {
   // Reports the build-time FFmpeg version once M4 lands; "none" for a core-only

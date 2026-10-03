@@ -41,7 +41,7 @@ C::FrameSyncInput MakeInput() {
   in.next_serial = 1;
   in.last_serial = 1;
   in.queue_serial = 1;
-  in.master_clock = kTenSeconds;   // Exactly in sync.
+  in.master_clock = kTenSeconds;  // Exactly in sync.
   in.master_serial = 1;
   in.master_clock_valid = true;
   in.master_is_video = false;
@@ -54,7 +54,9 @@ C::FrameSyncInput MakeInput() {
   return in;
 }
 
-C::Thresholds Thresholds() { return C::Thresholds{}; }
+C::Thresholds Thresholds() {
+  return C::Thresholds{};
+}
 
 // ---------------------------------------------------------------------------
 // Basic presentation
@@ -70,7 +72,7 @@ TEST(VideoFrameCompositorTest, PresentsWhenFrameIsDue) {
 
 TEST(VideoFrameCompositorTest, HoldsWhenNotYetDue) {
   auto in = MakeInput();
-  in.frame_timer = kNow + kFps30;   // Next frame is due one interval from now.
+  in.frame_timer = kNow + kFps30;  // Next frame is due one interval from now.
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kHold);
   EXPECT_EQ(out.retry_at, kNow + kFps30);
@@ -79,7 +81,7 @@ TEST(VideoFrameCompositorTest, HoldsWhenNotYetDue) {
 
 TEST(VideoFrameCompositorTest, ReportsLongHoldForCallersToClamp) {
   auto in = MakeInput();
-  in.fps_duration = base::Seconds(30);   // Absurd interval.
+  in.fps_duration = base::Seconds(30);  // Absurd interval.
   in.next_duration = base::Seconds(30);
   in.last_timestamp = in.next_timestamp - base::Seconds(30);
   in.frame_timer = kNow + base::Seconds(30);
@@ -113,7 +115,7 @@ TEST(VideoFrameCompositorTest, ConsecutiveFramesAdvanceDurationEstimate) {
   in.last_timestamp = kTenSeconds - base::Milliseconds(40);
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kPresent);
-  EXPECT_EQ(out.frame_duration, base::Milliseconds(40));   // From the pts delta.
+  EXPECT_EQ(out.frame_duration, base::Milliseconds(40));  // From the pts delta.
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +124,7 @@ TEST(VideoFrameCompositorTest, ConsecutiveFramesAdvanceDurationEstimate) {
 
 TEST(VideoFrameCompositorTest, PresentsWhenSlightlyLateInsideThreshold) {
   auto in = MakeInput();
-  in.master_clock = kTenSeconds + base::Milliseconds(20);   // 20 ms late.
+  in.master_clock = kTenSeconds + base::Milliseconds(20);  // 20 ms late.
   in.max_frame_drop = 5;
   const auto out = C::DecideNextFrame(in, Thresholds());
   // 20 ms is inside the frame duration (33.3 ms), so the frame is still
@@ -142,7 +144,7 @@ TEST(VideoFrameCompositorTest, DriftInsideDeadZoneLeavesDelayUntouched) {
 
 TEST(VideoFrameCompositorTest, DropsWhenLateBeyondFrameDuration) {
   auto in = MakeInput();
-  in.master_clock = kTenSeconds + base::Milliseconds(200);   // 200 ms late.
+  in.master_clock = kTenSeconds + base::Milliseconds(200);  // 200 ms late.
   in.max_frame_drop = 5;
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kDrop);
@@ -153,7 +155,7 @@ TEST(VideoFrameCompositorTest, DropsWhenLateBeyondFrameDuration) {
 TEST(VideoFrameCompositorTest, NeverDropsWhenFramedropDisabled) {
   auto in = MakeInput();
   in.master_clock = kTenSeconds + base::Milliseconds(200);
-  in.max_frame_drop = -1;   // ijkplayer's "framedrop=-1" disables dropping.
+  in.max_frame_drop = -1;  // ijkplayer's "framedrop=-1" disables dropping.
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kPresent);
 
   in.max_frame_drop = 0;
@@ -189,7 +191,7 @@ TEST(VideoFrameCompositorTest, SnapsInsteadOfDroppingBeyondNoSyncThreshold) {
   in.max_frame_drop = 10;
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kPresent);
-  EXPECT_EQ(out.target_delay, kFps30);   // Unadjusted: no correction attempted.
+  EXPECT_EQ(out.target_delay, kFps30);  // Unadjusted: no correction attempted.
 }
 
 TEST(VideoFrameCompositorTest, DoesNotDropWhenVideoIsTheMasterClock) {
@@ -212,12 +214,12 @@ TEST(VideoFrameCompositorTest, TargetDelayUnchangedWhenInSync) {
 
 TEST(VideoFrameCompositorTest, TargetDelayShortenedWhenBehindMaster) {
   auto in = MakeInput();
-  in.master_clock = kTenSeconds + base::Milliseconds(20);   // av_diff = +20 ms.
+  in.master_clock = kTenSeconds + base::Milliseconds(20);  // av_diff = +20 ms.
   // sync_threshold = clip(33.3 ms, 40 ms, 100 ms) = 40 ms, so 20 ms is inside
   // the dead zone and the delay is untouched.
   EXPECT_EQ(C::ComputeTargetDelay(kFps30, in, Thresholds()), kFps30);
 
-  in.master_clock = kTenSeconds + base::Milliseconds(60);   // av_diff = +60 ms.
+  in.master_clock = kTenSeconds + base::Milliseconds(60);  // av_diff = +60 ms.
   EXPECT_EQ(C::ComputeTargetDelay(kFps30, in, Thresholds()), base::TimeDelta());
 }
 
@@ -231,7 +233,8 @@ TEST(VideoFrameCompositorTest, LongFrameAbsorbsFullDriftWhenAheadOfMaster) {
   auto in = MakeInput();
   const base::TimeDelta long_frame = base::Milliseconds(500);
   in.next_timestamp = kTenSeconds;
-  in.master_clock = kTenSeconds - base::Milliseconds(100);   // av_diff = -100 ms.
+  in.master_clock =
+      kTenSeconds - base::Milliseconds(100);  // av_diff = -100 ms.
   // sync_threshold = clip(500 ms, 40 ms, 100 ms) = 100 ms; av_diff <= -100 ms
   // and delay (500 ms) > sync_framedup_threshold, so the full drift is added.
   EXPECT_EQ(C::ComputeTargetDelay(long_frame, in, Thresholds()),
@@ -257,7 +260,7 @@ TEST(VideoFrameCompositorTest, NoCorrectionWhenMasterClockInvalid) {
 
 TEST(VideoFrameCompositorTest, NoCorrectionWhenNextTimestampIsNoTimestamp) {
   auto in = MakeInput();
-  in.next_timestamp = base::TimeDelta::Min();   // media::kNoTimestamp
+  in.next_timestamp = base::TimeDelta::Min();  // media::kNoTimestamp
   in.master_clock = kTenSeconds + base::Seconds(5);
   EXPECT_EQ(C::ComputeTargetDelay(kFps30, in, Thresholds()), kFps30);
 }
@@ -285,8 +288,8 @@ TEST(VideoFrameCompositorTest, PlaybackRateZeroDoesNotDivideByZero) {
 
 TEST(VideoFrameCompositorTest, FpsCapDropsFramesArrivingTooSoon) {
   auto in = MakeInput();
-  in.max_fps = 31;   // ijkplayer default.
-  in.last_present_wall_time = kNow - base::Milliseconds(10);   // 10 ms ago.
+  in.max_fps = 31;  // ijkplayer default.
+  in.last_present_wall_time = kNow - base::Milliseconds(10);  // 10 ms ago.
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kDrop);
   EXPECT_EQ(out.drop_reason, R::kFpsCap);
@@ -294,7 +297,7 @@ TEST(VideoFrameCompositorTest, FpsCapDropsFramesArrivingTooSoon) {
 
 TEST(VideoFrameCompositorTest, FpsCapAllowsFrameAfterMinInterval) {
   auto in = MakeInput();
-  in.max_fps = 31;   // min interval ~32.2 ms
+  in.max_fps = 31;  // min interval ~32.2 ms
   in.last_present_wall_time = kNow - base::Milliseconds(40);
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kPresent);
 }
@@ -311,12 +314,12 @@ TEST(VideoFrameCompositorTest, FpsCapDisabledForZeroAndNegative) {
 TEST(VideoFrameCompositorTest, FpsCapIgnoredBeforeFirstPresent) {
   auto in = MakeInput();
   in.max_fps = 31;
-  in.last_present_wall_time = base::TimeTicks();   // null: nothing shown yet
+  in.last_present_wall_time = base::TimeTicks();  // null: nothing shown yet
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kPresent);
 }
 
 TEST(VideoFrameCompositorTest, ApplyFpsCapExtendsShortDurations) {
-  const base::TimeDelta cap31 = base::Microseconds(1000000 / 31);   // ~32.26 ms
+  const base::TimeDelta cap31 = base::Microseconds(1000000 / 31);  // ~32.26 ms
   const base::TimeDelta fps60 = base::Microseconds(16667);
   // A 60 fps source is faster than a 31 fps cap, so the effective display
   // duration is stretched to the cap interval.
@@ -324,7 +327,8 @@ TEST(VideoFrameCompositorTest, ApplyFpsCapExtendsShortDurations) {
   // A 30 fps source is already slower than the cap: unchanged.
   EXPECT_EQ(C::ApplyFpsCap(kFps30, 31), kFps30);
   // A long frame is never shortened by the cap.
-  EXPECT_EQ(C::ApplyFpsCap(base::Milliseconds(100), 31), base::Milliseconds(100));
+  EXPECT_EQ(C::ApplyFpsCap(base::Milliseconds(100), 31),
+            base::Milliseconds(100));
   // 0 and negative disable the cap.
   EXPECT_EQ(C::ApplyFpsCap(kFps30, 0), kFps30);
   EXPECT_EQ(C::ApplyFpsCap(kFps30, -1), kFps30);
@@ -367,7 +371,7 @@ TEST(VideoFrameCompositorTest, FpsCapHalvesOutputFor60fpsSource) {
 TEST(VideoFrameCompositorTest, DropsFrameFromStaleSeekGeneration) {
   auto in = MakeInput();
   in.next_serial = 2;
-  in.queue_serial = 3;   // A seek happened after this frame was queued.
+  in.queue_serial = 3;  // A seek happened after this frame was queued.
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kDrop);
   EXPECT_EQ(out.drop_reason, R::kStaleSerial);
@@ -382,13 +386,14 @@ TEST(VideoFrameCompositorTest, SkipsDurationComputationAcrossSeekSerialChange) {
   in.last_serial = 3;
   in.next_serial = 4;
   in.queue_serial = 4;
-  in.last_timestamp = kTenSeconds - base::Seconds(30);   // Bogus cross-seek delta.
+  in.last_timestamp =
+      kTenSeconds - base::Seconds(30);  // Bogus cross-seek delta.
   in.master_clock = in.next_timestamp;
 
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kPresent);
-  EXPECT_EQ(out.frame_duration, kFps30);   // Fell back to the fps-derived value.
-  EXPECT_EQ(out.target_delay, kFps30);     // Not derived from the 30 s delta.
+  EXPECT_EQ(out.frame_duration, kFps30);  // Fell back to the fps-derived value.
+  EXPECT_EQ(out.target_delay, kFps30);    // Not derived from the 30 s delta.
 }
 
 TEST(VideoFrameCompositorTest, SameSerialUsesPtsDelta) {
@@ -418,14 +423,14 @@ TEST(VideoFrameCompositorTest, AccurateSeekPresentsFrameAtOrAfterTarget) {
   in.accurate_seek_target = kTenSeconds - base::Milliseconds(1);
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kPresent);
 
-  in.accurate_seek_target = kTenSeconds;   // Exactly at the target.
+  in.accurate_seek_target = kTenSeconds;  // Exactly at the target.
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kPresent);
 }
 
 TEST(VideoFrameCompositorTest, AccurateSeekIgnoresUnsetTarget) {
   auto in = MakeInput();
   in.accurate_seek_pending = true;
-  in.accurate_seek_target = base::TimeDelta();   // Never set.
+  in.accurate_seek_target = base::TimeDelta();  // Never set.
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kPresent);
 }
 
@@ -448,7 +453,7 @@ TEST(VideoFrameCompositorTest, AccurateSeekWinsOverFramedrop) {
 
 TEST(VideoFrameCompositorTest, DoubleSpeedHalvesTheTargetDelay) {
   auto in = MakeInput();
-  in.frame_timer = kNow + kFps30;   // Definitely a hold at any rate.
+  in.frame_timer = kNow + kFps30;  // Definitely a hold at any rate.
   in.playback_rate = 2.0;
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kHold);
@@ -471,7 +476,7 @@ TEST(VideoFrameCompositorTest, HalfSpeedDoublesTheTargetDelay) {
 // special-casing the current frame.
 TEST(VideoFrameCompositorTest, PlaybackRateScalesTargetDelayNotTheHoldGate) {
   auto in = MakeInput();
-  in.frame_timer = kNow + base::Microseconds(600);   // 600 us from due.
+  in.frame_timer = kNow + base::Microseconds(600);  // 600 us from due.
   in.playback_rate = 200.0;
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kHold);
@@ -503,9 +508,9 @@ TEST(VideoFrameCompositorTest, StepModePresentsOneFrameWhilePaused) {
 TEST(VideoFrameCompositorTest, StepModeIgnoresPacingAndDropping) {
   auto in = MakeInput();
   in.step_mode = true;
-  in.frame_timer = kNow + base::Seconds(5);   // Far from due.
+  in.frame_timer = kNow + base::Seconds(5);  // Far from due.
   in.next_serial = 0;
-  in.queue_serial = 9;                        // Stale.
+  in.queue_serial = 9;  // Stale.
   in.accurate_seek_pending = true;
   in.accurate_seek_target = kTenSeconds + base::Seconds(60);
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kPresent);
@@ -516,7 +521,7 @@ TEST(VideoFrameCompositorTest, BufferingBlocksPresentation) {
   in.buffering_blocked = true;
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kHold);
-  EXPECT_EQ(out.frame_duration, base::TimeDelta());   // No pacing computed.
+  EXPECT_EQ(out.frame_duration, base::TimeDelta());  // No pacing computed.
 }
 
 // ---------------------------------------------------------------------------
@@ -530,7 +535,7 @@ TEST(VideoFrameCompositorTest, InvalidMasterClockDisablesDriftCorrection) {
   in.max_frame_drop = 5;
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kPresent);
-  EXPECT_EQ(out.av_diff, base::TimeDelta());   // Not reported when invalid.
+  EXPECT_EQ(out.av_diff, base::TimeDelta());  // Not reported when invalid.
   EXPECT_EQ(out.target_delay, kFps30);
 }
 
@@ -541,7 +546,7 @@ TEST(VideoFrameCompositorTest, VideoMasterUsesItsOwnPacing) {
   in.max_frame_drop = 5;
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kPresent);
-  EXPECT_EQ(out.target_delay, kFps30);   // No re-pacing against itself.
+  EXPECT_EQ(out.target_delay, kFps30);  // No re-pacing against itself.
 }
 
 // ---------------------------------------------------------------------------
@@ -550,7 +555,7 @@ TEST(VideoFrameCompositorTest, VideoMasterUsesItsOwnPacing) {
 
 TEST(VideoFrameCompositorTest, NoTimestampsFallBackToMinSleepAndPresent) {
   auto in = MakeInput();
-  in.next_timestamp = base::TimeDelta::Min();   // media::kNoTimestamp
+  in.next_timestamp = base::TimeDelta::Min();  // media::kNoTimestamp
   in.last_timestamp = base::TimeDelta::Min();
   in.fps_duration = base::TimeDelta();
   in.next_duration = base::TimeDelta();
@@ -562,19 +567,20 @@ TEST(VideoFrameCompositorTest, NoTimestampsFallBackToMinSleepAndPresent) {
 
 TEST(VideoFrameCompositorTest, NegativePtsDeltaFallsBackToFpsDuration) {
   auto in = MakeInput();
-  in.last_timestamp = in.next_timestamp + base::Milliseconds(50);   // Out of order.
+  in.last_timestamp =
+      in.next_timestamp + base::Milliseconds(50);  // Out of order.
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).frame_duration, kFps30);
 }
 
 TEST(VideoFrameCompositorTest, AbsurdPtsDeltaFallsBackToFpsDuration) {
   auto in = MakeInput();
-  in.last_timestamp = in.next_timestamp - base::Seconds(60);   // > max_sane
+  in.last_timestamp = in.next_timestamp - base::Seconds(60);  // > max_sane
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).frame_duration, kFps30);
 }
 
 TEST(VideoFrameCompositorTest, NullFrameTimerPresentsImmediately) {
   auto in = MakeInput();
-  in.frame_timer = base::TimeTicks();   // null: nothing has been presented yet
+  in.frame_timer = base::TimeTicks();  // null: nothing has been presented yet
   const auto out = C::DecideNextFrame(in, Thresholds());
   // Pacing needs a reference point; without one ffplay shows the first decoded
   // frame right away instead of waiting a full interval. Preserving this is
@@ -584,7 +590,7 @@ TEST(VideoFrameCompositorTest, NullFrameTimerPresentsImmediately) {
 
 TEST(VideoFrameCompositorTest, DeadlineWindowOverridesHold) {
   auto in = MakeInput();
-  in.frame_timer = kNow + kFps30;              // Due 33.3 ms from now.
+  in.frame_timer = kNow + kFps30;  // Due 33.3 ms from now.
   in.deadline_max = kNow + base::Milliseconds(40);
   const auto out = C::DecideNextFrame(in, Thresholds());
   // The sink told us this refresh window extends past the due instant, so
@@ -595,14 +601,14 @@ TEST(VideoFrameCompositorTest, DeadlineWindowOverridesHold) {
 TEST(VideoFrameCompositorTest, DeadlineWindowBeforeDueStillHolds) {
   auto in = MakeInput();
   in.frame_timer = kNow + kFps30;
-  in.deadline_max = kNow + base::Milliseconds(10);   // Window closes too early.
+  in.deadline_max = kNow + base::Milliseconds(10);  // Window closes too early.
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kHold);
 }
 
 TEST(VideoFrameCompositorTest, NullDeadlineWindowIsIgnored) {
   auto in = MakeInput();
   in.frame_timer = kNow + kFps30;
-  in.deadline_max = base::TimeTicks();   // null
+  in.deadline_max = base::TimeTicks();  // null
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kHold);
 }
 
@@ -674,9 +680,9 @@ TEST_F(VideoFrameCompositorStateTest, PresentsFramesInOrder) {
 
   int presented = 0;
   for (int i = 0; i < 5; ++i) {
-    clock_.Advance(base::Milliseconds(40));   // Past the 33.3 ms interval.
-    compositor_->SetMasterClock(
-        kTenSeconds + base::Milliseconds(40 * i), 1, true);
+    clock_.Advance(base::Milliseconds(40));  // Past the 33.3 ms interval.
+    compositor_->SetMasterClock(kTenSeconds + base::Milliseconds(40 * i), 1,
+                                true);
     if (compositor_->Render(kNow, clock_.NowTicks())) {
       ++presented;
     }
@@ -709,7 +715,7 @@ TEST_F(VideoFrameCompositorStateTest, PausedRenderKeepsCurrentFrame) {
   compositor_->PutCurrentFrame(MakeFrame(1));
   clock_.Advance(base::Seconds(1));
   EXPECT_EQ(compositor_->Render(kNow, clock_.NowTicks()), nullptr);
-  EXPECT_EQ(compositor_->frames_pending(), 1u);   // Not consumed while paused.
+  EXPECT_EQ(compositor_->frames_pending(), 1u);  // Not consumed while paused.
   EXPECT_EQ(compositor_->current_frame(), first);
 }
 
@@ -724,7 +730,8 @@ TEST_F(VideoFrameCompositorStateTest, PlaybackRateAcceleratesPresentation) {
   int presented = 0;
   for (int i = 0; i < 10; ++i) {
     clock_.Advance(base::Milliseconds(10));
-    compositor_->SetMasterClock(kTenSeconds + base::Milliseconds(40 * i), 1, true);
+    compositor_->SetMasterClock(kTenSeconds + base::Milliseconds(40 * i), 1,
+                                true);
     if (compositor_->Render(kNow, clock_.NowTicks())) {
       ++presented;
     }

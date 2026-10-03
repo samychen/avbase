@@ -9,16 +9,24 @@ namespace avbase::media {
 const char* GetDecoderStatusCodeName(DecoderStatus::Codes code) {
   using C = DecoderStatus::Codes;
   switch (code) {
-    case C::kOk: return "ok";
-    case C::kUnknownError: return "unknown-error";
-    case C::kNotInitialized: return "not-initialized";
-    case C::kUnsupportedCodec: return "unsupported-codec";
-    case C::kUnsupportedResolution: return "unsupported-resolution";
-    case C::kUnsupportedConfig: return "unsupported-config";
-    case C::kDecodeError: return "decode-error";
-    case C::kDecodingAborted: return "decoding-aborted";
-    case C::kElidedEndOfStreamForConfigChange:
-      return "elided-eos-for-config-change";
+  case C::kOk:
+    return "ok";
+  case C::kUnknownError:
+    return "unknown-error";
+  case C::kNotInitialized:
+    return "not-initialized";
+  case C::kUnsupportedCodec:
+    return "unsupported-codec";
+  case C::kUnsupportedResolution:
+    return "unsupported-resolution";
+  case C::kUnsupportedConfig:
+    return "unsupported-config";
+  case C::kDecodeError:
+    return "decode-error";
+  case C::kDecodingAborted:
+    return "decoding-aborted";
+  case C::kElidedEndOfStreamForConfigChange:
+    return "elided-eos-for-config-change";
   }
   return "invalid";
 }

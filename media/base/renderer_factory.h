@@ -105,8 +105,8 @@ class AVBASE_MEDIA_EXPORT RendererFactory {
   // |display| is nullptr for headless playback or when video output is
   // disabled; the sink must then discard frames while still driving the
   // render cadence, so that the video clock keeps advancing.
-  virtual std::unique_ptr<VideoRendererSink> CreateVideoRendererSink(
-      base::scoped_refptr<NativeDisplay> display) = 0;
+  virtual std::unique_ptr<VideoRendererSink>
+  CreateVideoRendererSink(base::scoped_refptr<NativeDisplay> display) = 0;
 
   // Audio has no display argument: the device is chosen by
   // config.audio.output_device_id and the backend by config.audio.backend

@@ -25,8 +25,7 @@ namespace avbase::base {
 template <typename TaskReturnType, typename ReplyArgType, typename Task,
           typename Reply>
 bool PostTaskAndReplyWithResult(TaskRunner* task_runner,
-                                const Location& from_here,
-                                Task&& task,
+                                const Location& from_here, Task&& task,
                                 Reply&& reply) {
   static_assert(std::is_convertible_v<TaskReturnType, ReplyArgType>,
                 "task return type must be convertible to the reply argument");

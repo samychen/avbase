@@ -61,14 +61,14 @@ class AVBASE_MEDIA_EXPORT DecoderBuffer
   };
 
   // Owns a copy of |data|.
-  static base::scoped_refptr<DecoderBuffer> CopyFrom(
-      const uint8_t* data, size_t size, DemuxerStreamType stream_type,
-      int32_t stream_index);
+  static base::scoped_refptr<DecoderBuffer>
+  CopyFrom(const uint8_t* data, size_t size, DemuxerStreamType stream_type,
+           int32_t stream_index);
   // Adopts |storage| without copying. This is the zero-copy path used by
   // platform/ffmpeg.
-  static base::scoped_refptr<DecoderBuffer> FromStorage(
-      std::unique_ptr<Storage> storage, DemuxerStreamType stream_type,
-      int32_t stream_index);
+  static base::scoped_refptr<DecoderBuffer>
+  FromStorage(std::unique_ptr<Storage> storage, DemuxerStreamType stream_type,
+              int32_t stream_index);
   // End-of-stream marker. Carries no payload; IsEndOfStream() is true.
   static base::scoped_refptr<DecoderBuffer> CreateEOSBuffer();
 
@@ -161,7 +161,8 @@ class AVBASE_MEDIA_EXPORT DecoderBuffer
 };
 
 // Owned-memory Storage, used by tests and by non-FFmpeg demuxers.
-class AVBASE_MEDIA_EXPORT OwnedBufferStorage final : public DecoderBuffer::Storage {
+class AVBASE_MEDIA_EXPORT OwnedBufferStorage final
+    : public DecoderBuffer::Storage {
  public:
   OwnedBufferStorage(const uint8_t* data, size_t size);
   ~OwnedBufferStorage() override;

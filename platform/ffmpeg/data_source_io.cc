@@ -37,8 +37,7 @@ DataSourceIO::~DataSourceIO() {
   Detach();
 }
 
-bool DataSourceIO::Attach(AVFormatContext* ctx,
-                          media::MediaError* error) {
+bool DataSourceIO::Attach(AVFormatContext* ctx, media::MediaError* error) {
   int64_t size = -1;
   if (!source_->GetSize(&size)) {
     size = -1;
@@ -47,8 +46,7 @@ bool DataSourceIO::Attach(AVFormatContext* ctx,
   if (!seekable && size < 0) {
     // A streaming source without a length cannot answer AVSEEK_SIZE, and
     // every container probe needs one of the two.
-    *error = UnusableSourceError(
-        "the source is neither seekable nor sizeable");
+    *error = UnusableSourceError("the source is neither seekable nor sizeable");
     return false;
   }
 
@@ -120,17 +118,22 @@ int64_t DataSourceIO::Seek(void* opaque, int64_t offset, int whence) {
     return size;
   }
   switch (whence) {
-    case SEEK_SET: target = offset; break;
-    case SEEK_CUR: target = self->next_offset_ + offset; break;
-    case SEEK_END: {
-      int64_t size = -1;
-      if (!self->source_->GetSize(&size) || size < 0) {
-        return AVERROR(ENOSYS);
-      }
-      target = size + offset;
-      break;
+  case SEEK_SET:
+    target = offset;
+    break;
+  case SEEK_CUR:
+    target = self->next_offset_ + offset;
+    break;
+  case SEEK_END: {
+    int64_t size = -1;
+    if (!self->source_->GetSize(&size) || size < 0) {
+      return AVERROR(ENOSYS);
     }
-    default: return AVERROR(ENOSYS);
+    target = size + offset;
+    break;
+  }
+  default:
+    return AVERROR(ENOSYS);
   }
   if (target < 0) {
     return AVERROR(EINVAL);

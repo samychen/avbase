@@ -108,9 +108,9 @@ class AVBASE_MEDIA_EXPORT AudioRendererAlgorithm {
   // different cost and quality, and "why does 1.0x sound different from 1.01x"
   // is otherwise unanswerable from outside.
   enum class FillBufferMode {
-    kPassthrough,   // rate ~= 1.0: a single copy, no processing.
-    kResampler,     // pitch need not be preserved: resample (NOT IMPLEMENTED).
-    kWsola,         // pitch preserved: the overlap-and-add path.
+    kPassthrough,  // rate ~= 1.0: a single copy, no processing.
+    kResampler,    // pitch need not be preserved: resample (NOT IMPLEMENTED).
+    kWsola,        // pitch preserved: the overlap-and-add path.
   };
 
   AudioRendererAlgorithm();

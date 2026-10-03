@@ -78,7 +78,7 @@ void Lock::RecordRelease() {
   held.erase(std::remove(held.begin(), held.end(), this), held.end());
 }
 
-#else   // AVBASE_ENABLE_DCHECK
+#else  // AVBASE_ENABLE_DCHECK
 
 void Lock::AssertAcquiredInOrder() {}
 void Lock::RecordRelease() {}

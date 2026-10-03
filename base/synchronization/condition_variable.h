@@ -28,7 +28,7 @@ class ConditionVariable {
   void Wait() {
     std::unique_lock<std::mutex> lock(lock_->native(), std::adopt_lock);
     cv_.wait(lock);
-    lock.release();   // Caller still owns the lock.
+    lock.release();  // Caller still owns the lock.
   }
 
   // Returns false on timeout.
@@ -36,7 +36,7 @@ class ConditionVariable {
     std::unique_lock<std::mutex> lock(lock_->native(), std::adopt_lock);
     const bool ok = cv_.wait_for(lock, max_wait.ToChronoMicros()) ==
                     std::cv_status::no_timeout;
-    lock.release();   // Caller still owns the lock.
+    lock.release();  // Caller still owns the lock.
     return ok;
   }
 

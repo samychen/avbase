@@ -70,7 +70,8 @@ extern "C" {
 #define AVBASE_FFMPEG_HAS_DICT_ITERATE 0
 #endif
 
-// av_register_all() was removed in FFmpeg 4.0; guard so the glue never calls it.
+// av_register_all() was removed in FFmpeg 4.0; guard so the glue never calls
+// it.
 #if LIBAVFORMAT_VERSION_MAJOR < 58
 #define AVBASE_FFMPEG_NEEDS_REGISTER_ALL 1
 #else
@@ -92,8 +93,8 @@ extern "C" {
 // way. The modern branch is codecpar's array, which is where FFmpeg 6.1 moved
 // stream side data to.
 inline const uint8_t* avbase_stream_side_data(const AVStream* stream,
-                                             AVPacketSideDataType type,
-                                             size_t* size) {
+                                              AVPacketSideDataType type,
+                                              size_t* size) {
   *size = 0;
 #if AVBASE_FFMPEG_HAS_CODECPAR_SIDE_DATA
   if (!stream || !stream->codecpar) {

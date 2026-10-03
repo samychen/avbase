@@ -52,13 +52,14 @@ class FFmpegDemuxerTest : public ::testing::Test {
                         DemuxerOptions options = {}) {
     Status result = Err(ErrorCode::kNotImplemented, "not run", {}, {});
     bool done = false;
-    demuxer_->Initialize(
-        descriptor, options, &host_,
-        task_environment_.GetMainThreadTaskRunnerRef(),
-        base::BindOnce([](Status* out, bool* flag, Status s) {
-          *out = std::move(s);
-          *flag = true;
-        }, &result, &done));
+    demuxer_->Initialize(descriptor, options, &host_,
+                         task_environment_.GetMainThreadTaskRunnerRef(),
+                         base::BindOnce(
+                             [](Status* out, bool* flag, Status s) {
+                               *out = std::move(s);
+                               *flag = true;
+                             },
+                             &result, &done));
     for (int i = 0; i < 2000 && !done; ++i) {
       task_environment_.RunUntilIdle();
       if (!done) {
@@ -117,8 +118,8 @@ TEST_F(FFmpegDemuxerTest, OpensAHostSuppliedDataSource) {
   const std::vector<uint8_t> bytes =
       ReadFileBytes(TestFile("small_h264_aac_3s.mp4"));
   ASSERT_GT(bytes.size(), 1000u);
-  auto memory = base::MakeRefCounted<MemoryDataSource>(bytes.data(),
-                                                       bytes.size());
+  auto memory =
+      base::MakeRefCounted<MemoryDataSource>(bytes.data(), bytes.size());
   const Status status =
       OpenDescriptor(DataSourceDescriptor::FromSource(std::move(memory)));
   ASSERT_TRUE(status) << status.error().ToString();
@@ -221,18 +222,22 @@ TEST_F(FFmpegDemuxerTest, TruncatedFileReachesEndOfStream) {
   bool eos = false;
   for (int attempt = 0; attempt < 400 && !eos; ++attempt) {
     bool answered = false;
-    video->Read(8, base::BindOnce([](bool* flag, bool* eos_flag, int* count,
-                                     DemuxerStream::Status /*status*/,
-                                     DemuxerStream::DecoderBufferVector b) {
-                  *flag = true;
-                  *count += static_cast<int>(b.size());
-                  for (const auto& buf : b) {
-                    if (buf->IsEndOfStream()) *eos_flag = true;
-                  }
-                }, &answered, &eos, &buffers));
+    video->Read(8, base::BindOnce(
+                       [](bool* flag, bool* eos_flag, int* count,
+                          DemuxerStream::Status /*status*/,
+                          DemuxerStream::DecoderBufferVector b) {
+                         *flag = true;
+                         *count += static_cast<int>(b.size());
+                         for (const auto& buf : b) {
+                           if (buf->IsEndOfStream())
+                             *eos_flag = true;
+                         }
+                       },
+                       &answered, &eos, &buffers));
     for (int i = 0; i < 200 && !answered; ++i) {
       task_environment_.RunUntilIdle();
-      if (!answered) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+      if (!answered)
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     ASSERT_TRUE(answered) << "Read() never called back";
   }
@@ -257,28 +262,36 @@ TEST_F(FFmpegDemuxerTest, ReadsWholeFileWithMonotonicTimestamps) {
   for (int attempt = 0; attempt < 600 && !eos; ++attempt) {
     bool answered = false;
     bool non_monotonic = false;
-    video->Read(4, base::BindOnce([](bool* flag, bool* eos_flag, int* count,
-                                     bool* mono, bool* prev_valid,
-                                     base::TimeDelta* prev, int32_t serial,
-                                     DemuxerStream::Status,
-                                     DemuxerStream::DecoderBufferVector buffers) {
-                  *flag = true;
-                  *count += static_cast<int>(buffers.size());
-                  for (const auto& buf : buffers) {
-                    if (buf->IsEndOfStream()) { *eos_flag = true; continue; }
-                    EXPECT_EQ(buf->serial(), serial);
-                    EXPECT_EQ(buf->stream_type(), DemuxerStreamType::kVideo);
-                    EXPECT_GT(buf->data_size(), 0u);
-                    if (buf->timestamp().is_infinte()) continue;   // kNoTimestamp
-                    if (*prev_valid && buf->timestamp() < *prev) *mono = false;
-                    *prev = buf->timestamp();
-                    *prev_valid = true;
-                  }
-                }, &answered, &eos, &frames, &non_monotonic, &previous_valid,
-                &previous, expected_serial));
+    video->Read(4, base::BindOnce(
+                       [](bool* flag, bool* eos_flag, int* count, bool* mono,
+                          bool* prev_valid, base::TimeDelta* prev,
+                          int32_t serial, DemuxerStream::Status,
+                          DemuxerStream::DecoderBufferVector buffers) {
+                         *flag = true;
+                         *count += static_cast<int>(buffers.size());
+                         for (const auto& buf : buffers) {
+                           if (buf->IsEndOfStream()) {
+                             *eos_flag = true;
+                             continue;
+                           }
+                           EXPECT_EQ(buf->serial(), serial);
+                           EXPECT_EQ(buf->stream_type(),
+                                     DemuxerStreamType::kVideo);
+                           EXPECT_GT(buf->data_size(), 0u);
+                           if (buf->timestamp().is_infinte())
+                             continue;  // kNoTimestamp
+                           if (*prev_valid && buf->timestamp() < *prev)
+                             *mono = false;
+                           *prev = buf->timestamp();
+                           *prev_valid = true;
+                         }
+                       },
+                       &answered, &eos, &frames, &non_monotonic,
+                       &previous_valid, &previous, expected_serial));
     for (int i = 0; i < 400 && !answered; ++i) {
       task_environment_.RunUntilIdle();
-      if (!answered) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+      if (!answered)
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     ASSERT_TRUE(answered);
     ASSERT_FALSE(non_monotonic) << "video pts went backwards";
@@ -304,14 +317,17 @@ TEST_F(FFmpegDemuxerTest, SeekBumpsSerialAndReportsCompletion) {
   Status seek_status = Err(ErrorCode::kNotImplemented, "unset", {}, {});
   demuxer_->StartPlayingFrom(
       base::Seconds(2),
-      base::BindOnce([](bool* done, Status* out, Status s, base::TimeDelta) {
-        *done = true;
-        *out = std::move(s);
-      }, &seek_done, &seek_status));
+      base::BindOnce(
+          [](bool* done, Status* out, Status s, base::TimeDelta) {
+            *done = true;
+            *out = std::move(s);
+          },
+          &seek_done, &seek_status));
 
   for (int i = 0; i < 1000 && !seek_done; ++i) {
     task_environment_.RunUntilIdle();
-    if (!seek_done) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    if (!seek_done)
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
   }
   ASSERT_TRUE(seek_done) << "the seek callback never ran";
   ASSERT_TRUE(seek_status) << seek_status.error().ToString();
@@ -325,7 +341,8 @@ TEST_F(FFmpegDemuxerTest, StopIsPromptEvenWhileBlockedInRead) {
   // Nothing is consuming, so the demux thread will block on a full queue.
   for (int i = 0; i < 100; ++i) {
     task_environment_.RunUntilIdle();
-    if (demuxer_->GetStats().packets_demuxed > 200) break;
+    if (demuxer_->GetStats().packets_demuxed > 200)
+      break;
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   const base::TimeTicks before = base::TimeTicks::Now();
@@ -342,8 +359,10 @@ TEST_F(FFmpegDemuxerTest, StageEventsAreLogged) {
   bool saw_open = false;
   bool saw_stream_info = false;
   for (const MediaLogEvent& event : events) {
-    if (event.type == MediaLogEvent::Type::kOpenInput) saw_open = true;
-    if (event.type == MediaLogEvent::Type::kFindStreamInfo) saw_stream_info = true;
+    if (event.type == MediaLogEvent::Type::kOpenInput)
+      saw_open = true;
+    if (event.type == MediaLogEvent::Type::kFindStreamInfo)
+      saw_stream_info = true;
   }
   EXPECT_TRUE(saw_open);
   EXPECT_TRUE(saw_stream_info);

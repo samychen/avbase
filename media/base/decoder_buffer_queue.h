@@ -45,11 +45,11 @@ namespace avbase::media {
 class AVBASE_MEDIA_EXPORT DecoderBufferQueue {
  public:
   enum class PopStatus {
-    kOk,            // |out| holds a buffer.
-    kEmpty,         // Queue is empty and closed for further input.
-    kFlushed,       // A Flush() happened while waiting; retry.
-    kAborted,       // Abort() was called; the consumer should exit.
-    kEndOfStream,   // The EOS marker was reached.
+    kOk,           // |out| holds a buffer.
+    kEmpty,        // Queue is empty and closed for further input.
+    kFlushed,      // A Flush() happened while waiting; retry.
+    kAborted,      // Abort() was called; the consumer should exit.
+    kEndOfStream,  // The EOS marker was reached.
   };
 
   struct Stats {
@@ -87,8 +87,10 @@ class AVBASE_MEDIA_EXPORT DecoderBufferQueue {
 
   // Blocks until a buffer is available. Returns the reason it stopped.
   PopStatus Pop(base::scoped_refptr<DecoderBuffer>* out);
-  // Non-blocking; takes up to |max| buffers. Returns kEmpty when none are ready.
-  PopStatus PopUpTo(size_t max, std::vector<base::scoped_refptr<DecoderBuffer>>* out);
+  // Non-blocking; takes up to |max| buffers. Returns kEmpty when none are
+  // ready.
+  PopStatus PopUpTo(size_t max,
+                    std::vector<base::scoped_refptr<DecoderBuffer>>* out);
 
   // Clears the queue, bumps the serial and wakes every waiter with kFlushed.
   void Flush();
@@ -139,7 +141,8 @@ class AVBASE_MEDIA_EXPORT DecoderBufferQueue {
   std::atomic<uint64_t> pop_waits_{0};
 };
 
-AVBASE_MEDIA_EXPORT const char* GetPopStatusName(DecoderBufferQueue::PopStatus s);
+AVBASE_MEDIA_EXPORT const char*
+GetPopStatusName(DecoderBufferQueue::PopStatus s);
 
 }  // namespace avbase::media
 

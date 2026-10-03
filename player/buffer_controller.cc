@@ -48,8 +48,8 @@ void BufferController::OnSeekCompleted() {
   buffering_ = false;
 }
 
-BufferController::Decision BufferController::Evaluate(
-    base::TimeDelta buffered_time) const {
+BufferController::Decision
+BufferController::Evaluate(base::TimeDelta buffered_time) const {
   if (!buffering_) {
     return Decision::kProceed;
   }
@@ -69,12 +69,12 @@ int BufferController::progress_percent(base::TimeDelta buffered_time) const {
 
 base::TimeDelta BufferController::current_mark() const {
   switch (step_) {
-    case Step::kFirst:
-      return thresholds_.first;
-    case Step::kNext:
-      return thresholds_.next;
-    case Step::kLast:
-      return thresholds_.last;
+  case Step::kFirst:
+    return thresholds_.first;
+  case Step::kNext:
+    return thresholds_.next;
+  case Step::kLast:
+    return thresholds_.last;
   }
   return thresholds_.last;
 }

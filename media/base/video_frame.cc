@@ -25,26 +25,26 @@ struct PlaneLayout {
 
 PlaneLayout LayoutFor(VideoFormat format) {
   switch (format) {
-    case VideoFormat::kI420:
-    case VideoFormat::kYV12:
-      return {3, {1, 2, 2, 0}, {1, 1, 1, 0}, {1, 2, 2, 0}};
-    case VideoFormat::kNV12:
-    case VideoFormat::kNV21:
-      return {2, {1, 2, 0, 0}, {1, 2, 0, 0}, {1, 1, 0, 0}};
-    case VideoFormat::kYUV420P10:
-      return {3, {1, 2, 2, 0}, {2, 2, 2, 0}, {1, 2, 2, 0}};
-    case VideoFormat::kP010:
-      return {2, {1, 2, 0, 0}, {4, 4, 0, 0}, {1, 1, 0, 0}};
-    case VideoFormat::kYUY2:
-      return {1, {1, 0, 0, 0}, {2, 0, 0, 0}, {1, 0, 0, 0}};
-    case VideoFormat::kARGB:
-      return {1, {1, 0, 0, 0}, {4, 0, 0, 0}, {1, 0, 0, 0}};
-    case VideoFormat::kRGB24:
-      return {1, {1, 0, 0, 0}, {3, 0, 0, 0}, {1, 0, 0, 0}};
-    case VideoFormat::kRGB565:
-      return {1, {1, 0, 0, 0}, {2, 0, 0, 0}, {1, 0, 0, 0}};
-    case VideoFormat::kUnknown:
-      break;
+  case VideoFormat::kI420:
+  case VideoFormat::kYV12:
+    return {3, {1, 2, 2, 0}, {1, 1, 1, 0}, {1, 2, 2, 0}};
+  case VideoFormat::kNV12:
+  case VideoFormat::kNV21:
+    return {2, {1, 2, 0, 0}, {1, 2, 0, 0}, {1, 1, 0, 0}};
+  case VideoFormat::kYUV420P10:
+    return {3, {1, 2, 2, 0}, {2, 2, 2, 0}, {1, 2, 2, 0}};
+  case VideoFormat::kP010:
+    return {2, {1, 2, 0, 0}, {4, 4, 0, 0}, {1, 1, 0, 0}};
+  case VideoFormat::kYUY2:
+    return {1, {1, 0, 0, 0}, {2, 0, 0, 0}, {1, 0, 0, 0}};
+  case VideoFormat::kARGB:
+    return {1, {1, 0, 0, 0}, {4, 0, 0, 0}, {1, 0, 0, 0}};
+  case VideoFormat::kRGB24:
+    return {1, {1, 0, 0, 0}, {3, 0, 0, 0}, {1, 0, 0, 0}};
+  case VideoFormat::kRGB565:
+    return {1, {1, 0, 0, 0}, {2, 0, 0, 0}, {1, 0, 0, 0}};
+  case VideoFormat::kUnknown:
+    break;
   }
   return {0, {0, 0, 0, 0}, {0, 0, 0, 0}, {1, 1, 1, 1}};
 }
@@ -53,17 +53,28 @@ PlaneLayout LayoutFor(VideoFormat format) {
 
 const char* GetVideoFormatName(VideoFormat format) {
   switch (format) {
-    case VideoFormat::kUnknown:   return "unknown";
-    case VideoFormat::kI420:      return "I420";
-    case VideoFormat::kYV12:      return "YV12";
-    case VideoFormat::kNV12:      return "NV12";
-    case VideoFormat::kNV21:      return "NV21";
-    case VideoFormat::kYUY2:      return "YUY2";
-    case VideoFormat::kARGB:      return "ARGB";
-    case VideoFormat::kRGB24:     return "RGB24";
-    case VideoFormat::kRGB565:    return "RGB565";
-    case VideoFormat::kYUV420P10: return "YUV420P10";
-    case VideoFormat::kP010:      return "P010";
+  case VideoFormat::kUnknown:
+    return "unknown";
+  case VideoFormat::kI420:
+    return "I420";
+  case VideoFormat::kYV12:
+    return "YV12";
+  case VideoFormat::kNV12:
+    return "NV12";
+  case VideoFormat::kNV21:
+    return "NV21";
+  case VideoFormat::kYUY2:
+    return "YUY2";
+  case VideoFormat::kARGB:
+    return "ARGB";
+  case VideoFormat::kRGB24:
+    return "RGB24";
+  case VideoFormat::kRGB565:
+    return "RGB565";
+  case VideoFormat::kYUV420P10:
+    return "YUV420P10";
+  case VideoFormat::kP010:
+    return "P010";
   }
   return "invalid";
 }
@@ -74,10 +85,14 @@ int VideoFormatPlaneCount(VideoFormat format) {
 
 const char* GetNativeHandleKindName(NativeHandleKind kind) {
   switch (kind) {
-    case NativeHandleKind::kNone:         return "none";
-    case NativeHandleKind::kVaapiSurface: return "vaapi-surface";
-    case NativeHandleKind::kD3D11Texture: return "d3d11-texture";
-    case NativeHandleKind::kCVPixelBuffer: return "cvpixelbuffer";
+  case NativeHandleKind::kNone:
+    return "none";
+  case NativeHandleKind::kVaapiSurface:
+    return "vaapi-surface";
+  case NativeHandleKind::kD3D11Texture:
+    return "d3d11-texture";
+  case NativeHandleKind::kCVPixelBuffer:
+    return "cvpixelbuffer";
   }
   return "invalid";
 }
@@ -106,15 +121,9 @@ base::scoped_refptr<VideoFrame> VideoFrame::ToI420() const {
 
 // static
 base::scoped_refptr<VideoFrame> VideoFrame::WrapNativeBuffer(
-    NativeHandle handle,
-    VideoFormat format,
-    Size coded_size,
-    Size natural_size,
-    Rational sar,
-    base::TimeDelta timestamp,
-    base::TimeDelta duration,
-    int32_t serial,
-    base::OnceClosure release_cb,
+    NativeHandle handle, VideoFormat format, Size coded_size, Size natural_size,
+    Rational sar, base::TimeDelta timestamp, base::TimeDelta duration,
+    int32_t serial, base::OnceClosure release_cb,
     base::RepeatingCallback<base::scoped_refptr<VideoFrame>()> to_i420_cb) {
   DCHECK(handle.kind != NativeHandleKind::kNone)
       << "WrapNativeBuffer needs a typed handle; use CreateBlackFrame for "
@@ -174,13 +183,8 @@ std::string VideoFrame::AsDebugString() const {
 
 // static
 base::scoped_refptr<VideoFrame> VideoFrame::CreateBlackFrame(
-    VideoFormat format,
-    Size coded_size,
-    Size natural_size,
-    Rational sar,
-    base::TimeDelta timestamp,
-    base::TimeDelta duration,
-    int32_t serial) {
+    VideoFormat format, Size coded_size, Size natural_size, Rational sar,
+    base::TimeDelta timestamp, base::TimeDelta duration, int32_t serial) {
   const PlaneLayout layout = LayoutFor(format);
   CHECK_GT(layout.plane_count, 0) << "CreateBlackFrame: unknown format";
 
@@ -204,8 +208,8 @@ base::scoped_refptr<VideoFrame> VideoFrame::CreateBlackFrame(
                          layout.width_bytes_den[p]) +
                         kAlignment - 1) /
                        kAlignment * kAlignment;
-    const int rows = (coded_size.height + layout.height_div[p] - 1) /
-                     layout.height_div[p];
+    const int rows =
+        (coded_size.height + layout.height_div[p] - 1) / layout.height_div[p];
     // strides_/allocated_sizes_ are std::array, whose operator[] takes size_t;
     // the plane index is an int because it is compared against plane_count.
     const size_t plane = static_cast<size_t>(p);
@@ -217,8 +221,8 @@ base::scoped_refptr<VideoFrame> VideoFrame::CreateBlackFrame(
   }
 
   frame->allocation_ = std::calloc(1, total);
-  CHECK(frame->allocation_) << "CreateBlackFrame: allocation of " << total
-                            << " bytes failed";
+  CHECK(frame->allocation_)
+      << "CreateBlackFrame: allocation of " << total << " bytes failed";
   auto* base_ptr = static_cast<uint8_t*>(frame->allocation_);
   for (int p = 0; p < layout.plane_count; ++p) {
     const size_t plane = static_cast<size_t>(p);

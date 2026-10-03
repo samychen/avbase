@@ -45,7 +45,7 @@ class WeakReferenceFlag : public RefCountedThreadSafe<WeakReferenceFlag> {
     std::thread::id expected{};
     if (bound_thread_.compare_exchange_strong(expected, id,
                                               std::memory_order_acq_rel)) {
-      return true;   // First dereference binds the sequence.
+      return true;  // First dereference binds the sequence.
     }
     return expected == id;
   }
@@ -83,7 +83,7 @@ class WeakPtr {
 
   template <typename U>
   WeakPtr(const WeakPtr<U>& other) noexcept
-      requires(std::is_convertible_v<U*, T*>)
+    requires(std::is_convertible_v<U*, T*>)
       : flag_(other.flag_), ptr_(other.ptr_) {}
 
   ~WeakPtr() = default;
@@ -96,9 +96,7 @@ class WeakPtr {
     CheckValid();
     return ptr_;
   }
-  T* get() const {
-    return MaybeValid() ? ptr_ : nullptr;
-  }
+  T* get() const { return MaybeValid() ? ptr_ : nullptr; }
 
   explicit operator bool() const { return MaybeValid(); }
 
@@ -150,9 +148,7 @@ class WeakPtrFactory {
 
   ~WeakPtrFactory() { InvalidateWeakPtrs(); }
 
-  WeakPtr<T> GetWeakPtr() const {
-    return WeakPtr<T>(flag_, instance_);
-  }
+  WeakPtr<T> GetWeakPtr() const { return WeakPtr<T>(flag_, instance_); }
 
   void InvalidateWeakPtrs() {
     if (flag_) {

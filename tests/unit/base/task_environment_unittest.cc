@@ -74,11 +74,14 @@ TEST_F(TaskEnvironmentTest, RunUntilIdleSkipsFutureDelayedTasks) {
 TEST_F(TaskEnvironmentTest, FastForwardByRunsDueTasksInTimeOrder) {
   std::vector<int> order;
   auto* runner = task_environment_.GetMainThreadTaskRunner();
-  runner->PostDelayedTask(FROM_HERE, BindOnce([&order]() { order.push_back(3); }),
+  runner->PostDelayedTask(FROM_HERE,
+                          BindOnce([&order]() { order.push_back(3); }),
                           Milliseconds(300));
-  runner->PostDelayedTask(FROM_HERE, BindOnce([&order]() { order.push_back(1); }),
+  runner->PostDelayedTask(FROM_HERE,
+                          BindOnce([&order]() { order.push_back(1); }),
                           Milliseconds(100));
-  runner->PostDelayedTask(FROM_HERE, BindOnce([&order]() { order.push_back(2); }),
+  runner->PostDelayedTask(FROM_HERE,
+                          BindOnce([&order]() { order.push_back(2); }),
                           Milliseconds(200));
 
   const TimeTicks start = task_environment_.NowTicks();
@@ -152,7 +155,7 @@ TEST_F(TaskEnvironmentTest, AdvanceClockDoesNotRunTasks) {
   task_environment_.GetMainThreadTaskRunner()->PostDelayedTask(
       FROM_HERE, BindOnce([&ran]() { ran = true; }), Milliseconds(10));
   task_environment_.AdvanceClock(Milliseconds(50));
-  EXPECT_FALSE(ran);   // Clock moved, queue untouched.
+  EXPECT_FALSE(ran);  // Clock moved, queue untouched.
   task_environment_.RunUntilIdle();
   EXPECT_TRUE(ran);
 }

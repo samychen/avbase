@@ -86,8 +86,9 @@ class OnceCallback<R(Args...)> {
 
   template <typename Functor>
   explicit OnceCallback(Functor f)
-      : invoker_(std::make_unique<
-                 internal::OnceInvokerImpl<Functor, R, Args...>>(std::move(f))) {}
+      : invoker_(
+            std::make_unique<internal::OnceInvokerImpl<Functor, R, Args...>>(
+                std::move(f))) {}
 
   explicit operator bool() const noexcept { return invoker_ != nullptr; }
   bool is_null() const noexcept { return invoker_ == nullptr; }

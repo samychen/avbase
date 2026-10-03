@@ -48,12 +48,12 @@ void AudioRendererImpl::PreStretch() {
     const int got =
         algorithm_.FillBuffer(slot.bus.get(), 0, chunk_frames, rate);
     if (got <= 0) {
-      return;                     // dry; the next decoded buffer wakes us up
+      return;  // dry; the next decoded buffer wakes us up
     }
     slot.frames = got;
     slot.media_time = next_chunk_media_time_;
-    next_chunk_media_time_ += OutputFramesToMediaTime(got, rate,
-                                                     params_.sample_rate());
+    next_chunk_media_time_ +=
+        OutputFramesToMediaTime(got, rate, params_.sample_rate());
     {
       base::AutoLock scoped(handoff_lock_);
       ++ring_count_;
@@ -89,8 +89,7 @@ int AudioRendererImpl::DrainRing(AudioBus* dest, int64_t* first_media_micros) {
     if (!have_time) {
       *first_media_micros =
           (front.media_time +
-           OutputFramesToMediaTime(front_offset_, rate,
-                                   params_.sample_rate()))
+           OutputFramesToMediaTime(front_offset_, rate, params_.sample_rate()))
               .InMicroseconds();
       have_time = true;
     }

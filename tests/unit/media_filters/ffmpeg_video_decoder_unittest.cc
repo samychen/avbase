@@ -16,10 +16,10 @@
 
 #include "base/functional/bind.h"
 #include "base/test/task_environment.h"
+#include "gtest/gtest.h"
 #include "media/base/video_decoder_factory.h"
 #include "media/filters/decoder_selector.h"
 #include "media/filters/ffmpeg_demuxer.h"
-#include "gtest/gtest.h"
 
 namespace avbase::media {
 namespace {
@@ -51,13 +51,14 @@ class DecodePipeline {
   bool Open() {
     Status result = Err(ErrorCode::kNotImplemented, "not run", {}, {});
     bool done = false;
-    demuxer_->Initialize(
-        DataSourceDescriptor::FromUri(path_), DemuxerOptions{}, &host_,
-        env_.GetMainThreadTaskRunnerRef(),
-        base::BindOnce([](Status* out, bool* flag, Status s) {
-          *out = std::move(s);
-          *flag = true;
-        }, &result, &done));
+    demuxer_->Initialize(DataSourceDescriptor::FromUri(path_), DemuxerOptions{},
+                         &host_, env_.GetMainThreadTaskRunnerRef(),
+                         base::BindOnce(
+                             [](Status* out, bool* flag, Status s) {
+                               *out = std::move(s);
+                               *flag = true;
+                             },
+                             &result, &done));
     PumpUntil([&done] { return done; });
     return done && result.has_value();
   }
@@ -73,10 +74,12 @@ class DecodePipeline {
     DecoderStatus init_status;
     decoder_->Initialize(
         config, /*low_delay=*/false, /*cdm=*/nullptr,
-        base::BindOnce([](bool* flag, DecoderStatus* out, DecoderStatus s) {
-          *flag = true;
-          *out = s;
-        }, &init_done, &init_status),
+        base::BindOnce(
+            [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+              *flag = true;
+              *out = s;
+            },
+            &init_done, &init_status),
         base::BindRepeating(
             [](std::vector<base::scoped_refptr<VideoFrame>>* sink,
                base::scoped_refptr<VideoFrame> frame) {
@@ -90,28 +93,31 @@ class DecodePipeline {
     }
 
     bool eos = false;
-    for (size_t round = 0; round < max_rounds && frames_.size() < wanted && !eos;
-         ++round) {
+    for (size_t round = 0;
+         round < max_rounds && frames_.size() < wanted && !eos; ++round) {
       bool answered = false;
-      video->Read(4, base::BindOnce([](bool* flag, bool* eos_flag,
-                                       DemuxerStream::Status,
-                                       DemuxerStream::DecoderBufferVector buffers) {
-                    *flag = true;
-                    for (const auto& b : buffers) {
-                      if (b->IsEndOfStream()) *eos_flag = true;
-                    }
-                    // Store for the decode step below.
-                    PendingBuffers() = std::move(buffers);
-                  }, &answered, &eos));
+      video->Read(4, base::BindOnce(
+                         [](bool* flag, bool* eos_flag, DemuxerStream::Status,
+                            DemuxerStream::DecoderBufferVector buffers) {
+                           *flag = true;
+                           for (const auto& b : buffers) {
+                             if (b->IsEndOfStream())
+                               *eos_flag = true;
+                           }
+                           // Store for the decode step below.
+                           PendingBuffers() = std::move(buffers);
+                         },
+                         &answered, &eos));
       PumpUntil([&answered] { return answered; });
       if (!answered) {
         break;
       }
       for (auto& buffer : PendingBuffers()) {
         bool decode_done = false;
-        decoder_->Decode(buffer, base::BindOnce([](bool* flag, DecoderStatus) {
-                                           *flag = true;
-                                         }, &decode_done));
+        decoder_->Decode(
+            buffer,
+            base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; },
+                           &decode_done));
         PumpUntil([&decode_done] { return decode_done; });
       }
       PendingBuffers().clear();
@@ -119,9 +125,10 @@ class DecodePipeline {
 
     // Flush the decoder so buffered frames (B-frame reorder delay) come out.
     bool flushed = false;
-    decoder_->Decode(DecoderBuffer::CreateEOSBuffer(),
-                     base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; },
-                                    &flushed));
+    decoder_->Decode(
+        DecoderBuffer::CreateEOSBuffer(),
+        base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; },
+                       &flushed));
     PumpUntil([&flushed] { return flushed; });
     return frames_.size();
   }
@@ -194,8 +201,9 @@ TEST_F(FFmpegVideoDecoderTest, DecodedFramesCarryCorrectGeometry) {
   for (size_t i = 0; i < y.size() && !has_non_black; i += 97) {
     has_non_black = (y[i] != 0);
   }
-  EXPECT_TRUE(has_non_black) << "decoded luma is all zero — conversion produced "
-                                "no pixels";
+  EXPECT_TRUE(has_non_black)
+      << "decoded luma is all zero — conversion produced "
+         "no pixels";
 }
 
 TEST_F(FFmpegVideoDecoderTest, TimestampsAdvanceAcrossDecodedFrames) {
@@ -220,8 +228,8 @@ TEST_F(FFmpegVideoDecoderTest, TimestampsAdvanceAcrossDecodedFrames) {
   // Frames come out of the decoder in presentation order, so pts must not go
   // backwards. This is the invariant VideoFrameCompositor relies on when it
   // derives last_duration from a pts delta.
-  EXPECT_EQ(regressions, 0) << "presentation timestamps went backwards "
-                            << regressions << " time(s)";
+  EXPECT_EQ(regressions, 0)
+      << "presentation timestamps went backwards " << regressions << " time(s)";
   EXPECT_GT(previous, base::Seconds(2))
       << "last decoded pts should be near the 3 s mark";
 }
@@ -250,15 +258,17 @@ TEST_F(FFmpegVideoDecoderTest, UnsupportedCodecReportsActionableStatus) {
   bool done = false;
   DecoderStatus status;
   decoder->Initialize(config, false, nullptr,
-                      base::BindOnce([](bool* flag, DecoderStatus* out,
-                                        DecoderStatus s) {
-                        *flag = true;
-                        *out = s;
-                      }, &done, &status),
+                      base::BindOnce(
+                          [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+                            *flag = true;
+                            *out = s;
+                          },
+                          &done, &status),
                       VideoDecoder::OutputCB(), WaitingCB());
   for (int i = 0; i < 500 && !done; ++i) {
     task_environment_.RunUntilIdle();
-    if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    if (!done)
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
   ASSERT_TRUE(done);
   EXPECT_FALSE(status.is_ok());
@@ -273,11 +283,12 @@ TEST_F(FFmpegVideoDecoderTest, DecodeBeforeInitializeReportsNotInitialized) {
   bool done = false;
   DecoderStatus status;
   decoder->Decode(DecoderBuffer::CreateEOSBuffer(),
-                  base::BindOnce([](bool* flag, DecoderStatus* out,
-                                    DecoderStatus s) {
-                    *flag = true;
-                    *out = s;
-                  }, &done, &status));
+                  base::BindOnce(
+                      [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+                        *flag = true;
+                        *out = s;
+                      },
+                      &done, &status));
   for (int i = 0; i < 500 && !done; ++i) {
     task_environment_.RunUntilIdle();
   }
@@ -297,20 +308,21 @@ TEST_F(FFmpegVideoDecoderTest, DecodeCallbackIsNeverRunInline) {
   config.coded_size = Size{64, 64};
 
   bool init_done = false;
-  decoder->Initialize(config, false, nullptr,
-                      base::BindOnce([](bool* f, DecoderStatus) { *f = true; },
-                                     &init_done),
-                      VideoDecoder::OutputCB(), WaitingCB());
+  decoder->Initialize(
+      config, false, nullptr,
+      base::BindOnce([](bool* f, DecoderStatus) { *f = true; }, &init_done),
+      VideoDecoder::OutputCB(), WaitingCB());
   for (int i = 0; i < 500 && !init_done; ++i) {
     task_environment_.RunUntilIdle();
   }
 
   bool ran_inline = false;
   bool cb_ran = false;
-  decoder->Decode(DecoderBuffer::CreateEOSBuffer(),
-                  base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; },
-                                 &cb_ran));
-  ran_inline = cb_ran;   // True only if the callback fired before Decode returned.
+  decoder->Decode(
+      DecoderBuffer::CreateEOSBuffer(),
+      base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; }, &cb_ran));
+  ran_inline =
+      cb_ran;  // True only if the callback fired before Decode returned.
   EXPECT_FALSE(ran_inline) << "decode_cb ran inline, violating the contract";
 
   for (int i = 0; i < 500 && !cb_ran; ++i) {
@@ -332,7 +344,8 @@ class FakeVideoDecoderFactory final : public VideoDecoderFactory {
   }
   VideoDecoderCapability GetCapability() const override { return capability_; }
   bool SupportsCodec(VideoDecoderType) const override { return true; }
-  std::unique_ptr<VideoDecoder> CreateVideoDecoder(const VideoDecoderConfig&) override {
+  std::unique_ptr<VideoDecoder>
+  CreateVideoDecoder(const VideoDecoderConfig&) override {
     return nullptr;
   }
   const char* name() const override { return name_.c_str(); }
@@ -399,7 +412,8 @@ TEST(DecoderSelectorTest, HwCodecMaskFiltersByCodec) {
   EXPECT_STREQ(selected[0]->name(), "ffmpeg");
   bool explained = false;
   for (const std::string& reason : reasons) {
-    if (reason.find("hw_codecs") != std::string::npos) explained = true;
+    if (reason.find("hw_codecs") != std::string::npos)
+      explained = true;
   }
   EXPECT_TRUE(explained) << "rejection was not explained: "
                          << (reasons.empty() ? "(none)" : reasons[0]);
@@ -407,7 +421,8 @@ TEST(DecoderSelectorTest, HwCodecMaskFiltersByCodec) {
 
 TEST(DecoderSelectorTest, ResolutionCapExcludesOversizedStreams) {
   FactoryList factories = {
-      base::MakeRefCounted<FakeVideoDecoderFactory>("vaapi-1080p", true, 10, 1920),
+      base::MakeRefCounted<FakeVideoDecoderFactory>("vaapi-1080p", true, 10,
+                                                    1920),
       base::MakeRefCounted<FakeVideoDecoderFactory>("ffmpeg", false, 0)};
   std::vector<std::string> reasons;
   const auto selected = DecoderSelector::SelectVideoDecoder(

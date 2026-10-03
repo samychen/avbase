@@ -45,13 +45,12 @@ void RendererImpl::SetPaused(bool paused) {
   }
 }
 
-void RendererImpl::SetOutputTarget(
-    base::scoped_refptr<NativeDisplay> display) {
+void RendererImpl::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
   if (video_) {
     deps_.video_task_runner->PostTask(
-        FROM_HERE, base::BindOnce(&VideoRendererImpl::SetOutputTarget,
-                                  base::Unretained(video_.get()),
-                                  std::move(display)));
+        FROM_HERE,
+        base::BindOnce(&VideoRendererImpl::SetOutputTarget,
+                       base::Unretained(video_.get()), std::move(display)));
   }
 }
 
@@ -87,9 +86,8 @@ void RendererImpl::EndAccurateSeek() {
   }
   if (video_) {
     deps_.video_task_runner->PostTask(
-        FROM_HERE,
-        base::BindOnce(&VideoRendererImpl::EndAccurateSeek,
-                       base::Unretained(video_.get())));
+        FROM_HERE, base::BindOnce(&VideoRendererImpl::EndAccurateSeek,
+                                  base::Unretained(video_.get())));
   }
 }
 
@@ -117,9 +115,8 @@ void RendererImpl::OnVideoFramePresented(base::TimeDelta timestamp,
   // display just before teardown must not be able to name a destroyed
   // renderer.
   deps_.media_task_runner->PostTask(
-      FROM_HERE,
-      base::BindOnce(&RendererImpl::CheckBufferingTransitions,
-                     weak_factory_.GetWeakPtr()));
+      FROM_HERE, base::BindOnce(&RendererImpl::CheckBufferingTransitions,
+                                weak_factory_.GetWeakPtr()));
 }
 
 void RendererImpl::OnAccurateSeekTargetReached() {
@@ -145,9 +142,9 @@ void RendererImpl::SetCdm(CdmContext* /*cdm_context*/,
 void RendererImpl::SetLatencyHint(std::optional<base::TimeDelta> latency_hint) {
   if (audio_) {
     deps_.audio_task_runner->PostTask(
-        FROM_HERE, base::BindOnce(&AudioRendererImpl::SetLatencyHint,
-                                  base::Unretained(audio_.get()),
-                                  latency_hint));
+        FROM_HERE,
+        base::BindOnce(&AudioRendererImpl::SetLatencyHint,
+                       base::Unretained(audio_.get()), latency_hint));
   }
   // Gap 6: the video side has no latency input, so a live stream can still fall
   // arbitrarily far behind on video while audio chases the hint.
@@ -156,9 +153,9 @@ void RendererImpl::SetLatencyHint(std::optional<base::TimeDelta> latency_hint) {
 void RendererImpl::SetPreservesPitch(bool preserves_pitch) {
   if (audio_) {
     deps_.audio_task_runner->PostTask(
-        FROM_HERE, base::BindOnce(&AudioRendererImpl::SetPreservesPitch,
-                                  base::Unretained(audio_.get()),
-                                  preserves_pitch));
+        FROM_HERE,
+        base::BindOnce(&AudioRendererImpl::SetPreservesPitch,
+                       base::Unretained(audio_.get()), preserves_pitch));
   }
 }
 
@@ -180,15 +177,15 @@ void RendererImpl::SetPlaybackRate(double playback_rate) {
   }
   if (audio_) {
     deps_.audio_task_runner->PostTask(
-        FROM_HERE, base::BindOnce(&AudioRendererImpl::SetPlaybackRate,
-                                  base::Unretained(audio_.get()),
-                                  playback_rate));
+        FROM_HERE,
+        base::BindOnce(&AudioRendererImpl::SetPlaybackRate,
+                       base::Unretained(audio_.get()), playback_rate));
   }
   if (video_) {
     deps_.video_task_runner->PostTask(
-        FROM_HERE, base::BindOnce(&VideoRendererImpl::SetPlaybackRate,
-                                  base::Unretained(video_.get()),
-                                  playback_rate));
+        FROM_HERE,
+        base::BindOnce(&VideoRendererImpl::SetPlaybackRate,
+                       base::Unretained(video_.get()), playback_rate));
   }
 }
 
@@ -242,13 +239,11 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
         std::move(change_completed_cb).Run();
         return;
       }
-      text_decoder_ =
-          deps_.text_decoder_factory->CreateTextDecoder(config);
+      text_decoder_ = deps_.text_decoder_factory->CreateTextDecoder(config);
       if (!text_decoder_) {
         ReportError(MediaError(
             ErrorCode::kNotImplemented,
-            "cannot decode that subtitle codec (\"" + config.codec_name +
-                "\")",
+            "cannot decode that subtitle codec (\"" + config.codec_name + "\")",
             "the text decoder factory declined the config; see the log for "
             "the FFmpeg-side reason",
             "re-encode the subtitle track as srt/ass/mov_text, or use an "
@@ -308,7 +303,7 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
     return;
   }
   if (enabled_track == audio_stream_) {
-    std::move(change_completed_cb).Run();   // Same track: nothing to do.
+    std::move(change_completed_cb).Run();  // Same track: nothing to do.
     return;
   }
   SwitchAudioRenderer(enabled_track, std::move(change_completed_cb));
@@ -342,9 +337,8 @@ void RendererImpl::SwitchAudioRenderer(DemuxerStream* new_stream,
   retired_audio_.emplace_back(audio_.release());
   AudioRendererImpl* old = retired_audio_.back().get();
   deps_.audio_task_runner->PostTask(
-      FROM_HERE,
-      base::BindOnce(&AudioRendererImpl::StopAndDrainForTeardown,
-                     base::Unretained(old), base::DoNothing()));
+      FROM_HERE, base::BindOnce(&AudioRendererImpl::StopAndDrainForTeardown,
+                                base::Unretained(old), base::DoNothing()));
   audio_stream_ = new_stream;
   audio_params_ = MakeAudioParameters(new_stream->audio_decoder_config(),
                                       deps_.audio_frames_per_buffer);
@@ -355,13 +349,12 @@ void RendererImpl::SwitchAudioRenderer(DemuxerStream* new_stream,
   audio_initialized_ = false;
   deps_.audio_task_runner->PostTask(
       FROM_HERE,
-      base::BindOnce(&AudioRendererImpl::Initialize,
-                     base::Unretained(audio_.get()), new_stream, audio_params_,
-                     deps_.audio_sink,
-                     base::BindOnce(&RendererImpl::OnSwitchedAudioInitialized,
-                                    base::Unretained(this), was_rendering,
-                                    resume_at, settings,
-                                    std::move(change_completed_cb))));
+      base::BindOnce(
+          &AudioRendererImpl::Initialize, base::Unretained(audio_.get()),
+          new_stream, audio_params_, deps_.audio_sink,
+          base::BindOnce(&RendererImpl::OnSwitchedAudioInitialized,
+                         base::Unretained(this), was_rendering, resume_at,
+                         settings, std::move(change_completed_cb))));
 }
 
 void RendererImpl::OnSwitchedAudioInitialized(
@@ -433,12 +426,12 @@ void RendererImpl::FinishAudioSwitch(bool was_rendering,
 
 // The reasoning lives at the declaration in renderer_impl.h.
 void RendererImpl::SetSourceLiveness(bool is_live,
-                                    base::TimeDelta max_cue_age) {
+                                     base::TimeDelta max_cue_age) {
   source_is_live_ = is_live;
   // Clamped: a negative window would make every cue stale, so a misconfigured
   // value must disable the policy rather than drop everything.
-  max_cue_age_ = max_cue_age > base::TimeDelta() ? max_cue_age
-                                                 : base::TimeDelta();
+  max_cue_age_ =
+      max_cue_age > base::TimeDelta() ? max_cue_age : base::TimeDelta();
   if (source_is_live_ && max_cue_age_ > base::TimeDelta()) {
     LOG(INFO) << "avbase.text: live source, cues older than "
               << max_cue_age_.InMilliseconds() << "ms will be dropped";
@@ -447,7 +440,7 @@ void RendererImpl::SetSourceLiveness(bool is_live,
 
 bool RendererImpl::IsCueStale(const TimedTextCue& cue) const {
   if (!source_is_live_ || max_cue_age_ <= base::TimeDelta()) {
-    return false;   // Recorded content: a seek lands on a cue on purpose.
+    return false;  // Recorded content: a seek lands on a cue on purpose.
   }
   const AvSyncController::Snapshot now = av_sync_->GetSnapshot();
   if (!now.master_valid) {
@@ -474,14 +467,14 @@ void RendererImpl::OnTextRead(int generation, DemuxerStream::Status status,
                               DemuxerStream::DecoderBufferVector buffers) {
   text_read_outstanding_ = false;
   if (generation != text_generation_) {
-    return;   // Reply from a leg that was switched away or flushed.
+    return;  // Reply from a leg that was switched away or flushed.
   }
   if (status == DemuxerStream::Status::kAborted) {
-    return;   // A flush invalidates the leg; the next PumpText re-arms.
+    return;  // A flush invalidates the leg; the next PumpText re-arms.
   }
   if (status != DemuxerStream::Status::kOk) {
     LOG(ERROR) << "avbase.text: read failed ("
-             << DemuxerStream::GetStatusName(status) << ")";
+               << DemuxerStream::GetStatusName(status) << ")";
     return;
   }
   for (auto& buffer : buffers) {
@@ -490,11 +483,10 @@ void RendererImpl::OnTextRead(int generation, DemuxerStream::Status status,
       return;
     }
     if (text_stream_ && buffer->serial() < text_stream_->serial()) {
-      continue;   // Pre-seek generation; docs/04 §4 R1.
+      continue;  // Pre-seek generation; docs/04 §4 R1.
     }
     std::vector<TimedTextCue> cues;
-    if (const Status decode = text_decoder_->Decode(*buffer, &cues);
-        !decode) {
+    if (const Status decode = text_decoder_->Decode(*buffer, &cues); !decode) {
       LOG(ERROR) << "avbase.text: decode failed: " << decode.error().ToString();
       continue;
     }

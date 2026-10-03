@@ -30,9 +30,8 @@ VideoDecoderConfig MakeValidVideoConfig() {
   return config;
 }
 
-base::scoped_refptr<DecoderBuffer> MakeDataBuffer(DemuxerStreamType type,
-                                                  int32_t serial,
-                                                  size_t bytes) {
+base::scoped_refptr<DecoderBuffer>
+MakeDataBuffer(DemuxerStreamType type, int32_t serial, size_t bytes) {
   const std::vector<uint8_t> data(bytes, 0xAB);
   auto buffer = DecoderBuffer::CopyFrom(data.data(), data.size(), type, 0);
   buffer->set_serial(serial);
@@ -78,31 +77,31 @@ void FakeDemuxerStream::Read(uint32_t count, ReadCB read_cb) {
 void FakeMediaResource::set_stream(DemuxerStreamType type,
                                    DemuxerStream* stream) {
   switch (type) {
-    case DemuxerStreamType::kAudio:
-      audio_ = stream;
-      return;
-    case DemuxerStreamType::kVideo:
-      video_ = stream;
-      return;
-    case DemuxerStreamType::kUnknown:
-    case DemuxerStreamType::kText:
-      // The text leg exists as of Phase 4.2 (renderer_impl.h's PumpText), so
-      // the fake CAN express one; the old comment here predated it and made
-      // the live-cue policy untestable at the renderer level.
-      text_ = stream;
-      return;
+  case DemuxerStreamType::kAudio:
+    audio_ = stream;
+    return;
+  case DemuxerStreamType::kVideo:
+    video_ = stream;
+    return;
+  case DemuxerStreamType::kUnknown:
+  case DemuxerStreamType::kText:
+    // The text leg exists as of Phase 4.2 (renderer_impl.h's PumpText), so
+    // the fake CAN express one; the old comment here predated it and made
+    // the live-cue policy untestable at the renderer level.
+    text_ = stream;
+    return;
   }
 }
 
 DemuxerStream* FakeMediaResource::GetStream(DemuxerStreamType type) {
   switch (type) {
-    case DemuxerStreamType::kAudio:
-      return audio_;
-    case DemuxerStreamType::kVideo:
-      return video_;
-    case DemuxerStreamType::kUnknown:
-    case DemuxerStreamType::kText:
-      return text_;
+  case DemuxerStreamType::kAudio:
+    return audio_;
+  case DemuxerStreamType::kVideo:
+    return video_;
+  case DemuxerStreamType::kUnknown:
+  case DemuxerStreamType::kText:
+    return text_;
   }
   return nullptr;
 }

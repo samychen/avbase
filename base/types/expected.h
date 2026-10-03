@@ -97,9 +97,9 @@ class expected {
   }
   template <class U>
   constexpr expected(U&& value)
-      requires(!std::is_same_v<std::remove_cvref_t<U>, expected> &&
-               !std::is_same_v<std::remove_cvref_t<U>, unexpect_t> &&
-               std::is_constructible_v<T, U>)
+    requires(!std::is_same_v<std::remove_cvref_t<U>, expected> &&
+             !std::is_same_v<std::remove_cvref_t<U>, unexpect_t> &&
+             std::is_constructible_v<T, U>)
       : has_value_(true) {
     new (&storage_.value) T(std::forward<U>(value));
   }

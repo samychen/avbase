@@ -14,11 +14,16 @@ namespace avbase::media {
 const char* GetVideoFrameQueuePopStatusName(VideoFrameQueue::PopStatus status) {
   using S = VideoFrameQueue::PopStatus;
   switch (status) {
-    case S::kOk:          return "ok";
-    case S::kEmpty:       return "empty";
-    case S::kFlushed:     return "flushed";
-    case S::kAborted:     return "aborted";
-    case S::kEndOfStream: return "end-of-stream";
+  case S::kOk:
+    return "ok";
+  case S::kEmpty:
+    return "empty";
+  case S::kFlushed:
+    return "flushed";
+  case S::kAborted:
+    return "aborted";
+  case S::kEndOfStream:
+    return "end-of-stream";
   }
   return "invalid";
 }
@@ -38,8 +43,8 @@ VideoFrameQueue::SlotGuard::SlotGuard(SlotGuard&& other) noexcept
   other.slot_ = 0;
 }
 
-VideoFrameQueue::SlotGuard& VideoFrameQueue::SlotGuard::operator=(
-    SlotGuard&& other) noexcept {
+VideoFrameQueue::SlotGuard&
+VideoFrameQueue::SlotGuard::operator=(SlotGuard&& other) noexcept {
   if (this != &other) {
     Release();
     queue_ = other.queue_;
@@ -50,7 +55,9 @@ VideoFrameQueue::SlotGuard& VideoFrameQueue::SlotGuard::operator=(
   return *this;
 }
 
-VideoFrameQueue::SlotGuard::~SlotGuard() { Release(); }
+VideoFrameQueue::SlotGuard::~SlotGuard() {
+  Release();
+}
 
 void VideoFrameQueue::SlotGuard::Release() {
   if (queue_) {
@@ -61,13 +68,12 @@ void VideoFrameQueue::SlotGuard::Release() {
   }
 }
 
-void VideoFrameQueue::SlotGuard::Commit(
-    base::scoped_refptr<VideoFrame> frame) {
+void VideoFrameQueue::SlotGuard::Commit(base::scoped_refptr<VideoFrame> frame) {
   CHECK(queue_) << "SlotGuard::Commit() on an empty guard";
   CHECK(frame) << "SlotGuard::Commit() with a null frame";
   VideoFrameQueue* queue = queue_;
   const size_t slot = slot_;
-  queue_ = nullptr;   // Transfer ownership of the slot to the queue.
+  queue_ = nullptr;  // Transfer ownership of the slot to the queue.
   {
     base::AutoLock scoped(queue->lock_);
     CHECK_LT(slot, queue->slots_.size());
@@ -79,7 +85,9 @@ void VideoFrameQueue::SlotGuard::Commit(
   queue->frame_available_.Signal();
 }
 
-void VideoFrameQueue::SlotGuard::Abandon() { Release(); }
+void VideoFrameQueue::SlotGuard::Abandon() {
+  Release();
+}
 
 // ---------------------------------------------------------------------------
 // VideoFrameQueue
@@ -94,7 +102,9 @@ VideoFrameQueue::VideoFrameQueue(std::string name, int capacity)
   slots_.resize(static_cast<size_t>(capacity_));
 }
 
-VideoFrameQueue::~VideoFrameQueue() { Abort(); }
+VideoFrameQueue::~VideoFrameQueue() {
+  Abort();
+}
 
 size_t VideoFrameQueue::FindFreeSlotLocked() const {
   for (size_t i = 0; i < slots_.size(); ++i) {
@@ -102,7 +112,7 @@ size_t VideoFrameQueue::FindFreeSlotLocked() const {
       return i;
     }
   }
-  return slots_.size();   // None free.
+  return slots_.size();  // None free.
 }
 
 bool VideoFrameQueue::IsFullLocked() const {
@@ -152,8 +162,8 @@ void VideoFrameQueue::ReturnSlot(size_t index, bool committed) {
   slot_available_.Signal();
 }
 
-VideoFrameQueue::PopStatus VideoFrameQueue::Pop(
-    base::scoped_refptr<VideoFrame>* out) {
+VideoFrameQueue::PopStatus
+VideoFrameQueue::Pop(base::scoped_refptr<VideoFrame>* out) {
   DCHECK(out);
   base::AutoLock scoped(lock_);
   for (;;) {
@@ -177,8 +187,8 @@ VideoFrameQueue::PopStatus VideoFrameQueue::Pop(
   }
 }
 
-size_t VideoFrameQueue::Peek(
-    std::vector<base::scoped_refptr<VideoFrame>>* out, size_t max) const {
+size_t VideoFrameQueue::Peek(std::vector<base::scoped_refptr<VideoFrame>>* out,
+                             size_t max) const {
   DCHECK(out);
   base::AutoLock scoped(lock_);
   for (const auto& slot : slots_) {
@@ -236,7 +246,8 @@ size_t VideoFrameQueue::size() const {
   base::AutoLock scoped(lock_);
   size_t n = 0;
   for (const auto& slot : slots_) {
-    if (slot.state == SlotState::kFilled) ++n;
+    if (slot.state == SlotState::kFilled)
+      ++n;
   }
   return n;
 }
@@ -245,7 +256,8 @@ size_t VideoFrameQueue::reserved_count() const {
   base::AutoLock scoped(lock_);
   size_t n = 0;
   for (const auto& slot : slots_) {
-    if (slot.state == SlotState::kReserved) ++n;
+    if (slot.state == SlotState::kReserved)
+      ++n;
   }
   return n;
 }
@@ -260,9 +272,14 @@ VideoFrameQueue::Stats VideoFrameQueue::GetStats() const {
   Stats stats;
   for (const auto& slot : slots_) {
     switch (slot.state) {
-      case SlotState::kFilled:   ++stats.filled;   break;
-      case SlotState::kReserved: ++stats.reserved; break;
-      case SlotState::kFree:     break;
+    case SlotState::kFilled:
+      ++stats.filled;
+      break;
+    case SlotState::kReserved:
+      ++stats.reserved;
+      break;
+    case SlotState::kFree:
+      break;
     }
   }
   stats.capacity = capacity_;

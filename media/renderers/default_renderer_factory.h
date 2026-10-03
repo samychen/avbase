@@ -16,8 +16,8 @@
 #include "media/base/renderer_factory.h"
 #include "media/base/text_decoder.h"
 #include "media/base/video_decoder_factory.h"
-#include "media/filters/decoder_selector.h"
 #include "media/base/video_renderer_sink.h"
+#include "media/filters/decoder_selector.h"
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/legacy/video_frame_compositor.h"
 #include "media/media_export.h"
@@ -91,12 +91,12 @@ class AVBASE_MEDIA_EXPORT DefaultRendererFactory final
   }
 
   // RendererFactory:
-  std::unique_ptr<Renderer> CreateRenderer(
-      RendererType type,
-      base::scoped_refptr<base::SequencedTaskRunner> media_task_runner)
-      override;
-  std::unique_ptr<VideoRendererSink> CreateVideoRendererSink(
-      base::scoped_refptr<NativeDisplay> display) override;
+  std::unique_ptr<Renderer>
+  CreateRenderer(RendererType type,
+                 base::scoped_refptr<base::SequencedTaskRunner>
+                     media_task_runner) override;
+  std::unique_ptr<VideoRendererSink>
+  CreateVideoRendererSink(base::scoped_refptr<NativeDisplay> display) override;
   base::scoped_refptr<AudioRendererSink> CreateAudioRendererSink() override;
   VideoDecoderFactory* GetVideoDecoderFactory() override;
   AudioDecoderFactory* GetAudioDecoderFactory() override;

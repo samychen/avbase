@@ -51,7 +51,9 @@ const TickClock* TaskEnvironment::GetTickClock() const {
                      : DefaultTickClock::GetInstance();
 }
 
-TimeTicks TaskEnvironment::NowTicks() const { return GetTickClock()->NowTicks(); }
+TimeTicks TaskEnvironment::NowTicks() const {
+  return GetTickClock()->NowTicks();
+}
 
 void TaskEnvironment::RunUntilIdle() {
   queue_->RunAllReadyTasks(NowTicks());

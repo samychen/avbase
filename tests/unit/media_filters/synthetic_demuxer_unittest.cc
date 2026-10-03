@@ -55,16 +55,15 @@ class SyntheticDemuxerTest : public ::testing::Test {
   // One Read(). The synthetic streams complete inline (they own no I/O), which
   // is what the demuxer's contract allows for a source that never blocks.
   DemuxerStream::DecoderBufferVector ReadOnce(DemuxerStream* stream,
-                                             uint32_t count = 16) {
+                                              uint32_t count = 16) {
     DemuxerStream::DecoderBufferVector result;
-    stream->Read(count,
-                 base::BindOnce(
-                     [](DemuxerStream::DecoderBufferVector* out,
-                        DemuxerStream::Status /*status*/,
-                        DemuxerStream::DecoderBufferVector buffers) {
-                       *out = std::move(buffers);
-                     },
-                     &result));
+    stream->Read(count, base::BindOnce(
+                            [](DemuxerStream::DecoderBufferVector* out,
+                               DemuxerStream::Status /*status*/,
+                               DemuxerStream::DecoderBufferVector buffers) {
+                              *out = std::move(buffers);
+                            },
+                            &result));
     return result;
   }
 
@@ -138,13 +137,13 @@ TEST_F(SyntheticDemuxerTest, SeekLandsOnTheKeyframeAtOrBeforeTheRequest) {
 
   base::TimeDelta actual;
   demuxer_->StartPlayingFrom(
-      base::Seconds(5), base::BindOnce(
-                            [](base::TimeDelta* out, Status status,
-                               base::TimeDelta landed) {
-                              EXPECT_TRUE(status.has_value());
-                              *out = landed;
-                            },
-                            &actual));
+      base::Seconds(5),
+      base::BindOnce(
+          [](base::TimeDelta* out, Status status, base::TimeDelta landed) {
+            EXPECT_TRUE(status.has_value());
+            *out = landed;
+          },
+          &actual));
   EXPECT_EQ(actual, base::Seconds(5));
   EXPECT_EQ(demuxer_->seek_count(), 1);
 
@@ -206,7 +205,7 @@ TEST_F(SyntheticDemuxerTest, EndOfStreamIsReportedAfterTheLastPacket) {
   demuxer_->SetPosition(demuxer_->spec().duration - base::Milliseconds(1));
 
   const DemuxerStream::DecoderBufferVector tail = Drain(video);
-  ASSERT_EQ(tail.size(), 1u);   // frame 299 is the last one inside 10 s
+  ASSERT_EQ(tail.size(), 1u);  // frame 299 is the last one inside 10 s
   EXPECT_EQ(IndexOf(tail[0]), 299);
 
   const DemuxerStream::DecoderBufferVector again = ReadOnce(video, 1);

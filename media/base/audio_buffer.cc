@@ -16,10 +16,11 @@ AudioBuffer::AudioBuffer() = default;
 AudioBuffer::~AudioBuffer() = default;
 
 // static
-base::scoped_refptr<AudioBuffer> AudioBuffer::Create(
-    SampleFormat sample_format, ChannelLayout channel_layout, int channels,
-    int sample_rate, int frame_count, base::TimeDelta timestamp,
-    base::TimeDelta duration, int32_t serial, std::vector<uint8_t> data) {
+base::scoped_refptr<AudioBuffer>
+AudioBuffer::Create(SampleFormat sample_format, ChannelLayout channel_layout,
+                    int channels, int sample_rate, int frame_count,
+                    base::TimeDelta timestamp, base::TimeDelta duration,
+                    int32_t serial, std::vector<uint8_t> data) {
   base::scoped_refptr<AudioBuffer> buffer(new AudioBuffer());
   buffer->sample_format_ = sample_format;
   buffer->channel_layout_ = channel_layout;
@@ -42,12 +43,12 @@ base::scoped_refptr<AudioBuffer> AudioBuffer::CreateEOSBuffer() {
 
 bool AudioBuffer::is_planar() const {
   switch (sample_format_) {
-    case SampleFormat::kS16P:
-    case SampleFormat::kS32P:
-    case SampleFormat::kF32P:
-      return true;
-    default:
-      return false;
+  case SampleFormat::kS16P:
+  case SampleFormat::kS32P:
+  case SampleFormat::kF32P:
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -68,7 +69,8 @@ std::span<const uint8_t> AudioBuffer::channel_data(int channel) const {
                                   std::min(per_channel, data_.size() - offset));
 }
 
-int AudioBuffer::ReadFrames(int frames, int offset_frames, AudioBus* dest) const {
+int AudioBuffer::ReadFrames(int frames, int offset_frames,
+                            AudioBus* dest) const {
   CHECK(dest);
   if (is_eos_ || data_.empty() || channels_ <= 0) {
     return 0;
@@ -83,8 +85,8 @@ int AudioBuffer::ReadFrames(int frames, int offset_frames, AudioBus* dest) const
   if (bytes_per_sample_int <= 0) {
     return 0;
   }
-  // Held as size_t from here on: every use is pointer arithmetic, and keeping it
-  // signed would make each one an implicit int -> size_t conversion that
+  // Held as size_t from here on: every use is pointer arithmetic, and keeping
+  // it signed would make each one an implicit int -> size_t conversion that
   // -Wsign-conversion (debug preset, -Werror) rejects.
   const size_t bytes_per_sample = static_cast<size_t>(bytes_per_sample_int);
 
@@ -92,8 +94,7 @@ int AudioBuffer::ReadFrames(int frames, int offset_frames, AudioBus* dest) const
     float* out = dest->channel(ch);
     if (is_planar()) {
       const std::span<const uint8_t> src = channel_data(ch);
-      const size_t base =
-          static_cast<size_t>(offset_frames) * bytes_per_sample;
+      const size_t base = static_cast<size_t>(offset_frames) * bytes_per_sample;
       for (int f = 0; f < count; ++f) {
         const size_t i = base + static_cast<size_t>(f) * bytes_per_sample;
         if (i + bytes_per_sample > src.size()) {
@@ -103,7 +104,8 @@ int AudioBuffer::ReadFrames(int frames, int offset_frames, AudioBus* dest) const
         out[f] = DecodeSample(src.data() + i, sample_format_);
       }
     } else {
-      const size_t frame_bytes = bytes_per_sample * static_cast<size_t>(channels_);
+      const size_t frame_bytes =
+          bytes_per_sample * static_cast<size_t>(channels_);
       const size_t base = static_cast<size_t>(offset_frames) * frame_bytes +
                           static_cast<size_t>(ch) * bytes_per_sample;
       for (int f = 0; f < count; ++f) {

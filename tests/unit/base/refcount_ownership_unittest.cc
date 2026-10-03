@@ -96,7 +96,7 @@ TEST(WrapRefCountedTest, AddsExactlyOneReference) {
   EXPECT_EQ(owner.get(), alias.get());
 
   alias = nullptr;
-  EXPECT_EQ(1, owner->ref_count());   // The alias released, the owner did not.
+  EXPECT_EQ(1, owner->ref_count());  // The alias released, the owner did not.
 }
 
 TEST(WrapRefCountedTest, NullIsSafeAndYieldsNullPtr) {
@@ -142,7 +142,7 @@ TEST(AdoptRefTest, TakesOverAnExistingReferenceWithoutAddingOne) {
     EXPECT_TRUE(owner->HasOneRef());
     EXPECT_FALSE(destroyed);
   }
-  EXPECT_TRUE(destroyed);                // Release() ran exactly once.
+  EXPECT_TRUE(destroyed);  // Release() ran exactly once.
 }
 
 TEST(AdoptRefTest, NullIsSafe) {

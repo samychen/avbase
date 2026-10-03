@@ -23,11 +23,11 @@ TEST(ThreadTest, StartsAndRunsPostedTasks) {
 
   WaitableEvent done;
   std::atomic<int> value{0};
-  ASSERT_TRUE(thread.task_runner()->PostTask(
-      FROM_HERE, BindOnce([&value, &done]() {
-        value.store(42);
-        done.Signal();
-      })));
+  ASSERT_TRUE(
+      thread.task_runner()->PostTask(FROM_HERE, BindOnce([&value, &done]() {
+                                       value.store(42);
+                                       done.Signal();
+                                     })));
   ASSERT_TRUE(done.TimedWait(Seconds(5)));
   EXPECT_EQ(value.load(), 42);
 }
@@ -52,11 +52,11 @@ TEST(ThreadTest, SetsTheOsThreadName) {
 
   WaitableEvent done;
   std::string observed;
-  ASSERT_TRUE(thread.task_runner()->PostTask(
-      FROM_HERE, BindOnce([&observed, &done]() {
-        observed = PlatformThread::GetName();
-        done.Signal();
-      })));
+  ASSERT_TRUE(
+      thread.task_runner()->PostTask(FROM_HERE, BindOnce([&observed, &done]() {
+                                       observed = PlatformThread::GetName();
+                                       done.Signal();
+                                     })));
   ASSERT_TRUE(done.TimedWait(Seconds(5)));
   EXPECT_EQ(observed, "avbase-named");
 }
@@ -69,11 +69,11 @@ TEST(ThreadTest, LongNameIsTruncatedNotRejected) {
 
   WaitableEvent done;
   std::string observed;
-  ASSERT_TRUE(thread.task_runner()->PostTask(
-      FROM_HERE, BindOnce([&observed, &done]() {
-        observed = PlatformThread::GetName();
-        done.Signal();
-      })));
+  ASSERT_TRUE(
+      thread.task_runner()->PostTask(FROM_HERE, BindOnce([&observed, &done]() {
+                                       observed = PlatformThread::GetName();
+                                       done.Signal();
+                                     })));
   ASSERT_TRUE(done.TimedWait(Seconds(5)));
   EXPECT_LE(observed.size(), 15u);
   EXPECT_EQ(observed, "avbase-this-nam");
@@ -97,7 +97,7 @@ TEST(ThreadTest, StopIsBoundedAndIdempotent) {
       FROM_HERE, BindOnce([&after_stop]() { after_stop.fetch_add(1); })));
   EXPECT_EQ(after_stop.load(), 0);
 
-  thread.Stop();   // Idempotent.
+  thread.Stop();  // Idempotent.
   SUCCEED();
 }
 
@@ -154,12 +154,12 @@ TEST(ThreadTest, WeakPtrBoundTaskIsInertAfterOwnerDies) {
     // compiles, looks equivalent, and silently disables the liveness guard —
     // verified the hard way when this test touched a destroyed object.
     ASSERT_TRUE(thread.task_runner()->PostTask(
-        FROM_HERE,
-        BindOnce([](Target* t, WaitableEvent* ev) {
-                   t->Touch();
-                   ev->Signal();
-                 },
-                 target.GetWeakPtr(), &ran)));
+        FROM_HERE, BindOnce(
+                       [](Target* t, WaitableEvent* ev) {
+                         t->Touch();
+                         ev->Signal();
+                       },
+                       target.GetWeakPtr(), &ran)));
     ASSERT_TRUE(ran.TimedWait(Seconds(5)));
     EXPECT_EQ(touches->load(), 1);
 
@@ -170,7 +170,7 @@ TEST(ThreadTest, WeakPtrBoundTaskIsInertAfterOwnerDies) {
     thread.task_runner()->PostDelayedTask(
         FROM_HERE, BindOnce(&Target::Touch, target.GetWeakPtr()),
         Milliseconds(200));
-  }   // |target| is gone; its WeakPtrFactory has invalidated the pointer.
+  }  // |target| is gone; its WeakPtrFactory has invalidated the pointer.
 
   // Drain past the delayed task's due time. If the WeakPtr guard failed, this
   // would dereference freed memory (ASan) or set touches to -1.
@@ -195,13 +195,15 @@ TEST(ThreadTest, MultipleThreadsAreIndependent) {
   std::atomic<int> counter_a{0}, counter_b{0};
   WaitableEvent done_a, done_b;
   a.task_runner()->PostTask(FROM_HERE, BindOnce([&counter_a, &done_a]() {
-    for (int i = 0; i < 1000; ++i) counter_a.fetch_add(1);
-    done_a.Signal();
-  }));
+                              for (int i = 0; i < 1000; ++i)
+                                counter_a.fetch_add(1);
+                              done_a.Signal();
+                            }));
   b.task_runner()->PostTask(FROM_HERE, BindOnce([&counter_b, &done_b]() {
-    for (int i = 0; i < 1000; ++i) counter_b.fetch_add(1);
-    done_b.Signal();
-  }));
+                              for (int i = 0; i < 1000; ++i)
+                                counter_b.fetch_add(1);
+                              done_b.Signal();
+                            }));
   ASSERT_TRUE(done_a.TimedWait(Seconds(5)));
   ASSERT_TRUE(done_b.TimedWait(Seconds(5)));
   EXPECT_EQ(counter_a.load(), 1000);

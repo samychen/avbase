@@ -87,15 +87,14 @@ class ThrottledDataSource final : public DataSource {
 
   // Fault state.
   std::mutex fault_lock_;
-  int64_t fail_from_ = -1;   // -1 = disarmed
+  int64_t fail_from_ = -1;  // -1 = disarmed
   MediaError failure_;
 
   // Abort. Sticky by design, matching the DataSource contract: Abort() bounds
   // Stop(), and a reconnect builds a fresh source rather than un-aborting a
   // dead one.
-  base::WaitableEvent aborted_{
-      base::WaitableEvent::ResetPolicy::kManualReset,
-      base::WaitableEvent::InitialState::kNotSignaled};
+  base::WaitableEvent aborted_{base::WaitableEvent::ResetPolicy::kManualReset,
+                               base::WaitableEvent::InitialState::kNotSignaled};
 
   // Counters.
   mutable std::mutex stats_lock_;

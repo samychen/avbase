@@ -8,11 +8,11 @@
 #include <thread>
 #include <vector>
 
+#include "base/sequence_checker.h"
 #include "base/synchronization/atomic_flag.h"
 #include "base/synchronization/atomic_sequence_number.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/sequence_checker.h"
 #include "gtest/gtest.h"
 
 namespace avbase::base {
@@ -30,14 +30,16 @@ TEST(LockTest, AutoLockGuardsCriticalSection) {
       }
     });
   }
-  for (auto& t : threads) t.join();
+  for (auto& t : threads)
+    t.join();
   EXPECT_EQ(counter, 8 * 5000);
 }
 
 TEST(LockTest, TryReportsContention) {
   Lock lock;
   AutoLock scoped(lock);
-  EXPECT_FALSE(lock.Try());   // Held by this thread; std::mutex is not recursive.
+  EXPECT_FALSE(
+      lock.Try());  // Held by this thread; std::mutex is not recursive.
 }
 
 TEST(LockTest, AutoUnlockReacquiresOnScopeExit) {
@@ -132,7 +134,7 @@ TEST(WaitableEventTest, ManualResetStaysSignaled) {
   event.Signal();
   EXPECT_TRUE(event.IsSignaled());
   event.Wait();
-  EXPECT_TRUE(event.IsSignaled());   // Manual reset by default.
+  EXPECT_TRUE(event.IsSignaled());  // Manual reset by default.
   EXPECT_TRUE(event.TimedWait(Milliseconds(1)));
 }
 
@@ -198,10 +200,12 @@ TEST(AtomicSequenceNumberTest, ConcurrentIncrementsAreLossless) {
   std::vector<std::thread> threads;
   for (int i = 0; i < 8; ++i) {
     threads.emplace_back([&seq]() {
-      for (int j = 0; j < 10000; ++j) seq.GetNext();
+      for (int j = 0; j < 10000; ++j)
+        seq.GetNext();
     });
   }
-  for (auto& t : threads) t.join();
+  for (auto& t : threads)
+    t.join();
   EXPECT_EQ(seq.Get(), 8 * 10000);
 }
 
@@ -213,7 +217,7 @@ TEST(SequenceCheckerTest, BindsOnFirstUse) {
 
 TEST(SequenceCheckerTest, RejectsOtherThreads) {
   SequenceChecker checker;
-  ASSERT_TRUE(checker.CalledOnValidSequence());   // Bind to this thread.
+  ASSERT_TRUE(checker.CalledOnValidSequence());  // Bind to this thread.
 
   bool other_thread_ok = true;
   std::thread t([&checker, &other_thread_ok]() {

@@ -95,9 +95,9 @@ void SyntheticVideoDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
   }
   uint32_t index = 0;
   if (!ReadIndexPayload(*buffer, &index)) {
-    std::move(decode_cb).Run(DecoderStatus(
-        DecoderStatus::Codes::kDecodeError,
-        "synthetic packet without an index"));
+    std::move(decode_cb).Run(
+        DecoderStatus(DecoderStatus::Codes::kDecodeError,
+                      "synthetic packet without an index"));
     return;
   }
   // The frame's timestamp comes from the packet, not from a frame counter: that
@@ -157,9 +157,9 @@ void SyntheticAudioDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
   }
   uint32_t index = 0;
   if (!ReadIndexPayload(*buffer, &index)) {
-    std::move(decode_cb).Run(DecoderStatus(
-        DecoderStatus::Codes::kDecodeError,
-        "synthetic packet without an index"));
+    std::move(decode_cb).Run(
+        DecoderStatus(DecoderStatus::Codes::kDecodeError,
+                      "synthetic packet without an index"));
     return;
   }
   const int frames = spec_.audio_frames_per_packet;
@@ -172,8 +172,7 @@ void SyntheticAudioDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
   // Planar f32: channel planes one after another, which is what kF32P means.
   for (int channel = 0; channel < spec_.channels; ++channel) {
     for (int i = 0; i < frames; ++i) {
-      const double phase = 2.0 * kPi * tone_hz *
-                           static_cast<double>(i) /
+      const double phase = 2.0 * kPi * tone_hz * static_cast<double>(i) /
                            static_cast<double>(spec_.sample_rate);
       samples[static_cast<size_t>(channel) * static_cast<size_t>(frames) +
               static_cast<size_t>(i)] =

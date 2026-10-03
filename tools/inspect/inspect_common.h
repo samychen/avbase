@@ -89,8 +89,8 @@ class Pump {
   base::test::TaskEnvironment& env_;
 };
 
-// Opens the demuxer, or prints why it could not. On success |info| points at the
-// demuxer's own MediaInfo, valid for as long as the demuxer lives.
+// Opens the demuxer, or prints why it could not. On success |info| points at
+// the demuxer's own MediaInfo, valid for as long as the demuxer lives.
 bool OpenDemuxer(media::FFmpegDemuxer* demuxer, const std::string& path,
                  InspectHost* host, Pump* pump,
                  base::scoped_refptr<base::SequencedTaskRunner> runner,

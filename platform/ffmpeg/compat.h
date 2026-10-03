@@ -10,39 +10,84 @@
 
 #include <map>
 #include <memory>
-#include <vector>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "base/time/time.h"
 #include "media/base/decoder_status.h"
-#include "player/public/error.h"
 #include "platform/ffmpeg/av_includes.h"
+#include "player/public/error.h"
 
 namespace avbase::platform::ffmpeg {
 
 // ---- RAII wrappers ---------------------------------------------------------
 // These replace the 50+ `goto fail` ladders in ijkplayer's ff_ffplay.c: with a
 // unique_ptr per FFmpeg handle, an early return is correct by construction.
-struct FormatCtxDeleter { void operator()(AVFormatContext* p) const { if (p) avformat_close_input(&p); } };
-struct CodecCtxDeleter  { void operator()(AVCodecContext* p)  const { if (p) avcodec_free_context(&p); } };
-struct FrameDeleter     { void operator()(AVFrame* p)         const { if (p) av_frame_free(&p); } };
-struct PacketDeleter    { void operator()(AVPacket* p)        const { if (p) av_packet_free(&p); } };
-struct DictDeleter      { void operator()(AVDictionary* p)    const { if (p) av_dict_free(&p); } };
-struct BufferDeleter    { void operator()(AVBufferRef* p)     const { if (p) av_buffer_unref(&p); } };
-struct SwrDeleter       { void operator()(SwrContext* p)      const { if (p) swr_free(&p); } };
-struct SwsDeleter       { void operator()(SwsContext* p)      const { if (p) sws_freeContext(p); } };
-struct IoCtxDeleter     { void operator()(AVIOContext* p)     const { if (p) avio_context_free(&p); } };
+struct FormatCtxDeleter {
+  void operator()(AVFormatContext* p) const {
+    if (p)
+      avformat_close_input(&p);
+  }
+};
+struct CodecCtxDeleter {
+  void operator()(AVCodecContext* p) const {
+    if (p)
+      avcodec_free_context(&p);
+  }
+};
+struct FrameDeleter {
+  void operator()(AVFrame* p) const {
+    if (p)
+      av_frame_free(&p);
+  }
+};
+struct PacketDeleter {
+  void operator()(AVPacket* p) const {
+    if (p)
+      av_packet_free(&p);
+  }
+};
+struct DictDeleter {
+  void operator()(AVDictionary* p) const {
+    if (p)
+      av_dict_free(&p);
+  }
+};
+struct BufferDeleter {
+  void operator()(AVBufferRef* p) const {
+    if (p)
+      av_buffer_unref(&p);
+  }
+};
+struct SwrDeleter {
+  void operator()(SwrContext* p) const {
+    if (p)
+      swr_free(&p);
+  }
+};
+struct SwsDeleter {
+  void operator()(SwsContext* p) const {
+    if (p)
+      sws_freeContext(p);
+  }
+};
+struct IoCtxDeleter {
+  void operator()(AVIOContext* p) const {
+    if (p)
+      avio_context_free(&p);
+  }
+};
 
 using FormatCtxPtr = std::unique_ptr<AVFormatContext, FormatCtxDeleter>;
-using CodecCtxPtr  = std::unique_ptr<AVCodecContext,  CodecCtxDeleter>;
-using FramePtr     = std::unique_ptr<AVFrame,     FrameDeleter>;
-using PacketPtr    = std::unique_ptr<AVPacket,    PacketDeleter>;
-using DictPtr      = std::unique_ptr<AVDictionary, DictDeleter>;
-using BufferPtr    = std::unique_ptr<AVBufferRef,  BufferDeleter>;
-using SwrPtr       = std::unique_ptr<SwrContext,   SwrDeleter>;
-using SwsPtr       = std::unique_ptr<SwsContext,   SwsDeleter>;
-using IoCtxPtr     = std::unique_ptr<AVIOContext,  IoCtxDeleter>;
+using CodecCtxPtr = std::unique_ptr<AVCodecContext, CodecCtxDeleter>;
+using FramePtr = std::unique_ptr<AVFrame, FrameDeleter>;
+using PacketPtr = std::unique_ptr<AVPacket, PacketDeleter>;
+using DictPtr = std::unique_ptr<AVDictionary, DictDeleter>;
+using BufferPtr = std::unique_ptr<AVBufferRef, BufferDeleter>;
+using SwrPtr = std::unique_ptr<SwrContext, SwrDeleter>;
+using SwsPtr = std::unique_ptr<SwsContext, SwsDeleter>;
+using IoCtxPtr = std::unique_ptr<AVIOContext, IoCtxDeleter>;
 
 // ---- Channel layout (the AVChannelLayout boundary) --------------------------
 int ChannelCount(const AVCodecContext* ctx);
@@ -53,8 +98,9 @@ int ChannelCount(const AVCodecParameters* par);
 uint64_t ChannelLayoutMask(const AVCodecParameters* par);
 
 // ---- swresample allocation (swr_alloc_set_opts -> swr_alloc_set_opts2) ------
-SwrPtr MakeSwrContext(AVSampleFormat out_format, uint64_t out_layout, int out_rate,
-                      AVSampleFormat in_format,  uint64_t in_layout,  int in_rate);
+SwrPtr MakeSwrContext(AVSampleFormat out_format, uint64_t out_layout,
+                      int out_rate, AVSampleFormat in_format,
+                      uint64_t in_layout, int in_rate);
 
 // ---- Timestamps -------------------------------------------------------------
 // AV_NOPTS_VALUE becomes media::kNoTimestamp; no magic INT64_MIN ever escapes

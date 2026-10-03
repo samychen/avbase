@@ -90,8 +90,8 @@ class FrameCaptureSink final : public VideoRendererSink {
   void Pause() override { playing_.store(false); }
   void Play() override { playing_.store(true); }
   void Flush() override {}
-  void SetOutputTarget(base::scoped_refptr<
-                       avbase::media::NativeDisplay> /*display*/) override {}
+  void SetOutputTarget(
+      base::scoped_refptr<avbase::media::NativeDisplay> /*display*/) override {}
   bool IsRunning() const override { return running_.load(); }
   bool GetDisplayInterval(base::TimeDelta* interval) const override {
     if (interval) {
@@ -136,8 +136,7 @@ class FrameCaptureSinkFactory final
  public:
   explicit FrameCaptureSinkFactory(FrameStore* store) : store_(store) {}
   std::unique_ptr<VideoRendererSink> Create(
-      base::scoped_refptr<avbase::media::NativeDisplay> /*display*/)
-      override {
+      base::scoped_refptr<avbase::media::NativeDisplay> /*display*/) override {
     return std::make_unique<FrameCaptureSink>(store_);
   }
   const char* name() const override { return "frame-capture-factory"; }
@@ -170,8 +169,7 @@ int main(int argc, char** argv) {
   FrameStore store;
   avbase::PlayerConfig config;
   auto deps = std::make_unique<avbase::Deps>();
-  deps->video_sink_factory =
-      std::make_shared<FrameCaptureSinkFactory>(&store);
+  deps->video_sink_factory = std::make_shared<FrameCaptureSinkFactory>(&store);
   avbase::Player player(config, std::move(deps));
 
   if (const avbase::Status s = player.SetDataSource(url); !s) {
@@ -180,8 +178,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (const avbase::Status s = player.PrepareSync(); !s) {
-    std::fprintf(stderr, "Prepare failed: %s\n",
-                 s.error().ToString().c_str());
+    std::fprintf(stderr, "Prepare failed: %s\n", s.error().ToString().c_str());
     return 1;
   }
   player.Start();

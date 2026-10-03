@@ -41,8 +41,7 @@ std::unique_ptr<Renderer> DefaultRendererFactory::CreateRenderer(
   // once the stream's config is known.
   impl_deps.video_decoder_preference = deps_.video_decoder_preference;
   impl_deps.video_hw_codecs = deps_.video_hw_codecs;
-  impl_deps.video_decoder_preference_set =
-      deps_.video_decoder_preference_set;
+  impl_deps.video_decoder_preference_set = deps_.video_decoder_preference_set;
   impl_deps.audio_factories = deps_.audio_decoder_factories;
   impl_deps.text_decoder_factory = deps_.text_decoder_factory;
   impl_deps.video_sink = CreateVideoRendererSink(display_);
@@ -57,8 +56,9 @@ std::unique_ptr<Renderer> DefaultRendererFactory::CreateRenderer(
   return std::make_unique<RendererImpl>(std::move(impl_deps));
 }
 
-std::unique_ptr<VideoRendererSink> DefaultRendererFactory::
-    CreateVideoRendererSink(base::scoped_refptr<NativeDisplay> display) {
+std::unique_ptr<VideoRendererSink>
+DefaultRendererFactory::CreateVideoRendererSink(
+    base::scoped_refptr<NativeDisplay> display) {
   if (deps_.video_sink_factory) {
     return deps_.video_sink_factory->Create(std::move(display));
   }
@@ -67,8 +67,8 @@ std::unique_ptr<VideoRendererSink> DefaultRendererFactory::
   return sink;
 }
 
-base::scoped_refptr<AudioRendererSink> DefaultRendererFactory::
-    CreateAudioRendererSink() {
+base::scoped_refptr<AudioRendererSink>
+DefaultRendererFactory::CreateAudioRendererSink() {
   if (deps_.audio_sink_factory) {
     return deps_.audio_sink_factory->Create();
   }

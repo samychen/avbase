@@ -7,7 +7,6 @@
 // see docs/04 §2.1 (decision D3) for why the demux loop runs on its own
 // blocking thread instead of on the media sequence.
 
-
 #ifndef AVBASE_MEDIA_FILTERS_FFMPEG_DEMUXER_H_
 #define AVBASE_MEDIA_FILTERS_FFMPEG_DEMUXER_H_
 
@@ -42,21 +41,25 @@ namespace avbase::media {
 // One elementary stream. Owns the DecoderBufferQueue the demux thread fills.
 class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
  public:
-  FFmpegDemuxerStream(DemuxerStreamType type, int32_t index,
-                      base::scoped_refptr<MediaLog> media_log,
-                      base::scoped_refptr<base::SequencedTaskRunner> media_runner,
-                      const VideoDecoderConfig& video_config,
-                      const AudioDecoderConfig& audio_config,
-                      const TextDecoderConfig& text_config,
-                      StreamLiveness liveness);
+  FFmpegDemuxerStream(
+      DemuxerStreamType type, int32_t index,
+      base::scoped_refptr<MediaLog> media_log,
+      base::scoped_refptr<base::SequencedTaskRunner> media_runner,
+      const VideoDecoderConfig& video_config,
+      const AudioDecoderConfig& audio_config,
+      const TextDecoderConfig& text_config, StreamLiveness liveness);
   FFmpegDemuxerStream(const FFmpegDemuxerStream&) = delete;
   FFmpegDemuxerStream& operator=(const FFmpegDemuxerStream&) = delete;
   ~FFmpegDemuxerStream() override;
 
   // DemuxerStream:
   void Read(uint32_t count, ReadCB read_cb) override;
-  const AudioDecoderConfig& audio_decoder_config() const override { return audio_config_; }
-  const VideoDecoderConfig& video_decoder_config() const override { return video_config_; }
+  const AudioDecoderConfig& audio_decoder_config() const override {
+    return audio_config_;
+  }
+  const VideoDecoderConfig& video_decoder_config() const override {
+    return video_config_;
+  }
   const TextDecoderConfig& text_decoder_config() const override {
     return text_config_;
   }
@@ -67,7 +70,9 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
   int32_t serial() const override { return queue_->serial(); }
   size_t buffered_buffers() const override { return queue_->size(); }
   size_t buffered_bytes() const override { return queue_->bytes(); }
-  base::TimeDelta buffered_duration() const override { return queue_->buffered_duration(); }
+  base::TimeDelta buffered_duration() const override {
+    return queue_->buffered_duration();
+  }
 
   // ---- Called on the demux thread -----------------------------------------
   // Enqueues a buffer and, if a Read() is waiting, posts its reply to the media
@@ -114,11 +119,11 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   ~FFmpegDemuxer() override;
 
   // Demuxer:
-  void Initialize(const DataSourceDescriptor& source,
-                  const DemuxerOptions& options,
-                  Host* host,
-                  base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
-                  InitializeCB init_cb) override;
+  void
+  Initialize(const DataSourceDescriptor& source, const DemuxerOptions& options,
+             Host* host,
+             base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
+             InitializeCB init_cb) override;
   void StartPlayingFrom(base::TimeDelta time, SeekCB cb) override;
   void Flush(base::OnceClosure flush_cb) override;
   void Reset(base::OnceClosure reset_cb) override;
@@ -149,8 +154,8 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   // Builds the AVDictionary that avformat_open_input receives. Split out of
   // OpenOnDemuxThread so the option precedence (structured config first, then
   // the verbatim passthrough map) is reviewable in one place.
-  static std::map<std::string, std::string> BuildOpenOptions(
-      const DemuxerOptions& options, const std::string& uri);
+  static std::map<std::string, std::string>
+  BuildOpenOptions(const DemuxerOptions& options, const std::string& uri);
   void DemuxLoop();
   // One iteration of the read/backpressure step. Returns false when the loop
   // should exit.

@@ -37,8 +37,10 @@ class AVBASE_MEDIA_EXPORT FFmpegVideoDecoder final : public VideoDecoder {
   // VideoDecoder:
   void Initialize(const VideoDecoderConfig& config, bool low_delay,
                   CdmContext* cdm_context, InitCB init_cb,
-                  const OutputCB& output_cb, const WaitingCB& waiting_cb) override;
-  void Decode(base::scoped_refptr<DecoderBuffer> buffer, DecodeCB decode_cb) override;
+                  const OutputCB& output_cb,
+                  const WaitingCB& waiting_cb) override;
+  void Decode(base::scoped_refptr<DecoderBuffer> buffer,
+              DecodeCB decode_cb) override;
   void Reset(base::OnceClosure closure) override;
   int GetMaxDecodeRequests() const override;
   VideoDecoderType GetDecoderType() const override {

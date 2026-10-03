@@ -214,8 +214,36 @@ jobs:
             tests/fuzz/seeds -max_total_time=60 -rss_limit_mb=2048 || [ $? -eq 124 ]
           ./build/fuzz/bin/avbase_fuzz_demuxer_standalone --iters 16
 
-  # Deliberately absent, and it should stay that way until the tree is clean:
-  # check-format (clang-format), check-cpplint and check-clang-tidy would all
-  # be red on the first run -- the C23 ratchet exists precisely because 310
-  # lines exceed 80 columns today. A gate that is red from day one teaches
-  # people to ignore gates (R12). See STYLE.md's "工具落地状态".
+  # Opened in this round, once the reason it was deferred stopped being true.
+  # The old note said check-format "would be red on the first run" because the
+  # C23 ratchet existed to grandfather 310 over-length lines; the tree is now
+  # clang-format clean and that baseline is down to 37 lines, so a gate that
+  # passes is a gate worth having (R12: a red-on-day-one gate teaches people to
+  # ignore gates).
+  #
+  # It checks the WHOLE tree, not just the diff. A diff-scoped check (the
+  # git-clang-format shape) is cheaper to satisfy and correspondingly easier to
+  # route around, and the whole point here is that .clang-format is the single
+  # source of truth for style -- which is only true if drift anywhere is caught.
+  check-format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - name: clang-format must report no changes
+        run: |
+          # Same exclusion set the local sweep used: media/filters/legacy/ is
+          # the LGPL-2.1 quarantine (its provenance comments must keep the
+          # shape ijkplayer had) and option_registry.inc is generated, so
+          # neither is the formatter's to change.
+          mapfile -t FILES < <(git ls-files '*.cc' '*.h' \
+            | grep -v 'media/filters/legacy/' \
+            | grep -v 'player/option_registry.inc')
+          echo "checking ${#FILES[@]} files"
+          clang-format --dry-run --Werror --style=file "${FILES[@]}"
+
+  # Still absent, and for the same reason as before: check-cpplint and
+  # check-clang-tidy have not been through a fix-the-tree pass, so both would
+  # be red on the first run. R12 again -- they are opened one at a time, each
+  # after its own sweep, not all at once. See STYLE.md's "工具落地状态".

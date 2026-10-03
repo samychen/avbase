@@ -86,17 +86,16 @@ constexpr double kTonePhases[4] = {0.0, 0.7, 2.1, 4.0};
 // Wraps |mono| into a planar-float32 stereo AudioBuffer. Both channels carry
 // the same signal so a per-channel assertion and a summed one agree, which
 // keeps the dominant-frequency search unambiguous.
-base::scoped_refptr<AudioBuffer> MakePlanarStereo(
-    const std::vector<float>& mono, base::TimeDelta timestamp) {
+base::scoped_refptr<AudioBuffer>
+MakePlanarStereo(const std::vector<float>& mono, base::TimeDelta timestamp) {
   const int frames = static_cast<int>(mono.size());
   std::vector<uint8_t> data(mono.size() * kChannels * sizeof(float));
   for (int c = 0; c < kChannels; ++c) {
     const size_t offset = static_cast<size_t>(c) * mono.size() * sizeof(float);
-    std::memcpy(data.data() + offset, mono.data(),
-                mono.size() * sizeof(float));
+    std::memcpy(data.data() + offset, mono.data(), mono.size() * sizeof(float));
   }
-  const base::TimeDelta duration = base::SecondsD(
-      static_cast<double>(frames) / kSampleRate);
+  const base::TimeDelta duration =
+      base::SecondsD(static_cast<double>(frames) / kSampleRate);
   return AudioBuffer::Create(SampleFormat::kF32P, ChannelLayout::kStereo,
                              kChannels, kSampleRate, frames, timestamp,
                              duration, /*serial=*/0, std::move(data));
@@ -114,9 +113,9 @@ base::scoped_refptr<AudioBuffer> MakeSineBuffer(int frames, double freq_hz,
   std::vector<float> mono(static_cast<size_t>(frames));
   float* samples = mono.data();
   for (int n = 0; n < frames; ++n) {
-    samples[n] = amplitude * static_cast<float>(
-                                std::sin(2.0 * kTestPi * freq_hz * n /
-                                         kSampleRate));
+    samples[n] =
+        amplitude *
+        static_cast<float>(std::sin(2.0 * kTestPi * freq_hz * n / kSampleRate));
   }
   return MakePlanarStereo(mono, timestamp);
 }
@@ -126,17 +125,16 @@ base::scoped_refptr<AudioBuffer> MakeSineBuffer(int frames, double freq_hz,
 // own generator: a phase reset every 4096 frames would put a discontinuity
 // inside the search block, and the search would then be choosing between
 // artefacts of the fixture rather than features of the signal.
-base::scoped_refptr<AudioBuffer> MakeToneBuffer(int frames,
-                                                base::TimeDelta timestamp,
-                                                int64_t start_sample) {
+base::scoped_refptr<AudioBuffer>
+MakeToneBuffer(int frames, base::TimeDelta timestamp, int64_t start_sample) {
   std::vector<float> mono(static_cast<size_t>(frames));
   for (int n = 0; n < frames; ++n) {
     const double t = static_cast<double>(start_sample + n) / kSampleRate;
     double sample = 0.0;
     for (int k = 0; k < 4; ++k) {
-      sample += kToneGains[k] * std::sin(2.0 * kTestPi * kToneFundamental *
-                                             kToneRatios[k] * t +
-                                         kTonePhases[k]);
+      sample += kToneGains[k] *
+                std::sin(2.0 * kTestPi * kToneFundamental * kToneRatios[k] * t +
+                         kTonePhases[k]);
     }
     mono[static_cast<size_t>(n)] = static_cast<float>(sample);
   }
@@ -197,9 +195,9 @@ class AudioRendererAlgorithmTest : public ::testing::Test {
       const int n = std::min(frames_per_buffer, total - done);
       const base::TimeDelta timestamp =
           base::SecondsD(static_cast<double>(done) / kSampleRate);
-      algorithm_.EnqueueBuffer(
-          stimulus == Stimulus::kTone ? MakeToneBuffer(n, timestamp, done)
-                                      : MakeSineBuffer(n, freq_hz, timestamp));
+      algorithm_.EnqueueBuffer(stimulus == Stimulus::kTone
+                                   ? MakeToneBuffer(n, timestamp, done)
+                                   : MakeSineBuffer(n, freq_hz, timestamp));
       done += n;
     }
     algorithm_.MarkEndOfStream();
@@ -231,8 +229,7 @@ class AudioRendererAlgorithmTest : public ::testing::Test {
 
 TEST_F(AudioRendererAlgorithmTest, RateOneIsPassthroughAndSampleExact) {
   const int kFrames = 4096;
-  algorithm_.EnqueueBuffer(
-      MakeSineBuffer(kFrames, 440.0, base::TimeDelta()));
+  algorithm_.EnqueueBuffer(MakeSineBuffer(kFrames, 440.0, base::TimeDelta()));
 
   auto bus = AudioBus::Create(kChannels, kFrames);
   const int got = algorithm_.FillBuffer(bus.get(), 0, kFrames, 1.0);
@@ -252,8 +249,8 @@ TEST_F(AudioRendererAlgorithmTest, RateOneIsPassthroughAndSampleExact) {
   auto reference = AudioBus::Create(kChannels, kFrames);
   expected->ReadFrames(kFrames, 0, reference.get());
   for (int n = 0; n < kFrames; ++n) {
-    ASSERT_FLOAT_EQ(reference->channel(0)[n], bus->channel(0)[n]) << "frame "
-                                                                 << n;
+    ASSERT_FLOAT_EQ(reference->channel(0)[n], bus->channel(0)[n])
+        << "frame " << n;
   }
 }
 
@@ -309,9 +306,8 @@ TEST_F(AudioRendererAlgorithmTest, PitchIsPreservedAtTwoX) {
   // Measure well past the first window: the opening samples are the zero-filled
   // ramp-in of the overlap-add chain and carry no pitch information.
   ASSERT_GT(out.size(), static_cast<size_t>(4 * kOlaWindowFrames));
-  const std::vector<float> measured(
-      out.begin() + 2 * kOlaWindowFrames,
-      out.begin() + 2 * kOlaWindowFrames + 4096);
+  const std::vector<float> measured(out.begin() + 2 * kOlaWindowFrames,
+                                    out.begin() + 2 * kOlaWindowFrames + 4096);
   const double peak =
       DominantFrequency(measured, kFundamental * 0.9, kFundamental * 1.1);
   // +/-2% per docs/07 §3.9. Naive resampling would put this near 880 Hz, so the
@@ -343,9 +339,8 @@ TEST_F(AudioRendererAlgorithmTest, PitchIsPreservedAtHalfX) {
   Drain(0.5, kFramesPerBuffer, &out);
 
   ASSERT_GT(out.size(), static_cast<size_t>(4 * kOlaWindowFrames));
-  const std::vector<float> measured(
-      out.begin() + 2 * kOlaWindowFrames,
-      out.begin() + 2 * kOlaWindowFrames + 4096);
+  const std::vector<float> measured(out.begin() + 2 * kOlaWindowFrames,
+                                    out.begin() + 2 * kOlaWindowFrames + 4096);
   const double peak =
       DominantFrequency(measured, kFundamental * 0.9, kFundamental * 1.1);
   // Stimulus and tolerance: see PitchIsPreservedAtTwoX. Measured: 440.0 Hz.
@@ -435,7 +430,7 @@ TEST_F(AudioRendererAlgorithmTest, PlaybackThresholdDoublesUpToTheCap) {
 
   algorithm_.IncreasePlaybackThreshold();
   const int doubled = algorithm_.queue_playback_threshold();
-  if (doubled != initial) {          // unless it was already at the cap
+  if (doubled != initial) {  // unless it was already at the cap
     EXPECT_EQ(2 * initial, doubled);
     EXPECT_EQ(doubled, algorithm_.queue_capacity());
   }
@@ -456,18 +451,18 @@ TEST_F(AudioRendererAlgorithmTest, LatencyHintIsClampedAtBothEnds) {
   EXPECT_GE(algorithm_.queue_playback_threshold(), 2 * kFramesPerBuffer);
 
   algorithm_.SetLatencyHint(base::Milliseconds(500));
-  EXPECT_NEAR(500 * kSampleRate / 1000,
-              algorithm_.queue_playback_threshold(), 2);
+  EXPECT_NEAR(500 * kSampleRate / 1000, algorithm_.queue_playback_threshold(),
+              2);
 
   // Clearing the hint restores the default instead of keeping the last value.
   algorithm_.SetLatencyHint(std::nullopt);
-  EXPECT_NEAR(200 * kSampleRate / 1000,
-              algorithm_.queue_playback_threshold(), 2);
+  EXPECT_NEAR(200 * kSampleRate / 1000, algorithm_.queue_playback_threshold(),
+              2);
 }
 
 TEST_F(AudioRendererAlgorithmTest, BufferedDurationMatchesBufferedFrames) {
-  algorithm_.EnqueueBuffer(MakeSineBuffer(kSampleRate, 440.0,
-                                          base::TimeDelta()));
+  algorithm_.EnqueueBuffer(
+      MakeSineBuffer(kSampleRate, 440.0, base::TimeDelta()));
   EXPECT_EQ(kSampleRate, algorithm_.buffered_frames());
   EXPECT_EQ(base::Seconds(1), algorithm_.buffered_duration());
 }
@@ -507,7 +502,7 @@ TEST(AudioFrameQueueTest, TailPastTheEndIsZeroFilled) {
   queue.Append(MakeSineBuffer(100, 440.0, base::TimeDelta()));
 
   auto bus = AudioBus::Create(kChannels, 256);
-  bus->channel(0)[200] = 1.0f;         // stale value that must be overwritten
+  bus->channel(0)[200] = 1.0f;  // stale value that must be overwritten
   const int got = queue.PeekFrames(256, 0, 0, bus.get(), scratch.get());
   EXPECT_EQ(100, got);
   for (int n = 100; n < 256; ++n) {
@@ -522,7 +517,7 @@ TEST(AudioFrameQueueTest, SeekFramesDropsAcrossBufferBoundaries) {
   queue.Append(MakeSineBuffer(300, 440.0, base::Milliseconds(6250)));
   ASSERT_EQ(600, queue.frames());
 
-  queue.SeekFrames(350);               // crosses from buffer 0 into buffer 1
+  queue.SeekFrames(350);  // crosses from buffer 0 into buffer 1
   EXPECT_EQ(250, queue.frames());
 
   auto scratch = AudioBus::Create(kChannels, 256);

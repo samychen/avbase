@@ -14,8 +14,8 @@ FFmpegHwVideoDecoderFactory::FFmpegHwVideoDecoderFactory(
       task_runner_(std::move(task_runner)),
       allowed_codecs_(allowed_codecs) {}
 
-media::VideoDecoderCapability FFmpegHwVideoDecoderFactory::GetCapability()
-    const {
+media::VideoDecoderCapability
+FFmpegHwVideoDecoderFactory::GetCapability() const {
   media::VideoDecoderCapability cap;
   cap.hardware = true;
   cap.outputs_opaque_surface = true;

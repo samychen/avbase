@@ -68,8 +68,8 @@ class FakeAudioDecoder final : public AudioDecoder {
   std::string GetDisplayName() const override { return "FakeAudioDecoder"; }
   void Initialize(const AudioDecoderConfig& config, bool has_pending_clear,
                   int32_t current_serial, InitCB init_cb,
-                  const OutputCB& output_cb, const WaitingCB& waiting_cb)
-      override;
+                  const OutputCB& output_cb,
+                  const WaitingCB& waiting_cb) override;
   void Decode(base::scoped_refptr<DecoderBuffer> buffer,
               DecodeCB decode_cb) override;
   void Reset(base::OnceClosure closure) override;
@@ -95,8 +95,8 @@ class FakeAudioDecoderFactory final : public AudioDecoderFactory {
   int create_calls() const { return create_calls_; }
 
   // AudioDecoderFactory.
-  std::unique_ptr<AudioDecoder> CreateAudioDecoder(
-      const AudioDecoderConfig& config) override;
+  std::unique_ptr<AudioDecoder>
+  CreateAudioDecoder(const AudioDecoderConfig& config) override;
   const char* name() const override { return name_.c_str(); }
 
  private:
@@ -119,8 +119,8 @@ class FakeVideoDecoder final : public VideoDecoder {
   }
   void Initialize(const VideoDecoderConfig& config, bool low_delay,
                   CdmContext* cdm_context, InitCB init_cb,
-                  const OutputCB& output_cb, const WaitingCB& waiting_cb)
-      override;
+                  const OutputCB& output_cb,
+                  const WaitingCB& waiting_cb) override;
   void Decode(base::scoped_refptr<DecoderBuffer> buffer,
               DecodeCB decode_cb) override;
   void Reset(base::OnceClosure closure) override;
@@ -156,8 +156,8 @@ class FakeVideoDecoderFactory final : public VideoDecoderFactory {
   // VideoDecoderFactory.
   VideoDecoderCapability GetCapability() const override;
   bool SupportsCodec(VideoDecoderType type_hint) const override;
-  std::unique_ptr<VideoDecoder> CreateVideoDecoder(
-      const VideoDecoderConfig& config) override;
+  std::unique_ptr<VideoDecoder>
+  CreateVideoDecoder(const VideoDecoderConfig& config) override;
   const char* name() const override { return name_.c_str(); }
 
  private:

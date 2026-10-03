@@ -36,7 +36,8 @@ class AVBASE_MEDIA_EXPORT DemuxerStream {
   //  kAborted       : the read was cancelled by Flush(); |buffers| is empty.
   //  kConfigChanged : the decoder config changed mid-stream; re-query
   //                   video_decoder_config()/audio_decoder_config() before
-  //                   reading again. Only returned when SupportsConfigChanges().
+  //                   reading again. Only returned when
+  //                   SupportsConfigChanges().
   //  kError         : fatal; playback should fail.
   enum class Status { kOk, kAborted, kConfigChanged, kError };
   static const char* GetStatusName(Status status);

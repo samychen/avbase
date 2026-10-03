@@ -19,10 +19,10 @@
 #include "media/base/data_source_descriptor.h"
 #include "media/base/pipeline_status.h"
 #include "media/filters/pipeline_impl.h"
-#include "tests/support/pipeline_fixture.h"
 #include "tests/support/fake_pipeline_client.h"
 #include "tests/support/fake_renderer_sinks.h"
 #include "tests/support/fake_sink_factories.h"
+#include "tests/support/pipeline_fixture.h"
 
 namespace avbase::media {
 namespace {
@@ -53,7 +53,8 @@ class PipelineTrackTest : public PipelineTestFixture {
 TEST_F(PipelineTrackTest, DemuxerEnumeratesBothAudioTracks) {
   StartPipeline();
   ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }))
-      << "never probed the source; events:\n" << client_.EventLog();
+      << "never probed the source; events:\n"
+      << client_.EventLog();
   // Serialize test-thread pulls onto the renderer's own sequence; without
   // this the direct PullPeriod path races the renderer teardown (the same
   // arm-the-sink step the seek and throttle fixtures do).
@@ -92,7 +93,8 @@ TEST_F(PipelineTrackTest, PlaysAudioOnlyTwoTrackFileToEosWithoutSwitch) {
 TEST_F(PipelineTrackTest, SwitchAudioTrackMidPlayAndReachEos) {
   StartPipeline();
   ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }))
-      << "never probed the source; events:\n" << client_.EventLog();
+      << "never probed the source; events:\n"
+      << client_.EventLog();
   // Serialize test-thread pulls onto the renderer's own sequence; without
   // this the direct PullPeriod path races the renderer teardown (the same
   // arm-the-sink step the seek and throttle fixtures do).
@@ -115,7 +117,8 @@ TEST_F(PipelineTrackTest, SwitchAudioTrackMidPlayAndReachEos) {
           },
           &switched, &switch_status));
   ASSERT_TRUE(PumpUntil([&] { return switched.load(); }))
-      << "track switch never completed; events:\n" << client_.EventLog();
+      << "track switch never completed; events:\n"
+      << client_.EventLog();
   EXPECT_EQ(switch_status, PipelineStatus::kOk);
   EXPECT_FALSE(client_.error()) << client_.error().ToString();
 

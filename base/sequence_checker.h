@@ -27,8 +27,9 @@ class SequenceChecker {
   bool CalledOnValidSequence() const {
     const std::thread::id id = std::this_thread::get_id();
     std::thread::id expected{};
-    if (bound_.compare_exchange_strong(expected, id, std::memory_order_acq_rel)) {
-      return true;   // First call binds.
+    if (bound_.compare_exchange_strong(expected, id,
+                                       std::memory_order_acq_rel)) {
+      return true;  // First call binds.
     }
     return expected == id;
   }
@@ -45,7 +46,7 @@ class SequenceChecker {
 
 #if defined(AVBASE_ENABLE_DCHECK)
 #define SEQUENCE_CHECKER(name) mutable ::avbase::base::SequenceChecker name
-#define DCHECK_CALLED_ON_VALID_SEQUENCE(name)               \
+#define DCHECK_CALLED_ON_VALID_SEQUENCE(name) \
   DCHECK((name).CalledOnValidSequence())
 #define DETACH_FROM_SEQUENCE(name) (name).DetachFromSequence()
 #else

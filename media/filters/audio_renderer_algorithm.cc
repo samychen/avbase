@@ -90,14 +90,14 @@ void AudioRendererAlgorithm::Initialize(const AudioParameters& params) {
   is_bitstream_format_ = false;
 
   min_playback_threshold_ = params.frames_per_buffer() * 2;
-  initial_capacity_ = std::max(
-      min_playback_threshold_,
-      internal::TimeToFrames(kStartingCapacity, samples_per_second_));
+  initial_capacity_ =
+      std::max(min_playback_threshold_,
+               internal::TimeToFrames(kStartingCapacity, samples_per_second_));
   capacity_ = initial_capacity_;
   playback_threshold_ = initial_capacity_;
-  max_capacity_ = std::max(
-      initial_capacity_,
-      internal::TimeToFrames(kMaxCapacity, samples_per_second_));
+  max_capacity_ =
+      std::max(initial_capacity_,
+               internal::TimeToFrames(kMaxCapacity, samples_per_second_));
 
   num_candidate_blocks_ =
       internal::TimeToFrames(kWsolaSearchInterval, samples_per_second_);
@@ -163,9 +163,13 @@ void AudioRendererAlgorithm::SetPreservesPitch(bool preserves_pitch) {
   preserves_pitch_ = preserves_pitch;
 }
 
-void AudioRendererAlgorithm::SetVolume(float volume) { volume_ = volume; }
+void AudioRendererAlgorithm::SetVolume(float volume) {
+  volume_ = volume;
+}
 
-void AudioRendererAlgorithm::SetMuted(bool muted) { muted_ = muted; }
+void AudioRendererAlgorithm::SetMuted(bool muted) {
+  muted_ = muted;
+}
 
 void AudioRendererAlgorithm::MarkEndOfStream() {
   reached_end_of_stream_ = true;
@@ -206,8 +210,8 @@ base::TimeDelta AudioRendererAlgorithm::buffered_duration() const {
   if (!queue_ || samples_per_second_ <= 0) {
     return base::TimeDelta();
   }
-  return base::SecondsD(
-      static_cast<double>(queue_->frames()) / samples_per_second_);
+  return base::SecondsD(static_cast<double>(queue_->frames()) /
+                        samples_per_second_);
 }
 
 bool AudioRendererAlgorithm::IsQueueAdequateForPlayback() const {
@@ -236,7 +240,7 @@ double AudioRendererAlgorithm::DelayInFrames(double playback_rate) const {
   const int faster_step =
       static_cast<int>(std::ceil(ola_window_size_ / playback_rate));
   if (ola_window_size_ <= faster_step && slower_step >= ola_window_size_) {
-    return buffered_frames();      // passthrough: output frames == input frames
+    return buffered_frames();  // passthrough: output frames == input frames
   }
   const double buffered_output = buffered_frames() / playback_rate;
   return (buffered_output - output_time_) + num_complete_frames_;
@@ -306,36 +310,36 @@ int AudioRendererAlgorithm::FillBuffer(AudioBus* dest, int dest_offset,
   EnsureScratch(requested_frames);
 
   if (is_bitstream_format_) {
-    rendered = queue_->ReadFrames(requested_frames, dest_offset, dest,
-                                  scratch_.get());
+    rendered =
+        queue_->ReadFrames(requested_frames, dest_offset, dest, scratch_.get());
   } else {
     const FillBufferMode mode = ChooseBufferMode(playback_rate);
     SetFillBufferMode(mode);
     switch (mode) {
-      case FillBufferMode::kPassthrough:
-        rendered = queue_->ReadFrames(
-            std::min(buffered_frames(), requested_frames), dest_offset, dest,
-            scratch_.get());
-        effective_playback_rate_ = 1.0;
-        break;
-      case FillBufferMode::kResampler:
-        // Gap 4: avbase has no MultiChannelResampler. Falling through to WSOLA
-        // keeps the duration right and the pitch wrong, which is the safer of
-        // the two errors for A/V sync, and it is logged so the mistake cannot
-        // be mistaken for correct behaviour.
-        if (!warned_about_resampler_) {
-          warned_about_resampler_ = true;
-          LOG(WARNING) << "avbase.sync: preserves_pitch=false requested but no "
-                          "resampler exists yet; using WSOLA, so pitch will be "
-                          "preserved when it should not be";
-        }
-        rendered = RunWsola(dest, dest_offset, requested_frames,
-                            initial_input_frames, playback_rate);
-        break;
-      case FillBufferMode::kWsola:
-        rendered = RunWsola(dest, dest_offset, requested_frames,
-                            initial_input_frames, playback_rate);
-        break;
+    case FillBufferMode::kPassthrough:
+      rendered =
+          queue_->ReadFrames(std::min(buffered_frames(), requested_frames),
+                             dest_offset, dest, scratch_.get());
+      effective_playback_rate_ = 1.0;
+      break;
+    case FillBufferMode::kResampler:
+      // Gap 4: avbase has no MultiChannelResampler. Falling through to WSOLA
+      // keeps the duration right and the pitch wrong, which is the safer of
+      // the two errors for A/V sync, and it is logged so the mistake cannot
+      // be mistaken for correct behaviour.
+      if (!warned_about_resampler_) {
+        warned_about_resampler_ = true;
+        LOG(WARNING) << "avbase.sync: preserves_pitch=false requested but no "
+                        "resampler exists yet; using WSOLA, so pitch will be "
+                        "preserved when it should not be";
+      }
+      rendered = RunWsola(dest, dest_offset, requested_frames,
+                          initial_input_frames, playback_rate);
+      break;
+    case FillBufferMode::kWsola:
+      rendered = RunWsola(dest, dest_offset, requested_frames,
+                          initial_input_frames, playback_rate);
+      break;
     }
   }
 
@@ -367,9 +371,9 @@ int AudioRendererAlgorithm::RunWsola(AudioBus* dest, int dest_offset,
   // overshot by two thirds of a window.
   if (reached_end_of_stream_ && rendered < requested_frames &&
       !CanPerformWsola()) {
-    rendered += queue_->ReadFrames(requested_frames - rendered,
-                                   dest_offset + rendered, dest,
-                                   scratch_.get());
+    rendered +=
+        queue_->ReadFrames(requested_frames - rendered, dest_offset + rendered,
+                           dest, scratch_.get());
   }
 
   // The rate actually achieved by this call: input frames consumed per output
@@ -419,8 +423,7 @@ void AudioRendererAlgorithm::AllocateWsolaBuffers() {
   transition_window_.assign(static_cast<size_t>(ola_window_size_) * 2, 0.0f);
   internal::FillPeriodicHanningWindow(&transition_window_);
 
-  wsola_output_ =
-      AudioBus::Create(channels_, ola_window_size_ + ola_hop_size_);
+  wsola_output_ = AudioBus::Create(channels_, ola_window_size_ + ola_hop_size_);
   wsola_output_->Zero();
   optimal_block_ = AudioBus::Create(channels_, ola_window_size_);
   target_block_ = AudioBus::Create(channels_, ola_window_size_);
@@ -591,9 +594,8 @@ void AudioRendererAlgorithm::GetOptimalBlock() {
         target_block_index_ - ola_hop_size_ - search_block_index_;
     const int half_exclude = kExcludeIntervalLengthFrames / 2;
     optimal_index = internal::OptimalIndex(
-        search_block_.get(), target_block_.get(),
-        last_optimal - half_exclude, last_optimal + half_exclude,
-        EffectiveSearchBlockFrames());
+        search_block_.get(), target_block_.get(), last_optimal - half_exclude,
+        last_optimal + half_exclude, EffectiveSearchBlockFrames());
     optimal_index += search_block_index_;
     PeekAudioWithZeroPrepend(optimal_index, optimal_block_.get());
 

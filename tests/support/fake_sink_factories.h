@@ -31,8 +31,8 @@ class FakeVideoSinkFactory final : public VideoRendererSinkFactory {
   FakeVideoSink* last_sink() const;
 
   // VideoRendererSinkFactory.
-  std::unique_ptr<VideoRendererSink> Create(
-      base::scoped_refptr<NativeDisplay> display) override;
+  std::unique_ptr<VideoRendererSink>
+  Create(base::scoped_refptr<NativeDisplay> display) override;
   const char* name() const override { return "FakeVideoSinkFactory"; }
 
  private:

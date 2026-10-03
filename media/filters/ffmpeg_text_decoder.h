@@ -41,8 +41,8 @@ class AVBASE_MEDIA_EXPORT FFmpegTextDecoder final : public TextDecoder {
 class AVBASE_MEDIA_EXPORT FFmpegTextDecoderFactory final
     : public TextDecoderFactory {
  public:
-  std::unique_ptr<TextDecoder> CreateTextDecoder(
-      const TextDecoderConfig& config) override;
+  std::unique_ptr<TextDecoder>
+  CreateTextDecoder(const TextDecoderConfig& config) override;
   const char* name() const override { return "ffmpeg-text"; }
 
  private:

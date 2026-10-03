@@ -29,7 +29,7 @@ TEST_F(VideoFrameQueueTest, ReserveCommitPop) {
     auto guard = queue_.Reserve();
     ASSERT_TRUE(static_cast<bool>(guard));
     EXPECT_EQ(queue_.reserved_count(), 1u);
-    EXPECT_EQ(queue_.size(), 0u);   // Not visible to readers yet.
+    EXPECT_EQ(queue_.size(), 0u);  // Not visible to readers yet.
     guard.Commit(MakeFrame(0));
   }
   EXPECT_EQ(queue_.reserved_count(), 0u);
@@ -68,9 +68,9 @@ TEST_F(VideoFrameQueueTest, AbandonIsEquivalentToDropping) {
   auto guard = queue_.Reserve();
   ASSERT_TRUE(static_cast<bool>(guard));
   guard.Abandon();
-  EXPECT_FALSE(static_cast<bool>(guard));   // Guard is now empty.
+  EXPECT_FALSE(static_cast<bool>(guard));  // Guard is now empty.
   EXPECT_EQ(queue_.reserved_count(), 0u);
-  guard.Abandon();   // Idempotent; must not double-return the slot.
+  guard.Abandon();  // Idempotent; must not double-return the slot.
   EXPECT_EQ(queue_.GetStats().slots_returned_uncommitted, 1u);
 }
 
@@ -80,7 +80,7 @@ TEST_F(VideoFrameQueueTest, MoveTransfersSlotOwnership) {
     auto guard = queue_.Reserve();
     ASSERT_TRUE(static_cast<bool>(guard));
     moved_to = std::move(guard);
-    EXPECT_FALSE(static_cast<bool>(guard));   // NOLINT: testing moved-from state
+    EXPECT_FALSE(static_cast<bool>(guard));  // NOLINT: testing moved-from state
   }
   // The moved-from guard must NOT have returned the slot.
   EXPECT_EQ(queue_.reserved_count(), 1u);
@@ -114,7 +114,7 @@ TEST_F(VideoFrameQueueTest, ReserveBlocksUntilASlotFrees) {
 
   std::this_thread::sleep_for(std::chrono::milliseconds(20));
   EXPECT_FALSE(reserved.load());
-  guards.clear();   // Returning all three slots must wake the producer.
+  guards.clear();  // Returning all three slots must wake the producer.
   producer.join();
   EXPECT_TRUE(reserved.load());
   EXPECT_GE(queue_.GetStats().reserve_waits, 1u);
@@ -155,8 +155,8 @@ TEST_F(VideoFrameQueueTest, FlushLeavesReservedSlotsToTheirGuards) {
   queue_.Reserve().Commit(MakeFrame(0));
 
   queue_.Flush();
-  EXPECT_EQ(queue_.reserved_count(), 1u);   // Still held by |guard|.
-  EXPECT_EQ(queue_.size(), 0u);             // The filled one was dropped.
+  EXPECT_EQ(queue_.reserved_count(), 1u);  // Still held by |guard|.
+  EXPECT_EQ(queue_.size(), 0u);            // The filled one was dropped.
 
   guard.Commit(MakeFrame(1));
   EXPECT_EQ(queue_.size(), 1u);
@@ -169,7 +169,7 @@ TEST_F(VideoFrameQueueTest, PeekDoesNotConsume) {
   std::vector<base::scoped_refptr<VideoFrame>> seen;
   EXPECT_EQ(queue_.Peek(&seen, 10), 2u);
   EXPECT_EQ(seen.size(), 2u);
-  EXPECT_EQ(queue_.size(), 2u);   // Untouched.
+  EXPECT_EQ(queue_.size(), 2u);  // Untouched.
 
   seen.clear();
   EXPECT_EQ(queue_.Peek(&seen, 1), 1u);
@@ -186,16 +186,20 @@ TEST_F(VideoFrameQueueTest, EndOfStreamWaitsForPendingFrames) {
   queue_.Reserve().Commit(MakeFrame(0));
   queue_.MarkEndOfStream();
   base::scoped_refptr<VideoFrame> out;
-  EXPECT_EQ(queue_.Pop(&out), VideoFrameQueue::PopStatus::kOk);   // Frame first.
+  EXPECT_EQ(queue_.Pop(&out), VideoFrameQueue::PopStatus::kOk);  // Frame first.
   EXPECT_EQ(queue_.Pop(&out), VideoFrameQueue::PopStatus::kEndOfStream);
 }
 
 TEST_F(VideoFrameQueueTest, AbortReleasesBlockedReserveAndPop) {
   std::vector<VideoFrameQueue::SlotGuard> guards;
-  for (int i = 0; i < 3; ++i) guards.push_back(queue_.Reserve());
+  for (int i = 0; i < 3; ++i)
+    guards.push_back(queue_.Reserve());
 
   std::atomic<bool> producer_done{false}, consumer_done{false};
-  std::thread producer([&]() { queue_.Reserve(); producer_done.store(true); });
+  std::thread producer([&]() {
+    queue_.Reserve();
+    producer_done.store(true);
+  });
   std::thread consumer([&]() {
     base::scoped_refptr<VideoFrame> out;
     queue_.Pop(&out);
@@ -234,7 +238,8 @@ TEST_F(VideoFrameQueueTest, ConcurrentProducersAndConsumersLoseNoFrames) {
     producers.emplace_back([&queue, &committed, p]() {
       for (int i = 0; i < kPerProducer; ++i) {
         auto guard = queue.Reserve();
-        if (!guard) return;
+        if (!guard)
+          return;
         guard.Commit(MakeFrame(p * kPerProducer + i));
         committed.fetch_add(1);
       }
@@ -255,7 +260,8 @@ TEST_F(VideoFrameQueueTest, ConcurrentProducersAndConsumersLoseNoFrames) {
       }
     });
   }
-  for (auto& t : producers) t.join();
+  for (auto& t : producers)
+    t.join();
 
   // Wait for the consumers to drain instead of draining here.
   //
@@ -269,7 +275,8 @@ TEST_F(VideoFrameQueueTest, ConcurrentProducersAndConsumersLoseNoFrames) {
     std::this_thread::sleep_for(base::Milliseconds(1).ToChronoMicros());
   }
   queue.Abort();
-  for (auto& t : consumers) t.join();
+  for (auto& t : consumers)
+    t.join();
 
   EXPECT_EQ(committed.load(), kProducers * kPerProducer);
   EXPECT_EQ(popped.load(), kProducers * kPerProducer);
@@ -280,7 +287,8 @@ TEST_F(VideoFrameQueueTest, PopStatusNames) {
   using S = VideoFrameQueue::PopStatus;
   EXPECT_STREQ(GetVideoFrameQueuePopStatusName(S::kOk), "ok");
   EXPECT_STREQ(GetVideoFrameQueuePopStatusName(S::kFlushed), "flushed");
-  EXPECT_STREQ(GetVideoFrameQueuePopStatusName(S::kEndOfStream), "end-of-stream");
+  EXPECT_STREQ(GetVideoFrameQueuePopStatusName(S::kEndOfStream),
+               "end-of-stream");
 }
 
 }  // namespace

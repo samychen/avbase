@@ -18,19 +18,29 @@ std::string EscapeJson(std::string_view in) {
   out.reserve(in.size() + 8);
   for (char c : in) {
     switch (c) {
-      case '"':  out += "\\\""; break;
-      case '\\': out += "\\\\"; break;
-      case '\n': out += "\\n";  break;
-      case '\r': out += "\\r";  break;
-      case '\t': out += "\\t";  break;
-      default:
-        if (static_cast<unsigned char>(c) < 0x20) {
-          char buf[8];
-          std::snprintf(buf, sizeof(buf), "\\u%04x", c);
-          out += buf;
-        } else {
-          out += c;
-        }
+    case '"':
+      out += "\\\"";
+      break;
+    case '\\':
+      out += "\\\\";
+      break;
+    case '\n':
+      out += "\\n";
+      break;
+    case '\r':
+      out += "\\r";
+      break;
+    case '\t':
+      out += "\\t";
+      break;
+    default:
+      if (static_cast<unsigned char>(c) < 0x20) {
+        char buf[8];
+        std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+        out += buf;
+      } else {
+        out += c;
+      }
     }
   }
   return out;
@@ -41,20 +51,34 @@ std::string EscapeJson(std::string_view in) {
 const char* GetMediaLogEventTypeName(MediaLogEvent::Type type) {
   using T = MediaLogEvent::Type;
   switch (type) {
-    case T::kOpenInput:            return "open-input";
-    case T::kFindStreamInfo:       return "find-stream-info";
-    case T::kComponentOpen:        return "component-open";
-    case T::kVideoDecoderChanged:  return "video-decoder-changed";
-    case T::kAudioDecoderChanged:  return "audio-decoder-changed";
-    case T::kVideoDecoderFallback: return "video-decoder-fallback";
-    case T::kAudioVideoSync:       return "audio-video-sync";
-    case T::kDownloadBandwidth:    return "download-bandwidth";
-    case T::kBufferingStateChanged:return "buffering-state-changed";
-    case T::kFrameDropped:         return "frame-dropped";
-    case T::kSeekStarted:          return "seek-started";
-    case T::kSeekCompleted:        return "seek-completed";
-    case T::kError:                return "error";
-    case T::kProperty:             return "property";
+  case T::kOpenInput:
+    return "open-input";
+  case T::kFindStreamInfo:
+    return "find-stream-info";
+  case T::kComponentOpen:
+    return "component-open";
+  case T::kVideoDecoderChanged:
+    return "video-decoder-changed";
+  case T::kAudioDecoderChanged:
+    return "audio-decoder-changed";
+  case T::kVideoDecoderFallback:
+    return "video-decoder-fallback";
+  case T::kAudioVideoSync:
+    return "audio-video-sync";
+  case T::kDownloadBandwidth:
+    return "download-bandwidth";
+  case T::kBufferingStateChanged:
+    return "buffering-state-changed";
+  case T::kFrameDropped:
+    return "frame-dropped";
+  case T::kSeekStarted:
+    return "seek-started";
+  case T::kSeekCompleted:
+    return "seek-completed";
+  case T::kError:
+    return "error";
+  case T::kProperty:
+    return "property";
   }
   return "invalid";
 }
@@ -62,9 +86,12 @@ const char* GetMediaLogEventTypeName(MediaLogEvent::Type type) {
 const char* GetMediaLogLevelName(MediaLogEvent::Level level) {
   using L = MediaLogEvent::Level;
   switch (level) {
-    case L::kInfo:    return "INFO";
-    case L::kWarning: return "WARNING";
-    case L::kError:   return "ERROR";
+  case L::kInfo:
+    return "INFO";
+  case L::kWarning:
+    return "WARNING";
+  case L::kError:
+    return "ERROR";
   }
   return "INVALID";
 }
@@ -92,23 +119,23 @@ void MediaLog::AddEvent(MediaLogEvent::Level level, MediaLogEvent::Type type,
     line += " " + key + "=" + value;
   }
   switch (level) {
-    case MediaLogEvent::Level::kError:
-      LOG(ERROR) << "[media] " << line;
-      break;
-    case MediaLogEvent::Level::kWarning:
-      LOG(WARNING) << "[media] " << line;
-      break;
-    case MediaLogEvent::Level::kInfo:
-      LOG(INFO) << "[media] " << line;
-      break;
+  case MediaLogEvent::Level::kError:
+    LOG(ERROR) << "[media] " << line;
+    break;
+  case MediaLogEvent::Level::kWarning:
+    LOG(WARNING) << "[media] " << line;
+    break;
+  case MediaLogEvent::Level::kInfo:
+    LOG(INFO) << "[media] " << line;
+    break;
   }
 
   base::AutoLock scoped(lock_);
   events_.push_back(std::move(event));
   if (events_.size() > kMediaLogEventCapacity) {
     events_.erase(events_.begin(),
-                  events_.begin() +
-                      static_cast<long>(events_.size() - kMediaLogEventCapacity));
+                  events_.begin() + static_cast<long>(events_.size() -
+                                                      kMediaLogEventCapacity));
   }
 }
 

@@ -15,11 +15,27 @@
 namespace avbase::media {
 
 enum class SampleFormat {
-  kUnknown = 0, kU8, kS16, kS32, kF32, kS16P, kS32P, kF32P,
+  kUnknown = 0,
+  kU8,
+  kS16,
+  kS32,
+  kF32,
+  kS16P,
+  kS32P,
+  kF32P,
 };
 enum class ChannelLayout {
-  kNone = 0, kMono, kStereo, k2_1, kSurround, k4_0, kQuad, k5_0,
-  k5_1, k7_1, kDiscrete,
+  kNone = 0,
+  kMono,
+  kStereo,
+  k2_1,
+  kSurround,
+  k4_0,
+  kQuad,
+  k5_0,
+  k5_1,
+  k7_1,
+  kDiscrete,
 };
 
 AVBASE_MEDIA_EXPORT const char* GetSampleFormatName(SampleFormat format);
@@ -37,8 +53,10 @@ class AVBASE_MEDIA_EXPORT AudioParameters {
   AudioParameters() = default;
   AudioParameters(ChannelLayout layout, SampleFormat format, int sample_rate,
                   int frames_per_buffer)
-      : channel_layout_(layout), sample_format_(format),
-        sample_rate_(sample_rate), frames_per_buffer_(frames_per_buffer) {}
+      : channel_layout_(layout),
+        sample_format_(format),
+        sample_rate_(sample_rate),
+        frames_per_buffer_(frames_per_buffer) {}
 
   ChannelLayout channel_layout() const { return channel_layout_; }
   SampleFormat sample_format() const { return sample_format_; }
@@ -57,7 +75,8 @@ class AVBASE_MEDIA_EXPORT AudioParameters {
   bool is_valid() const {
     return sample_rate_ > 0 && frames_per_buffer_ > 0 && bytes_per_frame() > 0;
   }
-  friend bool operator==(const AudioParameters&, const AudioParameters&) = default;
+  friend bool operator==(const AudioParameters&,
+                         const AudioParameters&) = default;
 
  private:
   ChannelLayout channel_layout_{ChannelLayout::kStereo};

@@ -18,8 +18,9 @@ namespace avbase::platform::ffmpeg {
 //
 // Defined here rather than in media/ because it reads AVFrame fields
 // (invariant C4: libav types stay inside platform/ffmpeg).
-media::VideoColorSpace ColorSpaceFromAvFrame(
-    const AVFrame* frame, const media::VideoDecoderConfig& config);
+media::VideoColorSpace
+ColorSpaceFromAvFrame(const AVFrame* frame,
+                      const media::VideoDecoderConfig& config);
 
 }  // namespace avbase::platform::ffmpeg
 

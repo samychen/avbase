@@ -68,8 +68,8 @@ class AudioRendererImplTest : public ::testing::Test {
 
   void ScriptBuffers(int buffers) {
     for (int i = 0; i < buffers; ++i) {
-      stream_->AppendBuffer(test::MakeDataBuffer(DemuxerStreamType::kAudio,
-                                                 stream_->serial()));
+      stream_->AppendBuffer(
+          test::MakeDataBuffer(DemuxerStreamType::kAudio, stream_->serial()));
     }
   }
 
@@ -82,16 +82,16 @@ class AudioRendererImplTest : public ::testing::Test {
         AvSyncController::Thresholds());
     renderer_ = std::make_unique<AudioRendererImpl>(
         runner_, std::move(factories), av_sync_.get());
-    renderer_->set_ended_cb(base::BindRepeating(
-        &AudioRendererImplTest::OnEnded, base::Unretained(this)));
+    renderer_->set_ended_cb(base::BindRepeating(&AudioRendererImplTest::OnEnded,
+                                                base::Unretained(this)));
     sink_ = base::MakeRefCounted<test::FakeAudioSink>();
-    renderer_->Initialize(
-        stream_.get(),
-        AudioParameters(ChannelLayout::kStereo, SampleFormat::kF32P, 48000,
-                        kFramesPerPeriod),
-        sink_,
-        base::BindOnce(&AudioRendererImplTest::OnInitialized,
-                       base::Unretained(this)));
+    renderer_->Initialize(stream_.get(),
+                          AudioParameters(ChannelLayout::kStereo,
+                                          SampleFormat::kF32P, 48000,
+                                          kFramesPerPeriod),
+                          sink_,
+                          base::BindOnce(&AudioRendererImplTest::OnInitialized,
+                                         base::Unretained(this)));
     DrainQueue();
   }
 

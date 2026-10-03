@@ -24,11 +24,11 @@ struct VideoDecoderConfig;
 // `mediacodec-avc`, `mediacodec-hevc`, `mediacodec-mpeg2`, ...).
 struct AVBASE_MEDIA_EXPORT VideoDecoderCapability {
   bool hardware{false};
-  bool outputs_opaque_surface{false};   // MediaCodec-into-Surface, VideoToolbox.
+  bool outputs_opaque_surface{false};  // MediaCodec-into-Surface, VideoToolbox.
   bool handles_resolution_change{false};
-  int max_width{0};      // 0 means unlimited.
+  int max_width{0};  // 0 means unlimited.
   int max_height{0};
-  int priority{0};       // Higher wins among otherwise equal candidates.
+  int priority{0};  // Higher wins among otherwise equal candidates.
 };
 
 // Ref-counted because factories are shared between players and outlive any
@@ -45,8 +45,8 @@ class AVBASE_MEDIA_EXPORT VideoDecoderFactory
   virtual VideoDecoderCapability GetCapability() const = 0;
   virtual bool SupportsCodec(VideoDecoderType type_hint) const = 0;
   // Returns nullptr when this factory cannot handle |config|.
-  virtual std::unique_ptr<VideoDecoder> CreateVideoDecoder(
-      const VideoDecoderConfig& config) = 0;
+  virtual std::unique_ptr<VideoDecoder>
+  CreateVideoDecoder(const VideoDecoderConfig& config) = 0;
   virtual const char* name() const = 0;
 
  protected:

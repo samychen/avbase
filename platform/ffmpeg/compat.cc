@@ -38,7 +38,8 @@ uint64_t ChannelLayoutMask(const AVCodecContext* ctx) {
 #else
   return ctx->channel_layout
              ? ctx->channel_layout
-             : static_cast<uint64_t>(av_get_default_channel_layout(ctx->channels));
+             : static_cast<uint64_t>(
+                   av_get_default_channel_layout(ctx->channels));
 #endif
 }
 
@@ -75,16 +76,20 @@ uint64_t ChannelLayoutMask(const AVCodecParameters* par) {
 }
 
 SwrPtr MakeSwrContext(AVSampleFormat out_format, uint64_t out_layout,
-                      int out_rate, AVSampleFormat in_format, uint64_t in_layout,
-                      int in_rate) {
+                      int out_rate, AVSampleFormat in_format,
+                      uint64_t in_layout, int in_rate) {
 #if AVBASE_FFMPEG_HAS_CHANNEL_LAYOUT
   SwrContext* ctx = nullptr;
   AVChannelLayout ol{};
   AVChannelLayout il{};
-  if (out_layout) av_channel_layout_from_mask(&ol, out_layout);
-  else            av_channel_layout_default(&ol, 2);
-  if (in_layout)  av_channel_layout_from_mask(&il, in_layout);
-  else            av_channel_layout_default(&il, 2);
+  if (out_layout)
+    av_channel_layout_from_mask(&ol, out_layout);
+  else
+    av_channel_layout_default(&ol, 2);
+  if (in_layout)
+    av_channel_layout_from_mask(&il, in_layout);
+  else
+    av_channel_layout_default(&il, 2);
   const int ret = swr_alloc_set_opts2(&ctx, &ol, out_format, out_rate, &il,
                                       in_format, in_rate, 0, nullptr);
   av_channel_layout_uninit(&ol);
@@ -94,10 +99,9 @@ SwrPtr MakeSwrContext(AVSampleFormat out_format, uint64_t out_layout,
   }
   return SwrPtr(ctx);
 #else
-  return SwrPtr(swr_alloc_set_opts(nullptr, static_cast<int64_t>(out_layout),
-                                   out_format, out_rate,
-                                   static_cast<int64_t>(in_layout), in_format,
-                                   in_rate, 0, nullptr));
+  return SwrPtr(swr_alloc_set_opts(
+      nullptr, static_cast<int64_t>(out_layout), out_format, out_rate,
+      static_cast<int64_t>(in_layout), in_format, in_rate, 0, nullptr));
 #endif
 }
 
@@ -113,7 +117,8 @@ int64_t FromTimeDelta(base::TimeDelta t, AVRational time_base) {
   if (media::IsNoTimestamp(t)) {
     return AV_NOPTS_VALUE;
   }
-  return av_rescale_q(t.InMicroseconds(), AVRational{1, AV_TIME_BASE}, time_base);
+  return av_rescale_q(t.InMicroseconds(), AVRational{1, AV_TIME_BASE},
+                      time_base);
 }
 
 std::string AvErrorString(int av_error) {
@@ -125,51 +130,80 @@ std::string AvErrorString(int av_error) {
 namespace {
 
 // Maps the AVERROR values that carry real diagnostic meaning. Everything else
-// falls through to kDecodeFailed with av_strerror's text, so an unmapped code is
-// still reported readably rather than as "unknown error".
+// falls through to kDecodeFailed with av_strerror's text, so an unmapped code
+// is still reported readably rather than as "unknown error".
 ErrorCode ClassifyAvError(int av_error) {
   switch (av_error) {
-    case AVERROR_EOF:                 return ErrorCode::kSourceEos;
-    case AVERROR(ENOENT):             return ErrorCode::kSourceNotFound;
-    case AVERROR(EACCES):
-    case AVERROR(EPERM):              return ErrorCode::kSourcePermissionDenied;
-    case AVERROR(EAGAIN):             return ErrorCode::kTimeout;
-    case AVERROR(ENOMEM):             return ErrorCode::kOutOfMemory;
-    case AVERROR(EIO):                return ErrorCode::kSourceReadFailed;
-    case AVERROR(ETIMEDOUT):          return ErrorCode::kNetworkTimeout;
-    case AVERROR(ECONNREFUSED):
-    case AVERROR(EHOSTUNREACH):
-    case AVERROR(ENETUNREACH):        return ErrorCode::kNetworkUnreachable;
-    case AVERROR_PROTOCOL_NOT_FOUND:
-    case AVERROR(EINVAL):             return ErrorCode::kSourceUnsupported;
-    case AVERROR_INVALIDDATA:         return ErrorCode::kDecodeFailed;
-    case AVERROR(ESPIPE):             return ErrorCode::kSourceSeekFailed;
-    case AVERROR_BUG:
-    case AVERROR_BUG2:
-    case AVERROR_PATCHWELCOME:        return ErrorCode::kNotImplemented;
-    case AVERROR_EXIT:                return ErrorCode::kAborted;
-    case AVERROR_DECODER_NOT_FOUND:
-    case AVERROR_STREAM_NOT_FOUND:    return ErrorCode::kStreamNotFound;
-    default:                          return ErrorCode::kDecodeFailed;
+  case AVERROR_EOF:
+    return ErrorCode::kSourceEos;
+  case AVERROR(ENOENT):
+    return ErrorCode::kSourceNotFound;
+  case AVERROR(EACCES):
+  case AVERROR(EPERM):
+    return ErrorCode::kSourcePermissionDenied;
+  case AVERROR(EAGAIN):
+    return ErrorCode::kTimeout;
+  case AVERROR(ENOMEM):
+    return ErrorCode::kOutOfMemory;
+  case AVERROR(EIO):
+    return ErrorCode::kSourceReadFailed;
+  case AVERROR(ETIMEDOUT):
+    return ErrorCode::kNetworkTimeout;
+  case AVERROR(ECONNREFUSED):
+  case AVERROR(EHOSTUNREACH):
+  case AVERROR(ENETUNREACH):
+    return ErrorCode::kNetworkUnreachable;
+  case AVERROR_PROTOCOL_NOT_FOUND:
+  case AVERROR(EINVAL):
+    return ErrorCode::kSourceUnsupported;
+  case AVERROR_INVALIDDATA:
+    return ErrorCode::kDecodeFailed;
+  case AVERROR(ESPIPE):
+    return ErrorCode::kSourceSeekFailed;
+  case AVERROR_BUG:
+  case AVERROR_BUG2:
+  case AVERROR_PATCHWELCOME:
+    return ErrorCode::kNotImplemented;
+  case AVERROR_EXIT:
+    return ErrorCode::kAborted;
+  case AVERROR_DECODER_NOT_FOUND:
+  case AVERROR_STREAM_NOT_FOUND:
+    return ErrorCode::kStreamNotFound;
+  default:
+    return ErrorCode::kDecodeFailed;
   }
 }
 
 std::string SummaryFor(ErrorCode code) {
   switch (code) {
-    case ErrorCode::kSourceEos:               return "end of stream";
-    case ErrorCode::kSourceNotFound:          return "media source not found";
-    case ErrorCode::kSourcePermissionDenied:  return "permission denied opening the media source";
-    case ErrorCode::kSourceReadFailed:        return "I/O error while reading the media source";
-    case ErrorCode::kSourceSeekFailed:        return "seek failed on this source";
-    case ErrorCode::kSourceUnsupported:       return "no demuxer or protocol can handle this source";
-    case ErrorCode::kNetworkTimeout:          return "network read timed out";
-    case ErrorCode::kNetworkUnreachable:      return "network unreachable or connection refused";
-    case ErrorCode::kOutOfMemory:             return "FFmpeg ran out of memory";
-    case ErrorCode::kTimeout:                 return "operation would block; retry";
-    case ErrorCode::kAborted:                 return "operation aborted";
-    case ErrorCode::kStreamNotFound:          return "requested stream or decoder not found";
-    case ErrorCode::kNotImplemented:          return "FFmpeg reported an unimplemented path";
-    default:                                  return "decoding or demuxing failed";
+  case ErrorCode::kSourceEos:
+    return "end of stream";
+  case ErrorCode::kSourceNotFound:
+    return "media source not found";
+  case ErrorCode::kSourcePermissionDenied:
+    return "permission denied opening the media source";
+  case ErrorCode::kSourceReadFailed:
+    return "I/O error while reading the media source";
+  case ErrorCode::kSourceSeekFailed:
+    return "seek failed on this source";
+  case ErrorCode::kSourceUnsupported:
+    return "no demuxer or protocol can handle this source";
+  case ErrorCode::kNetworkTimeout:
+    return "network read timed out";
+  case ErrorCode::kNetworkUnreachable:
+    return "network unreachable or connection refused";
+  case ErrorCode::kOutOfMemory:
+    return "FFmpeg ran out of memory";
+  case ErrorCode::kTimeout:
+    return "operation would block; retry";
+  case ErrorCode::kAborted:
+    return "operation aborted";
+  case ErrorCode::kStreamNotFound:
+    return "requested stream or decoder not found";
+  case ErrorCode::kNotImplemented:
+    return "FFmpeg reported an unimplemented path";
+  default:
+    return "decoding or demuxing failed";
   }
 }
 
@@ -185,33 +219,36 @@ MediaError ToMediaError(int av_error, std::string_view context,
     return MediaError::Ok();
   }
   const ErrorCode code = ClassifyAvError(av_error);
-  std::string det = std::string("native = ") + std::to_string(av_error) +
-                    " (" + AvErrorString(av_error) + ")";
+  std::string det = std::string("native = ") + std::to_string(av_error) + " (" +
+                    AvErrorString(av_error) + ")";
   if (!detail.empty()) {
     det = std::string(detail) + "\n           " + det;
   }
   std::string sug(suggestion);
   if (sug.empty()) {
     switch (code) {
-      case ErrorCode::kSourceNotFound:
-        sug = "verify the path or URL is reachable; for local files check that "
-              "the file exists and is readable by this process";
-        break;
-      case ErrorCode::kSourceUnsupported:
-        sug = "set config.demux.forced_format to name the container explicitly "
-              "(e.g. \"h264\", \"mpegts\"), or raise config.demux.probe_size";
-        break;
-      case ErrorCode::kNetworkTimeout:
-        sug = "raise config.demux.timeout, or increase "
-              "config.net.reconnect_max_retries";
-        break;
-      default:
-        sug = "attach Player::DumpDiagnostics() to the bug report";
-        break;
+    case ErrorCode::kSourceNotFound:
+      sug =
+          "verify the path or URL is reachable; for local files check that "
+          "the file exists and is readable by this process";
+      break;
+    case ErrorCode::kSourceUnsupported:
+      sug =
+          "set config.demux.forced_format to name the container explicitly "
+          "(e.g. \"h264\", \"mpegts\"), or raise config.demux.probe_size";
+      break;
+    case ErrorCode::kNetworkTimeout:
+      sug =
+          "raise config.demux.timeout, or increase "
+          "config.net.reconnect_max_retries";
+      break;
+    default:
+      sug = "attach Player::DumpDiagnostics() to the bug report";
+      break;
     }
   }
-  return MediaError(code, SummaryFor(code), std::move(det),
-                    std::move(sug), av_error, std::string(context));
+  return MediaError(code, SummaryFor(code), std::move(det), std::move(sug),
+                    av_error, std::string(context));
 }
 
 media::DecoderStatus ToDecoderStatus(int av_error, std::string_view context) {
@@ -221,16 +258,30 @@ media::DecoderStatus ToDecoderStatus(int av_error, std::string_view context) {
   }
   Codes code = Codes::kDecodeError;
   switch (av_error) {
-    case AVERROR(EAGAIN):     code = Codes::kDecodeError; break;
-    case AVERROR_EOF:         code = Codes::kDecodeError; break;
-    case AVERROR_DECODER_NOT_FOUND: code = Codes::kUnsupportedCodec; break;
-    case AVERROR_INVALIDDATA: code = Codes::kDecodeError; break;
-    case AVERROR(ENOMEM):     code = Codes::kUnknownError; break;
-    case AVERROR_EXIT:        code = Codes::kDecodingAborted; break;
-    default:                  code = Codes::kUnknownError; break;
+  case AVERROR(EAGAIN):
+    code = Codes::kDecodeError;
+    break;
+  case AVERROR_EOF:
+    code = Codes::kDecodeError;
+    break;
+  case AVERROR_DECODER_NOT_FOUND:
+    code = Codes::kUnsupportedCodec;
+    break;
+  case AVERROR_INVALIDDATA:
+    code = Codes::kDecodeError;
+    break;
+  case AVERROR(ENOMEM):
+    code = Codes::kUnknownError;
+    break;
+  case AVERROR_EXIT:
+    code = Codes::kDecodingAborted;
+    break;
+  default:
+    code = Codes::kUnknownError;
+    break;
   }
-  return media::DecoderStatus(
-      code, std::string(context) + ": " + AvErrorString(av_error));
+  return media::DecoderStatus(code, std::string(context) + ": " +
+                                        AvErrorString(av_error));
 }
 
 DictPtr ToAvDict(const std::map<std::string, std::string>& options) {
@@ -255,7 +306,8 @@ std::map<std::string, std::string> FromAvDict(const AVDictionary* dict) {
 #else
   // FFmpeg < 6.0: av_dict_get with an empty key and IGNORE_SUFFIX walks the
   // whole dictionary, returning the entry after |entry| each time.
-  while ((entry = av_dict_get(dict, "", entry, AV_DICT_IGNORE_SUFFIX)) != nullptr) {
+  while ((entry = av_dict_get(dict, "", entry, AV_DICT_IGNORE_SUFFIX)) !=
+         nullptr) {
     out[entry->key] = entry->value ? entry->value : "";
   }
 #endif

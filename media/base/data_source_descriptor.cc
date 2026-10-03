@@ -4,7 +4,7 @@
 
 #include "media/base/data_source_descriptor.h"
 
-#include "media/base/data_source.h"   // Complete type: scoped_refptr<DataSource> needs it.
+#include "media/base/data_source.h"  // Complete type: scoped_refptr<DataSource> needs it.
 
 #include <utility>
 
@@ -41,8 +41,8 @@ DataSourceDescriptor DataSourceDescriptor::FromFileDescriptor(int fd,
 }
 
 // static
-DataSourceDescriptor DataSourceDescriptor::FromSource(
-    base::scoped_refptr<DataSource> source) {
+DataSourceDescriptor
+DataSourceDescriptor::FromSource(base::scoped_refptr<DataSource> source) {
   DataSourceDescriptor d;
   d.kind = Kind::kCustomSource;
   d.custom = std::move(source);

@@ -21,21 +21,28 @@ namespace avbase::media {
 
 const char* BufferingStateToString(BufferingState state) {
   switch (state) {
-    case BufferingState::kHaveNothing:  return "have-nothing";
-    case BufferingState::kHaveMetadata: return "have-metadata";
-    case BufferingState::kHaveEnough:   return "have-enough";
-    case BufferingState::kHaveFuture:   return "have-future";
+  case BufferingState::kHaveNothing:
+    return "have-nothing";
+  case BufferingState::kHaveMetadata:
+    return "have-metadata";
+  case BufferingState::kHaveEnough:
+    return "have-enough";
+  case BufferingState::kHaveFuture:
+    return "have-future";
   }
   return "invalid";
 }
 
 const char* OutputDeviceStatusToString(OutputDeviceStatus status) {
   switch (status) {
-    case OutputDeviceStatus::kOk:           return "ok";
-    case OutputDeviceStatus::kFailed:       return "failed";
-    case OutputDeviceStatus::kNotAuthorized:
-      return "not-authorized";
-    case OutputDeviceStatus::kNotFound:     return "not-found";
+  case OutputDeviceStatus::kOk:
+    return "ok";
+  case OutputDeviceStatus::kFailed:
+    return "failed";
+  case OutputDeviceStatus::kNotAuthorized:
+    return "not-authorized";
+  case OutputDeviceStatus::kNotFound:
+    return "not-found";
   }
   return "invalid";
 }

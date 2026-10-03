@@ -47,8 +47,8 @@ class FakeVideoFactory final : public media::VideoDecoderFactory {
  public:
   media::VideoDecoderCapability GetCapability() const override { return {}; }
   bool SupportsCodec(media::VideoDecoderType) const override { return false; }
-  std::unique_ptr<media::VideoDecoder> CreateVideoDecoder(
-      const media::VideoDecoderConfig&) override {
+  std::unique_ptr<media::VideoDecoder>
+  CreateVideoDecoder(const media::VideoDecoderConfig&) override {
     return nullptr;
   }
   const char* name() const override { return "fake-video"; }
@@ -59,8 +59,8 @@ class FakeVideoFactory final : public media::VideoDecoderFactory {
 
 class FakeAudioFactory final : public media::AudioDecoderFactory {
  public:
-  std::unique_ptr<media::AudioDecoder> CreateAudioDecoder(
-      const media::AudioDecoderConfig&) override {
+  std::unique_ptr<media::AudioDecoder>
+  CreateAudioDecoder(const media::AudioDecoderConfig&) override {
     return nullptr;
   }
   const char* name() const override { return "fake-audio"; }
@@ -116,7 +116,7 @@ TEST(DepsOwnershipTest, SharingAFactoryBetweenTwoDepsKeepsOneCount) {
   a.video_decoder_factories.clear();
   EXPECT_EQ(2, factory->refs());
   b.video_decoder_factories.clear();
-  EXPECT_EQ(1, factory->refs());   // Only this test's own reference is left.
+  EXPECT_EQ(1, factory->refs());  // Only this test's own reference is left.
 }
 
 // Deps is move-only (copy deleted, move defaulted). Moving must transfer the

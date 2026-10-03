@@ -72,10 +72,10 @@ class NativeDisplay;
 
 // Which Renderer implementation the pipeline should build.
 enum class RendererType {
-  kRendererImpl = 0,   // Default: FFmpeg decode + avbase's own sinks.
-  kNullRenderer,       // Headless. platform/null, M10. CI and transcode-style
-                       // decode-to-nowhere runs.
-  kCastRenderer,       // Reserved; not planned in this milestone set.
+  kRendererImpl = 0,  // Default: FFmpeg decode + avbase's own sinks.
+  kNullRenderer,      // Headless. platform/null, M10. CI and transcode-style
+                      // decode-to-nowhere runs.
+  kCastRenderer,      // Reserved; not planned in this milestone set.
 };
 
 AVBASE_MEDIA_EXPORT const char* RendererTypeToString(RendererType type);
@@ -112,11 +112,10 @@ class AVBASE_MEDIA_EXPORT Renderer {
   // sequence and is never run inline, so a caller may safely destroy state in
   // it. kOk on success; any other PipelineStatus is convertible to a MediaError
   // with an actionable message (pipeline_status.h).
-  virtual void Initialize(MediaResource* media_resource,
-                          RendererClient* client,
-                          base::scoped_refptr<base::SequencedTaskRunner>
-                              media_task_runner,
-                          PipelineStatusCallback init_cb) = 0;
+  virtual void
+  Initialize(MediaResource* media_resource, RendererClient* client,
+             base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
+             PipelineStatusCallback init_cb) = 0;
 
   // Attaches a DRM context. Not implemented (D8): the default returns false
   // through |cdm_attached_cb| so that a caller learns the truth instead of
@@ -157,8 +156,7 @@ class AVBASE_MEDIA_EXPORT Renderer {
   // exactly what the viewer asked for.
   //
   // Runs on the media sequence.
-  virtual void SetSourceLiveness(bool is_live,
-                                 base::TimeDelta max_cue_age) {
+  virtual void SetSourceLiveness(bool is_live, base::TimeDelta max_cue_age) {
     (void)is_live;
     (void)max_cue_age;
   }

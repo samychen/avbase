@@ -79,8 +79,8 @@ class FakeTextDecoderFactory final : public TextDecoderFactory {
   int decode_calls() const;
 
   // TextDecoderFactory.
-  std::unique_ptr<TextDecoder> CreateTextDecoder(
-      const TextDecoderConfig& config) override;
+  std::unique_ptr<TextDecoder>
+  CreateTextDecoder(const TextDecoderConfig& config) override;
   const char* name() const override { return "FakeTextDecoderFactory"; }
 
  private:

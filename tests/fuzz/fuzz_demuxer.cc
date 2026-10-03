@@ -98,26 +98,21 @@ struct DemuxHarness {
 // Waits for |event| up to |timeout|; false means "give up on this input".
 bool WaitFor(avbase::base::WaitableEvent& event,
              std::chrono::milliseconds timeout) {
-  return event.TimedWait(
-      avbase::base::Milliseconds(
-          static_cast<int64_t>(
-              std::chrono::duration_cast<std::chrono::milliseconds>(timeout)
-                  .count())));
+  return event.TimedWait(avbase::base::Milliseconds(static_cast<int64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(timeout).count())));
 }
 
 // Destroys the demuxer and its byte buffer ON the media thread, FIFO after
 // every task the input posted. |bytes| backs the MemoryDataSource; both die
 // together.
-void RetireOnMediaThread(
-    avbase::base::Thread& media_thread,
-    std::unique_ptr<avbase::media::FFmpegDemuxer> demuxer,
-    std::unique_ptr<std::vector<uint8_t>> bytes) {
+void RetireOnMediaThread(avbase::base::Thread& media_thread,
+                         std::unique_ptr<avbase::media::FFmpegDemuxer> demuxer,
+                         std::unique_ptr<std::vector<uint8_t>> bytes) {
   media_thread.task_runner()->PostTask(
       FROM_HERE,
-      avbase::base::BindOnce(
-          [](std::unique_ptr<avbase::media::FFmpegDemuxer> d,
-             std::unique_ptr<std::vector<uint8_t>> b) {},
-          std::move(demuxer), std::move(bytes)));
+      avbase::base::BindOnce([](std::unique_ptr<avbase::media::FFmpegDemuxer> d,
+                                std::unique_ptr<std::vector<uint8_t>> b) {},
+                             std::move(demuxer), std::move(bytes)));
   avbase::base::WaitableEvent drained;
   media_thread.task_runner()->PostTask(
       FROM_HERE,
@@ -130,7 +125,7 @@ void RetireOnMediaThread(
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   if (size < 8 || size > (4u << 20)) {
-    return 0;   // Too small to open; too large to be worth fuzzing here.
+    return 0;  // Too small to open; too large to be worth fuzzing here.
   }
   // Deliberately leaked: a static DemuxHarness would be destroyed at process
   // exit, and its Thread joins after the logging subsystem's static mutex is
@@ -161,7 +156,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
           avbase::base::BindOnce(
               [](std::shared_ptr<avbase::base::WaitableEvent> done,
                  avbase::media::Status status) {
-                (void)status;   // A failed open is a finding too.
+                (void)status;  // A failed open is a finding too.
                 done->Signal();
               },
               init_done)));
@@ -170,21 +165,20 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     // Read a bounded number of buffers from whatever streams exist. A hung
     // read gives up on the input; the retire below still runs.
     for (int round = 0; round < kMaxReadRounds; ++round) {
-      DemuxerStream* stream = demuxer->GetStream(
-          round % 2 == 0 ? DemuxerStreamType::kAudio
-                         : DemuxerStreamType::kVideo);
+      DemuxerStream* stream =
+          demuxer->GetStream(round % 2 == 0 ? DemuxerStreamType::kAudio
+                                            : DemuxerStreamType::kVideo);
       if (!stream) {
         continue;
       }
       auto read_done = std::make_shared<avbase::base::WaitableEvent>();
       stream->Read(
-          4,
-          avbase::base::BindOnce(
-              [](std::shared_ptr<avbase::base::WaitableEvent> done,
-                 DemuxerStream::Status,
-                 std::vector<avbase::base::scoped_refptr<
-                     avbase::media::DecoderBuffer>>) { done->Signal(); },
-              read_done));
+          4, avbase::base::BindOnce(
+                 [](std::shared_ptr<avbase::base::WaitableEvent> done,
+                    DemuxerStream::Status,
+                    std::vector<avbase::base::scoped_refptr<
+                        avbase::media::DecoderBuffer>>) { done->Signal(); },
+                 read_done));
       if (!WaitFor(*read_done, kReadTimeout)) {
         break;
       }
@@ -196,9 +190,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   // non-blocking and posted like every other entry point; the retire task
   // FIFO-guarantees it ran before the demuxer and its bytes go away.
   harness->media_thread_.task_runner()->PostTask(
-      FROM_HERE,
-      avbase::base::BindOnce(&Demuxer::Stop,
-                             avbase::base::Unretained(demuxer.get())));
+      FROM_HERE, avbase::base::BindOnce(
+                     &Demuxer::Stop, avbase::base::Unretained(demuxer.get())));
   RetireOnMediaThread(harness->media_thread_, std::move(demuxer),
                       std::move(bytes));
   return 0;

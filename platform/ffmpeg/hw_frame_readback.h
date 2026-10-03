@@ -23,9 +23,10 @@ namespace avbase::platform::ffmpeg {
 // the device's software layout is (NV12, P010, ...) to I420. Returns nullptr
 // when the transfer or conversion fails; the frame stays valid and the
 // consumer can retry.
-base::scoped_refptr<media::VideoFrame> MapHwFrameToI420(
-    const AVFrame* hw_frame, media::Rational sar, base::TimeDelta timestamp,
-    base::TimeDelta duration, int32_t serial, media::VideoColorSpace cs);
+base::scoped_refptr<media::VideoFrame>
+MapHwFrameToI420(const AVFrame* hw_frame, media::Rational sar,
+                 base::TimeDelta timestamp, base::TimeDelta duration,
+                 int32_t serial, media::VideoColorSpace cs);
 
 }  // namespace avbase::platform::ffmpeg
 

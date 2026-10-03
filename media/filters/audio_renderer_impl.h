@@ -46,16 +46,16 @@
 // with room to spare (the copy is ~2k floats); * consistent with Δ13, whose
 // complaint about ffplay is precisely that `sdl_audio_callback` did
 // `swr_convert` -- milliseconds of DSP -- on the device thread. Δ13's remedy
-// column says "只做 FillBuffer + Scale", but FillBuffer IS the milliseconds; the
-// intent (no DSP on the device thread) is met by "只做 copy + Scale", which is
-// strictly stronger. * the lock is held for an O(1) ring index update, which is
-// the only reading of "持锁 < 5 us" that can actually be satisfied. docs/04 §6.3
-// and §8 need updating to say so. Recorded in docs/PROGRESS.md. The cost of
-// pre-stretching is latency: audio sits in the ring for up to |kReadyChunks| *
-// frames_per_buffer before reaching the device, which is why
-// the ring is small (4 x 21 ms at 1024/48k = 85 ms) and why Flush() drops it.
-// A live stream that cannot tolerate that should set
-// config.net.live_max_latency, which is M9's concern, not this class's.
+// column says "只做 FillBuffer + Scale", but FillBuffer IS the milliseconds;
+// the intent (no DSP on the device thread) is met by "只做 copy + Scale", which
+// is strictly stronger. * the lock is held for an O(1) ring index update, which
+// is the only reading of "持锁 < 5 us" that can actually be satisfied. docs/04
+// §6.3 and §8 need updating to say so. Recorded in docs/PROGRESS.md. The cost
+// of pre-stretching is latency: audio sits in the ring for up to |kReadyChunks|
+// * frames_per_buffer before reaching the device, which is why the ring is
+// small (4 x 21 ms at 1024/48k = 85 ms) and why Flush() drops it. A live stream
+// that cannot tolerate that should set config.net.live_max_latency, which is
+// M9's concern, not this class's.
 // ---------------------------------------------------------------------------
 // GAPS -- close these before this file leaves DRAFT
 // ---------------------------------------------------------------------------
@@ -149,8 +149,7 @@ class AVBASE_MEDIA_EXPORT AudioRendererImpl final
   // so that a failed decode never leaves a device open. |cb| runs on S4 and is
   // never run inline.
   void Initialize(DemuxerStream* stream, const AudioParameters& params,
-                  base::scoped_refptr<AudioRendererSink> sink,
-                  InitializeCB cb);
+                  base::scoped_refptr<AudioRendererSink> sink, InitializeCB cb);
 
   // Runs on S4. Begins decoding at |time| and starts the sink.
   void StartPlayingFrom(base::TimeDelta time);
@@ -278,9 +277,9 @@ class AVBASE_MEDIA_EXPORT AudioRendererImpl final
   // ---- shared with S7; handoff_lock_ guards all four ----
   mutable base::Lock handoff_lock_;
   ReadyChunk ring_[kReadyChunks];
-  int ring_head_{0};       // index of the chunk Render() reads next
-  int ring_count_{0};      // chunks currently published
-  int front_offset_{0};    // frames already consumed from ring_[ring_head_]
+  int ring_head_{0};     // index of the chunk Render() reads next
+  int ring_count_{0};    // chunks currently published
+  int front_offset_{0};  // frames already consumed from ring_[ring_head_]
 
   // ---- shared with S7; atomic because Render() reads them lock-free ----
   std::atomic<float> volume_{1.0f};

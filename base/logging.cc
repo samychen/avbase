@@ -28,11 +28,16 @@ LoggingDelegate*& DelegateSlot() {
 
 const char* SeverityName(LogSeverity severity) {
   switch (severity) {
-    case LOG_VERBOSE: return "VERBOSE";
-    case LOG_INFO:    return "INFO";
-    case LOG_WARNING: return "WARNING";
-    case LOG_ERROR:   return "ERROR";
-    case LOG_FATAL:   return "FATAL";
+  case LOG_VERBOSE:
+    return "VERBOSE";
+  case LOG_INFO:
+    return "INFO";
+  case LOG_WARNING:
+    return "WARNING";
+  case LOG_ERROR:
+    return "ERROR";
+  case LOG_FATAL:
+    return "FATAL";
   }
   return "UNKNOWN";
 }
@@ -45,13 +50,21 @@ void SetDelegate(std::unique_ptr<LoggingDelegate> delegate) {
   DelegateSlot() = delegate.release();
 }
 
-void SetMinLogLevel(LogSeverity severity) { g_min_log_level.store(severity); }
-LogSeverity GetMinLogLevel() { return g_min_log_level.load(); }
+void SetMinLogLevel(LogSeverity severity) {
+  g_min_log_level.store(severity);
+}
+LogSeverity GetMinLogLevel() {
+  return g_min_log_level.load();
+}
 bool ShouldCreateLogMessage(LogSeverity severity) {
   return severity >= g_min_log_level.load(std::memory_order_relaxed);
 }
-void SetMinVLogLevel(int level) { g_min_vlog_level.store(level); }
-int GetMinVLogLevel() { return g_min_vlog_level.load(); }
+void SetMinVLogLevel(int level) {
+  g_min_vlog_level.store(level);
+}
+int GetMinVLogLevel() {
+  return g_min_vlog_level.load();
+}
 bool ShouldCreateVerboseMessage(int verbosity) {
   return verbosity <= g_min_vlog_level.load(std::memory_order_relaxed);
 }

@@ -35,27 +35,25 @@ using test::SyntheticSpec;
 using test::SyntheticVideoDecoder;
 
 base::scoped_refptr<VideoFrame> MakeFrame() {
-  return VideoFrame::CreateBlackFrame(VideoFormat::kI420, Size{320, 240},
-                                      Size{320, 240}, Rational{1, 1},
-                                      base::TimeDelta(), base::Milliseconds(33),
-                                      0);
+  return VideoFrame::CreateBlackFrame(
+      VideoFormat::kI420, Size{320, 240}, Size{320, 240}, Rational{1, 1},
+      base::TimeDelta(), base::Milliseconds(33), 0);
 }
 
 // Pulls packets from |stream| until the EOS marker, then stops.
-std::vector<base::scoped_refptr<DecoderBuffer>> ReadPackets(
-    DemuxerStream* stream, size_t count) {
+std::vector<base::scoped_refptr<DecoderBuffer>>
+ReadPackets(DemuxerStream* stream, size_t count) {
   std::vector<base::scoped_refptr<DecoderBuffer>> out;
   while (out.size() < count) {
     DemuxerStream::DecoderBufferVector batch;
-    stream->Read(
-        static_cast<uint32_t>(count),
-        base::BindOnce(
-            [](DemuxerStream::DecoderBufferVector* into,
-               DemuxerStream::Status /*status*/,
-               DemuxerStream::DecoderBufferVector buffers) {
-              *into = std::move(buffers);
-            },
-            &batch));
+    stream->Read(static_cast<uint32_t>(count),
+                 base::BindOnce(
+                     [](DemuxerStream::DecoderBufferVector* into,
+                        DemuxerStream::Status /*status*/,
+                        DemuxerStream::DecoderBufferVector buffers) {
+                       *into = std::move(buffers);
+                     },
+                     &batch));
     for (auto& buffer : batch) {
       if (buffer->IsEndOfStream()) {
         return out;
@@ -148,16 +146,15 @@ TEST(SyntheticDecodersTest, AudioDecoderProducesThePacketsTone) {
 
   SyntheticAudioDecoder decoder(spec);
   std::vector<base::scoped_refptr<AudioBuffer>> buffers;
-  decoder.Initialize(
-      stream->audio_decoder_config(), false, packet->serial(),
-      base::BindOnce([](DecoderStatus) {}),
-      base::BindRepeating(
-          [](std::vector<base::scoped_refptr<AudioBuffer>>* into,
-             base::scoped_refptr<AudioBuffer> buffer) {
-            into->push_back(buffer);
-          },
-          &buffers),
-      base::BindRepeating([](WaitingReason) {}));
+  decoder.Initialize(stream->audio_decoder_config(), false, packet->serial(),
+                     base::BindOnce([](DecoderStatus) {}),
+                     base::BindRepeating(
+                         [](std::vector<base::scoped_refptr<AudioBuffer>>* into,
+                            base::scoped_refptr<AudioBuffer> buffer) {
+                           into->push_back(buffer);
+                         },
+                         &buffers),
+                     base::BindRepeating([](WaitingReason) {}));
   decoder.Decode(packet, base::BindOnce([](DecoderStatus) {}));
 
   ASSERT_EQ(buffers.size(), 1u);

@@ -122,8 +122,8 @@ class RendererImplTest : public ::testing::Test {
     deps.audio_disabled = !with_audio;
     if (with_video) {
       deps.video_task_runner = video_thread_.task_runner();
-      video_factory_ = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
-          behaviour_);
+      video_factory_ =
+          base::MakeRefCounted<test::FakeVideoDecoderFactory>(behaviour_);
       deps.video_factories.push_back(video_factory_);
       auto sink = std::make_unique<test::FakeVideoSink>();
       video_sink_ = sink.get();
@@ -133,8 +133,8 @@ class RendererImplTest : public ::testing::Test {
     }
     if (with_audio) {
       deps.audio_task_runner = audio_thread_.task_runner();
-      audio_factory_ = base::MakeRefCounted<test::FakeAudioDecoderFactory>(
-          behaviour_);
+      audio_factory_ =
+          base::MakeRefCounted<test::FakeAudioDecoderFactory>(behaviour_);
       deps.audio_factories.push_back(audio_factory_);
       audio_sink_ = base::MakeRefCounted<test::FakeAudioSink>();
       deps.audio_sink =

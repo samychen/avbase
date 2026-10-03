@@ -56,15 +56,15 @@ void VideoRendererImpl::set_frame_presented_cb(FramePresentedCB cb) {
 }
 
 void VideoRendererImpl::set_decoder_preference(DecoderPreference preference,
-                                              HwCodecMask hw_codecs) {
+                                               HwCodecMask hw_codecs) {
   decoder_preference_ = preference;
   hw_codecs_ = hw_codecs;
   preference_set_ = true;
 }
 
 void VideoRendererImpl::Initialize(DemuxerStream* stream,
-                                  std::unique_ptr<VideoRendererSink> sink,
-                                  InitializeCB cb) {
+                                   std::unique_ptr<VideoRendererSink> sink,
+                                   InitializeCB cb) {
   DCHECK(stream);
   if (!stream || !sink) {
     std::move(cb).Run(PipelineStatus::kVideoRendererInitializationError);
@@ -97,17 +97,16 @@ void VideoRendererImpl::Initialize(DemuxerStream* stream,
                  << (decoder_preference_ == DecoderPreference::kSoftware
                          ? "excluded"
                          : "allowed")
-                 << ", hw_codecs mask=0x" << std::hex << hw_codecs_
-                 << std::dec << ")";
+                 << ", hw_codecs mask=0x" << std::hex << hw_codecs_ << std::dec
+                 << ")";
       // Reported through the same callback as any other initialization
       // failure, so the pipeline reports one status rather than a decoder
       // that silently never produces a frame.
       std::move(cb).Run(PipelineStatus::kVideoRendererInitializationError);
       return;
     }
-    LOG(INFO) << "avbase.vdec: decoder preference resolved, "
-              << ranked.size() << " candidate(s), first="
-              << ranked.front()->name();
+    LOG(INFO) << "avbase.vdec: decoder preference resolved, " << ranked.size()
+              << " candidate(s), first=" << ranked.front()->name();
   } else {
     ranked = factories_;
   }
@@ -121,7 +120,7 @@ void VideoRendererImpl::Initialize(DemuxerStream* stream,
 }
 
 void VideoRendererImpl::OnDecoderInitialized(InitializeCB cb,
-                                            DecoderStatus status) {
+                                             DecoderStatus status) {
   if (!status.is_ok()) {
     LOG(ERROR) << "avbase.vdec: video decoder failed to initialize: "
                << decoder_stream_.GetDisplayName() << " ("
@@ -168,7 +167,7 @@ void VideoRendererImpl::StartPlayingFrom(base::TimeDelta time) {
     started_ = true;
   }
   sink_->Play();
-  (void)time;   // the demuxer has already seeked; the first frame carries it
+  (void)time;  // the demuxer has already seeked; the first frame carries it
   PumpDecoder();
 }
 
@@ -202,7 +201,7 @@ void VideoRendererImpl::Stop() {
 // ---- clock and pacing inputs, all posted onto S3 by RendererImpl -----------
 
 void VideoRendererImpl::SetMasterClock(base::TimeDelta media_time,
-                                      int32_t serial, bool valid) {
+                                       int32_t serial, bool valid) {
   compositor_.SetMasterClock(media_time, serial, valid);
 }
 
@@ -239,7 +238,9 @@ void VideoRendererImpl::BeginAccurateSeek(base::TimeDelta target) {
   compositor_.BeginAccurateSeek(target);
 }
 
-void VideoRendererImpl::EndAccurateSeek() { compositor_.EndAccurateSeek(); }
+void VideoRendererImpl::EndAccurateSeek() {
+  compositor_.EndAccurateSeek();
+}
 
 void VideoRendererImpl::SetOutputTarget(
     base::scoped_refptr<NativeDisplay> display) {
@@ -272,13 +273,12 @@ void VideoRendererImpl::PumpDecoder() {
   read_outstanding_ = true;
   decoder_stream_.Read(base::BindOnce(
       &VideoRendererImpl::OnDecoderOutput, base::Unretained(this),
-      base::BindOnce(&VideoRendererImpl::PumpDecoder,
-                     base::Unretained(this))));
+      base::BindOnce(&VideoRendererImpl::PumpDecoder, base::Unretained(this))));
 }
 
-void VideoRendererImpl::OnDecoderOutput(
-    base::OnceClosure pump_again, DecoderStatus status,
-    base::scoped_refptr<VideoFrame> frame) {
+void VideoRendererImpl::OnDecoderOutput(base::OnceClosure pump_again,
+                                        DecoderStatus status,
+                                        base::scoped_refptr<VideoFrame> frame) {
   read_outstanding_ = false;
   if (stopping_) {
     return;
@@ -288,10 +288,10 @@ void VideoRendererImpl::OnDecoderOutput(
   // precisely because a VideoFrame cannot carry that flag (unlike AudioBuffer).
   if (!status.is_ok()) {
     if (status.code() == DecoderStatus::Codes::kDecodingAborted) {
-      return;                       // a flush is in progress; not an error
+      return;  // a flush is in progress; not an error
     }
-    LOG(ERROR) << "avbase.vdec: decode failed ("
-               << status.AsDebugString() << ")";
+    LOG(ERROR) << "avbase.vdec: decode failed (" << status.AsDebugString()
+               << ")";
     ended_ = true;
     compositor_.SetEndOfStream();
     ReportEndedOnce();
@@ -336,8 +336,9 @@ void VideoRendererImpl::OnDecoderStreamEvent(DecoderStreamEvent event) {
 
 // ---- S6: the sink's render callback ---------------------------------------
 
-base::scoped_refptr<VideoFrame> VideoRendererImpl::Render(
-    base::TimeTicks deadline_min, base::TimeTicks deadline_max) {
+base::scoped_refptr<VideoFrame>
+VideoRendererImpl::Render(base::TimeTicks deadline_min,
+                          base::TimeTicks deadline_max) {
   // The whole body is one locked call into the compositor. Nothing here may
   // block, allocate or call back into Player: this runs on the sink's render
   // sequence, which for the SDL2 backend is the window's event loop (docs/04

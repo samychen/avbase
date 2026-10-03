@@ -38,9 +38,8 @@ VideoDecoderConfig MakeValidVideoConfig();
 
 // A zero-filled buffer for |type|. The timestamp is left unset: the
 // sub-renderers exercised here are driven by their sinks, not by a clock.
-base::scoped_refptr<DecoderBuffer> MakeDataBuffer(DemuxerStreamType type,
-                                                  int32_t serial,
-                                                  size_t bytes = 16);
+base::scoped_refptr<DecoderBuffer>
+MakeDataBuffer(DemuxerStreamType type, int32_t serial, size_t bytes = 16);
 
 // Hands out the buffers it was given, in order, then an EOS marker.
 //

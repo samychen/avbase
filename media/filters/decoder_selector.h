@@ -23,17 +23,16 @@
 #include "media/base/video_decoder_factory.h"
 #include "media/media_export.h"
 
-
 namespace avbase::media {
 
 // Which decoder kind to prefer. Defined here rather than in player/public so
 // that media/ never depends on player/ (invariant C22); PlayerConfig's field of
 // the same name is an alias for this type.
 enum class DecoderPreference {
-  kAuto = 0,           // Hardware first, fall back to software.
-  kHardwareFirst,      // Same as kAuto but logs a warning on fallback.
-  kSoftware,           // Never use hardware.
-  kHardwareOnly,       // Fail instead of falling back.
+  kAuto = 0,       // Hardware first, fall back to software.
+  kHardwareFirst,  // Same as kAuto but logs a warning on fallback.
+  kSoftware,       // Never use hardware.
+  kHardwareOnly,   // Fail instead of falling back.
 };
 
 // Bitmask of codecs a hardware path is allowed to handle. Replaces ijkplayer's
@@ -65,8 +64,10 @@ class AVBASE_MEDIA_EXPORT DecoderSelector {
 
   // |reasons|, when non-null, receives one line per rejected candidate naming
   // the factory and why it was skipped. This is what makes "why did my hardware
-  // decoder not get used" answerable from a log instead of requiring a debugger.
-  static std::vector<base::scoped_refptr<VideoDecoderFactory>> SelectVideoDecoder(
+  // decoder not get used" answerable from a log instead of requiring a
+  // debugger.
+  static std::vector<base::scoped_refptr<VideoDecoderFactory>>
+  SelectVideoDecoder(
       const std::vector<base::scoped_refptr<VideoDecoderFactory>>& factories,
       const VideoDecoderConfig& config, DecoderPreference preference,
       HwCodecMask hw_codecs, std::vector<std::string>* reasons);

@@ -12,8 +12,8 @@
 #include <cstring>
 #include <vector>
 
-#include "media/base/audio_bus.h"
 #include "gtest/gtest.h"
+#include "media/base/audio_bus.h"
 
 namespace avbase::media {
 namespace {
@@ -60,9 +60,11 @@ TEST(AudioBufferTest, InterleavedS16ReadsBothChannelsWithCorrectStride) {
   const int read = buffer->ReadFrames(8, 0, bus.get());
   EXPECT_EQ(8, read);
   for (int i = 0; i < 8; ++i) {
-    EXPECT_NEAR(static_cast<float>(i * 100) / 32768.0f, bus->channel(0)[i], 1e-6f)
+    EXPECT_NEAR(static_cast<float>(i * 100) / 32768.0f, bus->channel(0)[i],
+                1e-6f)
         << "frame " << i << " left";
-    EXPECT_NEAR(static_cast<float>(-i * 100) / 32768.0f, bus->channel(1)[i], 1e-6f)
+    EXPECT_NEAR(static_cast<float>(-i * 100) / 32768.0f, bus->channel(1)[i],
+                1e-6f)
         << "frame " << i << " right";
   }
 }
@@ -154,9 +156,9 @@ TEST(AudioBufferTest, SerialIsMutableForSeekFlush) {
 
 TEST(AudioBufferTest, UnknownSampleFormatReadsNothingInsteadOfTrapping) {
   std::vector<uint8_t> data(32, 0xAB);
-  auto buffer = AudioBuffer::Create(SampleFormat::kUnknown, ChannelLayout::kStereo,
-                                    2, 48000, 4, base::TimeDelta(),
-                                    base::TimeDelta(), 0, std::move(data));
+  auto buffer = AudioBuffer::Create(
+      SampleFormat::kUnknown, ChannelLayout::kStereo, 2, 48000, 4,
+      base::TimeDelta(), base::TimeDelta(), 0, std::move(data));
   auto bus = AudioBus::Create(2, 4);
   EXPECT_EQ(0, buffer->ReadFrames(4, 0, bus.get()));
 }
@@ -165,17 +167,20 @@ TEST(AudioBufferTest, DecodeSampleCoversEveryFormat) {
   // Each format must map its full-scale value to ~1.0 (or -1.0 for the signed
   // minimum), otherwise the whole format is scaled wrong.
   const uint8_t u8_full = 255;
-  EXPECT_NEAR(127.0f / 128.0f, DecodeSample(&u8_full, SampleFormat::kU8), 1e-3f);
+  EXPECT_NEAR(127.0f / 128.0f, DecodeSample(&u8_full, SampleFormat::kU8),
+              1e-3f);
 
   const int16_t s16_min = -32768;
   EXPECT_NEAR(-1.0f,
               DecodeSample(reinterpret_cast<const uint8_t*>(&s16_min),
-                           SampleFormat::kS16), 1e-6f);
+                           SampleFormat::kS16),
+              1e-6f);
 
   const int32_t s32_max = 2147483647;
   EXPECT_NEAR(1.0f,
               DecodeSample(reinterpret_cast<const uint8_t*>(&s32_max),
-                           SampleFormat::kS32), 1e-6f);
+                           SampleFormat::kS32),
+              1e-6f);
 
   const float f32 = 0.5f;
   EXPECT_FLOAT_EQ(0.5f, DecodeSample(reinterpret_cast<const uint8_t*>(&f32),

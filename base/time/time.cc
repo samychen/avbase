@@ -19,13 +19,14 @@ int64_t MonotonicNowMicros() {
 
 }  // namespace
 
-TimeTicks TimeTicks::Now() { return FromMicroseconds(MonotonicNowMicros()); }
+TimeTicks TimeTicks::Now() {
+  return FromMicroseconds(MonotonicNowMicros());
+}
 
 Time Time::Now() {
-  const int64_t us =
-      std::chrono::duration_cast<std::chrono::microseconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count();
+  const int64_t us = std::chrono::duration_cast<std::chrono::microseconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
   return FromUnixTime(0) + Microseconds(us);
 }
 

@@ -78,8 +78,8 @@ class SyntheticVideoDecoderFactory final : public VideoDecoderFactory {
 
   VideoDecoderCapability GetCapability() const override;
   bool SupportsCodec(VideoDecoderType type_hint) const override;
-  std::unique_ptr<VideoDecoder> CreateVideoDecoder(
-      const VideoDecoderConfig& config) override;
+  std::unique_ptr<VideoDecoder>
+  CreateVideoDecoder(const VideoDecoderConfig& config) override;
   const char* name() const override { return "SyntheticVideoDecoderFactory"; }
 
  private:
@@ -95,8 +95,8 @@ class SyntheticAudioDecoder final : public AudioDecoder {
   }
   void Initialize(const AudioDecoderConfig& config, bool has_pending_clear,
                   int32_t current_serial, InitCB init_cb,
-                  const OutputCB& output_cb, const WaitingCB& waiting_cb)
-      override;
+                  const OutputCB& output_cb,
+                  const WaitingCB& waiting_cb) override;
   void Decode(base::scoped_refptr<DecoderBuffer> buffer,
               DecodeCB decode_cb) override;
   void Reset(base::OnceClosure closure) override;
@@ -114,8 +114,8 @@ class SyntheticAudioDecoderFactory final : public AudioDecoderFactory {
   explicit SyntheticAudioDecoderFactory(const SyntheticSpec& spec)
       : spec_(spec) {}
 
-  std::unique_ptr<AudioDecoder> CreateAudioDecoder(
-      const AudioDecoderConfig& config) override;
+  std::unique_ptr<AudioDecoder>
+  CreateAudioDecoder(const AudioDecoderConfig& config) override;
   const char* name() const override { return "SyntheticAudioDecoderFactory"; }
 
  private:

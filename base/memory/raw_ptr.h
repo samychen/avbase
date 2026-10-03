@@ -27,13 +27,19 @@ class raw_ptr {
   constexpr raw_ptr(raw_ptr&&) noexcept = default;
   template <typename U>
   constexpr raw_ptr(const raw_ptr<U>& o) noexcept
-      requires(std::is_convertible_v<U*, T*>)
+    requires(std::is_convertible_v<U*, T*>)
       : ptr_(o.get()) {}
 
-  constexpr raw_ptr& operator=(T* p) noexcept { ptr_ = p; return *this; }
+  constexpr raw_ptr& operator=(T* p) noexcept {
+    ptr_ = p;
+    return *this;
+  }
   constexpr raw_ptr& operator=(const raw_ptr&) noexcept = default;
   constexpr raw_ptr& operator=(raw_ptr&&) noexcept = default;
-  constexpr raw_ptr& operator=(std::nullptr_t) noexcept { ptr_ = nullptr; return *this; }
+  constexpr raw_ptr& operator=(std::nullptr_t) noexcept {
+    ptr_ = nullptr;
+    return *this;
+  }
 
   constexpr T* get() const noexcept { return ptr_; }
   constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }
@@ -44,7 +50,8 @@ class raw_ptr {
   constexpr void reset() noexcept { ptr_ = nullptr; }
   constexpr void swap(raw_ptr& o) noexcept { std::swap(ptr_, o.ptr_); }
 
-  constexpr friend bool operator==(const raw_ptr& a, const raw_ptr& b) noexcept {
+  constexpr friend bool operator==(const raw_ptr& a,
+                                   const raw_ptr& b) noexcept {
     return a.ptr_ == b.ptr_;
   }
   constexpr friend bool operator==(const raw_ptr& a, T* b) noexcept {

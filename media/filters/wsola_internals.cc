@@ -14,7 +14,7 @@
 
 #include "media/filters/wsola_internals.h"
 
-#include <algorithm>   // std::min in Similarity()
+#include <algorithm>  // std::min in Similarity()
 #include <cmath>
 
 namespace avbase::media {

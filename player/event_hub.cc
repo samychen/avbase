@@ -104,8 +104,8 @@ void EventHub::Shutdown(base::TimeDelta timeout) {
   }
   if (!drained_.IsSignaled()) {
     thread_.task_runner()->PostTask(
-        FROM_HERE, base::BindOnce([](base::WaitableEvent* e) { e->Signal(); },
-                                  &drained_));
+        FROM_HERE,
+        base::BindOnce([](base::WaitableEvent* e) { e->Signal(); }, &drained_));
     drained_.TimedWait(timeout);
   }
   thread_.Stop();

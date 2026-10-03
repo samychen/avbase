@@ -201,8 +201,8 @@ const PlayerConfig& Player::config() const {
 
 Player::Subscription::Subscription() = default;
 Player::Subscription::Subscription(Subscription&&) noexcept = default;
-Player::Subscription& Player::Subscription::operator=(Subscription&&) noexcept =
-    default;
+Player::Subscription&
+Player::Subscription::operator=(Subscription&&) noexcept = default;
 Player::Subscription::~Subscription() = default;
 void Player::Subscription::Reset() {
   if (impl_ && impl_->player && impl_->id > 0) {
@@ -234,8 +234,8 @@ PlayerBuilder& PlayerBuilder::SetConfig(PlayerConfig config) {
 
 Status PlayerBuilder::SetOption(OptionCategory category, std::string_view key,
                                 const OptionValue& value) {
-  const Status s =
-      OptionRegistry::GetInstance().SetValue(&impl_->config, category, key, value);
+  const Status s = OptionRegistry::GetInstance().SetValue(&impl_->config,
+                                                          category, key, value);
   if (!s) {
     impl_->option_errors.push_back(s.error());
   }

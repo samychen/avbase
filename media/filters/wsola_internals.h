@@ -101,7 +101,7 @@ inline constexpr double kPi = 3.14159265358979323846;
 // Hz, which would shift every subsequent window and make the overlap-add
 // asymmetric.
 AVBASE_MEDIA_EXPORT int TimeToFrames(base::TimeDelta time,
-                                    int samples_per_second);
+                                     int samples_per_second);
 
 // Periodic Hanning window: w[n] = 0.5 * (1 - cos(2*pi*n / N)), n in [0, N).
 // "Periodic" means the final sample is not forced to zero, which is what makes
@@ -116,7 +116,7 @@ AVBASE_MEDIA_EXPORT void FillPeriodicHanningWindow(std::vector<float>* out);
 // needs in order to splice one window onto another without an audible seam. See
 // the provenance gap at the top of this file.
 AVBASE_MEDIA_EXPORT float Similarity(const AudioBus* search, int offset,
-                                    const AudioBus* target);
+                                     const AudioBus* target);
 
 // Index of the candidate block inside |search| that is most similar to
 // |target|, skipping the half-open range [exclude_begin, exclude_end). Returns
@@ -130,8 +130,8 @@ AVBASE_MEDIA_EXPORT float Similarity(const AudioBus* search, int offset,
 // block chosen for matching nothing. See
 // AudioRendererAlgorithm::EffectiveSearchBlockFrames().
 AVBASE_MEDIA_EXPORT int OptimalIndex(const AudioBus* search,
-                                    const AudioBus* target, int exclude_begin,
-                                    int exclude_end, int search_frames = 0);
+                                     const AudioBus* target, int exclude_begin,
+                                     int exclude_end, int search_frames = 0);
 
 }  // namespace internal
 }  // namespace avbase::media

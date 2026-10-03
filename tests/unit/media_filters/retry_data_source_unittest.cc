@@ -23,8 +23,7 @@ namespace {
 // counter on every read also works), then serves from a 1 KB pattern.
 class FlakyDataSource final : public DataSource {
  public:
-  explicit FlakyDataSource(int failures_left)
-      : failures_left_(failures_left) {}
+  explicit FlakyDataSource(int failures_left) : failures_left_(failures_left) {}
 
   void FailForever() { failures_left_ = 1 << 30; }
 
@@ -32,14 +31,12 @@ class FlakyDataSource final : public DataSource {
 
   void SetHost(Host*) override {}
   void Read(int64_t offset, size_t size, uint8_t* data,
-            base::scoped_refptr<base::TaskRunner> runner,
-            ReadCB cb) override {
+            base::scoped_refptr<base::TaskRunner> runner, ReadCB cb) override {
     runner->PostTask(
-        FROM_HERE, base::BindOnce(std::move(cb), ReadBlocking(offset, size,
-                                                              data)));
+        FROM_HERE,
+        base::BindOnce(std::move(cb), ReadBlocking(offset, size, data)));
   }
-  ReadResult ReadBlocking(int64_t offset, size_t size,
-                          uint8_t* data) override {
+  ReadResult ReadBlocking(int64_t offset, size_t size, uint8_t* data) override {
     if (failures_left_.fetch_sub(1) > 0) {
       return Err(ErrorCode::kNetworkUnreachable, "flaky source failed", {},
                  "test fault");
@@ -76,7 +73,7 @@ TEST(RetryDataSourceTest, RecoversWhenTheInnerSourceRecovers) {
   const auto result = source.ReadBlocking(100, 16, buf);
   ASSERT_TRUE(result) << result.error().ToString();
   EXPECT_EQ(result.value(), 16);
-  EXPECT_EQ(buf[0], 100);   // the pattern carries the offset
+  EXPECT_EQ(buf[0], 100);  // the pattern carries the offset
   EXPECT_EQ(inner->served_ok(), 1);
 }
 
@@ -106,13 +103,13 @@ TEST(RetryDataSourceTest, AsyncReadDeliversOnTheTaskRunner) {
   DataSource::ReadResult observed = Err(ErrorCode::kAborted, "not run", {}, {});
   source.Read(7, 4, reinterpret_cast<uint8_t*>(&observed),
               env.GetMainThreadTaskRunnerRef(),
-              base::BindOnce([](DataSource::ReadResult* out,
-                                base::WaitableEvent* e,
-                                DataSource::ReadResult r) {
-                *out = std::move(r);
-                e->Signal();
-              },
-                            &observed, &done));
+              base::BindOnce(
+                  [](DataSource::ReadResult* out, base::WaitableEvent* e,
+                     DataSource::ReadResult r) {
+                    *out = std::move(r);
+                    e->Signal();
+                  },
+                  &observed, &done));
   // The worker retries on its own thread; the result lands on this task
   // runner, which must be pumped for the callback to run at all.
   for (int i = 0; i < 2000 && !done.IsSignaled(); ++i) {
@@ -128,7 +125,7 @@ TEST(RetryDataSourceTest, AbortEndsABlockedRetryPromptly) {
   auto inner = base::MakeRefCounted<FlakyDataSource>(0);
   inner->FailForever();
   RetryDataSource::Config config;
-  config.max_retries = 1000;             // effectively forever
+  config.max_retries = 1000;              // effectively forever
   config.retry_delay = base::Seconds(1);  // long slices, abort must cut them
   RetryDataSource source(inner, config);
 

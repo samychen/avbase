@@ -17,12 +17,14 @@ namespace avbase::media {
 
 const char* GetDecoderStreamEventName(DecoderStreamEvent e) {
   switch (e) {
-    case DecoderStreamEvent::kNone: return "none";
-    case DecoderStreamEvent::kDecoderFallbackOnInit:
-      return "decoder-fallback-on-init";
-    case DecoderStreamEvent::kDecoderFallbackOnDecodeError:
-      return "decoder-fallback-on-decode-error";
-    case DecoderStreamEvent::kNoDecoderAvailable: return "no-decoder-available";
+  case DecoderStreamEvent::kNone:
+    return "none";
+  case DecoderStreamEvent::kDecoderFallbackOnInit:
+    return "decoder-fallback-on-init";
+  case DecoderStreamEvent::kDecoderFallbackOnDecodeError:
+    return "decoder-fallback-on-decode-error";
+  case DecoderStreamEvent::kNoDecoderAvailable:
+    return "no-decoder-available";
   }
   return "unknown";
 }
@@ -36,15 +38,15 @@ void VideoDecoderStreamTraits::InitializeDecoder(
     const typename DecoderType::OutputCB& output_cb,
     const WaitingCB& waiting_cb) {
   // VideoDecoder carries the serial on each DecoderBuffer instead, so it has no
-  // use for it here; low_delay is false because a DecoderStream always wants the
-  // decoder's full reorder buffer available.
+  // use for it here; low_delay is false because a DecoderStream always wants
+  // the decoder's full reorder buffer available.
   decoder->Initialize(config, /*low_delay=*/false, /*cdm_context=*/nullptr,
                       std::move(init_cb), output_cb, waiting_cb);
 }
 
 // static
-VideoDecoderConfig VideoDecoderStreamTraits::ConfigFromStream(
-    DemuxerStream* stream) {
+VideoDecoderConfig
+VideoDecoderStreamTraits::ConfigFromStream(DemuxerStream* stream) {
   return stream ? stream->video_decoder_config() : VideoDecoderConfig();
 }
 
@@ -59,8 +61,8 @@ void AudioDecoderStreamTraits::InitializeDecoder(
 }
 
 // static
-AudioDecoderConfig AudioDecoderStreamTraits::ConfigFromStream(
-    DemuxerStream* stream) {
+AudioDecoderConfig
+AudioDecoderStreamTraits::ConfigFromStream(DemuxerStream* stream) {
   return stream ? stream->audio_decoder_config() : AudioDecoderConfig();
 }
 
@@ -132,10 +134,10 @@ template <typename Traits>
 void DecoderStream<Traits>::TryNextFactory(InitCB init_cb) {
   if (next_factory_ >= factories_.size()) {
     Notify(DecoderStreamEvent::kNoDecoderAvailable);
-    init_status_ = DecoderStatus(
-        DecoderStatus::Codes::kUnknownError,
-        std::string(Traits::name()) + ": all " +
-            std::to_string(factories_.size()) + " decoder factories declined");
+    init_status_ = DecoderStatus(DecoderStatus::Codes::kUnknownError,
+                                 std::string(Traits::name()) + ": all " +
+                                     std::to_string(factories_.size()) +
+                                     " decoder factories declined");
     LOG(WARNING) << "[decoder-stream] " << init_status_.description();
     std::move(init_cb).Run(init_status_);
     return;
@@ -258,7 +260,8 @@ void DecoderStream<Traits>::ReadFromDemuxer() {
       base::BindOnce(
           [](base::scoped_refptr<base::SequencedTaskRunner> runner,
              base::OnceCallback<void(DemuxerStream::Status,
-                                     DemuxerStream::DecoderBufferVector)> cb,
+                                     DemuxerStream::DecoderBufferVector)>
+                 cb,
              DemuxerStream::Status status,
              DemuxerStream::DecoderBufferVector buffers) {
             runner->PostTask(FROM_HERE, base::BindOnce(std::move(cb), status,
@@ -271,8 +274,7 @@ void DecoderStream<Traits>::ReadFromDemuxer() {
 
 template <typename Traits>
 void DecoderStream<Traits>::OnBufferReady(
-    DemuxerStream::Status status,
-    DemuxerStream::DecoderBufferVector buffers) {
+    DemuxerStream::Status status, DemuxerStream::DecoderBufferVector buffers) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   demuxer_read_in_flight_ = false;
   if (flushing_) {
@@ -478,9 +480,9 @@ void DecoderStream<Traits>::OnResetDone(FlushCB closure) {
 }
 
 // No AVBASE_MEDIA_EXPORT here: the attribute belongs on the `extern template`
-// declarations in the header, where the type is still being introduced. Repeating
-// it on an instantiation definition is ignored by GCC and rejected under
-// -Werror=attributes.
+// declarations in the header, where the type is still being introduced.
+// Repeating it on an instantiation definition is ignored by GCC and rejected
+// under -Werror=attributes.
 template class DecoderStream<VideoDecoderStreamTraits>;
 template class DecoderStream<AudioDecoderStreamTraits>;
 

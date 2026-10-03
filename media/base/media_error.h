@@ -24,19 +24,39 @@ namespace avbase::media {
 enum class ErrorCode : uint16_t {
   kOk = 0,
   // Generic.
-  kInvalidArgument, kInvalidState, kNotImplemented, kOutOfMemory, kAborted,
-  kTimeout, kCancelled,
+  kInvalidArgument,
+  kInvalidState,
+  kNotImplemented,
+  kOutOfMemory,
+  kAborted,
+  kTimeout,
+  kCancelled,
   // Data source.
-  kSourceOpenFailed, kSourceNotFound, kSourcePermissionDenied,
-  kSourceReadFailed, kSourceSeekFailed, kSourceUnsupported, kSourceEos,
-  kNetworkUnreachable, kNetworkTimeout,
+  kSourceOpenFailed,
+  kSourceNotFound,
+  kSourcePermissionDenied,
+  kSourceReadFailed,
+  kSourceSeekFailed,
+  kSourceUnsupported,
+  kSourceEos,
+  kNetworkUnreachable,
+  kNetworkTimeout,
   // Decoding.
-  kDecoderNotFound, kDecoderOpenFailed, kDecodeFailed, kDecoderUnsupportedCodec,
+  kDecoderNotFound,
+  kDecoderOpenFailed,
+  kDecodeFailed,
+  kDecoderUnsupportedCodec,
   kDecoderHwFallback,
   // Rendering.
-  kSinkNotAttached, kSinkConfigureFailed, kSinkPresentFailed,
+  kSinkNotAttached,
+  kSinkConfigureFailed,
+  kSinkPresentFailed,
   // Player.
-  kMediaUnseekable, kStreamNotFound, kTrackNotFound, kConfigInvalid, kEos,
+  kMediaUnseekable,
+  kStreamNotFound,
+  kTrackNotFound,
+  kConfigInvalid,
+  kEos,
 };
 
 AVBASE_MEDIA_EXPORT const char* GetErrorCodeName(ErrorCode code);
@@ -94,7 +114,9 @@ template <typename T>
 using Result = base::expected<T, MediaError>;
 using Status = base::expected<void, MediaError>;
 
-inline Status OkStatus() { return Status(); }
+inline Status OkStatus() {
+  return Status();
+}
 
 // std::expected<void, E> cannot be constructed implicitly from E, so error
 // returns go through base::unexpected. This helper keeps call sites short:
@@ -105,11 +127,9 @@ inline base::unexpected<MediaError> Err(MediaError error) {
 inline base::unexpected<MediaError> Err(ErrorCode code, std::string summary,
                                         std::string detail = {},
                                         std::string suggestion = {}) {
-  return base::unexpected<MediaError>(
-      MediaError(code, std::move(summary), std::move(detail),
-                 std::move(suggestion)));
+  return base::unexpected<MediaError>(MediaError(
+      code, std::move(summary), std::move(detail), std::move(suggestion)));
 }
-
 
 }  // namespace avbase::media
 

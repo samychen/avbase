@@ -68,9 +68,8 @@ void RetryDataSource::Abort() {
   inner_->Abort();
 }
 
-DataSource::ReadResult RetryDataSource::ReadBlocking(int64_t offset,
-                                                     size_t size,
-                                                     uint8_t* data) {
+DataSource::ReadResult
+RetryDataSource::ReadBlocking(int64_t offset, size_t size, uint8_t* data) {
   int failures = 0;
   while (true) {
     if (aborted_.IsSet()) {
@@ -106,14 +105,14 @@ void RetryDataSource::Read(int64_t offset, size_t size, uint8_t* data,
   base::AutoLock scoped(pending_lock_);
   if (stopped_) {
     task_runner->PostTask(
-        FROM_HERE, base::BindOnce(std::move(read_cb),
-                                  Err(ErrorCode::kAborted,
-                                      "the retry source was torn down", {},
-                                      "no action needed")));
+        FROM_HERE,
+        base::BindOnce(std::move(read_cb), Err(ErrorCode::kAborted,
+                                               "the retry source was torn down",
+                                               {}, "no action needed")));
     return;
   }
-  jobs_.push_back(AsyncJob{offset, size, data, std::move(task_runner),
-                           std::move(read_cb)});
+  jobs_.push_back(
+      AsyncJob{offset, size, data, std::move(task_runner), std::move(read_cb)});
   pending_cv_.Signal();
 }
 
@@ -132,9 +131,8 @@ void RetryDataSource::WorkerMain() {
       jobs_.pop_front();
     }
     ReadResult result = ReadBlocking(job.offset, job.size, job.data);
-    job.runner->PostTask(
-        FROM_HERE,
-        base::BindOnce(std::move(job.cb), std::move(result)));
+    job.runner->PostTask(FROM_HERE,
+                         base::BindOnce(std::move(job.cb), std::move(result)));
   }
 }
 

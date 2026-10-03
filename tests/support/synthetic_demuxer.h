@@ -126,11 +126,11 @@ class SyntheticDemuxer final : public Demuxer {
   int64_t FrameIndexAt(base::TimeDelta time) const;
 
   // Demuxer.
-  void Initialize(
-      const DataSourceDescriptor& source, const DemuxerOptions& options,
-      Host* host,
-      base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
-      InitializeCB init_cb) override;
+  void
+  Initialize(const DataSourceDescriptor& source, const DemuxerOptions& options,
+             Host* host,
+             base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
+             InitializeCB init_cb) override;
   void StartPlayingFrom(base::TimeDelta time, SeekCB cb) override;
   void Flush(base::OnceClosure flush_cb) override;
   void Reset(base::OnceClosure reset_cb) override;

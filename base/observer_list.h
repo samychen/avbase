@@ -43,11 +43,13 @@ class ObserverList {
     for (auto& entry : list_) {
       if (entry.observer == observer) {
         if (iteration_depth_ > 0) {
-          entry.alive = false;   // Deferred erase; compacted when iteration ends.
+          entry.alive =
+              false;  // Deferred erase; compacted when iteration ends.
         } else {
-          list_.erase(std::remove_if(list_.begin(), list_.end(),
-                                     [&](const Entry& e) { return &e == &entry; }),
-                      list_.end());
+          list_.erase(
+              std::remove_if(list_.begin(), list_.end(),
+                             [&](const Entry& e) { return &e == &entry; }),
+              list_.end());
         }
         return;
       }

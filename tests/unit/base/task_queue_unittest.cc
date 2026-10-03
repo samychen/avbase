@@ -23,9 +23,8 @@ TEST(TaskQueueTest, RunsPostedTasksInOrder) {
   auto queue = MakeRefCounted<TaskQueue>();
   std::vector<int> order;
   for (int i = 0; i < 5; ++i) {
-    ASSERT_TRUE(queue->PostTask(FROM_HERE, BindOnce([&order, i]() {
-                                  order.push_back(i);
-                                })));
+    ASSERT_TRUE(queue->PostTask(
+        FROM_HERE, BindOnce([&order, i]() { order.push_back(i); })));
   }
   EXPECT_EQ(queue->GetPendingTaskCount(), 5u);
   EXPECT_EQ(queue->RunAllReadyTasks(TimeTicks::Now()), 5u);
@@ -46,9 +45,11 @@ TEST(TaskQueueTest, DelayedTasksRespectReadyTime) {
   queue->SetTickClockForTesting(&clock);
 
   std::vector<int> order;
-  queue->PostDelayedTask(FROM_HERE, BindOnce([&order]() { order.push_back(2); }),
+  queue->PostDelayedTask(FROM_HERE,
+                         BindOnce([&order]() { order.push_back(2); }),
                          Milliseconds(200));
-  queue->PostDelayedTask(FROM_HERE, BindOnce([&order]() { order.push_back(1); }),
+  queue->PostDelayedTask(FROM_HERE,
+                         BindOnce([&order]() { order.push_back(1); }),
                          Milliseconds(100));
   queue->PostTask(FROM_HERE, BindOnce([&order]() { order.push_back(0); }));
 
@@ -75,9 +76,10 @@ TEST(TaskQueueTest, DueDelayedTaskBeatsLaterImmediateTask) {
   queue->SetTickClockForTesting(&clock);
 
   std::vector<int> order;
-  queue->PostDelayedTask(FROM_HERE, BindOnce([&order]() { order.push_back(1); }),
+  queue->PostDelayedTask(FROM_HERE,
+                         BindOnce([&order]() { order.push_back(1); }),
                          Milliseconds(10));
-  clock.Advance(Milliseconds(20));   // The delayed task is now due.
+  clock.Advance(Milliseconds(20));  // The delayed task is now due.
   queue->PostTask(FROM_HERE, BindOnce([&order]() { order.push_back(2); }));
 
   queue->RunAllReadyTasks(clock.NowTicks());
@@ -113,7 +115,8 @@ TEST(TaskQueueTest, ClearDropsPendingTasks) {
   auto queue = MakeRefCounted<TaskQueue>();
   int runs = 0;
   queue->PostTask(FROM_HERE, BindOnce([&runs]() { ++runs; }));
-  queue->PostDelayedTask(FROM_HERE, BindOnce([&runs]() { ++runs; }), Seconds(1));
+  queue->PostDelayedTask(FROM_HERE, BindOnce([&runs]() { ++runs; }),
+                         Seconds(1));
   EXPECT_EQ(queue->GetPendingTaskCount(), 2u);
   queue->Clear();
   EXPECT_EQ(queue->GetPendingTaskCount(), 0u);
@@ -174,8 +177,8 @@ TEST(TaskQueueTest, RunLoopExecutesOnItsOwnThread) {
   std::thread runner([&queue]() { queue->Run(); });
 
   for (int i = 0; i < 100; ++i) {
-    while (!queue->PostTask(FROM_HERE,
-                            BindOnce([&executed]() { executed.fetch_add(1); }))) {
+    while (!queue->PostTask(
+        FROM_HERE, BindOnce([&executed]() { executed.fetch_add(1); }))) {
       std::this_thread::yield();
     }
   }
@@ -194,8 +197,7 @@ TEST(TaskQueueTest, RunsTasksInCurrentSequenceReflectsTheRunnerThread) {
 
   std::atomic<bool> inside{false};
   std::thread runner([&queue]() { queue->Run(); });
-  while (!queue->PostTask(FROM_HERE,
-                          BindOnce([&queue, &inside]() {
+  while (!queue->PostTask(FROM_HERE, BindOnce([&queue, &inside]() {
                             inside = queue->RunsTasksInCurrentSequence();
                             queue->Quit();
                           }))) {

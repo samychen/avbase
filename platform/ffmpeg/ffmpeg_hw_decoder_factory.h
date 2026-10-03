@@ -30,13 +30,13 @@ class FFmpegHwVideoDecoderFactory final : public media::VideoDecoderFactory {
       base::scoped_refptr<base::SequencedTaskRunner> task_runner,
       media::HwCodecMask allowed_codecs);
   FFmpegHwVideoDecoderFactory(const FFmpegHwVideoDecoderFactory&) = delete;
-  FFmpegHwVideoDecoderFactory& operator=(const FFmpegHwVideoDecoderFactory&) =
-      delete;
+  FFmpegHwVideoDecoderFactory&
+  operator=(const FFmpegHwVideoDecoderFactory&) = delete;
 
   media::VideoDecoderCapability GetCapability() const override;
   bool SupportsCodec(media::VideoDecoderType type_hint) const override;
-  std::unique_ptr<media::VideoDecoder> CreateVideoDecoder(
-      const media::VideoDecoderConfig& config) override;
+  std::unique_ptr<media::VideoDecoder>
+  CreateVideoDecoder(const media::VideoDecoderConfig& config) override;
   const char* name() const override { return spec_.display_name.c_str(); }
 
  private:

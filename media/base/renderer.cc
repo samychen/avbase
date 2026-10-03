@@ -26,9 +26,12 @@ namespace avbase::media {
 
 const char* RendererTypeToString(RendererType type) {
   switch (type) {
-    case RendererType::kRendererImpl: return "RendererImpl";
-    case RendererType::kNullRenderer: return "NullRenderer";
-    case RendererType::kCastRenderer: return "CastRenderer";
+  case RendererType::kRendererImpl:
+    return "RendererImpl";
+  case RendererType::kNullRenderer:
+    return "NullRenderer";
+  case RendererType::kCastRenderer:
+    return "CastRenderer";
   }
   return "invalid";
 }

@@ -19,9 +19,9 @@
 #include "base/time/time.h"
 #include "media/base/data_source_descriptor.h"
 #include "media/base/demuxer_stream.h"
-#include "media/base/media_log.h"
 #include "media/base/media_error.h"
 #include "media/base/media_info.h"
+#include "media/base/media_log.h"
 #include "media/base/media_resource.h"
 #include "media/media_export.h"
 
@@ -69,6 +69,7 @@ class AVBASE_MEDIA_EXPORT Demuxer : public MediaResource {
     virtual void OnBufferedTimeUpdate(base::TimeDelta buffered,
                                       base::TimeDelta playback_time) = 0;
     virtual void OnDemuxerError(MediaError error) = 0;
+
    protected:
     Host() = default;
     virtual ~Host() = default;
@@ -83,11 +84,11 @@ class AVBASE_MEDIA_EXPORT Demuxer : public MediaResource {
 
   // Opens the source and probes stream information. |init_cb| runs on
   // |media_task_runner| and is never run inline.
-  virtual void Initialize(const DataSourceDescriptor& source,
-                          const DemuxerOptions& options,
-                          Host* host,
-                          base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
-                          InitializeCB init_cb) = 0;
+  virtual void
+  Initialize(const DataSourceDescriptor& source, const DemuxerOptions& options,
+             Host* host,
+             base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
+             InitializeCB init_cb) = 0;
 
   // Physical seek. |cb| reports the position actually reached, which for a
   // keyframe seek is at or before the request.

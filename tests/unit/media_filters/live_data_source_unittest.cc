@@ -86,19 +86,19 @@ TEST(LiveDataSourceTest, CloseTurnsTheEdgeIntoEof) {
   uint8_t buf[100];
   const auto result = source.ReadBlocking(0, 100, buf);
   ASSERT_TRUE(result);
-  EXPECT_EQ(result.value(), 40);   // partial serve up to the new EOF
+  EXPECT_EQ(result.value(), 40);  // partial serve up to the new EOF
   const auto eof = source.ReadBlocking(40, 100, buf);
   ASSERT_TRUE(eof);
-  EXPECT_EQ(eof.value(), 0);       // past the end: EOF
+  EXPECT_EQ(eof.value(), 0);  // past the end: EOF
 }
 
 TEST(LiveDataSourceTest, AbortBoundsTheEdgeWait) {
-  LiveDataSource source;   // nothing appended, never closed
+  LiveDataSource source;  // nothing appended, never closed
   std::atomic<bool> finished{false};
   std::thread reader([&] {
     uint8_t buf[10];
     auto r = source.ReadBlocking(0, 10, buf);
-    finished.store(!r.has_value());   // abort must surface as an error
+    finished.store(!r.has_value());  // abort must surface as an error
   });
   std::this_thread::sleep_for(std::chrono::milliseconds(150));
   const auto start = std::chrono::steady_clock::now();
@@ -120,13 +120,13 @@ TEST(LiveDataSourceTest, AsyncReadDeliversOnTheTaskRunner) {
   DataSource::ReadResult observed = Err(ErrorCode::kAborted, "not run", {}, {});
   source.Read(10, 20, reinterpret_cast<uint8_t*>(&observed),
               env.GetMainThreadTaskRunnerRef(),
-              base::BindOnce([](DataSource::ReadResult* out,
-                                base::WaitableEvent* e,
-                                DataSource::ReadResult r) {
-                *out = std::move(r);
-                e->Signal();
-              },
-                            &observed, &done));
+              base::BindOnce(
+                  [](DataSource::ReadResult* out, base::WaitableEvent* e,
+                     DataSource::ReadResult r) {
+                    *out = std::move(r);
+                    e->Signal();
+                  },
+                  &observed, &done));
   for (int i = 0; i < 2000 && !done.IsSignaled(); ++i) {
     env.RunUntilIdle();
     std::this_thread::sleep_for(std::chrono::milliseconds(2));

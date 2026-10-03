@@ -19,15 +19,28 @@ bool DecoderSelector::CodecAllowedByMask(VideoCodec codec, HwCodecMask mask) {
   // cannot handle.
   HwCodecMask bit = 0;
   switch (codec) {
-    case VideoCodec::kH264:       bit = static_cast<HwCodecMask>(HwCodecFlag::kAvc);   break;
-    case VideoCodec::kHevc:       bit = static_cast<HwCodecMask>(HwCodecFlag::kHevc);  break;
-    case VideoCodec::kMpeg2Video: bit = static_cast<HwCodecMask>(HwCodecFlag::kMpeg2);  break;
-    case VideoCodec::kMpeg4:      bit = static_cast<HwCodecMask>(HwCodecFlag::kMpeg4);  break;
-    case VideoCodec::kVp9:        bit = static_cast<HwCodecMask>(HwCodecFlag::kVp9);    break;
-    case VideoCodec::kAv1:        bit = static_cast<HwCodecMask>(HwCodecFlag::kAv1);    break;
-    case VideoCodec::kUnknown:
-    case VideoCodec::kVp8:
-    case VideoCodec::kTheora:     return false;
+  case VideoCodec::kH264:
+    bit = static_cast<HwCodecMask>(HwCodecFlag::kAvc);
+    break;
+  case VideoCodec::kHevc:
+    bit = static_cast<HwCodecMask>(HwCodecFlag::kHevc);
+    break;
+  case VideoCodec::kMpeg2Video:
+    bit = static_cast<HwCodecMask>(HwCodecFlag::kMpeg2);
+    break;
+  case VideoCodec::kMpeg4:
+    bit = static_cast<HwCodecMask>(HwCodecFlag::kMpeg4);
+    break;
+  case VideoCodec::kVp9:
+    bit = static_cast<HwCodecMask>(HwCodecFlag::kVp9);
+    break;
+  case VideoCodec::kAv1:
+    bit = static_cast<HwCodecMask>(HwCodecFlag::kAv1);
+    break;
+  case VideoCodec::kUnknown:
+  case VideoCodec::kVp8:
+  case VideoCodec::kTheora:
+    return false;
   }
   if (bit == 0) {
     return false;
@@ -78,8 +91,9 @@ DecoderSelector::SelectVideoDecoder(
     const bool want_hardware = factory->GetCapability().hardware;
     std::string reason;
     if (!IsCandidate(*factory, config, want_hardware, &reason)) {
-      // A hardware factory can still be rejected by the codec mask even when its
-      // capability struct looks fine; that check is preference-specific below.
+      // A hardware factory can still be rejected by the codec mask even when
+      // its capability struct looks fine; that check is preference-specific
+      // below.
       if (reasons && !reason.empty() && reason != "software decoder" &&
           reason != "hardware decoder") {
         reasons->push_back(std::string(factory->name()) + ": " + reason);
@@ -107,17 +121,17 @@ DecoderSelector::SelectVideoDecoder(
 
   std::vector<base::scoped_refptr<VideoDecoderFactory>> out;
   switch (preference) {
-    case DecoderPreference::kSoftware:
-      out = std::move(software);
-      break;
-    case DecoderPreference::kHardwareOnly:
-      out = std::move(hardware);
-      break;
-    case DecoderPreference::kAuto:
-    case DecoderPreference::kHardwareFirst:
-      out = std::move(hardware);
-      out.insert(out.end(), software.begin(), software.end());
-      break;
+  case DecoderPreference::kSoftware:
+    out = std::move(software);
+    break;
+  case DecoderPreference::kHardwareOnly:
+    out = std::move(hardware);
+    break;
+  case DecoderPreference::kAuto:
+  case DecoderPreference::kHardwareFirst:
+    out = std::move(hardware);
+    out.insert(out.end(), software.begin(), software.end());
+    break;
   }
 
   if (reasons && out.empty()) {

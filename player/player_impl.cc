@@ -15,29 +15,29 @@
 #include <algorithm>
 #include <utility>
 
+#include "avbase/BuildConfig.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/time/default_tick_clock.h"
-#include "avbase/BuildConfig.h"
 #include "media/base/media_constants.h"
 #include "media/base/media_error.h"
 #include "media/base/media_log.h"
 #if AVBASE_ENABLE_FFMPEG
 #include "media/filters/ffmpeg_decoder_factories.h"
-#include "media/filters/ffmpeg_text_decoder.h"
 #include "media/filters/ffmpeg_demuxer.h"
+#include "media/filters/ffmpeg_text_decoder.h"
 #endif
 namespace avbase {
 namespace {
 
 media::AvSyncController::MasterType ToMediaMaster(SyncMasterType type) {
   switch (type) {
-    case SyncMasterType::kAudio:
-      return media::AvSyncController::MasterType::kAudio;
-    case SyncMasterType::kVideo:
-      return media::AvSyncController::MasterType::kVideo;
-    case SyncMasterType::kExternal:
-      return media::AvSyncController::MasterType::kExternal;
+  case SyncMasterType::kAudio:
+    return media::AvSyncController::MasterType::kAudio;
+  case SyncMasterType::kVideo:
+    return media::AvSyncController::MasterType::kVideo;
+  case SyncMasterType::kExternal:
+    return media::AvSyncController::MasterType::kExternal;
   }
   return media::AvSyncController::MasterType::kAudio;
 }
@@ -130,8 +130,8 @@ Status PlayerImpl::SetDataSource(std::string_view uri) {
   return SetDataSource(media::DataSourceDescriptor::FromUri(uri));
 }
 
-Status PlayerImpl::SetDataSource(
-    const media::DataSourceDescriptor& descriptor) {
+Status
+PlayerImpl::SetDataSource(const media::DataSourceDescriptor& descriptor) {
   if (descriptor.kind == media::DataSourceDescriptor::Kind::kUri &&
       descriptor.uri.empty()) {
     return base::unexpected(MediaError(
@@ -165,7 +165,7 @@ Status PlayerImpl::PrepareAsync() {
                               PlayerState::kPreparing, base::TimeDelta());
 
   media::DemuxerOptions options;
-  options.probe_size = 0;                   // TEST
+  options.probe_size = 0;                        // TEST
   options.analyze_duration = base::TimeDelta();  // TEST
   options.find_stream_info = config_.demux.find_stream_info;
   options.forced_format = config_.demux.forced_format;
@@ -204,9 +204,9 @@ Status PlayerImpl::PrepareAsync() {
   // The pipeline is the only layer that learns the source is live (from the
   // demuxer), so the cue-age window travels here and the policy is decided
   // where the fact is.
-  pipeline_->SetLiveCueMaxAge(
-      config_.subtitle.enabled ? config_.subtitle.live_cue_max_age
-                               : base::TimeDelta());
+  pipeline_->SetLiveCueMaxAge(config_.subtitle.enabled
+                                  ? config_.subtitle.live_cue_max_age
+                                  : base::TimeDelta());
   media::DataSourceDescriptor source;
   {
     base::AutoLock scoped(state_lock_);
@@ -335,12 +335,13 @@ void PlayerImpl::Start() {
   }
   if (previous == PlayerState::kCompleted && pipeline_) {
     // Replay: restart from the beginning rather than unpausing at EOS.
-    pipeline_->Seek(base::TimeDelta(),
-                    base::BindOnce([](PlayerImpl* self) {
-                      if (self->pipeline_) {
-                        self->pipeline_->Play();
-                      }
-                    }, base::Unretained(this)));
+    pipeline_->Seek(base::TimeDelta(), base::BindOnce(
+                                           [](PlayerImpl* self) {
+                                             if (self->pipeline_) {
+                                               self->pipeline_->Play();
+                                             }
+                                           },
+                                           base::Unretained(this)));
     return;
   }
   if (pipeline_) {
@@ -392,8 +393,7 @@ void PlayerImpl::Stop() {
     machine_.TransitionTo(PlayerState::kStopping);
     machine_.TransitionTo(PlayerState::kStopped);
   }
-  event_hub_.PostStateChanged(previous, PlayerState::kStopped,
-                              GetMediaTime());
+  event_hub_.PostStateChanged(previous, PlayerState::kStopped, GetMediaTime());
 }
 
 void PlayerImpl::StopSync(base::TimeDelta timeout) {
@@ -452,8 +452,7 @@ Result<int64_t> PlayerImpl::SeekTo(base::TimeDelta position, SeekMode mode,
     current = machine_.state();
   }
   if (current != PlayerState::kStarted && current != PlayerState::kPaused &&
-      current != PlayerState::kPrepared &&
-      current != PlayerState::kCompleted) {
+      current != PlayerState::kPrepared && current != PlayerState::kCompleted) {
     return base::unexpected(MediaError(
         ErrorCode::kInvalidState,
         std::string("SeekTo called in state ") + GetPlayerStateName(current),
@@ -494,9 +493,9 @@ Result<int64_t> PlayerImpl::SeekTo(base::TimeDelta position, SeekMode mode,
           },
           base::Unretained(this), id, position, mode == SeekMode::kAccurate));
   const base::TimeDelta requested = position;
-  pipeline_->Seek(requested, base::BindOnce(&PlayerImpl::OnMediaSeekDone,
-                                            base::Unretained(this), id,
-                                            requested));
+  pipeline_->Seek(requested,
+                  base::BindOnce(&PlayerImpl::OnMediaSeekDone,
+                                 base::Unretained(this), id, requested));
   return id;
 }
 

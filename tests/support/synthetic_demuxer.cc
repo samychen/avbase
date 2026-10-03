@@ -149,13 +149,13 @@ int64_t SyntheticDemuxer::FrameIndexAt(base::TimeDelta time) const {
   if (time <= base::TimeDelta()) {
     return 0;
   }
-  const int64_t frames = time.InMicroseconds() * spec_.fps_num /
-                         (1000000LL * spec_.fps_den);
+  const int64_t frames =
+      time.InMicroseconds() * spec_.fps_num / (1000000LL * spec_.fps_den);
   return std::min<int64_t>(frames, spec_.frame_count());
 }
 
-base::TimeDelta SyntheticDemuxer::KeyframeAtOrBefore(
-    base::TimeDelta time) const {
+base::TimeDelta
+SyntheticDemuxer::KeyframeAtOrBefore(base::TimeDelta time) const {
   const int64_t index = FrameIndexAt(time);
   if (spec_.keyframe_interval <= 0) {
     return TimeOfFrame(spec_, index);
@@ -238,13 +238,13 @@ void SyntheticDemuxer::Stop() {}
 
 DemuxerStream* SyntheticDemuxer::GetStream(DemuxerStreamType type) {
   switch (type) {
-    case DemuxerStreamType::kVideo:
-      return spec_.enable_video ? video_.get() : nullptr;
-    case DemuxerStreamType::kAudio:
-      return spec_.enable_audio ? audio_.get() : nullptr;
-    case DemuxerStreamType::kUnknown:
-    case DemuxerStreamType::kText:
-      return nullptr;
+  case DemuxerStreamType::kVideo:
+    return spec_.enable_video ? video_.get() : nullptr;
+  case DemuxerStreamType::kAudio:
+    return spec_.enable_audio ? audio_.get() : nullptr;
+  case DemuxerStreamType::kUnknown:
+  case DemuxerStreamType::kText:
+    return nullptr;
   }
   return nullptr;
 }

@@ -16,7 +16,7 @@ namespace avbase::base {
 enum class ThreadPriority {
   kBackground,
   kBestEffort,
-  kDisplayCritical,   // Audio and video render threads.
+  kDisplayCritical,  // Audio and video render threads.
 };
 
 namespace PlatformThread {
@@ -29,6 +29,6 @@ AVBASE_BASE_EXPORT std::string GetName();
 AVBASE_BASE_EXPORT void SetCurrentThreadPriority(ThreadPriority priority);
 
 }  // namespace PlatformThread
-}  // namespace base
+}  // namespace avbase::base
 
 #endif  // AVBASE_BASE_THREADING_PLATFORM_THREAD_H_

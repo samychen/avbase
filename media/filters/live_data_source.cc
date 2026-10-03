@@ -69,9 +69,8 @@ void LiveDataSource::SetHost(Host* host) {
   // the demuxer side. Kept for the contract.
 }
 
-DataSource::ReadResult LiveDataSource::ReadBlockingImpl(int64_t offset,
-                                                        size_t size,
-                                                        uint8_t* data) {
+DataSource::ReadResult
+LiveDataSource::ReadBlockingImpl(int64_t offset, size_t size, uint8_t* data) {
   if (offset < 0) {
     return Err(ErrorCode::kInvalidArgument, "negative read offset",
                "offset = " + std::to_string(offset),
@@ -91,7 +90,7 @@ DataSource::ReadResult LiveDataSource::ReadBlockingImpl(int64_t offset,
         return static_cast<int>(n);
       }
       if (closed_) {
-        return 0;   // EOF: the stream was finite after all.
+        return 0;  // EOF: the stream was finite after all.
       }
       if (aborted_.IsSet()) {
         return Err(ErrorCode::kAborted, "the live source was aborted",
@@ -105,8 +104,7 @@ DataSource::ReadResult LiveDataSource::ReadBlockingImpl(int64_t offset,
   }
 }
 
-DataSource::ReadResult LiveDataSource::ReadBlocking(int64_t offset,
-                                                    size_t size,
+DataSource::ReadResult LiveDataSource::ReadBlocking(int64_t offset, size_t size,
                                                     uint8_t* data) {
   return ReadBlockingImpl(offset, size, data);
 }
@@ -131,7 +129,7 @@ bool LiveDataSource::IsStreaming() const {
 void LiveDataSource::SetBitrate(int bitrate) {}
 
 bool LiveDataSource::IsSeekable() const {
-  return false;   // The defining property of the live case.
+  return false;  // The defining property of the live case.
 }
 
 void LiveDataSource::Read(int64_t offset, size_t size, uint8_t* data,
@@ -142,9 +140,8 @@ void LiveDataSource::Read(int64_t offset, size_t size, uint8_t* data,
     task_runner->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(read_cb),
-                       Err(ErrorCode::kAborted,
-                           "the live source was torn down", {},
-                           "no action needed")));
+                       Err(ErrorCode::kAborted, "the live source was torn down",
+                           {}, "no action needed")));
     return;
   }
   jobs_.push_back(

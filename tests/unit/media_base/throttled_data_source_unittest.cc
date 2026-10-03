@@ -28,15 +28,14 @@ std::array<uint8_t, kFileSize> MakeFile() {
   return bytes;
 }
 
-base::scoped_refptr<DataSource> MakeInner(
-    const std::array<uint8_t, kFileSize>& bytes) {
+base::scoped_refptr<DataSource>
+MakeInner(const std::array<uint8_t, kFileSize>& bytes) {
   return base::MakeRefCounted<MemoryDataSource>(bytes.data(), bytes.size());
 }
 
 MediaError NetworkDied() {
   return MediaError::Of(ErrorCode::kNetworkUnreachable, "network died",
-                        "injected by the test at a chosen offset",
-                        "reconnect");
+                        "injected by the test at a chosen offset", "reconnect");
 }
 
 TEST(ThrottledDataSourceTest, RateZeroIsPassthrough) {

@@ -69,7 +69,7 @@ TEST(ExpectedTest, MacrosPropagateErrors) {
 
   const auto bad = Chained("nope");
   ASSERT_FALSE(bad.has_value());
-  EXPECT_EQ(bad.error().code, 1);   // The original error survives propagation.
+  EXPECT_EQ(bad.error().code, 1);  // The original error survives propagation.
 }
 
 TEST(ExpectedTest, ExplicitConstructionAvoidsBoolAmbiguity) {

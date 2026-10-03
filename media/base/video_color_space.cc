@@ -13,9 +13,9 @@ namespace {
 // bracket contains the coded height wins. 576 is the last row of PAL SD, 600
 // cleanly separates SD from 720p HD. HDR overrides everything (row 0).
 struct FallbackRow {
-  int min_height;   // Inclusive.
-  int max_height;   // Inclusive; INT_MAX means unbounded.
-  bool hdr_only;    // Row only applies when has_hdr_metadata.
+  int min_height;  // Inclusive.
+  int max_height;  // Inclusive; INT_MAX means unbounded.
+  bool hdr_only;   // Row only applies when has_hdr_metadata.
   VideoColorSpace cs;
 };
 
@@ -42,43 +42,62 @@ constexpr FallbackRow kFallbackTable[] = {
 
 const char* GetColorMatrixName(ColorMatrix matrix) {
   switch (matrix) {
-    case ColorMatrix::kUnknown:   return "unknown";
-    case ColorMatrix::kIdentity:  return "identity";
-    case ColorMatrix::kSMPTE170M: return "smpte170m";
-    case ColorMatrix::kBT709:     return "bt709";
-    case ColorMatrix::kBT2020Ncl: return "bt2020ncl";
-    case ColorMatrix::kBT2020Cl:  return "bt2020cl";
+  case ColorMatrix::kUnknown:
+    return "unknown";
+  case ColorMatrix::kIdentity:
+    return "identity";
+  case ColorMatrix::kSMPTE170M:
+    return "smpte170m";
+  case ColorMatrix::kBT709:
+    return "bt709";
+  case ColorMatrix::kBT2020Ncl:
+    return "bt2020ncl";
+  case ColorMatrix::kBT2020Cl:
+    return "bt2020cl";
   }
   return "invalid";
 }
 
 const char* GetColorTransferName(ColorTransfer transfer) {
   switch (transfer) {
-    case ColorTransfer::kUnknown:    return "unknown";
-    case ColorTransfer::kBT709:      return "bt709";
-    case ColorTransfer::kGamma22:    return "gamma22";
-    case ColorTransfer::kSRGB:       return "srgb";
-    case ColorTransfer::kSMPTE2084:  return "smpte2084";
-    case ColorTransfer::kARIBStdB67: return "arib-std-b67";
+  case ColorTransfer::kUnknown:
+    return "unknown";
+  case ColorTransfer::kBT709:
+    return "bt709";
+  case ColorTransfer::kGamma22:
+    return "gamma22";
+  case ColorTransfer::kSRGB:
+    return "srgb";
+  case ColorTransfer::kSMPTE2084:
+    return "smpte2084";
+  case ColorTransfer::kARIBStdB67:
+    return "arib-std-b67";
   }
   return "invalid";
 }
 
 const char* GetColorPrimariesName(ColorPrimaries primaries) {
   switch (primaries) {
-    case ColorPrimaries::kUnknown:   return "unknown";
-    case ColorPrimaries::kSMPTE170M: return "smpte170m";
-    case ColorPrimaries::kBT709:     return "bt709";
-    case ColorPrimaries::kBT2020:    return "bt2020";
+  case ColorPrimaries::kUnknown:
+    return "unknown";
+  case ColorPrimaries::kSMPTE170M:
+    return "smpte170m";
+  case ColorPrimaries::kBT709:
+    return "bt709";
+  case ColorPrimaries::kBT2020:
+    return "bt2020";
   }
   return "invalid";
 }
 
 const char* GetColorRangeName(ColorRange range) {
   switch (range) {
-    case ColorRange::kUnknown: return "unknown";
-    case ColorRange::kLimited: return "limited";
-    case ColorRange::kFull:    return "full";
+  case ColorRange::kUnknown:
+    return "unknown";
+  case ColorRange::kLimited:
+    return "limited";
+  case ColorRange::kFull:
+    return "full";
   }
   return "invalid";
 }

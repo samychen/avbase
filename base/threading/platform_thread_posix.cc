@@ -53,9 +53,15 @@ void SetCurrentThreadPriority(ThreadPriority priority) {
   // underrun is audible, whereas a late video frame is merely visible.
   int nice_value = 0;
   switch (priority) {
-    case ThreadPriority::kBackground:      nice_value = 10;  break;
-    case ThreadPriority::kBestEffort:      nice_value = 0;   break;
-    case ThreadPriority::kDisplayCritical: nice_value = -6;  break;
+  case ThreadPriority::kBackground:
+    nice_value = 10;
+    break;
+  case ThreadPriority::kBestEffort:
+    nice_value = 0;
+    break;
+  case ThreadPriority::kDisplayCritical:
+    nice_value = -6;
+    break;
   }
   // Requires CAP_SYS_NICE for negative values; failure is expected and benign
   // for unprivileged processes, so it is deliberately not checked.

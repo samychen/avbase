@@ -20,10 +20,10 @@
 #include "media/base/pipeline_status.h"
 #include "media/base/timed_text.h"
 #include "media/filters/pipeline_impl.h"
-#include "tests/support/pipeline_fixture.h"
 #include "tests/support/fake_pipeline_client.h"
 #include "tests/support/fake_renderer_sinks.h"
 #include "tests/support/fake_sink_factories.h"
+#include "tests/support/pipeline_fixture.h"
 
 namespace avbase::media {
 namespace {
@@ -54,8 +54,7 @@ class PipelineTextTest : public PipelineTestFixture {
     pipeline_->SelectTextTrack(
         index,
         base::BindOnce(
-            [](std::atomic<bool>* flag, PipelineStatus* out,
-               PipelineStatus s) {
+            [](std::atomic<bool>* flag, PipelineStatus* out, PipelineStatus s) {
               *out = s;
               flag->store(true);
             },
@@ -66,7 +65,8 @@ class PipelineTextTest : public PipelineTestFixture {
 TEST_F(PipelineTextTest, NoCuesUntilATrackIsSelected) {
   StartPipeline();
   ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }))
-      << "never probed the source; events:\n" << client_.EventLog();
+      << "never probed the source; events:\n"
+      << client_.EventLog();
   pipeline_->Play();
   // The text leg is off by default: no track selected, no cues, and the
   // pipeline still reaches EOS on the audio track.
@@ -86,19 +86,20 @@ TEST_F(PipelineTextTest, SelectedTrackDeliversItsCues) {
   PipelineStatus status = PipelineStatus::kTrackSwitchError;
   SelectTextTrack(kTrackEng, &status, &done);
   ASSERT_TRUE(PumpUntil([&] { return done.load(); }))
-      << "text selection never completed; events:\n" << client_.EventLog();
+      << "text selection never completed; events:\n"
+      << client_.EventLog();
   EXPECT_EQ(status, PipelineStatus::kOk);
 
   ASSERT_TRUE(PumpUntil([this] { return client_.cues().size() >= 3; }))
-      << "no cues delivered; events:\n" << client_.EventLog();
+      << "no cues delivered; events:\n"
+      << client_.EventLog();
   // The English track's words, in order. Content equality (not count) is the
   // assertion: it proves both WHICH track was decoded and that the decoder
   // flattened the rects into text.
   ASSERT_EQ(client_.cues().size(), 3u);
   EXPECT_NE(client_.cues()[0].text.find("first track alpha"),
             std::string::npos);
-  EXPECT_NE(client_.cues()[1].text.find("first track beta"),
-            std::string::npos);
+  EXPECT_NE(client_.cues()[1].text.find("first track beta"), std::string::npos);
   EXPECT_NE(client_.cues()[2].text.find("first track gamma"),
             std::string::npos);
   // Cue timing came from the container (0.1s, 0.7s, 1.3s starts).
@@ -124,16 +125,14 @@ TEST_F(PipelineTextTest, SwitchingToTheSecondTrackDeliversItsCues) {
       << "second selection never completed; events:\n"
       << client_.EventLog();
   EXPECT_EQ(status, PipelineStatus::kOk);
-  ASSERT_TRUE(PumpUntil(
-      [this] {
-        for (const TimedTextCue& cue : client_.cues()) {
-          if (cue.text.find("second track alpha") != std::string::npos) {
-            return true;
-          }
-        }
-        return false;
-      }))
-      << "the second track's cues never arrived; events:\n"
+  ASSERT_TRUE(PumpUntil([this] {
+    for (const TimedTextCue& cue : client_.cues()) {
+      if (cue.text.find("second track alpha") != std::string::npos) {
+        return true;
+      }
+    }
+    return false;
+  })) << "the second track's cues never arrived; events:\n"
       << client_.EventLog();
   EXPECT_FALSE(client_.error());
 }

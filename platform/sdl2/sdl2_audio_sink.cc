@@ -53,11 +53,9 @@ void Sdl2AudioSink::Start() {
   // allowed_changes = 0: SDL converts internally if the device differs, so
   // the callback always fills the requested format (the AudioBus matches
   // |params_|, and SDL's conversion runs before our buffer reaches the wire).
-  SDL_AudioDeviceID device =
-      SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+  SDL_AudioDeviceID device = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
   if (device == 0) {
-    LOG(ERROR) << "avbase.aout: SDL_OpenAudioDevice failed: "
-               << SDL_GetError();
+    LOG(ERROR) << "avbase.aout: SDL_OpenAudioDevice failed: " << SDL_GetError();
     started_.store(false);
     return;
   }
@@ -67,8 +65,7 @@ void Sdl2AudioSink::Start() {
 void Sdl2AudioSink::Stop() {
   if (device_ != nullptr) {
     const SDL_AudioDeviceID device =
-        static_cast<SDL_AudioDeviceID>(
-            reinterpret_cast<uintptr_t>(device_));
+        static_cast<SDL_AudioDeviceID>(reinterpret_cast<uintptr_t>(device_));
     // Close pauses and destroys the device: after this returns, the callback
     // is never invoked again (the AudioRendererSink contract).
     SDL_CloseAudioDevice(device);
@@ -81,8 +78,8 @@ void Sdl2AudioSink::Stop() {
 void Sdl2AudioSink::Pause() {
   if (device_ != nullptr) {
     SDL_PauseAudioDevice(
-        static_cast<SDL_AudioDeviceID>(
-            reinterpret_cast<uintptr_t>(device_)), 1);
+        static_cast<SDL_AudioDeviceID>(reinterpret_cast<uintptr_t>(device_)),
+        1);
   }
   playing_.store(false);
 }
@@ -90,8 +87,8 @@ void Sdl2AudioSink::Pause() {
 void Sdl2AudioSink::Play() {
   if (device_ != nullptr) {
     SDL_PauseAudioDevice(
-        static_cast<SDL_AudioDeviceID>(
-            reinterpret_cast<uintptr_t>(device_)), 0);
+        static_cast<SDL_AudioDeviceID>(reinterpret_cast<uintptr_t>(device_)),
+        0);
     playing_.store(true);
   }
 }
@@ -101,8 +98,7 @@ void Sdl2AudioSink::Flush() {
     // Only valid while not playing; AudioRendererImpl::Flush() guarantees
     // that ordering (it pauses first, for exactly this reason).
     SDL_ClearQueuedAudio(
-        static_cast<SDL_AudioDeviceID>(
-            reinterpret_cast<uintptr_t>(device_)));
+        static_cast<SDL_AudioDeviceID>(reinterpret_cast<uintptr_t>(device_)));
   }
 }
 
@@ -151,8 +147,8 @@ void Sdl2AudioSink::AudioCallback(uint8_t* stream, int len) {
   const int channels = params_.channels();
   const base::TimeTicks now = base::TimeTicks::Now();
   const AudioGlitchInfo none;
-  const int written = callback_->Render(base::TimeDelta(), now, none,
-                                        bus_.get());
+  const int written =
+      callback_->Render(base::TimeDelta(), now, none, bus_.get());
   if (written <= 0) {
     underruns_.fetch_add(1);
     base::AutoLock scoped(glitch_lock_);

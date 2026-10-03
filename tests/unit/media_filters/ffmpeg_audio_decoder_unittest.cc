@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// End-to-end: real container -> FFmpegDemuxer -> FFmpegAudioDecoder -> real PCM.
-// Mirrors ffmpeg_video_decoder_unittest.cc so the two decoder paths stay
+// End-to-end: real container -> FFmpegDemuxer -> FFmpegAudioDecoder -> real
+// PCM. Mirrors ffmpeg_video_decoder_unittest.cc so the two decoder paths stay
 // comparable.
 
 #include "media/filters/ffmpeg_audio_decoder.h"
@@ -18,9 +18,9 @@
 
 #include "base/functional/bind.h"
 #include "base/test/task_environment.h"
+#include "gtest/gtest.h"
 #include "media/base/audio_bus.h"
 #include "media/filters/ffmpeg_demuxer.h"
-#include "gtest/gtest.h"
 
 namespace avbase::media {
 namespace {
@@ -50,13 +50,14 @@ class AudioDecodePipeline {
   bool Open(const std::string& path) {
     Status result = Err(ErrorCode::kNotImplemented, "not run", {}, {});
     bool done = false;
-    demuxer_->Initialize(
-        DataSourceDescriptor::FromUri(path), DemuxerOptions{}, &host_,
-        env_.GetMainThreadTaskRunnerRef(),
-        base::BindOnce([](Status* out, bool* flag, Status s) {
-          *out = std::move(s);
-          *flag = true;
-        }, &result, &done));
+    demuxer_->Initialize(DataSourceDescriptor::FromUri(path), DemuxerOptions{},
+                         &host_, env_.GetMainThreadTaskRunnerRef(),
+                         base::BindOnce(
+                             [](Status* out, bool* flag, Status s) {
+                               *out = std::move(s);
+                               *flag = true;
+                             },
+                             &result, &done));
     PumpUntil([&done] { return done; });
     return done && result.has_value();
   }
@@ -71,10 +72,12 @@ class AudioDecodePipeline {
     bool init_done = false;
     decoder_->Initialize(
         config_, /*has_pending_clear=*/false, /*serial=*/0,
-        base::BindOnce([](bool* flag, DecoderStatus* out, DecoderStatus s) {
-          *flag = true;
-          *out = s;
-        }, &init_done, &init_status_),
+        base::BindOnce(
+            [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+              *flag = true;
+              *out = s;
+            },
+            &init_done, &init_status_),
         base::BindRepeating(
             [](std::vector<base::scoped_refptr<AudioBuffer>>* sink,
                base::scoped_refptr<AudioBuffer> buffer) {
@@ -88,29 +91,31 @@ class AudioDecodePipeline {
     }
 
     bool eos = false;
-    for (size_t round = 0;
-         round < max_rounds && CountReal() < wanted && !eos; ++round) {
+    for (size_t round = 0; round < max_rounds && CountReal() < wanted && !eos;
+         ++round) {
       bool answered = false;
-      audio->Read(
-          8, base::BindOnce([](bool* flag, bool* eos_flag, DemuxerStream::Status,
-                               DemuxerStream::DecoderBufferVector buffers) {
-            *flag = true;
-            for (const auto& b : buffers) {
-              if (b->IsEndOfStream()) {
-                *eos_flag = true;
-              }
-            }
-            PendingBuffers() = std::move(buffers);
-          }, &answered, &eos));
+      audio->Read(8, base::BindOnce(
+                         [](bool* flag, bool* eos_flag, DemuxerStream::Status,
+                            DemuxerStream::DecoderBufferVector buffers) {
+                           *flag = true;
+                           for (const auto& b : buffers) {
+                             if (b->IsEndOfStream()) {
+                               *eos_flag = true;
+                             }
+                           }
+                           PendingBuffers() = std::move(buffers);
+                         },
+                         &answered, &eos));
       PumpUntil([&answered] { return answered; });
       if (!answered) {
         break;
       }
       for (auto& buffer : PendingBuffers()) {
         bool decode_done = false;
-        decoder_->Decode(buffer, base::BindOnce([](bool* flag, DecoderStatus) {
-                                     *flag = true;
-                                   }, &decode_done));
+        decoder_->Decode(
+            buffer,
+            base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; },
+                           &decode_done));
         PumpUntil([&decode_done] { return decode_done; });
       }
       PendingBuffers().clear();
@@ -118,9 +123,10 @@ class AudioDecodePipeline {
 
     // Drain so any frame the decoder was holding back (AAC priming) is emitted.
     bool flushed = false;
-    decoder_->Decode(DecoderBuffer::CreateEOSBuffer(),
-                     base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; },
-                                    &flushed));
+    decoder_->Decode(
+        DecoderBuffer::CreateEOSBuffer(),
+        base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; },
+                       &flushed));
     PumpUntil([&flushed] { return flushed; });
     return CountReal();
   }
@@ -263,8 +269,7 @@ TEST_F(FFmpegAudioDecoderTest, DecodedSamplesConvertToFloatWithoutClipping) {
       continue;
     }
     auto bus = AudioBus::Create(b->channel_count(), b->frame_count());
-    ASSERT_EQ(b->frame_count(),
-              b->ReadFrames(b->frame_count(), 0, bus.get()));
+    ASSERT_EQ(b->frame_count(), b->ReadFrames(b->frame_count(), 0, bus.get()));
     for (int ch = 0; ch < bus->channels(); ++ch) {
       for (int f = 0; f < bus->frames(); ++f) {
         const float v = bus->channel(ch)[f];
@@ -298,11 +303,12 @@ TEST_F(FFmpegAudioDecoderTest, DecodeBeforeInitializeFailsCleanly) {
   bool ran = false;
   // Decode() on an uninitialized decoder must report, not crash and not emit.
   decoder.Decode(DecoderBuffer::CreateEOSBuffer(),
-                 base::BindOnce([](bool* flag, DecoderStatus* out,
-                                   DecoderStatus s) {
-                   *flag = true;
-                   *out = s;
-                 }, &ran, &status));
+                 base::BindOnce(
+                     [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+                       *flag = true;
+                       *out = s;
+                     },
+                     &ran, &status));
   EXPECT_TRUE(ran);
   EXPECT_FALSE(status.is_ok());
   EXPECT_EQ(DecoderStatus::Codes::kNotInitialized, status.code());
@@ -325,23 +331,26 @@ TEST_F(FFmpegAudioDecoderTest, UnsupportedCodecReportsActionableError) {
   DecoderStatus status;
   bool done = false;
   decoder.Initialize(config, false, 0,
-                     base::BindOnce([](bool* flag, DecoderStatus* out,
-                                       DecoderStatus s) {
-                       *flag = true;
-                       *out = s;
-                     }, &done, &status),
+                     base::BindOnce(
+                         [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+                           *flag = true;
+                           *out = s;
+                         },
+                         &done, &status),
                      FFmpegAudioDecoder::OutputCB(), WaitingCB());
   ASSERT_TRUE(done);
   EXPECT_FALSE(status.is_ok());
   EXPECT_EQ(DecoderStatus::Codes::kUnsupportedCodec, status.code());
   // The description must name the codec, otherwise the SDK user cannot tell
   // which track failed (see bug #28).
-  EXPECT_NE(std::string::npos, status.description().find("definitely-not-a-codec"))
+  EXPECT_NE(std::string::npos,
+            status.description().find("definitely-not-a-codec"))
       << status.description();
   EXPECT_FALSE(decoder.initialized());
 }
 
-TEST_F(FFmpegAudioDecoderTest, StructurallyInvalidConfigIsDistinctFromUnknownCodec) {
+TEST_F(FFmpegAudioDecoderTest,
+       StructurallyInvalidConfigIsDistinctFromUnknownCodec) {
   // Bug #28 on the video side was exactly this: one generic "config is not
   // valid" message for two different failures. The two codes must stay distinct
   // so an SDK user can tell "your file is malformed" from "we lack this codec".
@@ -356,11 +365,12 @@ TEST_F(FFmpegAudioDecoderTest, StructurallyInvalidConfigIsDistinctFromUnknownCod
   DecoderStatus status;
   bool done = false;
   decoder.Initialize(bad, false, 0,
-                     base::BindOnce([](bool* flag, DecoderStatus* out,
-                                       DecoderStatus s) {
-                       *flag = true;
-                       *out = s;
-                     }, &done, &status),
+                     base::BindOnce(
+                         [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+                           *flag = true;
+                           *out = s;
+                         },
+                         &done, &status),
                      FFmpegAudioDecoder::OutputCB(), WaitingCB());
   ASSERT_TRUE(done);
   EXPECT_EQ(DecoderStatus::Codes::kUnsupportedConfig, status.code());
@@ -375,11 +385,12 @@ TEST_F(FFmpegAudioDecoderTest, StructurallyInvalidConfigIsDistinctFromUnknownCod
   no_rate.channels = 2;
   done = false;
   decoder.Initialize(no_rate, false, 0,
-                     base::BindOnce([](bool* flag, DecoderStatus* out,
-                                       DecoderStatus s) {
-                       *flag = true;
-                       *out = s;
-                     }, &done, &status),
+                     base::BindOnce(
+                         [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+                           *flag = true;
+                           *out = s;
+                         },
+                         &done, &status),
                      FFmpegAudioDecoder::OutputCB(), WaitingCB());
   ASSERT_TRUE(done);
   EXPECT_EQ(DecoderStatus::Codes::kUnsupportedConfig, status.code());

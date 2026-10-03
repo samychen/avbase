@@ -27,7 +27,7 @@ namespace avbase::media {
 struct AVBASE_MEDIA_EXPORT AudioGlitchInfo {
   uint64_t total_glitches{0};
   base::TimeDelta total_glitch_duration;
-  uint64_t xruns{0};   // Device-level xruns (ALSA EPIPE, PulseAudio overrun).
+  uint64_t xruns{0};  // Device-level xruns (ALSA EPIPE, PulseAudio overrun).
 };
 
 class AVBASE_MEDIA_EXPORT AudioRendererSink
@@ -44,10 +44,8 @@ class AVBASE_MEDIA_EXPORT AudioRendererSink
     // allocate, take a lock held by any media sequence, or call back into
     // Player. Budget: < 100 us. Enforced by
     // tests/contract/audio_renderer_sink_contract.h.
-    virtual int Render(base::TimeDelta delay,
-                       base::TimeTicks delay_timestamp,
-                       const AudioGlitchInfo& glitch_info,
-                       AudioBus* dest) = 0;
+    virtual int Render(base::TimeDelta delay, base::TimeTicks delay_timestamp,
+                       const AudioGlitchInfo& glitch_info, AudioBus* dest) = 0;
     virtual void OnRenderError() = 0;
 
    protected:
@@ -64,8 +62,8 @@ class AVBASE_MEDIA_EXPORT AudioRendererSink
   virtual void Stop() = 0;
   virtual void Pause() = 0;
   virtual void Play() = 0;
-  virtual void Flush() = 0;   // Only valid while not playing.
-  virtual bool SetVolume(double volume) = 0;   // [0.0, 1.0]
+  virtual void Flush() = 0;                   // Only valid while not playing.
+  virtual bool SetVolume(double volume) = 0;  // [0.0, 1.0]
   virtual bool IsOptimizedForHardwareParameters() = 0;
   virtual bool CurrentThreadIsRenderingThread() = 0;
   // Hardware latency, used to correct the audio clock. Returns zero when the
@@ -81,7 +79,8 @@ class AVBASE_MEDIA_EXPORT AudioRendererSink
 };
 
 // A sink that can be Initialize()d and Start()ed again after Stop().
-class AVBASE_MEDIA_EXPORT RestartableAudioRendererSink : public AudioRendererSink {
+class AVBASE_MEDIA_EXPORT RestartableAudioRendererSink
+    : public AudioRendererSink {
  protected:
   ~RestartableAudioRendererSink() override = default;
 };

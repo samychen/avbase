@@ -49,8 +49,7 @@ TEST_F(MediaLogTest, RecordsEventsWithLevelAndType) {
 }
 
 TEST_F(MediaLogTest, PropertiesAreRetained) {
-  log_->AddEvent(MediaLogEvent::Level::kInfo,
-                 MediaLogEvent::Type::kOpenInput,
+  log_->AddEvent(MediaLogEvent::Level::kInfo, MediaLogEvent::Type::kOpenInput,
                  {{"uri", "file:///tmp/a.mp4"}, {"elapsed_ms", "210"}},
                  "opened");
   const auto events = log_->GetEvents();
@@ -67,12 +66,12 @@ TEST_F(MediaLogTest, RingBufferCapsRetainedEvents) {
   EXPECT_EQ(log_->event_count(), kMediaLogEventCapacity);
   // Oldest entries are dropped, newest retained.
   const auto events = log_->GetEvents();
-  EXPECT_EQ(events.back().message,
-            std::to_string(kMediaLogEventCapacity + 49));
+  EXPECT_EQ(events.back().message, std::to_string(kMediaLogEventCapacity + 49));
 }
 
 TEST_F(MediaLogTest, ClearEmpties) {
-  log_->AddEvent(MediaLogEvent::Level::kError, MediaLogEvent::Type::kError, "x");
+  log_->AddEvent(MediaLogEvent::Level::kError, MediaLogEvent::Type::kError,
+                 "x");
   log_->Clear();
   EXPECT_EQ(log_->event_count(), 0u);
 }
@@ -128,7 +127,8 @@ TEST_F(MediaLogTest, ThreadSafeUnderConcurrentWriters) {
       }
     });
   }
-  for (auto& th : threads) th.join();
+  for (auto& th : threads)
+    th.join();
   EXPECT_EQ(log_->event_count(), kMediaLogEventCapacity);
 }
 

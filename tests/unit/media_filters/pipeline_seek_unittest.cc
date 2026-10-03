@@ -45,10 +45,10 @@
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/pipeline_impl.h"
 #include "media/renderers/default_renderer_factory.h"
-#include "tests/support/pipeline_fixture.h"
 #include "tests/support/fake_pipeline_client.h"
 #include "tests/support/fake_renderer_sinks.h"
 #include "tests/support/fake_sink_factories.h"
+#include "tests/support/pipeline_fixture.h"
 #include "tests/support/synthetic_decoders.h"
 #include "tests/support/synthetic_demuxer.h"
 
@@ -92,15 +92,15 @@ class PipelineSeekTest : public PipelineTestFixture {
       return video_sinks_->last_sink() && audio_sinks_->last_sink() &&
              video_sinks_->last_sink()->start_count() > 0 &&
              audio_sinks_->last_sink()->start_count() > 0;
-    })) << "sinks never started; events:\n" << client_.EventLog();
+    })) << "sinks never started; events:\n"
+        << client_.EventLog();
     // Marshalled pulls: the base PumpRound arms the render runner.
   }
 
   // First stored frame whose index is >= |floor|, or nullptr.
-  static const base::scoped_refptr<VideoFrame>* LandingFrame(
-      const test::FakeVideoSink& video, uint32_t floor, size_t from) {
-    const std::vector<base::scoped_refptr<VideoFrame>>& frames =
-        video.frames();
+  static const base::scoped_refptr<VideoFrame>*
+  LandingFrame(const test::FakeVideoSink& video, uint32_t floor, size_t from) {
+    const std::vector<base::scoped_refptr<VideoFrame>>& frames = video.frames();
     for (size_t i = from; i < frames.size(); ++i) {
       uint32_t index = 0;
       if (test::ReadFrameIndex(*frames[i], &index) && index >= floor) {
@@ -116,9 +116,10 @@ class PipelineSeekTest : public PipelineTestFixture {
 TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
   StartPipeline();
   ASSERT_TRUE(PumpUntil([this] { return client_.Started(); }))
-      << "pipeline never started; events:\n" << client_.EventLog();
-  ASSERT_FALSE(client_.HasError())
-      << client_.error().ToString() << "\n" << client_.EventLog();
+      << "pipeline never started; events:\n"
+      << client_.EventLog();
+  ASSERT_FALSE(client_.HasError()) << client_.error().ToString() << "\n"
+                                   << client_.EventLog();
   PlayAndWaitForSinks();
 
   // Get playback under way: pump roughly a second, and require that real
@@ -137,7 +138,8 @@ TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
   ASSERT_TRUE(PumpUntil([this] {
     PumpRound();
     return seeked_.load();
-  })) << "seek callback never ran; events:\n" << client_.EventLog();
+  })) << "seek callback never ran; events:\n"
+      << client_.EventLog();
   EXPECT_GE(video_sinks_->last_sink()->flush_count(), 1);
 
   // The landing frame: the first presented frame at or after frame 150.
@@ -145,10 +147,10 @@ TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
   ASSERT_TRUE(PumpUntil([&] {
     PumpRound();
     return LandingFrame(*video, kSeekFrame, first_batch) != nullptr;
-  })) << "no frame >= " << kSeekFrame
-      << " presented after the seek; events:\n" << client_.EventLog()
-      << "sink stats: presented="
-      << video->GetStats().frames_presented
+  })) << "no frame >= "
+      << kSeekFrame << " presented after the seek; events:\n"
+      << client_.EventLog()
+      << "sink stats: presented=" << video->GetStats().frames_presented
       << " dropped=" << video->GetStats().frames_dropped
       << " stored=" << video->frames().size();
 
@@ -162,13 +164,11 @@ TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
   // No frame from before the seek may follow the landing frame. The
   // compositor legitimately drops late frames, so the boundary is "once the
   // new generation is on the display, the old one is gone for good".
-  const size_t landed_at =
-      static_cast<size_t>(landed - video->frames().data());
+  const size_t landed_at = static_cast<size_t>(landed - video->frames().data());
   for (int round = 0; round < 120; ++round) {
     PumpRound();
   }
-  const std::vector<base::scoped_refptr<VideoFrame>>& frames =
-      video->frames();
+  const std::vector<base::scoped_refptr<VideoFrame>>& frames = video->frames();
   for (size_t i = landed_at; i < frames.size(); ++i) {
     uint32_t after = 0;
     if (test::ReadFrameIndex(*frames[i], &after)) {
@@ -177,8 +177,8 @@ TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
           << ", after the landing frame";
     }
   }
-  EXPECT_FALSE(client_.HasError())
-      << client_.error().ToString() << "\n" << client_.EventLog();
+  EXPECT_FALSE(client_.HasError()) << client_.error().ToString() << "\n"
+                                   << client_.EventLog();
 }
 
 // The M9 accurate-seek contract at the pipeline level: with the drop window
@@ -193,7 +193,8 @@ TEST_F(PipelineSeekTest, SeekToFiveSecondsLandsOnFrame150) {
 TEST_F(PipelineSeekTest, AccurateSeekPresentsNothingBeforeTheTarget) {
   StartPipeline();
   ASSERT_TRUE(PumpUntil([this] { return client_.Started(); }))
-      << "pipeline never started; events:\n" << client_.EventLog();
+      << "pipeline never started; events:\n"
+      << client_.EventLog();
   PlayAndWaitForSinks();
   int presented_before = 0;
   for (int round = 0; round < 60; ++round) {
@@ -218,21 +219,21 @@ TEST_F(PipelineSeekTest, AccurateSeekPresentsNothingBeforeTheTarget) {
   ASSERT_TRUE(PumpUntil([this] {
     PumpRound();
     return seeked_.load();
-  })) << "seek callback never ran; events:\n" << client_.EventLog();
+  })) << "seek callback never ran; events:\n"
+      << client_.EventLog();
 
   const test::FakeVideoSink* video = video_sinks_->last_sink();
   ASSERT_TRUE(PumpUntil([&] {
     PumpRound();
     return LandingFrame(*video, kSeekFrame, window_batch) != nullptr;
-  })) << "no frame >= " << kSeekFrame
-      << " presented after the accurate seek; events:\n"
+  })) << "no frame >= "
+      << kSeekFrame << " presented after the accurate seek; events:\n"
       << client_.EventLog();
 
   // THE contract: from the moment the window opened, no frame below the
   // target was presented. (A frame dropped as late can land past the target,
   // so the upper bound keeps the keyframe test's slack; the floor is exact.)
-  const std::vector<base::scoped_refptr<VideoFrame>>& frames =
-      video->frames();
+  const std::vector<base::scoped_refptr<VideoFrame>>& frames = video->frames();
   for (size_t i = window_batch; i < frames.size(); ++i) {
     uint32_t index = 0;
     if (test::ReadFrameIndex(*frames[i], &index)) {
@@ -264,8 +265,8 @@ TEST_F(PipelineSeekTest, AccurateSeekPresentsNothingBeforeTheTarget) {
   EXPECT_TRUE(client_.have_enough())
       << "no kHaveEnough edge after the seek; events:\n"
       << client_.EventLog();
-  EXPECT_FALSE(client_.HasError())
-      << client_.error().ToString() << "\n" << client_.EventLog();
+  EXPECT_FALSE(client_.HasError()) << client_.error().ToString() << "\n"
+                                   << client_.EventLog();
 }
 
 // The live chase (docs/12 section 2.1), end to end through the pipeline:
@@ -279,7 +280,8 @@ TEST_F(PipelineSeekTest, LiveSourceChasesToTheEdge) {
   spec_.duration = base::Seconds(10);
   StartPipeline();
   ASSERT_TRUE(PumpUntil([this] { return client_.Started(); }))
-      << "pipeline never started; events:\n" << client_.EventLog();
+      << "pipeline never started; events:\n"
+      << client_.EventLog();
   pipeline_->SetLatencyHint(base::Seconds(2));
   PlayAndWaitForSinks();
 
@@ -301,8 +303,8 @@ TEST_F(PipelineSeekTest, LiveSourceChasesToTheEdge) {
   EXPECT_GT(video_sinks_->last_sink()->frames().size(), frames_at_chase)
       << "no frames presented after the chase; events:\n"
       << client_.EventLog();
-  EXPECT_FALSE(client_.HasError())
-      << client_.error().ToString() << "\n" << client_.EventLog();
+  EXPECT_FALSE(client_.HasError()) << client_.error().ToString() << "\n"
+                                   << client_.EventLog();
 }
 
 // docs/07 section 5's audio-only and video-only cases: the renderer falls
@@ -319,7 +321,8 @@ TEST_F(PipelineSeekTest, AudioOnlySourcePlaysThrough) {
     PumpRound();
     return audio_sinks_->last_sink() &&
            audio_sinks_->last_sink()->start_count() > 0;
-  })) << "audio sink never started; events:\n" << client_.EventLog();
+  })) << "audio sink never started; events:\n"
+      << client_.EventLog();
   audio_sinks_->last_sink()->set_render_runner(audio_thread_.task_runner());
   // The factories create both sinks at assembly; the disabled side must
   // never START (it has no stream to serve).
@@ -330,8 +333,8 @@ TEST_F(PipelineSeekTest, AudioOnlySourcePlaysThrough) {
   }));
   EXPECT_EQ(video_sinks_->last_sink()->start_count(), 0)
       << "the disabled video sink started";
-  EXPECT_FALSE(client_.HasError())
-      << client_.error().ToString() << "\n" << client_.EventLog();
+  EXPECT_FALSE(client_.HasError()) << client_.error().ToString() << "\n"
+                                   << client_.EventLog();
 }
 
 TEST_F(PipelineSeekTest, VideoOnlySourcePlaysThrough) {
@@ -343,7 +346,8 @@ TEST_F(PipelineSeekTest, VideoOnlySourcePlaysThrough) {
     PumpRound();
     return video_sinks_->last_sink() &&
            video_sinks_->last_sink()->start_count() > 0;
-  })) << "video sink never started; events:\n" << client_.EventLog();
+  })) << "video sink never started; events:\n"
+      << client_.EventLog();
   ASSERT_TRUE(PumpUntil([this] {
     PumpRound();
     return client_.ended();
@@ -351,8 +355,8 @@ TEST_F(PipelineSeekTest, VideoOnlySourcePlaysThrough) {
   EXPECT_EQ(audio_sinks_->last_sink()->start_count(), 0)
       << "the disabled audio sink started";
   EXPECT_GT(video_sinks_->last_sink()->frames().size(), 0u);
-  EXPECT_FALSE(client_.HasError())
-      << client_.error().ToString() << "\n" << client_.EventLog();
+  EXPECT_FALSE(client_.HasError()) << client_.error().ToString() << "\n"
+                                   << client_.EventLog();
 }
 
 }  // namespace

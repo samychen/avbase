@@ -25,10 +25,14 @@ constexpr base::TimeDelta kMaxPresentInterval = base::Milliseconds(1000) / 60;
 // anything else is reported as a submit failure rather than drawn wrong.
 Uint32 SdlPixelFormat(VideoFormat format) {
   switch (format) {
-    case VideoFormat::kI420: return SDL_PIXELFORMAT_IYUV;
-    case VideoFormat::kYV12: return SDL_PIXELFORMAT_YV12;
-    case VideoFormat::kNV12: return SDL_PIXELFORMAT_NV12;
-    default:                 return SDL_PIXELFORMAT_UNKNOWN;
+  case VideoFormat::kI420:
+    return SDL_PIXELFORMAT_IYUV;
+  case VideoFormat::kYV12:
+    return SDL_PIXELFORMAT_YV12;
+  case VideoFormat::kNV12:
+    return SDL_PIXELFORMAT_NV12;
+  default:
+    return SDL_PIXELFORMAT_UNKNOWN;
   }
 }
 
@@ -186,9 +190,9 @@ bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
       SDL_DestroyTexture(static_cast<SDL_Texture*>(texture_));
       texture_ = nullptr;
     }
-    texture_ = SDL_CreateTexture(renderer, pixel_format,
-                                 SDL_TEXTUREACCESS_STREAMING, bounds.w,
-                                 bounds.h);
+    texture_ =
+        SDL_CreateTexture(renderer, pixel_format, SDL_TEXTUREACCESS_STREAMING,
+                          bounds.w, bounds.h);
     texture_width_ = bounds.w;
     texture_height_ = bounds.h;
     if (!texture_) {
@@ -212,11 +216,11 @@ bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
     // IYUV wants Y, U, V; YV12 wants Y, V, U -- the planes are swapped here,
     // the pixel format tells SDL which order the texture stores.
     const Uint8* second = pixel_format == SDL_PIXELFORMAT_YV12 ? v : u;
-    const int second_pitch = pixel_format == SDL_PIXELFORMAT_YV12 ? v_pitch
-                                                                  : u_pitch;
+    const int second_pitch =
+        pixel_format == SDL_PIXELFORMAT_YV12 ? v_pitch : u_pitch;
     const Uint8* third = pixel_format == SDL_PIXELFORMAT_YV12 ? u : v;
-    const int third_pitch = pixel_format == SDL_PIXELFORMAT_YV12 ? u_pitch
-                                                                 : v_pitch;
+    const int third_pitch =
+        pixel_format == SDL_PIXELFORMAT_YV12 ? u_pitch : v_pitch;
     updated = SDL_UpdateYUVTexture(texture, &bounds, y, y_pitch, second,
                                    second_pitch, third, third_pitch);
   }
@@ -229,8 +233,8 @@ bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
   return true;
 }
 
-std::unique_ptr<VideoRendererSink> Sdl2VideoSinkFactory::Create(
-    base::scoped_refptr<NativeDisplay> display) {
+std::unique_ptr<VideoRendererSink>
+Sdl2VideoSinkFactory::Create(base::scoped_refptr<NativeDisplay> display) {
   return std::make_unique<Sdl2VideoSink>(std::move(display));
 }
 

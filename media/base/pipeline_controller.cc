@@ -21,12 +21,18 @@ namespace avbase::media {
 
 const char* PipelineControllerStateToString(PipelineController::State state) {
   switch (state) {
-    case PipelineController::State::kCreated:    return "created";
-    case PipelineController::State::kStarting:   return "starting";
-    case PipelineController::State::kReady:      return "ready";
-    case PipelineController::State::kStopping:   return "stopping";
-    case PipelineController::State::kStopped:    return "stopped";
-    case PipelineController::State::kDestroying: return "destroying";
+  case PipelineController::State::kCreated:
+    return "created";
+  case PipelineController::State::kStarting:
+    return "starting";
+  case PipelineController::State::kReady:
+    return "ready";
+  case PipelineController::State::kStopping:
+    return "stopping";
+  case PipelineController::State::kStopped:
+    return "stopped";
+  case PipelineController::State::kDestroying:
+    return "destroying";
   }
   return "invalid";
 }

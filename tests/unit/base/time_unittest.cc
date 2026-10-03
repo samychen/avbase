@@ -21,7 +21,7 @@ TEST(TimeDeltaTest, FactoriesUseExplicitUnits) {
   EXPECT_EQ(Seconds(1).InMicroseconds(), 1000000);
   EXPECT_EQ(Minutes(1).InMicroseconds(), 60000000);
   EXPECT_EQ(Seconds(2).InMilliseconds(), 2000);
-  EXPECT_EQ(Milliseconds(1500).InSeconds(), 1);   // Truncates, like Chromium.
+  EXPECT_EQ(Milliseconds(1500).InSeconds(), 1);  // Truncates, like Chromium.
 }
 
 TEST(TimeDeltaTest, FloatingPointConversions) {

@@ -41,7 +41,8 @@ class AVBASE_MEDIA_EXPORT DecoderStatus {
   std::string description_;
 };
 
-AVBASE_MEDIA_EXPORT const char* GetDecoderStatusCodeName(DecoderStatus::Codes code);
+AVBASE_MEDIA_EXPORT const char*
+GetDecoderStatusCodeName(DecoderStatus::Codes code);
 
 }  // namespace avbase::media
 

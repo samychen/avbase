@@ -54,9 +54,8 @@ class SyntheticLiveDemuxerTest : public ::testing::Test {
     demuxer_->Initialize(
         DataSourceDescriptor::FromUri("synthetic-live://test"),
         DemuxerOptions(), /*host=*/nullptr, runner_,
-        base::BindOnce(
-            [](Status* out, Status s) { *out = std::move(s); },
-            base::Unretained(&status)));
+        base::BindOnce([](Status* out, Status s) { *out = std::move(s); },
+                       base::Unretained(&status)));
     env_.RunUntilIdle();
     init_status_ = std::move(status);
   }
@@ -68,15 +67,14 @@ class SyntheticLiveDemuxerTest : public ::testing::Test {
                                               uint32_t count) {
     DemuxerStream::DecoderBufferVector out;
     demuxer_->GetStream(type)->Read(
-        count,
-        base::BindOnce(
-            [](DemuxerStream::DecoderBufferVector* out,
-               DemuxerStream::Status status,
-               DemuxerStream::DecoderBufferVector buffers) {
-              (void)status;
-              *out = std::move(buffers);
-            },
-            base::Unretained(&out)));
+        count, base::BindOnce(
+                   [](DemuxerStream::DecoderBufferVector* out,
+                      DemuxerStream::Status status,
+                      DemuxerStream::DecoderBufferVector buffers) {
+                     (void)status;
+                     *out = std::move(buffers);
+                   },
+                   base::Unretained(&out)));
     env_.RunUntilIdle();
     return out;
   }
@@ -88,21 +86,19 @@ class SyntheticLiveDemuxerTest : public ::testing::Test {
   // draining it here would run the park to its ceiling before the test had a
   // chance to move the clock -- the helper would be the thing that guarantees
   // the timeout it is trying to avoid.
-  DemuxerStream::DecoderBufferVector ReadAsync(DemuxerStreamType type,
-                                               uint32_t count,
-                                               std::atomic<bool>* done) {
+  DemuxerStream::DecoderBufferVector
+  ReadAsync(DemuxerStreamType type, uint32_t count, std::atomic<bool>* done) {
     DemuxerStream::DecoderBufferVector out;
     demuxer_->GetStream(type)->Read(
-        count,
-        base::BindOnce(
-            [](DemuxerStream::DecoderBufferVector* out, std::atomic<bool>* done,
-               DemuxerStream::Status status,
-               DemuxerStream::DecoderBufferVector buffers) {
-              (void)status;
-              *out = std::move(buffers);
-              done->store(true);
-            },
-            base::Unretained(&out), base::Unretained(done)));
+        count, base::BindOnce(
+                   [](DemuxerStream::DecoderBufferVector* out,
+                      std::atomic<bool>* done, DemuxerStream::Status status,
+                      DemuxerStream::DecoderBufferVector buffers) {
+                     (void)status;
+                     *out = std::move(buffers);
+                     done->store(true);
+                   },
+                   base::Unretained(&out), base::Unretained(done)));
     return out;
   }
 

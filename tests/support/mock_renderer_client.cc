@@ -56,8 +56,7 @@ void FakeRendererClient::OnStatisticsUpdate(const PipelineStatistics& stats) {
   events_.push_back({"statistics", base::TimeDelta()});
 }
 
-void FakeRendererClient::OnVideoConfigChange(
-    const VideoDecoderConfig& config) {
+void FakeRendererClient::OnVideoConfigChange(const VideoDecoderConfig& config) {
   last_video_config_ = config;
   events_.push_back({"video_config", base::TimeDelta()});
 }

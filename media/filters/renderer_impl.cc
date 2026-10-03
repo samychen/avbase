@@ -67,18 +67,17 @@ static void QuiesceAndDestroyOn(
 }
 
 template <typename T>
-static void DestroyOn(
-    const base::scoped_refptr<base::SequencedTaskRunner>& runner,
-    std::unique_ptr<T>* member) {
+static void
+DestroyOn(const base::scoped_refptr<base::SequencedTaskRunner>& runner,
+          std::unique_ptr<T>* member) {
   base::WaitableEvent done;
-  runner->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](std::unique_ptr<T>* m, base::WaitableEvent* e) {
-            m->reset();
-            e->Signal();
-          },
-          member, &done));
+  runner->PostTask(FROM_HERE,
+                   base::BindOnce(
+                       [](std::unique_ptr<T>* m, base::WaitableEvent* e) {
+                         m->reset();
+                         e->Signal();
+                       },
+                       member, &done));
   done.Wait();
 }
 
@@ -112,8 +111,9 @@ RendererImpl::~RendererImpl() {
 }
 
 // static
-AudioParameters RendererImpl::MakeAudioParameters(
-    const AudioDecoderConfig& config, int frames_per_buffer) {
+AudioParameters
+RendererImpl::MakeAudioParameters(const AudioDecoderConfig& config,
+                                  int frames_per_buffer) {
   // Gap 2: a real AudioManager would negotiate the device period and could
   // return something the hardware prefers; until media/audio/ exists this is a
   // fixed guess, and AudioRendererSink::IsOptimizedForHardwareParameters() is
@@ -122,11 +122,10 @@ AudioParameters RendererImpl::MakeAudioParameters(
                          config.sample_rate, frames_per_buffer);
 }
 
-void RendererImpl::Initialize(MediaResource* media_resource,
-                              RendererClient* client,
-                              base::scoped_refptr<base::SequencedTaskRunner>
-                                  media_task_runner,
-                              PipelineStatusCallback init_cb) {
+void RendererImpl::Initialize(
+    MediaResource* media_resource, RendererClient* client,
+    base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
+    PipelineStatusCallback init_cb) {
   DCHECK(media_resource);
   DCHECK(client);
   client_ = client;
@@ -135,14 +134,14 @@ void RendererImpl::Initialize(MediaResource* media_resource,
   }
   av_sync_ = deps_.av_sync;
 
-  DemuxerStream* video_stream = deps_.video_disabled
-                                    ? nullptr
-                                    : media_resource->GetStream(
-                                          DemuxerStreamType::kVideo);
-  DemuxerStream* audio_stream = deps_.audio_disabled
-                                    ? nullptr
-                                    : media_resource->GetStream(
-                                          DemuxerStreamType::kAudio);
+  DemuxerStream* video_stream =
+      deps_.video_disabled
+          ? nullptr
+          : media_resource->GetStream(DemuxerStreamType::kVideo);
+  DemuxerStream* audio_stream =
+      deps_.audio_disabled
+          ? nullptr
+          : media_resource->GetStream(DemuxerStreamType::kAudio);
   has_video_ = video_stream != nullptr;
   has_audio_ = audio_stream != nullptr;
   if (!has_video_ && !has_audio_) {
@@ -223,14 +222,14 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
   // getters (the compositor's lock and the audio handoff lock) instead of the
   // sub-renderers' plain bools, which would be a data race from S1.
   if (video_) {
-    video_->set_ended_cb(base::BindRepeating(
-        &RendererImpl::PostVideoEnded, base::Unretained(this)));
+    video_->set_ended_cb(base::BindRepeating(&RendererImpl::PostVideoEnded,
+                                             base::Unretained(this)));
     video_->set_frame_presented_cb(base::BindRepeating(
         &RendererImpl::OnVideoFramePresented, base::Unretained(this)));
   }
   if (audio_) {
-    audio_->set_ended_cb(base::BindRepeating(
-        &RendererImpl::PostAudioEnded, base::Unretained(this)));
+    audio_->set_ended_cb(base::BindRepeating(&RendererImpl::PostAudioEnded,
+                                             base::Unretained(this)));
   }
 }
 
@@ -246,16 +245,14 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
 // has to be timed.
 void RendererImpl::PostVideoEnded() {
   deps_.media_task_runner->PostTask(
-      FROM_HERE,
-      base::BindOnce(&RendererImpl::OnVideoStreamEnded,
-                     weak_factory_.GetWeakPtr()));
+      FROM_HERE, base::BindOnce(&RendererImpl::OnVideoStreamEnded,
+                                weak_factory_.GetWeakPtr()));
 }
 
 void RendererImpl::PostAudioEnded() {
   deps_.media_task_runner->PostTask(
-      FROM_HERE,
-      base::BindOnce(&RendererImpl::OnAudioStreamEnded,
-                     weak_factory_.GetWeakPtr()));
+      FROM_HERE, base::BindOnce(&RendererImpl::OnAudioStreamEnded,
+                                weak_factory_.GetWeakPtr()));
 }
 
 void RendererImpl::OnVideoStreamEnded() {
@@ -285,14 +282,12 @@ void RendererImpl::CheckBufferingTransitions() {
   }
   starved_reported_ = starved;
   LOG(INFO) << "[hwm] edge " << (starved ? "DRY" : "RECOVER")
-            << " video_pending="
-            << (video_ ? video_->frames_pending() : -1)
-            << " audio_buffered="
-            << (audio_ ? audio_->buffered_frames() : -1);
+            << " video_pending=" << (video_ ? video_->frames_pending() : -1)
+            << " audio_buffered=" << (audio_ ? audio_->buffered_frames() : -1);
   if (client_) {
-    client_->OnBufferingStateChange(
-        starved ? BufferingState::kHaveNothing : BufferingState::kHaveEnough,
-        base::TimeDelta());
+    client_->OnBufferingStateChange(starved ? BufferingState::kHaveNothing
+                                            : BufferingState::kHaveEnough,
+                                    base::TimeDelta());
   }
 }
 
@@ -300,10 +295,10 @@ void RendererImpl::CheckForEnded() {
   if (!initialized_ || ended_) {
     return;
   }
-  const bool video_done = !video_ || (video_ended_ &&
-                                      video_->frames_pending() == 0);
-  const bool audio_done = !audio_ || (audio_ended_ &&
-                                      audio_->buffered_frames() == 0);
+  const bool video_done =
+      !video_ || (video_ended_ && video_->frames_pending() == 0);
+  const bool audio_done =
+      !audio_ || (audio_ended_ && audio_->buffered_frames() == 0);
   if (video_done && audio_done) {
     OnEnded();
   }
@@ -437,11 +432,10 @@ void RendererImpl::PushMasterClock() {
                        base::Unretained(video_.get()), snapshot.master,
                        av_sync_->master_serial(), true));
     deps_.video_task_runner->PostTask(
-        FROM_HERE,
-        base::BindOnce(&VideoRendererImpl::SetMasterIsVideo,
-                       base::Unretained(video_.get()),
-                       snapshot.resolved ==
-                           AvSyncController::MasterType::kVideo));
+        FROM_HERE, base::BindOnce(&VideoRendererImpl::SetMasterIsVideo,
+                                  base::Unretained(video_.get()),
+                                  snapshot.resolved ==
+                                      AvSyncController::MasterType::kVideo));
   }
   deps_.media_task_runner->PostDelayedTask(
       FROM_HERE,
@@ -460,8 +454,7 @@ void RendererImpl::PushStatistics() {
   }
   deps_.media_task_runner->PostDelayedTask(
       FROM_HERE,
-      base::BindOnce(&RendererImpl::PushStatistics,
-                     weak_factory_.GetWeakPtr()),
+      base::BindOnce(&RendererImpl::PushStatistics, weak_factory_.GetWeakPtr()),
       kStatsInterval);
 }
 
@@ -471,9 +464,9 @@ PipelineStatistics RendererImpl::GetStatistics() const {
     const AvSyncController::Snapshot s = av_sync_->GetSnapshot();
     stats.avg_av_diff_ms = s.av_diff.InMillisecondsF();
     if (audio_ && audio_params_.sample_rate() > 0) {
-      stats.buffered_time = base::SecondsD(
-          static_cast<double>(audio_->buffered_frames()) /
-          audio_params_.sample_rate());
+      stats.buffered_time =
+          base::SecondsD(static_cast<double>(audio_->buffered_frames()) /
+                         audio_params_.sample_rate());
     }
   }
   if (video_) {
@@ -533,23 +526,20 @@ void RendererImpl::Flush(base::OnceClosure flush_cb) {
     // pipeline's completion contract is S1, so hop it back. The sequence
     // checker caught the first draft running it inline.
     deps_.video_task_runner->PostTask(
-        FROM_HERE, base::BindOnce(
-                       [](VideoRendererImpl* v, int32_t s,
-                          base::OnceClosure done,
-                          base::scoped_refptr<base::SequencedTaskRunner>
-                              media) {
-                         v->Flush(s, base::BindOnce(
-                                         [](base::OnceClosure d,
-                                            base::scoped_refptr<
-                                                base::SequencedTaskRunner>
-                                                 m) {
-                                           m->PostTask(FROM_HERE,
-                                                       std::move(d));
-                                         },
-                                         std::move(done), std::move(media)));
-                       },
-                       base::Unretained(video_.get()), serial,
-                       std::move(flush_cb), deps_.media_task_runner));
+        FROM_HERE,
+        base::BindOnce(
+            [](VideoRendererImpl* v, int32_t s, base::OnceClosure done,
+               base::scoped_refptr<base::SequencedTaskRunner> media) {
+              v->Flush(
+                  s, base::BindOnce(
+                         [](base::OnceClosure d,
+                            base::scoped_refptr<base::SequencedTaskRunner> m) {
+                           m->PostTask(FROM_HERE, std::move(d));
+                         },
+                         std::move(done), std::move(media)));
+            },
+            base::Unretained(video_.get()), serial, std::move(flush_cb),
+            deps_.media_task_runner));
   } else {
     std::move(flush_cb).Run();
   }
@@ -559,26 +549,22 @@ void RendererImpl::CompleteInitialization(PipelineStatus status) {
   // Hop to the media sequence: sub-renderers complete on S3/S4, and
   // PipelineImpl's sequence checker (correctly) rejects anything else.
   deps_.media_task_runner->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](PipelineStatusCallback cb, PipelineStatus s) {
-            std::move(cb).Run(s);
-          },
-          std::move(pending_init_cb_), status));
+      FROM_HERE, base::BindOnce([](PipelineStatusCallback cb,
+                                   PipelineStatus s) { std::move(cb).Run(s); },
+                                std::move(pending_init_cb_), status));
 }
 
 void RendererImpl::ReportError(MediaError error) {
   // May be called from S3/S4 (a sub-renderer's init failure); the pipeline
   // client runs on S1.
   deps_.media_task_runner->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](RendererImpl* self, MediaError e) {
-            if (self->client_) {
-              self->client_->OnError(std::move(e));
-            }
-          },
-          base::Unretained(this), std::move(error)));
+      FROM_HERE, base::BindOnce(
+                     [](RendererImpl* self, MediaError e) {
+                       if (self->client_) {
+                         self->client_->OnError(std::move(e));
+                       }
+                     },
+                     base::Unretained(this), std::move(error)));
 }
 
 void RendererImpl::OnEnded() {

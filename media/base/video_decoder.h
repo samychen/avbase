@@ -28,7 +28,7 @@
 
 namespace avbase::media {
 
-class CdmContext;   // DRM placeholder; not implemented (docs/08 §4).
+class CdmContext;  // DRM placeholder; not implemented (docs/08 §4).
 
 // WaitingReason/WaitingCB live in media/base/waiting.h so AudioDecoder can
 // share them without depending on this header.
@@ -39,7 +39,8 @@ class AVBASE_MEDIA_EXPORT VideoDecoder {
   // Called for each decoded frame. Must be invoked as soon as the frame is
   // ready, without thread trampolining: an extra hop per frame measurably hurts
   // delivery timing on high-frame-rate material.
-  using OutputCB = base::RepeatingCallback<void(base::scoped_refptr<VideoFrame>)>;
+  using OutputCB =
+      base::RepeatingCallback<void(base::scoped_refptr<VideoFrame>)>;
   using DecodeCB = base::OnceCallback<void(DecoderStatus)>;
 
   VideoDecoder(const VideoDecoder&) = delete;
@@ -51,8 +52,8 @@ class AVBASE_MEDIA_EXPORT VideoDecoder {
   //  2) Must not be called while a decode or reset is pending.
   //  3) No calls may be made before |init_cb| runs.
   //  4) |init_cb| MAY run before this method returns.
-  // |low_delay| forbids queueing beyond what reordering requires; initialization
-  // fails if the decoder cannot comply.
+  // |low_delay| forbids queueing beyond what reordering requires;
+  // initialization fails if the decoder cannot comply.
   virtual void Initialize(const VideoDecoderConfig& config, bool low_delay,
                           CdmContext* cdm_context, InitCB init_cb,
                           const OutputCB& output_cb,

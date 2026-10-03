@@ -63,8 +63,8 @@ class VideoRendererImplTest : public ::testing::Test {
   // EOS (the fake appends the EOS marker itself on the first empty read).
   void ScriptBuffers(int buffers) {
     for (int i = 0; i < buffers; ++i) {
-      stream_->AppendBuffer(test::MakeDataBuffer(DemuxerStreamType::kVideo,
-                                                 stream_->serial()));
+      stream_->AppendBuffer(
+          test::MakeDataBuffer(DemuxerStreamType::kVideo, stream_->serial()));
     }
   }
 
@@ -75,14 +75,13 @@ class VideoRendererImplTest : public ::testing::Test {
     renderer_ = std::make_unique<VideoRendererImpl>(
         runner_, std::move(factories), env_.GetTickClock(),
         VideoFrameCompositor::Thresholds());
-    renderer_->set_ended_cb(base::BindRepeating(
-        &VideoRendererImplTest::OnEnded, base::Unretained(this)));
+    renderer_->set_ended_cb(base::BindRepeating(&VideoRendererImplTest::OnEnded,
+                                                base::Unretained(this)));
     auto sink = std::make_unique<test::FakeVideoSink>();
     sink_ = sink.get();
-    renderer_->Initialize(
-        stream_.get(), std::move(sink),
-        base::BindOnce(&VideoRendererImplTest::OnInitialized,
-                       base::Unretained(this)));
+    renderer_->Initialize(stream_.get(), std::move(sink),
+                          base::BindOnce(&VideoRendererImplTest::OnInitialized,
+                                         base::Unretained(this)));
     env_.RunUntilIdle();
   }
 
@@ -198,9 +197,9 @@ TEST_F(VideoRendererImplTest, FlushDropsFramesFromThePreviousSerial) {
   stream_->set_serial(1);
   ScriptBuffers(/*buffers=*/1);
   bool flush_done = false;
-  renderer_->Flush(/*serial=*/1, base::BindOnce(
-                                     [](bool* done) { *done = true; },
-                                     base::Unretained(&flush_done)));
+  renderer_->Flush(/*serial=*/1,
+                   base::BindOnce([](bool* done) { *done = true; },
+                                  base::Unretained(&flush_done)));
   env_.RunUntilIdle();
 
   EXPECT_TRUE(flush_done);
@@ -216,7 +215,6 @@ TEST_F(VideoRendererImplTest, FlushDropsFramesFromThePreviousSerial) {
       << "a frame from the flushed generation reached the display after the "
          "seek";
 }
-
 
 // ---------------------------------------------------------------------------
 // decoder_preference (docs/12 §2.3). These four are the regression anchor for

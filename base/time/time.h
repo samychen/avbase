@@ -94,9 +94,9 @@ class AVBASE_BASE_EXPORT TimeDelta {
     return is_infinte() ? *this : FromMicroseconds(micros_ / a);
   }
   constexpr double operator/(TimeDelta a) const noexcept {
-    return a.is_zero() ? std::numeric_limits<double>::infinity()
-                       : static_cast<double>(micros_) /
-                             static_cast<double>(a.micros_);
+    return a.is_zero()
+               ? std::numeric_limits<double>::infinity()
+               : static_cast<double>(micros_) / static_cast<double>(a.micros_);
   }
   constexpr TimeDelta operator%(TimeDelta a) const noexcept {
     return FromMicroseconds(a.is_zero() ? micros_ : micros_ % a.micros_);
@@ -151,15 +151,19 @@ class AVBASE_BASE_EXPORT TimeDelta {
   static constexpr int64_t SaturatingAdd(int64_t a, int64_t b) noexcept {
     const int64_t kMax = std::numeric_limits<int64_t>::max();
     const int64_t kMin = std::numeric_limits<int64_t>::min();
-    if (b > 0 && a > kMax - b) return kMax;
-    if (b < 0 && a < kMin - b) return kMin;
+    if (b > 0 && a > kMax - b)
+      return kMax;
+    if (b < 0 && a < kMin - b)
+      return kMin;
     return a + b;
   }
   static constexpr int64_t SaturatingMul(int64_t a, int64_t b) noexcept {
-    if (a == 0) return 0;
+    if (a == 0)
+      return 0;
     const int64_t r = a * b;
-    if (r / a != b) return (a < 0) == (b < 0) ? std::numeric_limits<int64_t>::max()
-                                              : std::numeric_limits<int64_t>::min();
+    if (r / a != b)
+      return (a < 0) == (b < 0) ? std::numeric_limits<int64_t>::max()
+                                : std::numeric_limits<int64_t>::min();
     return r;
   }
 
@@ -172,9 +176,15 @@ constexpr TimeDelta Microseconds(int64_t us) noexcept {
 constexpr TimeDelta Milliseconds(int64_t ms) noexcept {
   return TimeDelta::FromMilliseconds(ms);
 }
-constexpr TimeDelta Seconds(int64_t s) noexcept { return TimeDelta::FromSeconds(s); }
-constexpr TimeDelta SecondsD(double s) noexcept { return TimeDelta::FromSecondsD(s); }
-constexpr TimeDelta Minutes(int64_t m) noexcept { return TimeDelta::FromMinutes(m); }
+constexpr TimeDelta Seconds(int64_t s) noexcept {
+  return TimeDelta::FromSeconds(s);
+}
+constexpr TimeDelta SecondsD(double s) noexcept {
+  return TimeDelta::FromSecondsD(s);
+}
+constexpr TimeDelta Minutes(int64_t m) noexcept {
+  return TimeDelta::FromMinutes(m);
+}
 
 AVBASE_BASE_EXPORT std::ostream& operator<<(std::ostream& os, TimeDelta d);
 

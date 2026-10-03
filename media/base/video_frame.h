@@ -105,14 +105,20 @@ class AVBASE_MEDIA_EXPORT VideoFrame
   REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
 
   enum class StorageType {
-    kStorageOwned = 0,       // CPU memory allocated by avbase; planes readable.
-    kStorageDmaBufs,         // Linux dmabuf; zero-copy into EGL, planes unreadable.
+    kStorageOwned = 0,  // CPU memory allocated by avbase; planes readable.
+    kStorageDmaBufs,    // Linux dmabuf; zero-copy into EGL, planes unreadable.
     kStorageGpuMemoryBuffer,
-    kStorageOpaque,          // Platform-private handle (MediaCodec Surface,
-                             // CVPixelBuffer). planes() returns an empty span.
+    kStorageOpaque,  // Platform-private handle (MediaCodec Surface,
+                     // CVPixelBuffer). planes() returns an empty span.
   };
 
-  enum Plane { kYPlane = 0, kUPlane = 1, kVPlane = 2, kAPlane = 3, kMaxPlanes = 4 };
+  enum Plane {
+    kYPlane = 0,
+    kUPlane = 1,
+    kVPlane = 2,
+    kAPlane = 3,
+    kMaxPlanes = 4
+  };
 
   VideoFormat format() const { return format_; }
   StorageType storage_type() const { return storage_type_; }
@@ -142,7 +148,9 @@ class AVBASE_MEDIA_EXPORT VideoFrame
   // the decoder sets it before the frame is first published.
   void set_color_space(VideoColorSpace cs) { color_space_ = cs; }
 
-  bool IsMappable() const { return storage_type_ == StorageType::kStorageOwned; }
+  bool IsMappable() const {
+    return storage_type_ == StorageType::kStorageOwned;
+  }
 
   // Zero-copy contract (avbase §6.2): a hardware-decoded frame is passed GPU
   // to GPU end to end; pixels are only read back when a consumer EXPLICITLY
@@ -158,9 +166,10 @@ class AVBASE_MEDIA_EXPORT VideoFrame
 
   // Test/CLI helper: builds a zero-filled owned frame. Production decoders go
   // through VideoFramePool instead.
-  static base::scoped_refptr<VideoFrame> CreateBlackFrame(
-      VideoFormat format, Size coded_size, Size natural_size, Rational sar,
-      base::TimeDelta timestamp, base::TimeDelta duration, int32_t serial);
+  static base::scoped_refptr<VideoFrame>
+  CreateBlackFrame(VideoFormat format, Size coded_size, Size natural_size,
+                   Rational sar, base::TimeDelta timestamp,
+                   base::TimeDelta duration, int32_t serial);
 
   // The hardware-frame constructor. |handle| names the GPU object; it stays
   // owned by the producer's backing store and is only guaranteed valid while
@@ -172,8 +181,7 @@ class AVBASE_MEDIA_EXPORT VideoFrame
   static base::scoped_refptr<VideoFrame> WrapNativeBuffer(
       NativeHandle handle, VideoFormat format, Size coded_size,
       Size natural_size, Rational sar, base::TimeDelta timestamp,
-      base::TimeDelta duration, int32_t serial,
-      base::OnceClosure release_cb,
+      base::TimeDelta duration, int32_t serial, base::OnceClosure release_cb,
       base::RepeatingCallback<base::scoped_refptr<VideoFrame>()> to_i420_cb);
 
   // The typed GPU handle. Empty (kNone) unless the producer used
@@ -209,7 +217,7 @@ class AVBASE_MEDIA_EXPORT VideoFrame
   std::array<int32_t, kMaxPlanes> strides_{0, 0, 0, 0};
   std::array<size_t, kMaxPlanes> allocated_sizes_{0, 0, 0, 0};
   const void* opaque_handle_{nullptr};
-  void* allocation_{nullptr};   // Owned backing store when storage is owned.
+  void* allocation_{nullptr};  // Owned backing store when storage is owned.
   NativeHandle native_handle_;
   VideoColorSpace color_space_;
   // Non-owned storage (hw frames, dmabufs): the producer-side teardown. Run

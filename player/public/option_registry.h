@@ -27,11 +27,18 @@ using OptionValue = std::variant<bool, int64_t, double, std::string>;
 struct AVBASE_PLAYER_EXPORT OptionDescriptor {
   std::string key;
   OptionCategory category{OptionCategory::kPlayer};
-  enum class Type { kBool, kInt, kInt64, kDouble, kString, kEnum } type{Type::kInt};
+  enum class Type {
+    kBool,
+    kInt,
+    kInt64,
+    kDouble,
+    kString,
+    kEnum
+  } type{Type::kInt};
   OptionValue min;
   OptionValue max;
   OptionValue default_value;
-  std::string config_field;   // e.g. "buffer.max_bytes"
+  std::string config_field;  // e.g. "buffer.max_bytes"
   std::string doc;
 };
 

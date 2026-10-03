@@ -11,36 +11,66 @@ namespace avbase::media {
 
 const char* GetErrorCodeName(ErrorCode code) {
   switch (code) {
-    case ErrorCode::kOk: return "Ok";
-    case ErrorCode::kInvalidArgument: return "InvalidArgument";
-    case ErrorCode::kInvalidState: return "InvalidState";
-    case ErrorCode::kNotImplemented: return "NotImplemented";
-    case ErrorCode::kOutOfMemory: return "OutOfMemory";
-    case ErrorCode::kAborted: return "Aborted";
-    case ErrorCode::kTimeout: return "Timeout";
-    case ErrorCode::kCancelled: return "Cancelled";
-    case ErrorCode::kSourceOpenFailed: return "SourceOpenFailed";
-    case ErrorCode::kSourceNotFound: return "SourceNotFound";
-    case ErrorCode::kSourcePermissionDenied: return "SourcePermissionDenied";
-    case ErrorCode::kSourceReadFailed: return "SourceReadFailed";
-    case ErrorCode::kSourceSeekFailed: return "SourceSeekFailed";
-    case ErrorCode::kSourceUnsupported: return "SourceUnsupported";
-    case ErrorCode::kSourceEos: return "SourceEos";
-    case ErrorCode::kNetworkUnreachable: return "NetworkUnreachable";
-    case ErrorCode::kNetworkTimeout: return "NetworkTimeout";
-    case ErrorCode::kDecoderNotFound: return "DecoderNotFound";
-    case ErrorCode::kDecoderOpenFailed: return "DecoderOpenFailed";
-    case ErrorCode::kDecodeFailed: return "DecodeFailed";
-    case ErrorCode::kDecoderUnsupportedCodec: return "DecoderUnsupportedCodec";
-    case ErrorCode::kDecoderHwFallback: return "DecoderHwFallback";
-    case ErrorCode::kSinkNotAttached: return "SinkNotAttached";
-    case ErrorCode::kSinkConfigureFailed: return "SinkConfigureFailed";
-    case ErrorCode::kSinkPresentFailed: return "SinkPresentFailed";
-    case ErrorCode::kMediaUnseekable: return "MediaUnseekable";
-    case ErrorCode::kStreamNotFound: return "StreamNotFound";
-    case ErrorCode::kTrackNotFound: return "TrackNotFound";
-    case ErrorCode::kConfigInvalid: return "ConfigInvalid";
-    case ErrorCode::kEos: return "Eos";
+  case ErrorCode::kOk:
+    return "Ok";
+  case ErrorCode::kInvalidArgument:
+    return "InvalidArgument";
+  case ErrorCode::kInvalidState:
+    return "InvalidState";
+  case ErrorCode::kNotImplemented:
+    return "NotImplemented";
+  case ErrorCode::kOutOfMemory:
+    return "OutOfMemory";
+  case ErrorCode::kAborted:
+    return "Aborted";
+  case ErrorCode::kTimeout:
+    return "Timeout";
+  case ErrorCode::kCancelled:
+    return "Cancelled";
+  case ErrorCode::kSourceOpenFailed:
+    return "SourceOpenFailed";
+  case ErrorCode::kSourceNotFound:
+    return "SourceNotFound";
+  case ErrorCode::kSourcePermissionDenied:
+    return "SourcePermissionDenied";
+  case ErrorCode::kSourceReadFailed:
+    return "SourceReadFailed";
+  case ErrorCode::kSourceSeekFailed:
+    return "SourceSeekFailed";
+  case ErrorCode::kSourceUnsupported:
+    return "SourceUnsupported";
+  case ErrorCode::kSourceEos:
+    return "SourceEos";
+  case ErrorCode::kNetworkUnreachable:
+    return "NetworkUnreachable";
+  case ErrorCode::kNetworkTimeout:
+    return "NetworkTimeout";
+  case ErrorCode::kDecoderNotFound:
+    return "DecoderNotFound";
+  case ErrorCode::kDecoderOpenFailed:
+    return "DecoderOpenFailed";
+  case ErrorCode::kDecodeFailed:
+    return "DecodeFailed";
+  case ErrorCode::kDecoderUnsupportedCodec:
+    return "DecoderUnsupportedCodec";
+  case ErrorCode::kDecoderHwFallback:
+    return "DecoderHwFallback";
+  case ErrorCode::kSinkNotAttached:
+    return "SinkNotAttached";
+  case ErrorCode::kSinkConfigureFailed:
+    return "SinkConfigureFailed";
+  case ErrorCode::kSinkPresentFailed:
+    return "SinkPresentFailed";
+  case ErrorCode::kMediaUnseekable:
+    return "MediaUnseekable";
+  case ErrorCode::kStreamNotFound:
+    return "StreamNotFound";
+  case ErrorCode::kTrackNotFound:
+    return "TrackNotFound";
+  case ErrorCode::kConfigInvalid:
+    return "ConfigInvalid";
+  case ErrorCode::kEos:
+    return "Eos";
   }
   return "Unknown";
 }
@@ -56,7 +86,9 @@ MediaError::MediaError(ErrorCode code, std::string summary, std::string detail,
       suggestion_(std::move(suggestion)) {}
 
 // static
-MediaError MediaError::Ok() { return MediaError(); }
+MediaError MediaError::Ok() {
+  return MediaError();
+}
 
 // static
 MediaError MediaError::Of(ErrorCode code, std::string summary,
@@ -89,19 +121,29 @@ std::string MediaError::ToJson() const {
     out.reserve(s.size() + 8);
     for (char c : s) {
       switch (c) {
-        case '"':  out += "\\\""; break;
-        case '\\': out += "\\\\"; break;
-        case '\n': out += "\\n";  break;
-        case '\r': out += "\\r";  break;
-        case '\t': out += "\\t";  break;
-        default:
-          if (static_cast<unsigned char>(c) < 0x20) {
-            char buf[8];
-            std::snprintf(buf, sizeof(buf), "\\u%04x", c);
-            out += buf;
-          } else {
-            out += c;
-          }
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (static_cast<unsigned char>(c) < 0x20) {
+          char buf[8];
+          std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+          out += buf;
+        } else {
+          out += c;
+        }
       }
     }
     return out;

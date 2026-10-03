@@ -103,8 +103,8 @@ class FakeAudioSink final : public AudioRendererSink {
   // triggers). The RendererImpl-style suites leave it unset: single pump, no
   // second sequence to race with.
   int PullPeriod(AudioBus* dest);
-  void set_render_runner(
-      base::scoped_refptr<base::SequencedTaskRunner> runner) {
+  void
+  set_render_runner(base::scoped_refptr<base::SequencedTaskRunner> runner) {
     render_runner_ = std::move(runner);
   }
   int start_count() const { return start_count_.load(); }

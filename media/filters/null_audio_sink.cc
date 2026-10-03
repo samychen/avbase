@@ -43,9 +43,9 @@ void NullAudioSink::Start() {
   thread_ = std::make_unique<base::Thread>("avbase-null-audio");
   thread_->Start();
   audio_runner_ = thread_->task_runner();
-  audio_runner_->PostTask(FROM_HERE,
-                          base::BindOnce(&NullAudioSink::ConsumeOnePeriod,
-                                         base::Unretained(this)));
+  audio_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&NullAudioSink::ConsumeOnePeriod, base::Unretained(this)));
 }
 
 void NullAudioSink::Stop() {
@@ -74,12 +74,12 @@ void NullAudioSink::Flush() {
 }
 
 bool NullAudioSink::SetVolume(double volume) {
-  (void)volume;   // Nothing is played; there is nothing to scale.
+  (void)volume;  // Nothing is played; there is nothing to scale.
   return true;
 }
 
 bool NullAudioSink::IsOptimizedForHardwareParameters() {
-  return false;   // Any parameters work; nothing is opened.
+  return false;  // Any parameters work; nothing is opened.
 }
 
 bool NullAudioSink::CurrentThreadIsRenderingThread() {
@@ -104,8 +104,8 @@ void NullAudioSink::ConsumeOnePeriod() {
     // the (fictional) speaker: one full period from now, zero hardware latency.
     const AudioGlitchInfo none;
     const base::TimeTicks now = base::TimeTicks::Now();
-    const int written = callback_->Render(params_.buffer_duration(), now,
-                                          none, bus_.get());
+    const int written =
+        callback_->Render(params_.buffer_duration(), now, none, bus_.get());
     if (written < requested) {
       base::AutoLock scoped(glitch_lock_);
       glitch_info_.total_glitches += 1;

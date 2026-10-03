@@ -30,8 +30,6 @@ namespace media {
 class DataSource;
 }  // namespace media
 
-
-
 // Re-exported from media/base so that SDK callers can spell it
 // avbase::DataSourceDescriptor without reaching into the media layer. The type
 // lives there because media::Demuxer takes it and media/ must not depend on
@@ -78,9 +76,9 @@ class AVBASE_PLAYER_EXPORT Player {
   Status PrepareSync(base::TimeDelta timeout = base::Seconds(30));
   void Start();
   void Pause();
-  void Stop();                                   // Non-blocking.
+  void Stop();  // Non-blocking.
   void StopSync(base::TimeDelta timeout);
-  void Reset();                                  // Back to kIdle, reusable.
+  void Reset();  // Back to kIdle, reusable.
   // Blocks until playback reaches a terminal state. Convenience for CLIs and
   // tests; production hosts use SetEventHandler() with their own loop.
   void RunUntilIdle();
@@ -92,11 +90,11 @@ class AVBASE_PLAYER_EXPORT Player {
   // caller doing rapid seeks can match results to requests.
   Result<int64_t> SeekTo(base::TimeDelta position, SeekMode mode, SeekCB cb);
   void SeekTo(base::TimeDelta position);
-  void StepOnce();                               // Single-frame advance while paused.
-  void SetPlaybackRate(double rate);             // [0.25, 4.0]
-  void SetVolume(double volume);                 // [0.0, 1.0]
+  void StepOnce();                    // Single-frame advance while paused.
+  void SetPlaybackRate(double rate);  // [0.25, 4.0]
+  void SetVolume(double volume);      // [0.0, 1.0]
   void SetMuted(bool muted);
-  void SetLoopCount(int count);                  // -1 = infinite
+  void SetLoopCount(int count);  // -1 = infinite
   Status SelectTrack(media::DemuxerStreamType type, int stream_index);
   // May be called while playing. Pass a null display to render nowhere while
   // keeping audio (useful for background playback).

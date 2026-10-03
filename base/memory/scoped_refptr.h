@@ -38,16 +38,22 @@ class scoped_refptr {
 
   constexpr scoped_refptr(T* p) noexcept : ptr_(p) { AddRef(); }
 
-  constexpr scoped_refptr(const scoped_refptr& o) noexcept : ptr_(o.ptr_) { AddRef(); }
+  constexpr scoped_refptr(const scoped_refptr& o) noexcept : ptr_(o.ptr_) {
+    AddRef();
+  }
   template <typename U>
   constexpr scoped_refptr(const scoped_refptr<U>& o) noexcept
-      requires(std::is_convertible_v<U*, T*>)
-      : ptr_(o.get()) { AddRef(); }
+    requires(std::is_convertible_v<U*, T*>)
+      : ptr_(o.get()) {
+    AddRef();
+  }
 
-  constexpr scoped_refptr(scoped_refptr&& o) noexcept : ptr_(o.ptr_) { o.ptr_ = nullptr; }
+  constexpr scoped_refptr(scoped_refptr&& o) noexcept : ptr_(o.ptr_) {
+    o.ptr_ = nullptr;
+  }
   template <typename U>
   constexpr scoped_refptr(scoped_refptr<U>&& o) noexcept
-      requires(std::is_convertible_v<U*, T*>)
+    requires(std::is_convertible_v<U*, T*>)
       : ptr_(o.release()) {}
 
   ~scoped_refptr() { Release(); }
@@ -68,7 +74,8 @@ class scoped_refptr {
   }
   template <typename U>
   constexpr scoped_refptr& operator=(const scoped_refptr<U>& o) noexcept
-      requires(std::is_convertible_v<U*, T*>) {
+    requires(std::is_convertible_v<U*, T*>)
+  {
     return *this = o.get();
   }
   constexpr scoped_refptr& operator=(scoped_refptr&& o) noexcept {
@@ -79,7 +86,8 @@ class scoped_refptr {
   }
   template <typename U>
   constexpr scoped_refptr& operator=(scoped_refptr<U>&& o) noexcept
-      requires(std::is_convertible_v<U*, T*>) {
+    requires(std::is_convertible_v<U*, T*>)
+  {
     Release();
     ptr_ = o.release();
     return *this;
@@ -101,19 +109,26 @@ class scoped_refptr {
     ptr_ = nullptr;
     return p;
   }
-  constexpr void reset() noexcept { Release(); ptr_ = nullptr; }
+  constexpr void reset() noexcept {
+    Release();
+    ptr_ = nullptr;
+  }
   constexpr void swap(scoped_refptr& o) noexcept { std::swap(ptr_, o.ptr_); }
 
-  constexpr friend bool operator==(const scoped_refptr& a, const scoped_refptr& b) noexcept {
+  constexpr friend bool operator==(const scoped_refptr& a,
+                                   const scoped_refptr& b) noexcept {
     return a.ptr_ == b.ptr_;
   }
-  constexpr friend bool operator==(const scoped_refptr& a, std::nullptr_t) noexcept {
+  constexpr friend bool operator==(const scoped_refptr& a,
+                                   std::nullptr_t) noexcept {
     return a.ptr_ == nullptr;
   }
-  constexpr friend bool operator==(std::nullptr_t, const scoped_refptr& a) noexcept {
+  constexpr friend bool operator==(std::nullptr_t,
+                                   const scoped_refptr& a) noexcept {
     return a.ptr_ == nullptr;
   }
-  constexpr friend auto operator<=>(const scoped_refptr& a, const scoped_refptr& b) noexcept {
+  constexpr friend auto operator<=>(const scoped_refptr& a,
+                                    const scoped_refptr& b) noexcept {
     return a.ptr_ <=> b.ptr_;
   }
 
@@ -125,10 +140,12 @@ class scoped_refptr {
 
  private:
   constexpr void AddRef() const noexcept {
-    if (ptr_) ptr_->AddRef();
+    if (ptr_)
+      ptr_->AddRef();
   }
   void Release() const {
-    if (ptr_) ptr_->Release();
+    if (ptr_)
+      ptr_->Release();
   }
 
   T* ptr_ = nullptr;

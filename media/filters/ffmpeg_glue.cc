@@ -26,7 +26,9 @@ void DoInitialize() {
 
 }  // namespace
 
-void InitializeFFmpeg() { std::call_once(g_once, &DoInitialize); }
+void InitializeFFmpeg() {
+  std::call_once(g_once, &DoInitialize);
+}
 
 bool IsFFmpegInitialized() {
   return g_initialized.load(std::memory_order_acquire);

@@ -69,9 +69,9 @@ AudioRendererImpl::~AudioRendererImpl() {
 }
 
 void AudioRendererImpl::Initialize(DemuxerStream* stream,
-                                  const AudioParameters& params,
-                                  base::scoped_refptr<AudioRendererSink> sink,
-                                  InitializeCB cb) {
+                                   const AudioParameters& params,
+                                   base::scoped_refptr<AudioRendererSink> sink,
+                                   InitializeCB cb) {
   DCHECK(stream);
   DCHECK(sink);
   if (!stream || !sink) {
@@ -101,7 +101,7 @@ void AudioRendererImpl::Initialize(DemuxerStream* stream,
 }
 
 void AudioRendererImpl::OnDecoderInitialized(InitializeCB cb,
-                                            DecoderStatus status) {
+                                             DecoderStatus status) {
   if (!status.is_ok()) {
     LOG(ERROR) << "avbase.adec: audio decoder failed to initialize: "
                << decoder_stream_.GetDisplayName() << " ("
@@ -228,18 +228,20 @@ void AudioRendererImpl::StopAndDrainForTeardown(
   // discards decoder state and the ring, which a dying object does not need;
   // the closure runs on this sequence (S4), where the delete is safe.
   const int32_t serial = decoder_stream_.demuxer_stream()->serial();
-  decoder_stream_.Flush(
-      serial,
-      base::BindOnce(
-          [](base::OnceClosure quiescent) { std::move(quiescent).Run(); },
-          std::move(on_quiescent)));
+  decoder_stream_.Flush(serial, base::BindOnce(
+                                    [](base::OnceClosure quiescent) {
+                                      std::move(quiescent).Run();
+                                    },
+                                    std::move(on_quiescent)));
 }
 
 void AudioRendererImpl::SetVolume(float volume) {
   volume_ = std::clamp(volume, 0.0f, 1.0f);
 }
 
-void AudioRendererImpl::SetMuted(bool muted) { muted_ = muted; }
+void AudioRendererImpl::SetMuted(bool muted) {
+  muted_ = muted;
+}
 
 void AudioRendererImpl::SetPlaybackRate(double rate) {
   playback_rate_ = std::clamp(rate, kMinPlaybackRate, kMaxPlaybackRate);
@@ -303,7 +305,7 @@ void AudioRendererImpl::PumpDecoder() {
   {
     base::AutoLock scoped(handoff_lock_);
     if (ring_count_ >= kReadyChunks) {
-      return;      // back-pressure: do not decode what cannot be published
+      return;  // back-pressure: do not decode what cannot be published
     }
   }
   read_outstanding_ = true;
@@ -399,7 +401,7 @@ int AudioRendererImpl::Render(base::TimeDelta delay,
     // as the user is paused.
     return 0;
   }
-  starved_.store(false);   // a served period clears the verdict
+  starved_.store(false);  // a served period clears the verdict
   DCHECK(sink_->CurrentThreadIsRenderingThread());
 
   const double rate = playback_rate_.load();
@@ -420,18 +422,17 @@ int AudioRendererImpl::Render(base::TimeDelta delay,
     return 0;
   }
   if (written < dest->frames()) {
-    starved_.store(true);   // partially served: the queue is on fumes
+    starved_.store(true);  // partially served: the queue is on fumes
   }
   // |written| > 0 here, so DrainRing() necessarily filled |first_media_micros|.
   if (av_sync_) {
-    av_sync_->OnAudioFramesConsumed(written,
-                                    base::TimeDelta::FromMicroseconds(
-                                        first_media_micros),
-                                    serial_);
+    av_sync_->OnAudioFramesConsumed(
+        written, base::TimeDelta::FromMicroseconds(first_media_micros),
+        serial_);
     last_media_time_micros_.store(
         first_media_micros +
-            OutputFramesToMediaTime(written, rate, params_.sample_rate())
-                .InMicroseconds());
+        OutputFramesToMediaTime(written, rate, params_.sample_rate())
+            .InMicroseconds());
   }
   frames_rendered_.fetch_add(static_cast<uint64_t>(written));
   (void)delay;

@@ -9,8 +9,8 @@ namespace {
 
 void Add(std::vector<ConfigIssue>* out, std::string field, std::string problem,
          std::string suggestion) {
-  out->push_back(ConfigIssue{std::move(field), std::move(problem),
-                             std::move(suggestion)});
+  out->push_back(
+      ConfigIssue{std::move(field), std::move(problem), std::move(suggestion)});
 }
 
 }  // namespace

@@ -68,7 +68,8 @@ void AudioBus::CopyPartialTo(int frames, AudioBus* dest) const {
   const int n = std::min({frames, frames_, dest->frames()});
   const int ch = std::min(channels_, dest->channels());
   for (int c = 0; c < ch; ++c) {
-    std::memcpy(dest->channel(c), channel(c), static_cast<size_t>(n) * sizeof(float));
+    std::memcpy(dest->channel(c), channel(c),
+                static_cast<size_t>(n) * sizeof(float));
   }
 }
 

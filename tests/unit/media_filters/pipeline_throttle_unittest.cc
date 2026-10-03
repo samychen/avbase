@@ -10,10 +10,10 @@
 
 #include <atomic>
 #include <chrono>
-#include <string>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -26,11 +26,11 @@
 #include "media/base/data_source_descriptor.h"
 #include "media/base/pipeline_status.h"
 #include "media/filters/pipeline_impl.h"
-#include "tests/support/pipeline_fixture.h"
 #include "tests/support/fake_pipeline_client.h"
-#include "tests/support/throttled_data_source.h"
 #include "tests/support/fake_renderer_sinks.h"
 #include "tests/support/fake_sink_factories.h"
+#include "tests/support/pipeline_fixture.h"
+#include "tests/support/throttled_data_source.h"
 
 namespace avbase::media {
 namespace {
@@ -102,9 +102,8 @@ TEST_F(PipelineThrottleTest,
   LoadMediaBytes();
   auto memory = base::MakeRefCounted<MemoryDataSource>(media_bytes_.data(),
                                                        media_bytes_.size());
-  auto throttled =
-      base::MakeRefCounted<test::ThrottledDataSource>(std::move(memory),
-                                                      256 * 1024);
+  auto throttled = base::MakeRefCounted<test::ThrottledDataSource>(
+      std::move(memory), 256 * 1024);
   throttled->set_max_burst_bytes(16 * 1024);
   // The pipeline takes ownership, and StartPipeline(std::move(...)) leaves
   // |throttled| NULL -- so the diagnostics below must hold a separate
@@ -119,8 +118,7 @@ TEST_F(PipelineThrottleTest,
   // engaged at all" -- which is exactly the question this test was failing on
   // for three rounds, and the reason the diagnosis took that long.
   const auto describe_source = [this, throttled_raw] {
-    return "bytes_served=" +
-           std::to_string(throttled_raw->bytes_served()) +
+    return "bytes_served=" + std::to_string(throttled_raw->bytes_served()) +
            " stalls=" + std::to_string(throttled_raw->stalls()) +
            " media_time=" + pipeline_->GetMediaTime().ToString() +
            "; events:\n" + client_.EventLog();
@@ -134,7 +132,8 @@ TEST_F(PipelineThrottleTest,
     return video_sinks_->last_sink() && audio_sinks_->last_sink() &&
            video_sinks_->last_sink()->start_count() > 0 &&
            audio_sinks_->last_sink()->start_count() > 0;
-  })) << "sinks never started; " << describe_source();
+  })) << "sinks never started; "
+      << describe_source();
   audio_sinks_->last_sink()->set_render_runner(audio_thread_.task_runner());
 
   // The throttle guarantees the queues run dry: the burst is far too small to
@@ -142,15 +141,17 @@ TEST_F(PipelineThrottleTest,
   ASSERT_TRUE(PumpUntil([this] {
     PumpRoundRealtime();
     return client_.have_nothing();
-  })) << "no kHaveNothing under a throttled source; " << describe_source();
+  })) << "no kHaveNothing under a throttled source; "
+      << describe_source();
   // And the recovery edge must follow -- playback continues, it does not
   // end in starvation.
   ASSERT_TRUE(PumpUntil([this] {
     PumpRoundRealtime();
     return client_.have_enough();
-  })) << "no kHaveEnough after starvation; events:\n" << client_.EventLog();
-  EXPECT_FALSE(client_.HasError())
-      << client_.error().ToString() << "\n" << client_.EventLog();
+  })) << "no kHaveEnough after starvation; events:\n"
+      << client_.EventLog();
+  EXPECT_FALSE(client_.HasError()) << client_.error().ToString() << "\n"
+                                   << client_.EventLog();
 }
 
 }  // namespace avbase::media

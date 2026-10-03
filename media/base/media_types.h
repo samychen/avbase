@@ -21,8 +21,8 @@ enum class DemuxerStreamType {
   kMaxValue = kText,
 };
 
-AVBASE_MEDIA_EXPORT const char* GetDemuxerStreamTypeName(
-    DemuxerStreamType type);
+AVBASE_MEDIA_EXPORT const char*
+GetDemuxerStreamTypeName(DemuxerStreamType type);
 
 enum class VideoDecoderType {
   kUnknown = 0,
@@ -31,7 +31,7 @@ enum class VideoDecoderType {
   kMediaCodec,
   kVideoToolbox,
   kNvDec,
-  kD3D11VideoDecoder,   // D3D11VA (NVDEC/QuickSync surface through it too).
+  kD3D11VideoDecoder,  // D3D11VA (NVDEC/QuickSync surface through it too).
   kMock,
 };
 

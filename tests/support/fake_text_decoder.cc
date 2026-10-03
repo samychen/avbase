@@ -45,8 +45,8 @@ Status FakeTextDecoder::Decode(const DecoderBuffer& buffer,
   return OkStatus();
 }
 
-std::unique_ptr<TextDecoder> FakeTextDecoderFactory::CreateTextDecoder(
-    const TextDecoderConfig& config) {
+std::unique_ptr<TextDecoder>
+FakeTextDecoderFactory::CreateTextDecoder(const TextDecoderConfig& config) {
   ++create_calls_;
   auto decoder = std::make_unique<FakeTextDecoder>();
   decoder->set_text(pending_text_);

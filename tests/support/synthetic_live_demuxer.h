@@ -103,11 +103,11 @@ class SyntheticLiveDemuxer final : public Demuxer {
   int64_t park_timeouts() const;
 
   // Demuxer.
-  void Initialize(
-      const DataSourceDescriptor& source, const DemuxerOptions& options,
-      Host* host,
-      base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
-      InitializeCB init_cb) override;
+  void
+  Initialize(const DataSourceDescriptor& source, const DemuxerOptions& options,
+             Host* host,
+             base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
+             InitializeCB init_cb) override;
   // A live stream cannot seek: there is no data before the edge, and going
   // backwards is the one thing a live demuxer must never do. Reports kAborted
   // with that reason instead of pretending to move a cursor.

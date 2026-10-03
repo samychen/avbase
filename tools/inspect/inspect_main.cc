@@ -5,11 +5,11 @@
 // avbase-inspect: a diagnostic CLI over the real media stack.
 //
 // Why this exists: ijkplayer's only window into its own behaviour is a wall of
-// LOGD lines from ff_ffplay.c, and several classes of bug -- a wrong time base, a
-// sign inversion in the sync correction, a decoder that silently produces no
-// frames -- are invisible in that output. Each subcommand prints the intermediate
-// values a developer would otherwise need a debugger for, using exactly the code
-// paths the player uses and no test doubles.
+// LOGD lines from ff_ffplay.c, and several classes of bug -- a wrong time base,
+// a sign inversion in the sync correction, a decoder that silently produces no
+// frames -- are invisible in that output. Each subcommand prints the
+// intermediate values a developer would otherwise need a debugger for, using
+// exactly the code paths the player uses and no test doubles.
 //
 // Bug #32 (a master clock offset by negative uptime) was found by `sync` on its
 // first run against a real file, after 300+ unit tests had passed.

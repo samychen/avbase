@@ -28,13 +28,13 @@ class AVBASE_MEDIA_EXPORT FFmpegVideoDecoderFactory final
   explicit FFmpegVideoDecoderFactory(
       base::scoped_refptr<base::SequencedTaskRunner> task_runner);
   FFmpegVideoDecoderFactory(const FFmpegVideoDecoderFactory&) = delete;
-  FFmpegVideoDecoderFactory& operator=(const FFmpegVideoDecoderFactory&) =
-      delete;
+  FFmpegVideoDecoderFactory&
+  operator=(const FFmpegVideoDecoderFactory&) = delete;
 
   VideoDecoderCapability GetCapability() const override;
   bool SupportsCodec(VideoDecoderType type_hint) const override;
-  std::unique_ptr<VideoDecoder> CreateVideoDecoder(
-      const VideoDecoderConfig& config) override;
+  std::unique_ptr<VideoDecoder>
+  CreateVideoDecoder(const VideoDecoderConfig& config) override;
   const char* name() const override { return "ffmpeg-video"; }
 
  private:
@@ -50,11 +50,11 @@ class AVBASE_MEDIA_EXPORT FFmpegAudioDecoderFactory final
   explicit FFmpegAudioDecoderFactory(
       base::scoped_refptr<base::SequencedTaskRunner> task_runner);
   FFmpegAudioDecoderFactory(const FFmpegAudioDecoderFactory&) = delete;
-  FFmpegAudioDecoderFactory& operator=(const FFmpegAudioDecoderFactory&) =
-      delete;
+  FFmpegAudioDecoderFactory&
+  operator=(const FFmpegAudioDecoderFactory&) = delete;
 
-  std::unique_ptr<AudioDecoder> CreateAudioDecoder(
-      const AudioDecoderConfig& config) override;
+  std::unique_ptr<AudioDecoder>
+  CreateAudioDecoder(const AudioDecoderConfig& config) override;
   const char* name() const override { return "ffmpeg-audio"; }
 
  private:

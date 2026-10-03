@@ -105,7 +105,7 @@ class AVBASE_BASE_EXPORT TaskQueue final : public SequencedTaskRunner {
 
   mutable Lock lock_;
   ConditionVariable cv_;
-  const TickClock* tick_clock_{nullptr};   // Test-only injection; see above.
+  const TickClock* tick_clock_{nullptr};  // Test-only injection; see above.
   // Kept sorted; the queue is short enough that binary-search insertion beats
   // maintaining two heaps here.
   std::vector<Task> tasks_ GUARDED_BY(lock_);

@@ -53,8 +53,8 @@ class AVBASE_MEDIA_EXPORT TextDecoderFactory
   TextDecoderFactory(const TextDecoderFactory&) = delete;
   TextDecoderFactory& operator=(const TextDecoderFactory&) = delete;
 
-  virtual std::unique_ptr<TextDecoder> CreateTextDecoder(
-      const TextDecoderConfig& config) = 0;
+  virtual std::unique_ptr<TextDecoder>
+  CreateTextDecoder(const TextDecoderConfig& config) = 0;
   virtual const char* name() const = 0;
 
  protected:

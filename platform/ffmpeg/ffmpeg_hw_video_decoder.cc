@@ -37,10 +37,14 @@ AVHWDeviceType DeviceTypeFromName(const std::string& name) {
 
 media::VideoFormat LayoutHintFromSwFormat(AVPixelFormat sw_format) {
   switch (sw_format) {
-    case AV_PIX_FMT_NV12:    return media::VideoFormat::kNV12;
-    case AV_PIX_FMT_P010LE:  return media::VideoFormat::kP010;
-    case AV_PIX_FMT_YUV420P: return media::VideoFormat::kI420;
-    default:                 return media::VideoFormat::kNV12;
+  case AV_PIX_FMT_NV12:
+    return media::VideoFormat::kNV12;
+  case AV_PIX_FMT_P010LE:
+    return media::VideoFormat::kP010;
+  case AV_PIX_FMT_YUV420P:
+    return media::VideoFormat::kI420;
+  default:
+    return media::VideoFormat::kNV12;
   }
 }
 
@@ -56,8 +60,8 @@ AVPixelFormat HwGetFormatCb(AVCodecContext* codec_ctx,
                             const AVPixelFormat* formats) {
   AVHWDeviceType wanted = AV_HWDEVICE_TYPE_NONE;
   if (codec_ctx->hw_device_ctx) {
-    auto* device = reinterpret_cast<AVHWDeviceContext*>(
-        codec_ctx->hw_device_ctx->data);
+    auto* device =
+        reinterpret_cast<AVHWDeviceContext*>(codec_ctx->hw_device_ctx->data);
     wanted = device->type;
   }
   for (const AVPixelFormat* fmt = formats; *fmt != AV_PIX_FMT_NONE; ++fmt) {
@@ -82,7 +86,7 @@ AVPixelFormat HwGetFormatCb(AVCodecContext* codec_ctx,
 struct FFmpegHwVideoDecoder::Context {
   ff::CodecCtxPtr codec_ctx;
   ff::FramePtr frame;
-  AVBufferRef* device_ref{nullptr};   // av_hwdevice_ctx_create output.
+  AVBufferRef* device_ref{nullptr};  // av_hwdevice_ctx_create output.
   AVPixelFormat hw_pix_fmt{AV_PIX_FMT_NONE};
   bool device_ready{false};
 
@@ -155,8 +159,7 @@ bool FFmpegHwVideoDecoder::OpenCodec(const media::VideoDecoderConfig& config) {
       break;
     }
     if (hw_config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
-        hw_config->device_type ==
-            DeviceTypeFromName(spec_.device_type)) {
+        hw_config->device_type == DeviceTypeFromName(spec_.device_type)) {
       ctx_->hw_pix_fmt = hw_config->pix_fmt;
       have_hw_config = true;
       break;
@@ -278,22 +281,22 @@ bool FFmpegHwVideoDecoder::DecodeAvailableFrames() {
     media::NativeHandle handle;
     handle.kind = spec_.handle_kind;
     switch (spec_.handle_kind) {
-      case media::NativeHandleKind::kCVPixelBuffer:
-      case media::NativeHandleKind::kVaapiSurface:
-        // videotoolbox: CVPixelBufferRef; vaapi: VASurfaceID (uintptr).
-        handle.id = frame->data[3];
-        handle.subresource = 0;
-        break;
-      case media::NativeHandleKind::kD3D11Texture:
-        // d3d11va: data[3] is the ID3D11Texture2D, data[4] carries the
-        // subresource index as an intptr (FFmpeg's d3d11va hwaccel).
-        handle.id = frame->data[3];
-        handle.subresource = static_cast<int>(
-            reinterpret_cast<intptr_t>(frame->data[4]));
-        break;
-      case media::NativeHandleKind::kNone:
-        av_frame_unref(frame);
-        return false;
+    case media::NativeHandleKind::kCVPixelBuffer:
+    case media::NativeHandleKind::kVaapiSurface:
+      // videotoolbox: CVPixelBufferRef; vaapi: VASurfaceID (uintptr).
+      handle.id = frame->data[3];
+      handle.subresource = 0;
+      break;
+    case media::NativeHandleKind::kD3D11Texture:
+      // d3d11va: data[3] is the ID3D11Texture2D, data[4] carries the
+      // subresource index as an intptr (FFmpeg's d3d11va hwaccel).
+      handle.id = frame->data[3];
+      handle.subresource =
+          static_cast<int>(reinterpret_cast<intptr_t>(frame->data[4]));
+      break;
+    case media::NativeHandleKind::kNone:
+      av_frame_unref(frame);
+      return false;
     }
 
     // The surface's software layout comes from the frames context, not from
@@ -376,10 +379,10 @@ void FFmpegHwVideoDecoder::Decode(
   if (!initialized_ || !ctx_->codec_ctx) {
     task_runner_->PostTask(
         FROM_HERE,
-        base::BindOnce(std::move(decode_cb),
-                       media::DecoderStatus(
-                           media::DecoderStatus::Codes::kNotInitialized,
-                           "Initialize() did not succeed")));
+        base::BindOnce(
+            std::move(decode_cb),
+            media::DecoderStatus(media::DecoderStatus::Codes::kNotInitialized,
+                                 "Initialize() did not succeed")));
     return;
   }
   pending_decode_cbs_.push_back(std::move(decode_cb));
@@ -420,14 +423,13 @@ void FFmpegHwVideoDecoder::Decode(
   const int send_ret =
       avcodec_send_packet(ctx_->codec_ctx.get(), storage->raw());
   if (send_ret < 0 && send_ret != AVERROR(EAGAIN)) {
-    RunOneDecodeCallback(
-        ff::ToDecoderStatus(send_ret, "avcodec_send_packet"));
+    RunOneDecodeCallback(ff::ToDecoderStatus(send_ret, "avcodec_send_packet"));
     return;
   }
   if (!DecodeAvailableFrames()) {
-    RunOneDecodeCallback(media::DecoderStatus(
-        media::DecoderStatus::Codes::kDecodeError,
-        "avcodec_receive_frame failed on the hw path"));
+    RunOneDecodeCallback(
+        media::DecoderStatus(media::DecoderStatus::Codes::kDecodeError,
+                             "avcodec_receive_frame failed on the hw path"));
     return;
   }
   RunOneDecodeCallback(media::DecoderStatus());
@@ -445,10 +447,10 @@ void FFmpegHwVideoDecoder::Reset(base::OnceClosure closure) {
     pending_decode_cbs_.pop_front();
     task_runner_->PostTask(
         FROM_HERE,
-        base::BindOnce(std::move(cb),
-                       media::DecoderStatus(
-                           media::DecoderStatus::Codes::kDecodingAborted,
-                           "Reset()")));
+        base::BindOnce(
+            std::move(cb),
+            media::DecoderStatus(media::DecoderStatus::Codes::kDecodingAborted,
+                                 "Reset()")));
   }
   if (closure) {
     task_runner_->PostTask(FROM_HERE, std::move(closure));

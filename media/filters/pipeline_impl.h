@@ -13,8 +13,8 @@
 #include "base/sequence_checker.h"
 #include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
-#include "base/time/time.h"
 #include "base/time/tick_clock.h"
+#include "base/time/time.h"
 #include "media/base/data_source_descriptor.h"
 #include "media/base/demuxer.h"
 #include "media/base/media_info.h"
@@ -51,8 +51,8 @@ namespace avbase::media {
 // particular survives renderer teardown, because the controller is a
 // shared_ptr held by both this class and RendererImpl.
 class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
-                                              public RendererClient,
-                                              public Demuxer::Host {
+                                               public RendererClient,
+                                               public Demuxer::Host {
  public:
   PipelineImpl();
   PipelineImpl(const PipelineImpl&) = delete;
@@ -86,15 +86,13 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
 
   // Pipeline:
   void Start(std::unique_ptr<Demuxer> demuxer,
-             RendererFactory* renderer_factory,
-             RendererType renderer_type,
+             RendererFactory* renderer_factory, RendererType renderer_type,
              base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
              Client* client) override;
   void Stop() override;
   void Play() override;
   void Pause() override;
-  void SetOutputTarget(
-      base::scoped_refptr<NativeDisplay> display) override;
+  void SetOutputTarget(base::scoped_refptr<NativeDisplay> display) override;
   // Concrete-side accurate-seek plumbing backing Player::SeekTo(kAccurate):
   // opens/closes the renderer's drop-frames-before-target window. Not on the
   // frozen Pipeline interface -- the keyframe-only Seek() contract stays
@@ -111,10 +109,8 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   base::TimeDelta GetDuration() const override;
   Statistics GetStatistics() const override;
   void Seek(base::TimeDelta time, base::OnceClosure seeked_cb) override;
-  void SelectAudioTrack(int stream_index,
-                        PipelineStatusCallback cb) override;
-  void SelectTextTrack(int stream_index,
-                       PipelineStatusCallback cb) override;
+  void SelectAudioTrack(int stream_index, PipelineStatusCallback cb) override;
+  void SelectTextTrack(int stream_index, PipelineStatusCallback cb) override;
   bool CanSeekForward() const override;
   bool CanSeekBackward() const override;
   int GetAudioStreamId() const override;
@@ -182,8 +178,8 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   // change is logged, and there is no overlay sequence in this build.
   void OnAudioOutputDeviceChanged(const std::string& device_id, bool is_default,
                                   OutputDeviceStatus status) override;
-  base::scoped_refptr<base::SequencedTaskRunner> GetOverlayTaskRunner()
-      override;
+  base::scoped_refptr<base::SequencedTaskRunner>
+  GetOverlayTaskRunner() override;
 
   DataSourceDescriptor source_;
   DemuxerOptions options_;
@@ -215,7 +211,6 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   base::OnceClosure seek_cb_;
   bool seek_demuxer_done_ = false;
   bool seek_renderer_flushed_ = false;
-
 
   // ---- thread-safe snapshots ----------------------------------------------
   // duration/buffered are atomics; the statistics snapshot and the media info

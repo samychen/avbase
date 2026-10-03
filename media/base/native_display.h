@@ -37,11 +37,11 @@ enum class NativeDisplayKind {
   kHwnd,
 };
 
-AVBASE_MEDIA_EXPORT const char* GetNativeDisplayKindName(
-    NativeDisplayKind kind);
+AVBASE_MEDIA_EXPORT const char*
+GetNativeDisplayKindName(NativeDisplayKind kind);
 
 struct AVBASE_MEDIA_EXPORT X11WindowHandle {
-  void* display{nullptr};      // X11 `Display*`, caller-owned unless noted.
+  void* display{nullptr};  // X11 `Display*`, caller-owned unless noted.
   // X11's `Window` is an XID, i.e. `unsigned long` -- pointer-width on every
   // platform X11 runs on. Declaring it uintptr_t rather than uint64_t keeps the
   // void* round-trip in FromX11Window() cast-free (and -Wuseless-cast quiet on
@@ -51,8 +51,8 @@ struct AVBASE_MEDIA_EXPORT X11WindowHandle {
 };
 
 struct AVBASE_MEDIA_EXPORT WaylandSurfaceHandle {
-  void* display{nullptr};      // `wl_display*`.
-  void* surface{nullptr};      // `wl_surface*`.
+  void* display{nullptr};  // `wl_display*`.
+  void* surface{nullptr};  // `wl_surface*`.
   bool avbase_owns_display{false};
   // Wayland cannot report a surface size, so the embedder must supply one.
   int32_t width{0};
@@ -64,18 +64,18 @@ class AVBASE_MEDIA_EXPORT NativeDisplay
  public:
   REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
 
-  static base::scoped_refptr<NativeDisplay> FromX11Window(
-      X11WindowHandle handle);
-  static base::scoped_refptr<NativeDisplay> FromWaylandSurface(
-      WaylandSurfaceHandle handle);
+  static base::scoped_refptr<NativeDisplay>
+  FromX11Window(X11WindowHandle handle);
+  static base::scoped_refptr<NativeDisplay>
+  FromWaylandSurface(WaylandSurfaceHandle handle);
   static base::scoped_refptr<NativeDisplay> FromSdl2Window(void* sdl_window);
   static base::scoped_refptr<NativeDisplay> FromDrmMaster(int drm_fd,
                                                           void* gbm_device);
   // Escape hatch for embedders with their own window abstraction. |release| is
   // run on the sink's render sequence when the last reference goes away.
-  static base::scoped_refptr<NativeDisplay> Wrap(
-      void* raw, NativeDisplayKind kind,
-      base::OnceCallback<void(void*)> release);
+  static base::scoped_refptr<NativeDisplay>
+  Wrap(void* raw, NativeDisplayKind kind,
+       base::OnceCallback<void(void*)> release);
   // A valid "render nowhere" target; the sink enters discard mode.
   static base::scoped_refptr<NativeDisplay> None();
 

@@ -30,8 +30,8 @@ namespace avbase::base::test {
 class AVBASE_BASE_EXPORT TaskEnvironment {
  public:
   enum class TimeSource {
-    kMockTime,   // Default: time only moves when the test moves it.
-    kRealTime,   // For the rare test that must observe real elapsed time.
+    kMockTime,  // Default: time only moves when the test moves it.
+    kRealTime,  // For the rare test that must observe real elapsed time.
   };
 
   explicit TaskEnvironment(TimeSource time_source = TimeSource::kMockTime);

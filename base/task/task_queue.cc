@@ -37,7 +37,8 @@ bool TaskQueue::PostDelayedTaskImpl(const Location& from_here, OnceClosure task,
 
   Task pending;
   pending.ready_time = ready_time;
-  pending.sequence_number = next_sequence_.fetch_add(1, std::memory_order_relaxed);
+  pending.sequence_number =
+      next_sequence_.fetch_add(1, std::memory_order_relaxed);
   pending.from_here = from_here;
   pending.closure = std::move(task);
 
@@ -52,8 +53,9 @@ bool TaskQueue::PostDelayedTaskImpl(const Location& from_here, OnceClosure task,
     // a reversed one silently inserted each new task at the front, which ran a
     // reply before the task that produces its value. Caught by
     // TaskRunnerUtilTest.PostTaskAndReplyWithResultDeliversTheValue.
-    auto it = std::upper_bound(tasks_.begin(), tasks_.end(), pending,
-                               [](const Task& a, const Task& b) { return a < b; });
+    auto it =
+        std::upper_bound(tasks_.begin(), tasks_.end(), pending,
+                         [](const Task& a, const Task& b) { return a < b; });
     wake_now = (it == tasks_.begin());
     tasks_.insert(it, std::move(pending));
   }

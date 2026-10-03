@@ -72,8 +72,7 @@ bool FFmpegDemuxer::IsActiveRoutingTarget(int index,
   return index == active;
 }
 
-void FFmpegDemuxer::SetActiveStream(DemuxerStreamType type,
-                                    int stream_index) {
+void FFmpegDemuxer::SetActiveStream(DemuxerStreamType type, int stream_index) {
   // Relaxed is enough: the demux thread re-reads the value per packet, and a
   // packet routed to the just-retired active stream around the switch is
   // harmless (it lands in a queue whose consumer is draining or gone).
@@ -89,7 +88,7 @@ void FFmpegDemuxer::SetActiveStream(DemuxerStreamType type,
 bool FFmpegDemuxerStream::EnqueueTextFromDemuxThread(
     base::scoped_refptr<DecoderBuffer> buffer) {
   if (!queue_->TryPushDropOldest(std::move(buffer))) {
-    return false;   // Aborted/closed: the caller drops the packet.
+    return false;  // Aborted/closed: the caller drops the packet.
   }
   base::AutoLock scoped(lock_);
   FulfilPendingReadLocked();

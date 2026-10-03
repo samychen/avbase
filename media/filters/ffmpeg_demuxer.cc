@@ -16,9 +16,9 @@
 #include <utility>
 
 #include "base/check.h"
-#include "base/logging.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "media/base/media_constants.h"
 #include "platform/ffmpeg/av_includes.h"
@@ -35,7 +35,9 @@ namespace {
 
 namespace ff = ::avbase::platform::ffmpeg;
 
-AVFormatContext* Ctx(void* raw) { return static_cast<AVFormatContext*>(raw); }
+AVFormatContext* Ctx(void* raw) {
+  return static_cast<AVFormatContext*>(raw);
+}
 
 VideoDecoderConfig MakeVideoConfig(const AVStream* stream) {
   VideoDecoderConfig config;
@@ -45,8 +47,8 @@ VideoDecoderConfig MakeVideoConfig(const AVStream* stream) {
   config.codec = VideoCodecFromName(config.codec_name);
   config.coded_size = Size{par->width, par->height};
   if (par->sample_aspect_ratio.num > 0 && par->sample_aspect_ratio.den > 0) {
-    config.sar = Rational{par->sample_aspect_ratio.num,
-                          par->sample_aspect_ratio.den};
+    config.sar =
+        Rational{par->sample_aspect_ratio.num, par->sample_aspect_ratio.den};
     // natural_size is the SAR-applied display size. Rounding matches FFmpeg's
     // av_reduce so a 720x576 anamorphic stream reports 1024x576.
     const int64_t w = static_cast<int64_t>(par->width) * config.sar.num;
@@ -65,15 +67,15 @@ VideoDecoderConfig MakeVideoConfig(const AVStream* stream) {
   config.profile = par->profile >= 0 ? std::to_string(par->profile) : "";
   config.level = par->level >= 0 ? std::to_string(par->level) : "";
   if (par->extradata && par->extradata_size > 0) {
-    config.extra_data.assign(
-        par->extradata,
-        par->extradata + static_cast<size_t>(par->extradata_size));
+    config.extra_data.assign(par->extradata,
+                             par->extradata +
+                                 static_cast<size_t>(par->extradata_size));
   }
   // Rotation lives in a display-matrix side-data entry, not in the codec
   // parameters. ijkplayer reads it in three separate places.
   size_t matrix_size = 0;
-  const uint8_t* matrix = avbase_stream_side_data(
-      stream, AV_PKT_DATA_DISPLAYMATRIX, &matrix_size);
+  const uint8_t* matrix =
+      avbase_stream_side_data(stream, AV_PKT_DATA_DISPLAYMATRIX, &matrix_size);
   if (matrix && matrix_size >= 9 * sizeof(int32_t)) {
     const double rotation =
         av_display_rotation_get(reinterpret_cast<const int32_t*>(matrix));
@@ -97,33 +99,57 @@ AudioDecoderConfig MakeAudioConfig(const AVStream* stream) {
   config.sample_rate = par->sample_rate;
   config.channels = ff::ChannelCount(par);
   switch (config.channels) {
-    case 1: config.channel_layout = ChannelLayout::kMono;    break;
-    case 2: config.channel_layout = ChannelLayout::kStereo;  break;
-    case 6: config.channel_layout = ChannelLayout::k5_1;     break;
-    case 8: config.channel_layout = ChannelLayout::k7_1;     break;
-    default:
-      config.channel_layout = ff::ChannelLayoutMask(par)
-                                  ? ChannelLayout::kDiscrete
-                                  : ChannelLayout::kNone;
-      break;
+  case 1:
+    config.channel_layout = ChannelLayout::kMono;
+    break;
+  case 2:
+    config.channel_layout = ChannelLayout::kStereo;
+    break;
+  case 6:
+    config.channel_layout = ChannelLayout::k5_1;
+    break;
+  case 8:
+    config.channel_layout = ChannelLayout::k7_1;
+    break;
+  default:
+    config.channel_layout = ff::ChannelLayoutMask(par)
+                                ? ChannelLayout::kDiscrete
+                                : ChannelLayout::kNone;
+    break;
   }
   switch (par->format) {
-    case AV_SAMPLE_FMT_U8:   config.sample_format = SampleFormat::kU8;   break;
-    case AV_SAMPLE_FMT_S16:  config.sample_format = SampleFormat::kS16;  break;
-    case AV_SAMPLE_FMT_S32:  config.sample_format = SampleFormat::kS32;  break;
-    case AV_SAMPLE_FMT_FLT:  config.sample_format = SampleFormat::kF32;  break;
-    case AV_SAMPLE_FMT_S16P: config.sample_format = SampleFormat::kS16P; break;
-    case AV_SAMPLE_FMT_S32P: config.sample_format = SampleFormat::kS32P; break;
-    case AV_SAMPLE_FMT_FLTP: config.sample_format = SampleFormat::kF32P; break;
-    default: config.sample_format = SampleFormat::kUnknown; break;
+  case AV_SAMPLE_FMT_U8:
+    config.sample_format = SampleFormat::kU8;
+    break;
+  case AV_SAMPLE_FMT_S16:
+    config.sample_format = SampleFormat::kS16;
+    break;
+  case AV_SAMPLE_FMT_S32:
+    config.sample_format = SampleFormat::kS32;
+    break;
+  case AV_SAMPLE_FMT_FLT:
+    config.sample_format = SampleFormat::kF32;
+    break;
+  case AV_SAMPLE_FMT_S16P:
+    config.sample_format = SampleFormat::kS16P;
+    break;
+  case AV_SAMPLE_FMT_S32P:
+    config.sample_format = SampleFormat::kS32P;
+    break;
+  case AV_SAMPLE_FMT_FLTP:
+    config.sample_format = SampleFormat::kF32P;
+    break;
+  default:
+    config.sample_format = SampleFormat::kUnknown;
+    break;
   }
   config.bit_rate = par->bit_rate > 0 ? par->bit_rate : 0;
   config.codec_delay_frames = par->initial_padding;
   config.seek_preroll_frames = par->seek_preroll;
   if (par->extradata && par->extradata_size > 0) {
-    config.extra_data.assign(
-        par->extradata,
-        par->extradata + static_cast<size_t>(par->extradata_size));
+    config.extra_data.assign(par->extradata,
+                             par->extradata +
+                                 static_cast<size_t>(par->extradata_size));
   }
   return config;
 }
@@ -134,54 +160,61 @@ TextDecoderConfig MakeTextConfig(const AVStream* stream) {
   const AVCodec* codec = avcodec_find_decoder(par->codec_id);
   config.codec_name = codec ? codec->name : "unknown";
   if (par->extradata && par->extradata_size > 0) {
-    config.extra_data.assign(
-        par->extradata,
-        par->extradata + static_cast<size_t>(par->extradata_size));
+    config.extra_data.assign(par->extradata,
+                             par->extradata +
+                                 static_cast<size_t>(par->extradata_size));
   }
   return config;
 }
 
 StreamKind ToStreamKind(AVMediaType type) {
   switch (type) {
-    case AVMEDIA_TYPE_VIDEO:    return StreamKind::kVideo;
-    case AVMEDIA_TYPE_AUDIO:    return StreamKind::kAudio;
-    case AVMEDIA_TYPE_SUBTITLE: return StreamKind::kText;
-    default:                    return StreamKind::kUnknown;
+  case AVMEDIA_TYPE_VIDEO:
+    return StreamKind::kVideo;
+  case AVMEDIA_TYPE_AUDIO:
+    return StreamKind::kAudio;
+  case AVMEDIA_TYPE_SUBTITLE:
+    return StreamKind::kText;
+  default:
+    return StreamKind::kUnknown;
   }
 }
 
 DemuxerStreamType ToDemuxerStreamType(AVMediaType type) {
   switch (type) {
-    case AVMEDIA_TYPE_VIDEO:    return DemuxerStreamType::kVideo;
-    case AVMEDIA_TYPE_AUDIO:    return DemuxerStreamType::kAudio;
-    case AVMEDIA_TYPE_SUBTITLE: return DemuxerStreamType::kText;
-    default:                    return DemuxerStreamType::kUnknown;
+  case AVMEDIA_TYPE_VIDEO:
+    return DemuxerStreamType::kVideo;
+  case AVMEDIA_TYPE_AUDIO:
+    return DemuxerStreamType::kAudio;
+  case AVMEDIA_TYPE_SUBTITLE:
+    return DemuxerStreamType::kText;
+  default:
+    return DemuxerStreamType::kUnknown;
   }
 }
 
 // Answers a ReadCB with an empty result. Always posted, never run inline.
 void PostEmptyRead(const base::scoped_refptr<base::SequencedTaskRunner>& runner,
                    DemuxerStream::ReadCB cb, DemuxerStream::Status status) {
-  runner->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](DemuxerStream::ReadCB c, DemuxerStream::Status s) {
-            std::move(c).Run(s, DemuxerStream::DecoderBufferVector{});
-          },
-          std::move(cb), status));
+  runner->PostTask(FROM_HERE,
+                   base::BindOnce(
+                       [](DemuxerStream::ReadCB c, DemuxerStream::Status s) {
+                         std::move(c).Run(s,
+                                          DemuxerStream::DecoderBufferVector{});
+                       },
+                       std::move(cb), status));
 }
 
 void PostRead(const base::scoped_refptr<base::SequencedTaskRunner>& runner,
               DemuxerStream::ReadCB cb, DemuxerStream::Status status,
               DemuxerStream::DecoderBufferVector buffers) {
-  runner->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](DemuxerStream::ReadCB c, DemuxerStream::Status s,
-             DemuxerStream::DecoderBufferVector b) {
-            std::move(c).Run(s, std::move(b));
-          },
-          std::move(cb), status, std::move(buffers)));
+  runner->PostTask(FROM_HERE,
+                   base::BindOnce(
+                       [](DemuxerStream::ReadCB c, DemuxerStream::Status s,
+                          DemuxerStream::DecoderBufferVector b) {
+                         std::move(c).Run(s, std::move(b));
+                       },
+                       std::move(cb), status, std::move(buffers)));
 }
 
 }  // namespace
@@ -210,7 +243,9 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
               std::to_string(index),
           /*max_buffers=*/256, kDefaultMaxBufferBytes / 2, media_log_)) {}
 
-FFmpegDemuxerStream::~FFmpegDemuxerStream() { queue_->Abort(); }
+FFmpegDemuxerStream::~FFmpegDemuxerStream() {
+  queue_->Abort();
+}
 
 void FFmpegDemuxerStream::Read(uint32_t count, ReadCB read_cb) {
   if (!read_cb) {
@@ -252,7 +287,7 @@ void FFmpegDemuxerStream::Read(uint32_t count, ReadCB read_cb) {
 bool FFmpegDemuxerStream::EnqueueFromDemuxThread(
     base::scoped_refptr<DecoderBuffer> buffer) {
   if (!queue_->TryPush(buffer)) {
-    return false;   // At a watermark; the caller backs off.
+    return false;  // At a watermark; the caller backs off.
   }
   base::AutoLock scoped(lock_);
   FulfilPendingReadLocked();
@@ -272,7 +307,7 @@ void FFmpegDemuxerStream::FulfilPendingReadLocked() {
   DecoderBufferVector batch;
   queue_->PopUpTo(pending_count_, &batch);
   if (batch.empty() && !queue_->end_of_stream() && !queue_->aborted()) {
-    return;   // Nothing yet; keep the request pending.
+    return;  // Nothing yet; keep the request pending.
   }
   ReadCB cb = std::move(pending_read_cb_);
   pending_count_ = 0;
@@ -363,10 +398,10 @@ void FFmpegDemuxer::Initialize(
   thread_options.priority = base::ThreadPriority::kBackground;
   if (!demux_thread_->StartWithOptions(thread_options)) {
     if (init_cb) {
-      std::move(init_cb).Run(
-          Err(ErrorCode::kNotImplemented, "failed to start the demux thread",
-              "the OS refused to create a thread",
-              "check the process thread limit (ulimit -u)"));
+      std::move(init_cb).Run(Err(ErrorCode::kNotImplemented,
+                                 "failed to start the demux thread",
+                                 "the OS refused to create a thread",
+                                 "check the process thread limit (ulimit -u)"));
     }
     return;
   }
@@ -376,14 +411,13 @@ void FFmpegDemuxer::Initialize(
   demux_thread_->task_runner()->PostTask(
       FROM_HERE,
       base::BindOnce(
-          [](FFmpegDemuxer* self, DataSourceDescriptor src,
-             DemuxerOptions opts, InitializeCB cb) {
+          [](FFmpegDemuxer* self, DataSourceDescriptor src, DemuxerOptions opts,
+             InitializeCB cb) {
             Status status = self->OpenOnDemuxThread(src, opts);
             self->media_runner_->PostTask(
                 FROM_HERE,
-                base::BindOnce(&FFmpegDemuxer::OnOpened,
-                               base::Unretained(self), std::move(status),
-                               std::move(cb)));
+                base::BindOnce(&FFmpegDemuxer::OnOpened, base::Unretained(self),
+                               std::move(status), std::move(cb)));
           },
           base::Unretained(this), source, options, std::move(init_cb)));
 }
@@ -396,7 +430,7 @@ namespace {
 // plain file leaves them unconsumed, which the Δ2 reporting then shows as a
 // spurious failure detail. Gate them on the URI scheme.
 bool IsNetworkUri(const std::string& uri) {
-  static const char* kSchemes[] = {"http://", "https://", "rtmp://",
+  static const char* kSchemes[] = {"http://",  "https://", "rtmp://",
                                    "rtmps://", "rtsp://",  "srt://",
                                    "mms://",   "udp://",   "tcp://"};
   for (const char* scheme : kSchemes) {
@@ -409,8 +443,9 @@ bool IsNetworkUri(const std::string& uri) {
 
 }  // namespace
 
-std::map<std::string, std::string> FFmpegDemuxer::BuildOpenOptions(
-    const DemuxerOptions& options, const std::string& uri) {
+std::map<std::string, std::string>
+FFmpegDemuxer::BuildOpenOptions(const DemuxerOptions& options,
+                                const std::string& uri) {
   // Start from the verbatim passthrough map so a caller can override anything,
   // then apply the structured fields on top. Structured config wins because it
   // is type-checked; a caller who needs to override a structured field can set
@@ -469,10 +504,10 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
   } else if (source.kind == DataSourceDescriptor::Kind::kCustomSource) {
     data_source_ = source.custom;
   }
-  const std::string uri = is_fd ? ("fd:" + std::to_string(source.fd))
-                                : source.uri;
+  const std::string uri =
+      is_fd ? ("fd:" + std::to_string(source.fd)) : source.uri;
   const char* open_uri =
-      data_source_ ? "" : uri.c_str();   // custom IO: filename is ignored
+      data_source_ ? "" : uri.c_str();  // custom IO: filename is ignored
   if (!data_source_ && uri.empty()) {
     // Only the protocol-layer kinds carry a URI; a memory buffer or a host
     // DataSource is addressed by its bytes, not by a name.
@@ -504,10 +539,10 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
   }
 
   ff::DictPtr dict = ff::ToAvDict(BuildOpenOptions(options, uri));
-  const AVInputFormat* forced = options.forced_format.empty()
-                                    ? nullptr
-                                    : av_find_input_format(
-                                          options.forced_format.c_str());
+  const AVInputFormat* forced =
+      options.forced_format.empty()
+          ? nullptr
+          : av_find_input_format(options.forced_format.c_str());
 
   AVDictionary* raw_dict = dict.release();
   const int ret = avformat_open_input(&ctx, open_uri, forced, &raw_dict);
@@ -543,10 +578,12 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
         detail += " " + key;
       }
     }
-    return base::unexpected(ff::ToMediaError(
-        ret, "FFmpegDemuxer::Open", detail,
-        "verify the URI is reachable (try `ffprobe \"" + uri + "\"). If the "
-        "container cannot be auto-detected, set config.demux.forced_format."));
+    return base::unexpected(
+        ff::ToMediaError(ret, "FFmpegDemuxer::Open", detail,
+                         "verify the URI is reachable (try `ffprobe \"" + uri +
+                             "\"). If the "
+                             "container cannot be auto-detected, set "
+                             "config.demux.forced_format."));
   }
   format_ctx_raw_ = ctx;
   EmitStage(MediaLogEvent::Type::kOpenInput,
@@ -570,15 +607,13 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
   BuildMediaInfo();
   opened_ok_.Set();
   if (media_log_) {
-    media_log_->AddEvent(MediaLogEvent::Level::kInfo,
-                         MediaLogEvent::Type::kOpenInput,
-                         {{"format", media_info_.format_name},
-                          {"streams",
-                           std::to_string(media_info_.streams.size())},
-                          {"duration_ms",
-                           std::to_string(
-                               media_info_.duration.InMilliseconds())}},
-                         "opened " + media_info_.format_name);
+    media_log_->AddEvent(
+        MediaLogEvent::Level::kInfo, MediaLogEvent::Type::kOpenInput,
+        {{"format", media_info_.format_name},
+         {"streams", std::to_string(media_info_.streams.size())},
+         {"duration_ms",
+          std::to_string(media_info_.duration.InMilliseconds())}},
+        "opened " + media_info_.format_name);
   }
   return OkStatus();
 }
@@ -589,7 +624,7 @@ void FFmpegDemuxer::AddStream(void* av_stream_raw, uint32_t index,
   const DemuxerStreamType type =
       ToDemuxerStreamType(av_stream->codecpar->codec_type);
   if (type == DemuxerStreamType::kUnknown) {
-    return;   // Data and attachment streams are not playable.
+    return;  // Data and attachment streams are not playable.
   }
   VideoDecoderConfig video_config;
   AudioDecoderConfig audio_config;
@@ -618,9 +653,8 @@ void FFmpegDemuxer::AddStream(void* av_stream_raw, uint32_t index,
       (av_stream->duration > 0 && av_stream->time_base.den > 0)
           ? ff::ToTimeDelta(av_stream->duration, av_stream->time_base)
           : media_info_.duration;
-  info.bit_rate = av_stream->codecpar->bit_rate > 0
-                      ? av_stream->codecpar->bit_rate
-                      : 0;
+  info.bit_rate =
+      av_stream->codecpar->bit_rate > 0 ? av_stream->codecpar->bit_rate : 0;
   if (type == DemuxerStreamType::kVideo) {
     info.coded_size = video_config.coded_size;
     info.natural_size = video_config.natural_size;
@@ -641,8 +675,10 @@ void FFmpegDemuxer::AddStream(void* av_stream_raw, uint32_t index,
     AVDictionaryEntry* entry =
         av_dict_get(av_stream->metadata, key, nullptr, 0);
     if (entry && entry->value) {
-      if (std::string_view(key) == "language") info.language = entry->value;
-      else                                     info.title = entry->value;
+      if (std::string_view(key) == "language")
+        info.language = entry->value;
+      else
+        info.title = entry->value;
     }
   }
   info.metadata = ff::FromAvDict(av_stream->metadata);
@@ -706,8 +742,8 @@ void FFmpegDemuxer::OnOpened(Status status, InitializeCB init_cb) {
     // Start filling the queues immediately so the first frame is available as
     // soon as a decoder asks for it.
     demux_thread_->task_runner()->PostTask(
-        FROM_HERE, base::BindOnce(&FFmpegDemuxer::DemuxLoop,
-                                  base::Unretained(this)));
+        FROM_HERE,
+        base::BindOnce(&FFmpegDemuxer::DemuxLoop, base::Unretained(this)));
   } else if (host_) {
     host_->OnDemuxerError(status.error());
   }
@@ -738,14 +774,14 @@ bool FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw, void* packet_raw) {
                                           "or "
                                           "call ReconnectNow()")));
     }
-    return false;   // Exit the loop.
+    return false;  // Exit the loop.
   }
 
   const int index = packet->stream_index;
   const size_t slot = static_cast<size_t>(index);
-  if (index < 0 || slot >= streams_.size() ||
-      !streams_[slot] || streams_[slot]->stream_index() != index) {
-    av_packet_unref(packet);   // Unselected stream; drop it.
+  if (index < 0 || slot >= streams_.size() || !streams_[slot] ||
+      streams_[slot]->stream_index() != index) {
+    av_packet_unref(packet);  // Unselected stream; drop it.
     return true;
   }
   FFmpegDemuxerStream* stream = streams_[slot].get();
@@ -771,8 +807,8 @@ bool FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw, void* packet_raw) {
     av_packet_unref(packet);
     return true;
   }
-  auto buffer = DecoderBuffer::FromStorage(std::move(storage), stream->type(),
-                                           index);
+  auto buffer =
+      DecoderBuffer::FromStorage(std::move(storage), stream->type(), index);
   AVStream* av_stream = ctx->streams[index];
   buffer->set_timestamp(ff::ToTimeDelta(packet->pts, av_stream->time_base));
   buffer->set_decode_timestamp(
@@ -822,11 +858,10 @@ void FFmpegDemuxer::DemuxLoop() {
     if (host_ && media_runner_) {
       media_runner_->PostTask(
           FROM_HERE,
-          base::BindOnce(&Demuxer::Host::OnDemuxerError,
-                         base::Unretained(host_.get()),
-                         MediaError(ErrorCode::kOutOfMemory,
-                                    "av_packet_alloc failed", {},
-                                    "reduce config.buffer.max_bytes")));
+          base::BindOnce(
+              &Demuxer::Host::OnDemuxerError, base::Unretained(host_.get()),
+              MediaError(ErrorCode::kOutOfMemory, "av_packet_alloc failed", {},
+                         "reduce config.buffer.max_bytes")));
     }
     return;
   }
@@ -872,22 +907,22 @@ void FFmpegDemuxer::HandleSeekRequestOnDemuxThread(const SeekRequest& request) {
   if (seek_index >= 0) {
     time_base = ctx->streams[seek_index]->time_base;
   }
-  const int64_t target_ts = ff::FromTimeDelta(request.target + start_time_,
-                                              time_base);
+  const int64_t target_ts =
+      ff::FromTimeDelta(request.target + start_time_, time_base);
   const int flags = request.any_frame ? 0 : AVSEEK_FLAG_BACKWARD;
   const int ret = av_seek_frame(ctx, seek_index, target_ts, flags);
   seek_count_.fetch_add(1, std::memory_order_relaxed);
 
   if (ret < 0) {
-    CompleteSeek(request.request_id,
-                 base::unexpected(ff::ToMediaError(
-                     ret, "FFmpegDemuxer::Seek",
-                     "target = " +
-                     std::to_string(request.target.InMilliseconds()) +
-                         " ms",
-                     "this source may not be seekable; check "
-                     "media_info().seekable and is_live()")),
-                 request.target);
+    CompleteSeek(
+        request.request_id,
+        base::unexpected(ff::ToMediaError(
+            ret, "FFmpegDemuxer::Seek",
+            "target = " + std::to_string(request.target.InMilliseconds()) +
+                " ms",
+            "this source may not be seekable; check "
+            "media_info().seekable and is_live()")),
+        request.target);
     return;
   }
 
@@ -933,11 +968,12 @@ void FFmpegDemuxer::CompleteSeek(int64_t request_id, Status status,
         "seek completed");
   }
   if (cb && media_runner_) {
-    media_runner_->PostTask(
-        FROM_HERE,
-        base::BindOnce([](SeekCB c, Status s, base::TimeDelta a) {
-          std::move(c).Run(std::move(s), a);
-        }, std::move(cb), std::move(status), actual));
+    media_runner_->PostTask(FROM_HERE,
+                            base::BindOnce(
+                                [](SeekCB c, Status s, base::TimeDelta a) {
+                                  std::move(c).Run(std::move(s), a);
+                                },
+                                std::move(cb), std::move(status), actual));
   }
 }
 
@@ -974,14 +1010,17 @@ void FFmpegDemuxer::StartPlayingFrom(base::TimeDelta time, SeekCB cb) {
       if (pending_cb) {
         media_runner_->PostTask(
             FROM_HERE,
-            base::BindOnce([](SeekCB c, Status s, base::TimeDelta a) {
-              std::move(c).Run(std::move(s), a);
-            }, std::move(pending_cb),
-            Err(ErrorCode::kAborted, "seek superseded by a newer request",
-                "request_id = " + std::to_string(id),
-                "this is expected during rapid seeking; match completions to "
-                "requests by request_id"),
-            time));
+            base::BindOnce(
+                [](SeekCB c, Status s, base::TimeDelta a) {
+                  std::move(c).Run(std::move(s), a);
+                },
+                std::move(pending_cb),
+                Err(ErrorCode::kAborted, "seek superseded by a newer request",
+                    "request_id = " + std::to_string(id),
+                    "this is expected during rapid seeking; match completions "
+                    "to "
+                    "requests by request_id"),
+                time));
       }
     }
     pending_seek_cbs_.clear();
@@ -1009,18 +1048,17 @@ void FFmpegDemuxer::Flush(base::OnceClosure flush_cb) {
   }
   // Performed on the demux thread so it cannot race with av_read_frame.
   demux_thread_->task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](FFmpegDemuxer* self, base::OnceClosure done) {
-            for (auto& stream : self->streams_) {
-              stream->FlushFromDemuxThread(base::DoNothing());
-            }
-            self->resume_event_.Signal();
-            if (done) {
-              std::move(done).Run();
-            }
-          },
-          base::Unretained(this), std::move(flush_cb)));
+      FROM_HERE, base::BindOnce(
+                     [](FFmpegDemuxer* self, base::OnceClosure done) {
+                       for (auto& stream : self->streams_) {
+                         stream->FlushFromDemuxThread(base::DoNothing());
+                       }
+                       self->resume_event_.Signal();
+                       if (done) {
+                         std::move(done).Run();
+                       }
+                     },
+                     base::Unretained(this), std::move(flush_cb)));
 }
 
 void FFmpegDemuxer::Reset(base::OnceClosure reset_cb) {
@@ -1050,7 +1088,7 @@ void FFmpegDemuxer::Stop() {
     demux_thread_.reset();
   }
   base::AutoLock scoped(seek_cb_lock_);
-  pending_seek_cbs_.clear();   // Dropping these is correct: the owner is going.
+  pending_seek_cbs_.clear();  // Dropping these is correct: the owner is going.
 }
 
 DemuxerStats FFmpegDemuxer::GetStats() const {
@@ -1072,8 +1110,8 @@ void FFmpegDemuxer::EmitStage(MediaLogEvent::Type stage,
       MediaLogEvent::Level::kInfo, stage,
       {{"elapsed_ms", std::to_string(elapsed.InMilliseconds())},
        {"since_prepare_ms",
-        std::to_string((base::TimeTicks::Now() - prepare_started_at_)
-                           .InMilliseconds())}},
+        std::to_string(
+            (base::TimeTicks::Now() - prepare_started_at_).InMilliseconds())}},
       GetMediaLogEventTypeName(stage));
 }
 

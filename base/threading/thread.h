@@ -76,6 +76,6 @@ class AVBASE_BASE_EXPORT Thread {
   WaitableEvent started_;
 };
 
-}  // namespace base
+}  // namespace avbase::base
 
 #endif  // AVBASE_BASE_THREADING_THREAD_H_

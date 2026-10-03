@@ -18,8 +18,8 @@ namespace avbase::media {
 struct AVBASE_MEDIA_EXPORT TimedTextCue {
   base::TimeDelta pts;
   base::TimeDelta duration;
-  std::string text;    // Plain text, all cue lines joined with '\n'.
-  std::string ass;     // Raw ASS markup (ASS-type rects), empty for plain.
+  std::string text;  // Plain text, all cue lines joined with '\n'.
+  std::string ass;   // Raw ASS markup (ASS-type rects), empty for plain.
 };
 
 }  // namespace avbase::media

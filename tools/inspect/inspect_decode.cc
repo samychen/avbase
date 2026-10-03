@@ -52,8 +52,7 @@ using media::VideoFrame;
 // like a clean end of stream.
 template <typename Decoder, typename Output>
 bool PumpDecoder(DemuxerStream* stream, Decoder* decoder, Pump* pump,
-                 size_t limit,
-                 std::vector<base::scoped_refptr<Output>>* sink) {
+                 size_t limit, std::vector<base::scoped_refptr<Output>>* sink) {
   bool eos = false;
   for (size_t round = 0; round < 200000 && sink->size() < limit && !eos;
        ++round) {
@@ -80,9 +79,8 @@ bool PumpDecoder(DemuxerStream* stream, Decoder* decoder, Pump* pump,
     for (auto& buffer : pending) {
       bool done = false;
       decoder->Decode(
-          buffer,
-          base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; },
-                         &done));
+          buffer, base::BindOnce(
+                      [](bool* flag, DecoderStatus) { *flag = true; }, &done));
       pump->Until([&done] { return done; });
     }
   }
@@ -124,21 +122,22 @@ int DecodeVideo(DemuxerStream* stream, Pump* pump,
   std::vector<base::scoped_refptr<VideoFrame>> frames;
   DecoderStatus init_status;
   bool init_done = false;
-  decoder.Initialize(
-      config, /*low_delay=*/false, /*cdm=*/nullptr,
-      base::BindOnce([](bool* flag, DecoderStatus* out, DecoderStatus s) {
-        *flag = true;
-        *out = s;
-      }, &init_done, &init_status),
-      base::BindRepeating(
-          [](std::vector<base::scoped_refptr<VideoFrame>>* sink,
-             base::scoped_refptr<VideoFrame> frame) {
-            if (frame) {
-              sink->push_back(std::move(frame));
-            }
-          },
-          &frames),
-      media::WaitingCB());
+  decoder.Initialize(config, /*low_delay=*/false, /*cdm=*/nullptr,
+                     base::BindOnce(
+                         [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+                           *flag = true;
+                           *out = s;
+                         },
+                         &init_done, &init_status),
+                     base::BindRepeating(
+                         [](std::vector<base::scoped_refptr<VideoFrame>>* sink,
+                            base::scoped_refptr<VideoFrame> frame) {
+                           if (frame) {
+                             sink->push_back(std::move(frame));
+                           }
+                         },
+                         &frames),
+                     media::WaitingCB());
   pump->Until([&init_done] { return init_done; });
   if (!init_status.is_ok()) {
     printf("  initialize: FAILED -- %s\n", init_status.AsDebugString().c_str());
@@ -180,23 +179,25 @@ int DecodeAudio(DemuxerStream* stream, Pump* pump, size_t limit) {
   std::vector<base::scoped_refptr<AudioBuffer>> buffers;
   DecoderStatus init_status;
   bool init_done = false;
-  decoder.Initialize(
-      config, /*has_pending_clear=*/false, /*serial=*/0,
-      base::BindOnce([](bool* flag, DecoderStatus* out, DecoderStatus s) {
-        *flag = true;
-        *out = s;
-      }, &init_done, &init_status),
-      base::BindRepeating(
-          [](std::vector<base::scoped_refptr<AudioBuffer>>* sink,
-             base::scoped_refptr<AudioBuffer> buffer) {
-            // The terminal EOS marker is not audio; keeping it out of the sink
-            // means every count below is a real buffer.
-            if (buffer && !buffer->end_of_stream()) {
-              sink->push_back(std::move(buffer));
-            }
-          },
-          &buffers),
-      media::WaitingCB());
+  decoder.Initialize(config, /*has_pending_clear=*/false, /*serial=*/0,
+                     base::BindOnce(
+                         [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+                           *flag = true;
+                           *out = s;
+                         },
+                         &init_done, &init_status),
+                     base::BindRepeating(
+                         [](std::vector<base::scoped_refptr<AudioBuffer>>* sink,
+                            base::scoped_refptr<AudioBuffer> buffer) {
+                           // The terminal EOS marker is not audio; keeping it
+                           // out of the sink means every count below is a real
+                           // buffer.
+                           if (buffer && !buffer->end_of_stream()) {
+                             sink->push_back(std::move(buffer));
+                           }
+                         },
+                         &buffers),
+                     media::WaitingCB());
   pump->Until([&init_done] { return init_done; });
   if (!init_status.is_ok()) {
     printf("  initialize: FAILED -- %s\n", init_status.AsDebugString().c_str());
@@ -255,8 +256,8 @@ int RunDecode(const Options& opts) {
     if (!stream) {
       printf("\nvideo: no video stream\n");
     } else {
-      exit_code |= DecodeVideo(stream, &pump,
-                               env.GetMainThreadTaskRunnerRef(), opts.limit);
+      exit_code |= DecodeVideo(stream, &pump, env.GetMainThreadTaskRunnerRef(),
+                               opts.limit);
     }
   }
   if (!opts.video_only) {

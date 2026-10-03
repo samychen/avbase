@@ -130,10 +130,9 @@ class LiveCuePolicyTest : public ::testing::Test {
 
     renderer_ = std::make_unique<RendererImpl>(std::move(deps));
     renderer_->SetSourceLiveness(live, window);
-    renderer_->Initialize(
-        &resource_, &client_, runner_,
-        base::BindOnce(&LiveCuePolicyTest::OnInitialized,
-                       base::Unretained(this)));
+    renderer_->Initialize(&resource_, &client_, runner_,
+                          base::BindOnce(&LiveCuePolicyTest::OnInitialized,
+                                         base::Unretained(this)));
     // Initialize() runs on S3 and its completion hops back to S1, so one
     // RunUntilIdle() is not enough -- the callback has not been posted yet.
     // Bounded and one sided, like every other wait in these suites.
@@ -157,10 +156,9 @@ class LiveCuePolicyTest : public ::testing::Test {
       // vacuously with zero cues -- which is exactly the kind of green that
       // means nothing.
       bool selected = false;
-      renderer_->OnTracksChanged(
-          DemuxerStreamType::kText, text_stream_.get(),
-          base::BindOnce([](bool* d) { *d = true; },
-                         base::Unretained(&selected)));
+      renderer_->OnTracksChanged(DemuxerStreamType::kText, text_stream_.get(),
+                                 base::BindOnce([](bool* d) { *d = true; },
+                                                base::Unretained(&selected)));
       for (int i = 0; i < 200 && !selected; ++i) {
         env_.RunUntilIdle();
         if (selected) {
@@ -179,7 +177,7 @@ class LiveCuePolicyTest : public ::testing::Test {
 
   // Queues one subtitle packet stamped |pts|, then lets the text pump run.
   void DeliverCue(base::TimeDelta pts) {
-    static const uint8_t kPayload[3] = {0x63, 0x75, 0x65};   // "cue"
+    static const uint8_t kPayload[3] = {0x63, 0x75, 0x65};  // "cue"
     auto buffer = DecoderBuffer::CopyFrom(kPayload, sizeof(kPayload),
                                           DemuxerStreamType::kText, 0);
     buffer->set_timestamp(pts);

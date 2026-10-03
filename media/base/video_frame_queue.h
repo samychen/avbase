@@ -75,7 +75,7 @@ class AVBASE_MEDIA_EXPORT VideoFrameQueue {
     int32_t serial{0};
     uint64_t committed{0};
     uint64_t popped{0};
-    uint64_t slots_returned_uncommitted{0};   // Leaks that RAII prevented.
+    uint64_t slots_returned_uncommitted{0};  // Leaks that RAII prevented.
     uint64_t dropped_by_flush{0};
     uint64_t reserve_waits{0};
     bool end_of_stream{false};
@@ -146,8 +146,8 @@ class AVBASE_MEDIA_EXPORT VideoFrameQueue {
   std::atomic<uint64_t> reserve_waits_{0};
 };
 
-AVBASE_MEDIA_EXPORT const char* GetVideoFrameQueuePopStatusName(
-    VideoFrameQueue::PopStatus status);
+AVBASE_MEDIA_EXPORT const char*
+GetVideoFrameQueuePopStatusName(VideoFrameQueue::PopStatus status);
 
 }  // namespace avbase::media
 

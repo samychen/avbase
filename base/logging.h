@@ -20,11 +20,11 @@ namespace base {
 namespace logging {
 
 enum LogSeverity : int {
-  LOG_VERBOSE = -1,   // Used by VLOG(n); n maps to -n.
+  LOG_VERBOSE = -1,  // Used by VLOG(n); n maps to -n.
   LOG_INFO = 0,
   LOG_WARNING = 1,
   LOG_ERROR = 2,
-  LOG_FATAL = 3,      // Logs, then aborts.
+  LOG_FATAL = 3,  // Logs, then aborts.
 };
 
 // Embedders install a delegate to route avbase logs into their own logging
@@ -32,9 +32,7 @@ enum LogSeverity : int {
 class AVBASE_BASE_EXPORT LoggingDelegate {
  public:
   virtual ~LoggingDelegate() = default;
-  virtual void OnLogMessage(LogSeverity severity,
-                            const char* file,
-                            int line,
+  virtual void OnLogMessage(LogSeverity severity, const char* file, int line,
                             std::string_view message) = 0;
 };
 
@@ -84,40 +82,45 @@ class LogMessageVoidify {
 }  // namespace base
 }  // namespace avbase
 
-#define AVBASE_LOG_STREAM(severity)                                        \
+#define AVBASE_LOG_STREAM(severity) \
   ::avbase::base::logging::LogMessage(__FILE__, __LINE__, severity).stream()
 
-#define AVBASE_LOG_IS_ON(severity)                                         \
-  ::avbase::base::logging::ShouldCreateLogMessage(                         \
+#define AVBASE_LOG_IS_ON(severity)                 \
+  ::avbase::base::logging::ShouldCreateLogMessage( \
       ::avbase::base::logging::LOG_##severity)
 
-#define AVBASE_LAZY_STREAM(stream, condition)                              \
-  !(condition) ? (void)0 : ::avbase::base::logging::LogMessageVoidify() & (stream)
+#define AVBASE_LAZY_STREAM(stream, condition) \
+  !(condition) ? (void)0                      \
+               : ::avbase::base::logging::LogMessageVoidify() & (stream)
 
-#define LOG(severity) AVBASE_LAZY_STREAM(AVBASE_LOG_STREAM(                 \
-    ::avbase::base::logging::LOG_##severity), AVBASE_LOG_IS_ON(severity))
+#define LOG(severity)                                             \
+  AVBASE_LAZY_STREAM(                                             \
+      AVBASE_LOG_STREAM(::avbase::base::logging::LOG_##severity), \
+      AVBASE_LOG_IS_ON(severity))
 
 #define LOG_IF(severity, condition) !(condition) ? (void)0 : LOG(severity)
 
 #if defined(AVBASE_ENABLE_DCHECK)
 #define DLOG(severity) LOG(severity)
 #else
-#define DLOG(severity) AVBASE_LAZY_STREAM(AVBASE_LOG_STREAM(                \
-    ::avbase::base::logging::LOG_##severity), false)
+#define DLOG(severity) \
+  AVBASE_LAZY_STREAM(  \
+      AVBASE_LOG_STREAM(::avbase::base::logging::LOG_##severity), false)
 #endif
 
 #define VLOG_IS_ON(verbosity) \
   ::avbase::base::logging::ShouldCreateVerboseMessage(verbosity)
 
-#define VLOG(verbosity)                                                   \
+#define VLOG(verbosity)                                                       \
   AVBASE_LAZY_STREAM(AVBASE_LOG_STREAM(::avbase::base::logging::LOG_VERBOSE), \
-                    VLOG_IS_ON(verbosity))
+                     VLOG_IS_ON(verbosity))
 
 #if defined(AVBASE_ENABLE_DCHECK)
 #define DVLOG(verbosity) VLOG(verbosity)
 #else
-#define DVLOG(verbosity) AVBASE_LAZY_STREAM(AVBASE_LOG_STREAM(              \
-    ::avbase::base::logging::LOG_VERBOSE), false)
+#define DVLOG(verbosity)                                                      \
+  AVBASE_LAZY_STREAM(AVBASE_LOG_STREAM(::avbase::base::logging::LOG_VERBOSE), \
+                     false)
 #endif
 
 #endif  // AVBASE_BASE_LOGGING_H_

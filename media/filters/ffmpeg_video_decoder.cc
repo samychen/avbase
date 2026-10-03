@@ -7,9 +7,6 @@
 #include <algorithm>
 #include <cstring>
 #include <memory>
-#include <algorithm>
-#include <cstring>
-#include <memory>
 #include <utility>
 
 #include "base/check.h"
@@ -29,17 +26,26 @@ namespace ff = ::avbase::platform::ffmpeg;
 // Maps an avbase VideoFormat onto an FFmpeg pixel format.
 AVPixelFormat ToAvPixelFormat(VideoFormat format) {
   switch (format) {
-    case VideoFormat::kI420:  return AV_PIX_FMT_YUV420P;
-    case VideoFormat::kYV12:  return AV_PIX_FMT_YUV420P;   // Plane order differs.
-    case VideoFormat::kNV12:  return AV_PIX_FMT_NV12;
-    case VideoFormat::kNV21:  return AV_PIX_FMT_NV21;
-    case VideoFormat::kARGB:  return AV_PIX_FMT_0RGB32;
-    case VideoFormat::kRGB24: return AV_PIX_FMT_RGB24;
-    case VideoFormat::kRGB565:return AV_PIX_FMT_RGB565LE;
-    case VideoFormat::kP010:  return AV_PIX_FMT_P010LE;
-    case VideoFormat::kYUY2:
-    case VideoFormat::kYUV420P10:
-    case VideoFormat::kUnknown: break;
+  case VideoFormat::kI420:
+    return AV_PIX_FMT_YUV420P;
+  case VideoFormat::kYV12:
+    return AV_PIX_FMT_YUV420P;  // Plane order differs.
+  case VideoFormat::kNV12:
+    return AV_PIX_FMT_NV12;
+  case VideoFormat::kNV21:
+    return AV_PIX_FMT_NV21;
+  case VideoFormat::kARGB:
+    return AV_PIX_FMT_0RGB32;
+  case VideoFormat::kRGB24:
+    return AV_PIX_FMT_RGB24;
+  case VideoFormat::kRGB565:
+    return AV_PIX_FMT_RGB565LE;
+  case VideoFormat::kP010:
+    return AV_PIX_FMT_P010LE;
+  case VideoFormat::kYUY2:
+  case VideoFormat::kYUV420P10:
+  case VideoFormat::kUnknown:
+    break;
   }
   return AV_PIX_FMT_NONE;
 }
@@ -48,17 +54,26 @@ AVPixelFormat ToAvPixelFormat(VideoFormat format) {
 // case (yuv420p source, no requested override) needs no swscale at all.
 VideoFormat FromAvPixelFormat(AVPixelFormat format) {
   switch (format) {
-    case AV_PIX_FMT_YUV420P:  return VideoFormat::kI420;
-    case AV_PIX_FMT_NV12:     return VideoFormat::kNV12;
-    case AV_PIX_FMT_NV21:     return VideoFormat::kNV21;
-    case AV_PIX_FMT_0RGB32:
-    case AV_PIX_FMT_ARGB:     return VideoFormat::kARGB;
-    case AV_PIX_FMT_RGB24:    return VideoFormat::kRGB24;
-    case AV_PIX_FMT_RGB565LE: return VideoFormat::kRGB565;
-    case AV_PIX_FMT_P010LE:   return VideoFormat::kP010;
-    case AV_PIX_FMT_YUV422P:
-    case AV_PIX_FMT_YUV444P:  return VideoFormat::kI420;   // Needs conversion.
-    default:                  return VideoFormat::kUnknown;
+  case AV_PIX_FMT_YUV420P:
+    return VideoFormat::kI420;
+  case AV_PIX_FMT_NV12:
+    return VideoFormat::kNV12;
+  case AV_PIX_FMT_NV21:
+    return VideoFormat::kNV21;
+  case AV_PIX_FMT_0RGB32:
+  case AV_PIX_FMT_ARGB:
+    return VideoFormat::kARGB;
+  case AV_PIX_FMT_RGB24:
+    return VideoFormat::kRGB24;
+  case AV_PIX_FMT_RGB565LE:
+    return VideoFormat::kRGB565;
+  case AV_PIX_FMT_P010LE:
+    return VideoFormat::kP010;
+  case AV_PIX_FMT_YUV422P:
+  case AV_PIX_FMT_YUV444P:
+    return VideoFormat::kI420;  // Needs conversion.
+  default:
+    return VideoFormat::kUnknown;
   }
 }
 
@@ -80,8 +95,7 @@ struct FFmpegVideoDecoder::Context {
 
 FFmpegVideoDecoder::FFmpegVideoDecoder(
     base::scoped_refptr<base::SequencedTaskRunner> task_runner)
-    : task_runner_(std::move(task_runner)),
-      ctx_(std::make_unique<Context>()) {
+    : task_runner_(std::move(task_runner)), ctx_(std::make_unique<Context>()) {
   CHECK(task_runner_) << "FFmpegVideoDecoder needs a task runner so that "
                          "decode_cb is never run inline";
   DETACH_FROM_SEQUENCE(sequence_checker_);
@@ -91,7 +105,8 @@ FFmpegVideoDecoder::~FFmpegVideoDecoder() = default;
 
 DecoderStatus FFmpegVideoDecoder::OpenCodec(const VideoDecoderConfig& config,
                                             int threads) {
-  const AVCodec* codec = avcodec_find_decoder_by_name(config.codec_name.c_str());
+  const AVCodec* codec =
+      avcodec_find_decoder_by_name(config.codec_name.c_str());
   if (!codec) {
     return DecoderStatus(DecoderStatus::Codes::kUnsupportedCodec,
                          "no decoder named \"" + config.codec_name + "\"");
@@ -107,7 +122,8 @@ DecoderStatus FFmpegVideoDecoder::OpenCodec(const VideoDecoderConfig& config,
   // av_rescale_q() returns 0 for every frame — which shows up downstream as
   // "all frames have timestamp 0" and destroys A/V sync. It must be the
   // container stream's time base, carried through VideoDecoderConfig.
-  codec_ctx->pkt_timebase = AVRational{config.time_base.num, config.time_base.den};
+  codec_ctx->pkt_timebase =
+      AVRational{config.time_base.num, config.time_base.den};
   if (codec_ctx->pkt_timebase.num <= 0 || codec_ctx->pkt_timebase.den <= 0) {
     codec_ctx->pkt_timebase = AVRational{1, AV_TIME_BASE};
   }
@@ -159,12 +175,13 @@ void FFmpegVideoDecoder::Initialize(const VideoDecoderConfig& config,
   // the caller cannot act on a message that does not say which field is wrong.
   DecoderStatus status;
   if (config.codec == VideoCodec::kUnknown || config.codec_name.empty()) {
-    status = DecoderStatus(
-        DecoderStatus::Codes::kUnsupportedCodec,
-        "unknown video codec (codec_name=\"" + config.codec_name + "\")");
+    status = DecoderStatus(DecoderStatus::Codes::kUnsupportedCodec,
+                           "unknown video codec (codec_name=\"" +
+                               config.codec_name + "\")");
   } else if (config.coded_size.IsEmpty()) {
-    status = DecoderStatus(DecoderStatus::Codes::kUnsupportedResolution,
-                           "coded_size is empty for codec " + config.codec_name);
+    status =
+        DecoderStatus(DecoderStatus::Codes::kUnsupportedResolution,
+                      "coded_size is empty for codec " + config.codec_name);
   } else {
     status = OpenCodec(config, thread_count_);
   }
@@ -185,7 +202,7 @@ bool FFmpegVideoDecoder::DecodeAvailableFrames() {
   for (;;) {
     const int ret = avcodec_receive_frame(codec_ctx, frame);
     if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-      return true;   // Needs more input, or fully drained. Not an error.
+      return true;  // Needs more input, or fully drained. Not an error.
     }
     if (ret < 0) {
       LOG(ERROR) << "avcodec_receive_frame: " << ff::AvErrorString(ret);
@@ -198,18 +215,19 @@ bool FFmpegVideoDecoder::DecodeAvailableFrames() {
       dst_format = FromAvPixelFormat(src_format);
     }
     if (dst_format == VideoFormat::kUnknown) {
-      dst_format = VideoFormat::kI420;   // Always convertible.
+      dst_format = VideoFormat::kI420;  // Always convertible.
     }
 
     const int width = frame->width;
     const int height = frame->height;
     if (NeedsConversion(src_format, dst_format)) {
       if (!ctx_->sws || ctx_->sws_src_w != width || ctx_->sws_src_h != height ||
-          ctx_->sws_src_fmt != src_format || ctx_->sws_dst_format != dst_format) {
-        ctx_->sws = ff::SwsPtr(sws_getContext(
-            width, height, src_format, width, height,
-            ToAvPixelFormat(dst_format), SWS_BILINEAR, nullptr, nullptr,
-            nullptr));
+          ctx_->sws_src_fmt != src_format ||
+          ctx_->sws_dst_format != dst_format) {
+        ctx_->sws =
+            ff::SwsPtr(sws_getContext(width, height, src_format, width, height,
+                                      ToAvPixelFormat(dst_format), SWS_BILINEAR,
+                                      nullptr, nullptr, nullptr));
         if (!ctx_->sws) {
           ++conversion_failures_;
           av_frame_unref(frame);
@@ -225,8 +243,10 @@ bool FFmpegVideoDecoder::DecodeAvailableFrames() {
     }
 
     Rational sar{1, 1};
-    if (frame->sample_aspect_ratio.num > 0 && frame->sample_aspect_ratio.den > 0) {
-      sar = Rational{frame->sample_aspect_ratio.num, frame->sample_aspect_ratio.den};
+    if (frame->sample_aspect_ratio.num > 0 &&
+        frame->sample_aspect_ratio.den > 0) {
+      sar = Rational{frame->sample_aspect_ratio.num,
+                     frame->sample_aspect_ratio.den};
     } else if (config_.sar.num > 0) {
       sar = config_.sar;
     }
@@ -248,13 +268,13 @@ bool FFmpegVideoDecoder::DecodeAvailableFrames() {
       for (int p = 0; p < planes && p < VideoFrame::kMaxPlanes; ++p) {
         const auto plane = static_cast<VideoFrame::Plane>(p);
         // mutable_data() is the producer-side accessor: |out| was just created
-        // here and has exactly one owner, so writing it needs neither a cast nor
-        // a lock. Consumers only ever see visible_data().
+        // here and has exactly one owner, so writing it needs neither a cast
+        // nor a lock. Consumers only ever see visible_data().
         dst[p] = out->mutable_data(plane).data();
         dst_stride[p] = out->stride(plane);
       }
-      const int scaled = sws_scale(ctx_->sws.get(), frame->data, frame->linesize,
-                                   0, height, dst, dst_stride);
+      const int scaled = sws_scale(ctx_->sws.get(), frame->data,
+                                   frame->linesize, 0, height, dst, dst_stride);
       if (scaled <= 0) {
         ++conversion_failures_;
         av_frame_unref(frame);
@@ -310,19 +330,20 @@ void FFmpegVideoDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
   pending_decode_cbs_.push_back(std::move(decode_cb));
 
   if (!buffer) {
-    RunOneDecodeCallback(DecoderStatus(DecoderStatus::Codes::kDecodeError,
-                                       "null buffer"));
+    RunOneDecodeCallback(
+        DecoderStatus(DecoderStatus::Codes::kDecodeError, "null buffer"));
     return;
   }
 
   if (buffer->IsEndOfStream()) {
     // EOS: flush the decoder, emit everything still buffered, then answer every
-    // outstanding request. avcodec_send_packet(nullptr) is the documented flush.
+    // outstanding request. avcodec_send_packet(nullptr) is the documented
+    // flush.
     avcodec_send_packet(ctx_->codec_ctx.get(), nullptr);
     decoding_eos_ = true;
     if (!DecodeAvailableFrames()) {
-      RunAllDecodeCallbacks(DecoderStatus(DecoderStatus::Codes::kDecodeError,
-                                          "flush failed"));
+      RunAllDecodeCallbacks(
+          DecoderStatus(DecoderStatus::Codes::kDecodeError, "flush failed"));
       return;
     }
     RunAllDecodeCallbacks(DecoderStatus());
@@ -394,8 +415,7 @@ void FFmpegVideoDecoder::RunAllDecodeCallbacks(DecoderStatus status) {
   while (!pending_decode_cbs_.empty()) {
     DecodeCB cb = std::move(pending_decode_cbs_.front());
     pending_decode_cbs_.pop_front();
-    task_runner_->PostTask(FROM_HERE,
-                           base::BindOnce(std::move(cb), status));
+    task_runner_->PostTask(FROM_HERE, base::BindOnce(std::move(cb), status));
   }
 }
 

@@ -13,7 +13,8 @@
 //   * Unretained(), DoNothing()
 // Not (yet) supported: Owned() (it would have to own and delete the pointer,
 // which nothing here does — shipping it without that semantics would silently
-// leak), Passed(), IgnoreResult() as a binder, generic (auto-parameter) lambdas.
+// leak), Passed(), IgnoreResult() as a binder, generic (auto-parameter)
+// lambdas.
 
 #ifndef AVBASE_BASE_FUNCTIONAL_BIND_H_
 #define AVBASE_BASE_FUNCTIONAL_BIND_H_
@@ -67,7 +68,8 @@ struct MemberTraits<R (C::*)(A...) const> {
 };
 
 template <typename T>
-struct CallableTraits : OperatorTraits<decltype(&std::remove_reference_t<T>::operator())> {};
+struct CallableTraits
+    : OperatorTraits<decltype(&std::remove_reference_t<T>::operator())> {};
 
 template <typename R, typename... A>
 struct CallableTraits<R(A...)> {
@@ -80,7 +82,8 @@ struct CallableTraits<R (*)(A...)> {
 template <typename R, typename C, typename... A>
 struct CallableTraits<R (C::*)(A...)> : MemberTraits<R (C::*)(A...)> {};
 template <typename R, typename C, typename... A>
-struct CallableTraits<R (C::*)(A...) const> : MemberTraits<R (C::*)(A...) const> {};
+struct CallableTraits<R (C::*)(A...) const>
+    : MemberTraits<R (C::*)(A...) const> {};
 template <typename Sig>
 struct CallableTraits<OnceCallback<Sig>> {
   using RunType = Sig;
@@ -161,7 +164,8 @@ bool IsInvalidWeakPtr(const T& value) {
 
 // True when any bound argument is an invalidated WeakPtr.
 template <typename... B, size_t... I>
-bool AnyWeakPtrInvalid(const std::tuple<B...>& bound, std::index_sequence<I...>) {
+bool AnyWeakPtrInvalid(const std::tuple<B...>& bound,
+                       std::index_sequence<I...>) {
   return (IsInvalidWeakPtr(std::get<I>(bound)) || ...);
 }
 
@@ -186,7 +190,8 @@ class BindState<R(Args...), Functor, std::tuple<B...>> {
       // silent no-op, which is the whole point of binding a WeakPtr.
       if constexpr (!std::is_void_v<R>) {
         // The call is skipped, so the caller gets a default-constructed result.
-        // Chromium does the same; the static_assert below is what makes it safe.
+        // Chromium does the same; the static_assert below is what makes it
+        // safe.
         static_assert(std::is_default_constructible_v<R>,
                       "A callback bound to a WeakPtr must return a "
                       "default-constructible type, because the call is skipped "
@@ -198,8 +203,7 @@ class BindState<R(Args...), Functor, std::tuple<B...>> {
     }
     return std::apply(
         [&](B&... bound_args) -> R {
-          return InvokeWith(functor_,
-                            UnwrapArg(std::forward<B>(bound_args))...,
+          return InvokeWith(functor_, UnwrapArg(std::forward<B>(bound_args))...,
                             std::forward<Args>(args)...);
         },
         bound_);
@@ -235,8 +239,8 @@ auto BindOnce(Functor&& functor, BoundArgs&&... bound) {
   using CallbackSig =
       typename internal::DropFirstN<RunType, sizeof...(BoundArgs)>::type;
 
-  auto bound_tuple =
-      std::make_tuple(static_cast<typename internal::StorageType<BoundArgs>::type>(
+  auto bound_tuple = std::make_tuple(
+      static_cast<typename internal::StorageType<BoundArgs>::type>(
           std::forward<BoundArgs>(bound))...);
   using BoundTuple = decltype(bound_tuple);
 
@@ -256,17 +260,18 @@ auto BindRepeating(Functor&& functor, BoundArgs&&... bound) {
   using CallbackSig =
       typename internal::DropFirstN<RunType, sizeof...(BoundArgs)>::type;
 
-  auto bound_tuple =
-      std::make_tuple(static_cast<typename internal::StorageType<BoundArgs>::type>(
+  auto bound_tuple = std::make_tuple(
+      static_cast<typename internal::StorageType<BoundArgs>::type>(
           std::forward<BoundArgs>(bound))...);
   using BoundTuple = decltype(bound_tuple);
 
-  auto shared = std::make_shared<
-      internal::BindState<CallbackSig, std::remove_cvref_t<Functor>, BoundTuple>>(
+  auto shared = std::make_shared<internal::BindState<
+      CallbackSig, std::remove_cvref_t<Functor>, BoundTuple>>(
       std::forward<Functor>(functor), std::move(bound_tuple));
 
   return RepeatingCallback<CallbackSig>(
-      [shared](auto&&... rest) -> typename internal::ReturnOf<CallbackSig>::type {
+      [shared](auto&&... rest) ->
+      typename internal::ReturnOf<CallbackSig>::type {
         return (*shared)(decltype(rest)(rest)...);
       });
 }

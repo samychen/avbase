@@ -8,10 +8,14 @@ namespace avbase::media {
 
 const char* GetWaitingReasonName(WaitingReason reason) {
   switch (reason) {
-    case WaitingReason::kNone: return "none";
-    case WaitingReason::kKey: return "key";
-    case WaitingReason::kDecoderStalled: return "decoder-stalled";
-    case WaitingReason::kNoFreeSurface: return "no-free-surface";
+  case WaitingReason::kNone:
+    return "none";
+  case WaitingReason::kKey:
+    return "key";
+  case WaitingReason::kDecoderStalled:
+    return "decoder-stalled";
+  case WaitingReason::kNoFreeSurface:
+    return "no-free-surface";
   }
   return "unknown";
 }

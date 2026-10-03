@@ -17,7 +17,7 @@ CheckOpStreamHelper::~CheckOpStreamHelper() {
   }
   const std::string text = stream_.str();
   LOG(FATAL) << text;
-  std::abort();   // Unreachable: LOG(FATAL) aborts. Keeps the compiler quiet.
+  std::abort();  // Unreachable: LOG(FATAL) aborts. Keeps the compiler quiet.
 }
 
 }  // namespace avbase::base::internal

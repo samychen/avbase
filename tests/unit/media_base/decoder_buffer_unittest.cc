@@ -87,7 +87,7 @@ TEST(DecoderBufferTest, RefCountingSharesOnePayload) {
   const uint8_t* ptr = a->data().data();
   {
     base::scoped_refptr<DecoderBuffer> copy = a;
-    EXPECT_EQ(copy->data().data(), ptr);   // No copy of the payload.
+    EXPECT_EQ(copy->data().data(), ptr);  // No copy of the payload.
     EXPECT_EQ(copy->data_size(), a->data_size());
   }
   EXPECT_EQ(a->data().data(), ptr);

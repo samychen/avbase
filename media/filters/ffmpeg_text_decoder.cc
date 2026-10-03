@@ -62,8 +62,8 @@ TimedTextCue MakeCue(const AVSubtitle& sub, base::TimeDelta packet_pts,
     }
   }
   cue.pts = packet_pts + base::Milliseconds(sub.start_display_time);
-  cue.duration = base::Milliseconds(sub.end_display_time -
-                                    sub.start_display_time);
+  cue.duration =
+      base::Milliseconds(sub.end_display_time - sub.start_display_time);
   if (cue.duration <= base::TimeDelta()) {
     // Some text decoders (subrip among them) leave the relative display
     // window at zero and let the container carry the duration: the demuxer
@@ -92,8 +92,8 @@ Status FFmpegTextDecoder::Initialize(const TextDecoderConfig& config) {
         "TextDecoderConfig::codec_name is empty",
         "the demuxer must fill text_decoder_config() for subtitle streams"));
   }
-  const AVCodec* codec = avcodec_find_decoder_by_name(
-      config.codec_name.c_str());
+  const AVCodec* codec =
+      avcodec_find_decoder_by_name(config.codec_name.c_str());
   if (!codec || codec->type != AVMEDIA_TYPE_SUBTITLE) {
     return base::unexpected(MediaError(
         ErrorCode::kNotImplemented,
@@ -104,10 +104,10 @@ Status FFmpegTextDecoder::Initialize(const TextDecoderConfig& config) {
   }
   ff::CodecCtxPtr codec_ctx(avcodec_alloc_context3(codec));
   if (!codec_ctx) {
-    return base::unexpected(MediaError(
-        ErrorCode::kOutOfMemory, "avcodec_alloc_context3 failed",
-        "text decoder context allocation returned null",
-        "retry; if it persists this is an OOM report"));
+    return base::unexpected(
+        MediaError(ErrorCode::kOutOfMemory, "avcodec_alloc_context3 failed",
+                   "text decoder context allocation returned null",
+                   "retry; if it persists this is an OOM report"));
   }
   if (!config.extra_data.empty()) {
     codec_ctx->extradata = static_cast<uint8_t*>(
@@ -138,16 +138,15 @@ Status FFmpegTextDecoder::Initialize(const TextDecoderConfig& config) {
 Status FFmpegTextDecoder::Decode(const DecoderBuffer& buffer,
                                  std::vector<TimedTextCue>* cues) {
   if (!ctx_ || !ctx_->codec_ctx) {
-    return base::unexpected(MediaError(
-        ErrorCode::kInvalidState, "text decoder is not initialized",
-        "Decode() ran before a successful Initialize()",
-        "this is an avbase bug; report the event log"));
+    return base::unexpected(
+        MediaError(ErrorCode::kInvalidState, "text decoder is not initialized",
+                   "Decode() ran before a successful Initialize()",
+                   "this is an avbase bug; report the event log"));
   }
   auto* storage = buffer.storage_as<ff::AvPacketStorage>();
   if (!storage || !storage->raw()) {
     return base::unexpected(MediaError(
-        ErrorCode::kDecodeFailed,
-        "text buffer storage is not an AVPacket",
+        ErrorCode::kDecodeFailed, "text buffer storage is not an AVPacket",
         "a custom Demuxer must produce AvPacketStorage for FFmpegTextDecoder",
         "wrap packets the same way the FFmpeg demuxer does"));
   }
@@ -160,13 +159,12 @@ Status FFmpegTextDecoder::Decode(const DecoderBuffer& buffer,
                                            &got_subtitle, packet);
   if (ret < 0) {
     avsubtitle_free(&sub);
-    return base::unexpected(
-        MediaError(ErrorCode::kDecodeFailed,
-                   "the subtitle packet could not be decoded",
-                   "avcodec_decode_subtitle2: " + ff::AvErrorString(ret),
-                   "skip-on-error is the text leg's policy: one bad cue never "
-                   "stops playback, but a stream of them means the track does "
-                   "not match its codec description"));
+    return base::unexpected(MediaError(
+        ErrorCode::kDecodeFailed, "the subtitle packet could not be decoded",
+        "avcodec_decode_subtitle2: " + ff::AvErrorString(ret),
+        "skip-on-error is the text leg's policy: one bad cue never "
+        "stops playback, but a stream of them means the track does "
+        "not match its codec description"));
   }
   if (got_subtitle) {
     // The demuxer already stamped buffer->timestamp() with the STREAM time
@@ -182,8 +180,8 @@ Status FFmpegTextDecoder::Decode(const DecoderBuffer& buffer,
   return Status();
 }
 
-std::unique_ptr<TextDecoder> FFmpegTextDecoderFactory::CreateTextDecoder(
-    const TextDecoderConfig& config) {
+std::unique_ptr<TextDecoder>
+FFmpegTextDecoderFactory::CreateTextDecoder(const TextDecoderConfig& config) {
   auto decoder = std::make_unique<FFmpegTextDecoder>();
   if (!decoder->Initialize(config)) {
     LOG(WARNING) << "FFmpegTextDecoderFactory: cannot initialize a text "

@@ -21,15 +21,15 @@ namespace avbase::media {
 enum class ColorMatrix : int8_t {
   kUnknown = 0,
   kIdentity,
-  kSMPTE170M,   // BT.601 (NTSC); what most SD content means.
-  kBT709,       // HD content, and every container that says nothing but is HD.
-  kBT2020Ncl,   // Non-constant luminance BT.2020 (HDR, UHD).
+  kSMPTE170M,  // BT.601 (NTSC); what most SD content means.
+  kBT709,      // HD content, and every container that says nothing but is HD.
+  kBT2020Ncl,  // Non-constant luminance BT.2020 (HDR, UHD).
   kBT2020Cl,
 };
 
 enum class ColorTransfer : int8_t {
   kUnknown = 0,
-  kBT709,       // Includes BT.601's ~2.2 gamma in practice.
+  kBT709,  // Includes BT.601's ~2.2 gamma in practice.
   kGamma22,
   kSRGB,
   kSMPTE2084,   // PQ / HDR10.
@@ -38,15 +38,15 @@ enum class ColorTransfer : int8_t {
 
 enum class ColorPrimaries : int8_t {
   kUnknown = 0,
-  kSMPTE170M,   // BT.601.
+  kSMPTE170M,  // BT.601.
   kBT709,
   kBT2020,
 };
 
 enum class ColorRange : int8_t {
   kUnknown = 0,
-  kLimited,     // MPEG-style; the overwhelmingly common case.
-  kFull,        // JPEG-style.
+  kLimited,  // MPEG-style; the overwhelmingly common case.
+  kFull,     // JPEG-style.
 };
 
 struct AVBASE_MEDIA_EXPORT VideoColorSpace {

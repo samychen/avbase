@@ -14,11 +14,16 @@ namespace avbase::media {
 const char* GetPopStatusName(DecoderBufferQueue::PopStatus s) {
   using S = DecoderBufferQueue::PopStatus;
   switch (s) {
-    case S::kOk:          return "ok";
-    case S::kEmpty:       return "empty";
-    case S::kFlushed:     return "flushed";
-    case S::kAborted:     return "aborted";
-    case S::kEndOfStream: return "end-of-stream";
+  case S::kOk:
+    return "ok";
+  case S::kEmpty:
+    return "empty";
+  case S::kFlushed:
+    return "flushed";
+  case S::kAborted:
+    return "aborted";
+  case S::kEndOfStream:
+    return "end-of-stream";
   }
   return "invalid";
 }
@@ -129,8 +134,8 @@ bool DecoderBufferQueue::TryPushDropOldest(
   return true;
 }
 
-DecoderBufferQueue::PopStatus DecoderBufferQueue::Pop(
-    base::scoped_refptr<DecoderBuffer>* out) {
+DecoderBufferQueue::PopStatus
+DecoderBufferQueue::Pop(base::scoped_refptr<DecoderBuffer>* out) {
   DCHECK(out);
   base::AutoLock scoped(lock_);
   for (;;) {

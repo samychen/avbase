@@ -68,8 +68,8 @@ void ReportErrorEvent(const avbase::PlayerEvent& e) {
 void PrintMediaInfo(avbase::Player& player) {
   if (auto info = player.media_info()) {
     std::printf("container: %s, duration: %s, streams: %zu\n",
-                info->format_name.c_str(),
-                info->duration.ToString().c_str(), info->streams.size());
+                info->format_name.c_str(), info->duration.ToString().c_str(),
+                info->streams.size());
   }
   const avbase::media::Size natural = player.video_natural_size();
   std::printf("video: %dx%d\n", natural.width, natural.height);
@@ -115,10 +115,9 @@ int StartAndWait(avbase::Player& player, const Options& options) {
     player.Start();
   }
   if (options.seek_to >= 0.0) {
-    const auto result =
-        player.SeekTo(avbase::base::SecondsD(options.seek_to),
-                      avbase::SeekMode::kPreviousKeyframe,
-                      avbase::Player::SeekCB());
+    const auto result = player.SeekTo(avbase::base::SecondsD(options.seek_to),
+                                      avbase::SeekMode::kPreviousKeyframe,
+                                      avbase::Player::SeekCB());
     if (!result) {
       std::fprintf(stderr, "SeekTo failed: %s\n",
                    result.error().ToString().c_str());

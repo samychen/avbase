@@ -19,8 +19,8 @@ namespace {
 constexpr base::TimeDelta kBudgetSlice = base::Milliseconds(2);
 }  // namespace
 
-ThrottledDataSource::ThrottledDataSource(
-    base::scoped_refptr<DataSource> inner, int bytes_per_second)
+ThrottledDataSource::ThrottledDataSource(base::scoped_refptr<DataSource> inner,
+                                         int bytes_per_second)
     : inner_(std::move(inner)), bytes_per_second_(bytes_per_second) {
   if (bytes_per_second_ > 0) {
     // One second's worth of burst: the connection is "already full" when the
@@ -83,8 +83,8 @@ size_t ThrottledDataSource::TakeBudgetLocked(size_t wanted) {
   return take;
 }
 
-ThrottledDataSource::ReadResult ThrottledDataSource::ReadInternal(
-    int64_t offset, size_t size, uint8_t* data) {
+ThrottledDataSource::ReadResult
+ThrottledDataSource::ReadInternal(int64_t offset, size_t size, uint8_t* data) {
   {
     std::scoped_lock scoped(fault_lock_);
     if (fail_from_ >= 0 && offset >= fail_from_) {
@@ -92,10 +92,10 @@ ThrottledDataSource::ReadResult ThrottledDataSource::ReadInternal(
     }
   }
   if (aborted_.IsSignaled()) {
-    return base::unexpected(MediaError::Of(
-        ErrorCode::kSourceReadFailed, "read aborted",
-        "the source was aborted before this read",
-        "reconnect with RetryDataSource instead of reading on"));
+    return base::unexpected(
+        MediaError::Of(ErrorCode::kSourceReadFailed, "read aborted",
+                       "the source was aborted before this read",
+                       "reconnect with RetryDataSource instead of reading on"));
   }
 
   size_t done = 0;
@@ -123,9 +123,8 @@ ThrottledDataSource::ReadResult ThrottledDataSource::ReadInternal(
       }
       continue;
     }
-    ReadResult got =
-        inner_->ReadBlocking(offset + static_cast<int64_t>(done), wanted,
-                             data + done);
+    ReadResult got = inner_->ReadBlocking(offset + static_cast<int64_t>(done),
+                                          wanted, data + done);
     if (!got.has_value()) {
       return base::unexpected(got.error());
     }
@@ -141,8 +140,8 @@ ThrottledDataSource::ReadResult ThrottledDataSource::ReadInternal(
   return static_cast<int>(done);
 }
 
-ThrottledDataSource::ReadResult ThrottledDataSource::ReadBlocking(
-    int64_t offset, size_t size, uint8_t* data) {
+ThrottledDataSource::ReadResult
+ThrottledDataSource::ReadBlocking(int64_t offset, size_t size, uint8_t* data) {
   return ReadInternal(offset, size, data);
 }
 
@@ -152,8 +151,8 @@ void ThrottledDataSource::Read(
   // The async path paces on the caller's thread (test fakes have no worker of
   // their own) and only the reply honours the "never inline" contract.
   ReadResult result = ReadInternal(offset, size, data);
-  task_runner->PostTask(
-      FROM_HERE, base::BindOnce(std::move(read_cb), std::move(result)));
+  task_runner->PostTask(FROM_HERE,
+                        base::BindOnce(std::move(read_cb), std::move(result)));
 }
 
 void ThrottledDataSource::Abort() {

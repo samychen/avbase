@@ -50,10 +50,10 @@
 #include "media/filters/ffmpeg_text_decoder.h"
 #endif
 #include "tests/support/fake_pipeline_client.h"
-#include "tests/support/synthetic_decoders.h"
-#include "tests/support/synthetic_demuxer.h"
 #include "tests/support/fake_renderer_sinks.h"
 #include "tests/support/fake_sink_factories.h"
+#include "tests/support/synthetic_decoders.h"
+#include "tests/support/synthetic_demuxer.h"
 
 #ifdef AVBASE_TESTDATA_DIR
 #define AVBASE_PIPELINE_FIXTURE_HAS_TESTDATA 1
@@ -210,12 +210,12 @@ class PipelineTestFixture : public ::testing::Test {
       }
       ASSERT_GT(media_bytes_.size(), 10000u)
           << "testdata file too small: " << media_file_;
-      auto source = base::MakeRefCounted<MemoryDataSource>(
-          media_bytes_.data(), media_bytes_.size());
+      auto source = base::MakeRefCounted<MemoryDataSource>(media_bytes_.data(),
+                                                           media_bytes_.size());
       source_ = custom_source ? custom_source : source;
 #endif
     } else {
-      source_.reset();   // SyntheticDemuxer needs no DataSource.
+      source_.reset();  // SyntheticDemuxer needs no DataSource.
     }
     DemuxerOptions options;
     if (ffmpeg_mode_) {
@@ -236,7 +236,8 @@ class PipelineTestFixture : public ::testing::Test {
     // kReady is signalled by kHaveMetadata (pipeline_impl.cc sets the state
     // right before emitting it). Play() before that is a documented no-op.
     ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }))
-        << "never reached kHaveMetadata; events:\n" << client_.EventLog();
+        << "never reached kHaveMetadata; events:\n"
+        << client_.EventLog();
     pipeline_->Play();
   }
 
@@ -288,8 +289,7 @@ class PipelineTestFixture : public ::testing::Test {
     // slow round does not push the schedule permanently behind. Never
     // negative: a round that overran sleeps not at all.
     const auto spent = std::chrono::steady_clock::now() - start;
-    const auto target =
-        std::chrono::milliseconds(media_ms_per_round) - spent;
+    const auto target = std::chrono::milliseconds(media_ms_per_round) - spent;
     if (target > std::chrono::milliseconds(0)) {
       std::this_thread::sleep_for(target);
     }

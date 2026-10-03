@@ -16,37 +16,37 @@ bool PlayerStateMachine::TransitionTo(PlayerState to) {
 
 bool PlayerStateMachine::CanTransitionTo(PlayerState to) const {
   switch (state_) {
-    case PlayerState::kIdle:
-      return to == PlayerState::kInitialized;
-    case PlayerState::kInitialized:
-      return to == PlayerState::kPreparing;
-    case PlayerState::kPreparing:
-      return to == PlayerState::kPrepared || to == PlayerState::kStopping ||
-             to == PlayerState::kError;
-    case PlayerState::kPrepared:
-      return to == PlayerState::kStarted || to == PlayerState::kStopping ||
-             to == PlayerState::kError;
-    case PlayerState::kStarted:
-      return to == PlayerState::kPaused || to == PlayerState::kCompleted ||
-             to == PlayerState::kStopping || to == PlayerState::kError;
-    case PlayerState::kPaused:
-      return to == PlayerState::kStarted || to == PlayerState::kStopping ||
-             to == PlayerState::kError;
-    case PlayerState::kCompleted:
-      return to == PlayerState::kStarted || to == PlayerState::kStopping ||
-             to == PlayerState::kError;
-    case PlayerState::kStopping:
-      return to == PlayerState::kStopped;
-    case PlayerState::kStopped:
-      return to == PlayerState::kIdle;
-    case PlayerState::kError:
-      return to == PlayerState::kStopped;
-    case PlayerState::kBuffering:
-      // kBuffering is a projection of buffering events, not a state this
-      // machine drives; kept in the enum for the frozen event surface.
-      return false;
-    case PlayerState::kEnd:
-      return false;
+  case PlayerState::kIdle:
+    return to == PlayerState::kInitialized;
+  case PlayerState::kInitialized:
+    return to == PlayerState::kPreparing;
+  case PlayerState::kPreparing:
+    return to == PlayerState::kPrepared || to == PlayerState::kStopping ||
+           to == PlayerState::kError;
+  case PlayerState::kPrepared:
+    return to == PlayerState::kStarted || to == PlayerState::kStopping ||
+           to == PlayerState::kError;
+  case PlayerState::kStarted:
+    return to == PlayerState::kPaused || to == PlayerState::kCompleted ||
+           to == PlayerState::kStopping || to == PlayerState::kError;
+  case PlayerState::kPaused:
+    return to == PlayerState::kStarted || to == PlayerState::kStopping ||
+           to == PlayerState::kError;
+  case PlayerState::kCompleted:
+    return to == PlayerState::kStarted || to == PlayerState::kStopping ||
+           to == PlayerState::kError;
+  case PlayerState::kStopping:
+    return to == PlayerState::kStopped;
+  case PlayerState::kStopped:
+    return to == PlayerState::kIdle;
+  case PlayerState::kError:
+    return to == PlayerState::kStopped;
+  case PlayerState::kBuffering:
+    // kBuffering is a projection of buffering events, not a state this
+    // machine drives; kept in the enum for the frozen event surface.
+    return false;
+  case PlayerState::kEnd:
+    return false;
   }
   return false;
 }

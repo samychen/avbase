@@ -87,7 +87,8 @@ TEST_F(AvSyncControllerTest, MasterClockAdvancesWithWallTime) {
   controller_->OnAudioFramesConsumed(1024, base::Seconds(10), 1);
   EXPECT_EQ(controller_->GetMasterClock(), base::Seconds(10));
   clock_.Advance(base::Milliseconds(250));
-  EXPECT_EQ(controller_->GetMasterClock(), base::Seconds(10) + base::Milliseconds(250));
+  EXPECT_EQ(controller_->GetMasterClock(),
+            base::Seconds(10) + base::Milliseconds(250));
 }
 
 // Regression for bug #32. Clock::Get() reconstructed the master clock from
@@ -125,7 +126,8 @@ TEST_F(AvSyncControllerTest, PlaybackRateScalesExtrapolation) {
   controller_->SetPlaybackRate(2.0);
   clock_.Advance(base::Milliseconds(100));
   // 100 ms of wall time at 2x is 200 ms of media time.
-  EXPECT_EQ(controller_->GetMasterClock(), base::Seconds(10) + base::Milliseconds(200));
+  EXPECT_EQ(controller_->GetMasterClock(),
+            base::Seconds(10) + base::Milliseconds(200));
 }
 
 TEST_F(AvSyncControllerTest, AvDiffIsAudioMinusVideo) {
@@ -172,7 +174,8 @@ TEST_F(AvSyncControllerTest, NoCorrectionUntilTheDiffWindowIsFull) {
   }
 }
 
-TEST_F(AvSyncControllerTest, CorrectsOnceTheWindowIsFullAndDriftExceedsThreshold) {
+TEST_F(AvSyncControllerTest,
+       CorrectsOnceTheWindowIsFullAndDriftExceedsThreshold) {
   controller_->set_requested_master(M::kVideo);
   controller_->OnVideoFramePresented(base::Seconds(10), 1);
   // Audio a full second behind video: far above AV_DIFF_THRESHOLD (0.1 s).
@@ -181,7 +184,8 @@ TEST_F(AvSyncControllerTest, CorrectsOnceTheWindowIsFullAndDriftExceedsThreshold
   for (int i = 0; i < 40; ++i) {
     adjustment = controller_->ComputeAudioSampleAdjustment(1024, 48000);
     controller_->OnAudioFramesConsumed(1024, base::Seconds(9), 1);
-    if (adjustment != 0) break;
+    if (adjustment != 0)
+      break;
   }
   EXPECT_NE(adjustment, 0);
   // SAMPLE_CORRECTION_PERCENT_MAX is 10. ffplay computes the bound with integer
@@ -195,12 +199,13 @@ TEST_F(AvSyncControllerTest, CorrectsOnceTheWindowIsFullAndDriftExceedsThreshold
 TEST_F(AvSyncControllerTest, CorrectionIsClampedToTenPercent) {
   controller_->set_requested_master(M::kVideo);
   controller_->OnVideoFramePresented(base::Seconds(100), 1);
-  controller_->OnAudioFramesConsumed(1024, base::Seconds(1), 1);   // 99 s behind
+  controller_->OnAudioFramesConsumed(1024, base::Seconds(1), 1);  // 99 s behind
   int adjustment = 0;
   for (int i = 0; i < 40; ++i) {
     adjustment = controller_->ComputeAudioSampleAdjustment(1024, 48000);
     controller_->OnAudioFramesConsumed(1024, base::Seconds(1), 1);
-    if (adjustment != 0) break;
+    if (adjustment != 0)
+      break;
   }
   EXPECT_GE(adjustment, -103);
   EXPECT_LE(adjustment, 103);
@@ -239,7 +244,8 @@ TEST_F(AvSyncControllerTest, AlignIsIdentityWhenAudioIsNotTheMaster) {
 
 TEST_F(AvSyncControllerTest, AlignShortensAudioWhenItIsBehindVideo) {
   controller_->OnVideoFramePresented(base::Seconds(10), 1);
-  controller_->OnAudioFramesConsumed(1024, base::Seconds(9) + base::Milliseconds(900), 1);
+  controller_->OnAudioFramesConsumed(
+      1024, base::Seconds(9) + base::Milliseconds(900), 1);
   // Audio is 100 ms behind; shortening the next buffer lets it catch up.
   const base::TimeDelta aligned =
       controller_->AlignAudioDurationToVideo(base::Milliseconds(100));
@@ -250,7 +256,8 @@ TEST_F(AvSyncControllerTest, AlignShortensAudioWhenItIsBehindVideo) {
 
 TEST_F(AvSyncControllerTest, AlignLengthensAudioWhenItIsAheadOfVideo) {
   controller_->OnVideoFramePresented(base::Seconds(10), 1);
-  controller_->OnAudioFramesConsumed(1024, base::Seconds(10) + base::Milliseconds(100), 1);
+  controller_->OnAudioFramesConsumed(
+      1024, base::Seconds(10) + base::Milliseconds(100), 1);
   const base::TimeDelta aligned =
       controller_->AlignAudioDurationToVideo(base::Milliseconds(100));
   EXPECT_GT(aligned, base::Milliseconds(100));
@@ -259,7 +266,8 @@ TEST_F(AvSyncControllerTest, AlignLengthensAudioWhenItIsAheadOfVideo) {
 
 TEST_F(AvSyncControllerTest, AlignNeverReturnsNegative) {
   controller_->OnVideoFramePresented(base::Seconds(10), 1);
-  controller_->OnAudioFramesConsumed(1024, base::Seconds(10) + base::Milliseconds(5), 1);
+  controller_->OnAudioFramesConsumed(
+      1024, base::Seconds(10) + base::Milliseconds(5), 1);
   const base::TimeDelta aligned =
       controller_->AlignAudioDurationToVideo(base::Microseconds(100));
   EXPECT_GE(aligned, base::TimeDelta());
@@ -281,7 +289,7 @@ TEST_F(AvSyncControllerTest, WallClockTimesAreMonotonic) {
   controller_->GetWallClockTimes(
       {base::Seconds(10), base::Seconds(11), base::Seconds(12)}, now, &out);
   ASSERT_EQ(out.size(), 3u);
-  EXPECT_EQ(out[0].wall_time, now);                       // media == master
+  EXPECT_EQ(out[0].wall_time, now);  // media == master
   EXPECT_EQ(out[1].wall_time - now, base::Seconds(1));
   EXPECT_EQ(out[2].wall_time - now, base::Seconds(2));
   EXPECT_LT(out[0].wall_time, out[1].wall_time);
@@ -293,7 +301,8 @@ TEST_F(AvSyncControllerTest, WallClockTimesCompressAtDoubleRate) {
   controller_->SetPlaybackRate(2.0);
   const base::TimeTicks now = clock_.NowTicks();
   std::vector<WallClockTime> out;
-  controller_->GetWallClockTimes({base::Seconds(10), base::Seconds(12)}, now, &out);
+  controller_->GetWallClockTimes({base::Seconds(10), base::Seconds(12)}, now,
+                                 &out);
   ASSERT_EQ(out.size(), 2u);
   // 2 s of media at 2x occupies 1 s of wall time.
   EXPECT_EQ(out[1].wall_time - now, base::Milliseconds(1000));
@@ -311,7 +320,8 @@ TEST_F(AvSyncControllerTest, WallClockTimesFallBackWhenClockInvalid) {
 
 TEST_F(AvSyncControllerTest, SnapshotCarriesEverything) {
   controller_->OnAudioFramesConsumed(1024, base::Seconds(5), 3);
-  controller_->OnVideoFramePresented(base::Seconds(5) - base::Milliseconds(20), 3);
+  controller_->OnVideoFramePresented(base::Seconds(5) - base::Milliseconds(20),
+                                     3);
   const auto snapshot = controller_->GetSnapshot();
   EXPECT_TRUE(snapshot.audio.valid);
   EXPECT_TRUE(snapshot.video.valid);
@@ -345,13 +355,14 @@ TEST_F(AvSyncControllerTest, ConcurrentReadersNeverSeeATornClock) {
     while (!stop.load(std::memory_order_relaxed)) {
       controller_->OnAudioFramesConsumed(1024, pts, 1);
       pts = pts + base::Milliseconds(21);
-      if (pts > base::Seconds(600)) pts = base::Seconds(1);
+      if (pts > base::Seconds(600))
+        pts = base::Seconds(1);
     }
   });
 
   // Readers must not start until the clock has been set at least once. A read
-  // that lands before the writer's first OnAudioFramesConsumed() sees an invalid
-  // clock and GetMasterClock() returns kNoTimestamp -- which is correct
+  // that lands before the writer's first OnAudioFramesConsumed() sees an
+  // invalid clock and GetMasterClock() returns kNoTimestamp -- which is correct
   // behaviour, not a torn read, but this test counts it as a violation. Without
   // this gate the test is a startup race: it passes when the writer thread wins
   // scheduling and fails with tens of thousands of "violations" when a reader
@@ -398,7 +409,8 @@ TEST_F(AvSyncControllerTest, ConcurrentReadersNeverSeeATornClock) {
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
   stop.store(true);
   writer.join();
-  for (auto& r : readers) r.join();
+  for (auto& r : readers)
+    r.join();
 
   EXPECT_EQ(violations.load(), 0);
   EXPECT_GT(reads.load(), 1000);

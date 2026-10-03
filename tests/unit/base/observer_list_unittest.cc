@@ -61,7 +61,7 @@ TEST(ObserverListTest, RemoveDuringIterationIsSafe) {
   for (ObserverList<Observer>::Iterator it(list); Observer* o = it.GetNext();) {
     o->OnEvent(5);
     if (o == &a) {
-      list.RemoveObserver(&b);   // b must not be notified in this pass.
+      list.RemoveObserver(&b);  // b must not be notified in this pass.
     }
   }
   EXPECT_EQ(a.events, std::vector<int>({5}));
@@ -77,7 +77,7 @@ TEST(ObserverListTest, RemoveSelfDuringIterationIsSafe) {
 
   for (ObserverList<Observer>::Iterator it(list); Observer* o = it.GetNext();) {
     if (o == &a) {
-      list.RemoveObserver(&a);   // Self-removal.
+      list.RemoveObserver(&a);  // Self-removal.
     } else {
       o->OnEvent(7);
     }
@@ -136,7 +136,8 @@ TEST(ObserverListTest, NestedIteration) {
   RecordingObserver a;
   list.AddObserver(&a);
 
-  for (ObserverList<Observer>::Iterator outer(list); Observer* o = outer.GetNext();) {
+  for (ObserverList<Observer>::Iterator outer(list);
+       Observer* o = outer.GetNext();) {
     for (ObserverList<Observer>::Iterator inner(list);
          Observer* i = inner.GetNext();) {
       i->OnEvent(2);

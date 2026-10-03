@@ -62,8 +62,7 @@ void PlayerImpl::OnMediaSeekDone(int64_t request_id,
   event_hub_.Post(EventType::kSeekCompleted, std::move(payload),
                   GetMediaTime());
   if (cb) {
-    event_hub_.PostClosure(
-        base::BindOnce(std::move(cb), OkStatus()));
+    event_hub_.PostClosure(base::BindOnce(std::move(cb), OkStatus()));
   }
 }
 
@@ -91,8 +90,8 @@ void PlayerImpl::ApplyGain() {
   }
   // Mute scales the samples at the device path (Δ13), it does not stop the
   // clock: the audio master stays authoritative while muted.
-  pipeline_->SetVolume(static_cast<float>(
-      muted_.load() ? 0.0 : volume_.load()));
+  pipeline_->SetVolume(
+      static_cast<float>(muted_.load() ? 0.0 : volume_.load()));
 }
 
 void PlayerImpl::SetLoopCount(int count) {
@@ -125,14 +124,13 @@ void PlayerImpl::OnEnded() {
       loop_count_.store(count - 1);
     }
     if (pipeline_) {
-      pipeline_->Seek(base::TimeDelta(),
-                      base::BindOnce(
-                          [](PlayerImpl* self) {
-                            if (self->pipeline_) {
-                              self->pipeline_->Play();
-                            }
-                          },
-                          base::Unretained(this)));
+      pipeline_->Seek(base::TimeDelta(), base::BindOnce(
+                                             [](PlayerImpl* self) {
+                                               if (self->pipeline_) {
+                                                 self->pipeline_->Play();
+                                               }
+                                             },
+                                             base::Unretained(this)));
     }
     return;
   }
@@ -295,11 +293,11 @@ std::string PlayerImpl::DumpDiagnostics() const {
   const media::Size natural = video_natural_size();
   std::string json = "{";
   json += "\"state\":\"" + std::string(GetPlayerStateName(s)) + "\"";
-  json += ",\"media_time_us\":" +
-          std::to_string(GetMediaTime().InMicroseconds());
+  json +=
+      ",\"media_time_us\":" + std::to_string(GetMediaTime().InMicroseconds());
   json += ",\"duration_us\":" + std::to_string(GetDuration().InMicroseconds());
-  json += ",\"buffered_us\":" +
-          std::to_string(GetBufferedTime().InMicroseconds());
+  json +=
+      ",\"buffered_us\":" + std::to_string(GetBufferedTime().InMicroseconds());
   json += ",\"rate\":" + std::to_string(playback_rate_.load());
   json += ",\"volume\":" + std::to_string(volume_.load());
   json += ",\"video\":" + std::to_string(natural.width) + "x" +
@@ -322,9 +320,8 @@ void PlayerImpl::BeginAccurateWaitOnMedia(int64_t request_id,
                        base::TimeTicks::Now());
   if (pipeline_) {
     pipeline_->BeginAccurateSeek(
-        target,
-        base::BindOnce(&PlayerImpl::OnAccurateSeekTargetReached,
-                       base::Unretained(this)));
+        target, base::BindOnce(&PlayerImpl::OnAccurateSeekTargetReached,
+                               base::Unretained(this)));
   }
   // Δ10's bound, armed over the whole operation: the keyframe seek, the
   // decode catch-up and the display landing all count against it. The task
@@ -443,10 +440,12 @@ void PlayerImpl::CompleteAccurateSeek(bool reached) {
   payload.actual = GetMediaTime();
   if (!reached) {
     payload.result = MediaError(
-        ErrorCode::kTimeout, "accurate seek timed out before the target "
-                             "frame was displayed",
-        "target = " + target.ToString() + "; the keyframe seek landed and "
-        "playback continued",
+        ErrorCode::kTimeout,
+        "accurate seek timed out before the target "
+        "frame was displayed",
+        "target = " + target.ToString() +
+            "; the keyframe seek landed and "
+            "playback continued",
         "raise config.seek.accurate_timeout, or accept the keyframe landing "
         "with SeekMode::kPreviousKeyframe");
   }
@@ -456,12 +455,12 @@ void PlayerImpl::CompleteAccurateSeek(bool reached) {
     event_hub_.PostClosure(base::BindOnce(
         std::move(cb),
         reached ? OkStatus()
-                : base::unexpected(MediaError(
-                      ErrorCode::kTimeout, "accurate seek timed out",
-                      "the target frame was not displayed within "
-                          "config.seek.accurate_timeout",
-                      "raise config.seek.accurate_timeout, or use "
-                      "SeekMode::kPreviousKeyframe"))));
+                : base::unexpected(
+                      MediaError(ErrorCode::kTimeout, "accurate seek timed out",
+                                 "the target frame was not displayed within "
+                                 "config.seek.accurate_timeout",
+                                 "raise config.seek.accurate_timeout, or use "
+                                 "SeekMode::kPreviousKeyframe"))));
   }
 }
 

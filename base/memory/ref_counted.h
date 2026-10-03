@@ -18,8 +18,8 @@ namespace avbase::base {
 // Declaring this inside a class forbids accidental construction on the stack
 // or via `new T` without adoption by a scoped_refptr. Mirrors Chromium's
 // REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE().
-#define REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE()                  \
-  static_assert(sizeof(::avbase::base::subtle::AdoptionHelper) > 0, "");  \
+#define REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE()                           \
+  static_assert(sizeof(::avbase::base::subtle::AdoptionHelper) > 0, ""); \
   friend class ::avbase::base::subtle::AdoptionHelper
 
 namespace subtle {

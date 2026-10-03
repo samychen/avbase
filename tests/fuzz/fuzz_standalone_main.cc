@@ -35,40 +35,40 @@ std::vector<uint8_t> Mutate(const std::vector<uint8_t>& input,
   std::uniform_int_distribution<size_t> pos_pick(0, last);
   std::uniform_int_distribution<int> byte_pick(0, 255);
   switch (round % 4) {
-    case 0: {   // Bit flips: 8 random bits.
-      for (int i = 0; i < 8 && !out.empty(); ++i) {
-        const size_t pos = pos_pick(rng);
-        out[pos] ^= static_cast<uint8_t>(1u << (round % 8));
-      }
-      break;
+  case 0: {  // Bit flips: 8 random bits.
+    for (int i = 0; i < 8 && !out.empty(); ++i) {
+      const size_t pos = pos_pick(rng);
+      out[pos] ^= static_cast<uint8_t>(1u << (round % 8));
     }
-    case 1: {   // Truncate: simulate a cut-off tail (mdat, moov).
-      if (!out.empty()) {
-        const size_t pos = pos_pick(rng);
-        out.resize(pos);
-      }
-      break;
+    break;
+  }
+  case 1: {  // Truncate: simulate a cut-off tail (mdat, moov).
+    if (!out.empty()) {
+      const size_t pos = pos_pick(rng);
+      out.resize(pos);
     }
-    case 2: {   // Stuff: lie about a length field / splice in garbage.
-      const size_t pos = out.empty() ? 0 : pos_pick(rng);
-      const size_t count = 1 + (rng() % 32);
-      for (size_t i = 0; i < count && pos + i < out.size(); ++i) {
-        out[pos + i] = static_cast<uint8_t>(byte_pick(rng));
-      }
-      break;
+    break;
+  }
+  case 2: {  // Stuff: lie about a length field / splice in garbage.
+    const size_t pos = out.empty() ? 0 : pos_pick(rng);
+    const size_t count = 1 + (rng() % 32);
+    for (size_t i = 0; i < count && pos + i < out.size(); ++i) {
+      out[pos + i] = static_cast<uint8_t>(byte_pick(rng));
     }
-    case 3: {   // Splice: copy a slice of one file into another offset.
-      if (out.size() > 16) {
-        const size_t src = pos_pick(rng);
-        const size_t dst = pos_pick(rng);
-        const size_t len = 1 + (rng() % 64);
-        for (size_t i = 0;
-             i < len && src + i < out.size() && dst + i < out.size(); ++i) {
-          out[dst + i] = out[src + i];
-        }
+    break;
+  }
+  case 3: {  // Splice: copy a slice of one file into another offset.
+    if (out.size() > 16) {
+      const size_t src = pos_pick(rng);
+      const size_t dst = pos_pick(rng);
+      const size_t len = 1 + (rng() % 64);
+      for (size_t i = 0;
+           i < len && src + i < out.size() && dst + i < out.size(); ++i) {
+        out[dst + i] = out[src + i];
       }
-      break;
     }
+    break;
+  }
   }
   if (out.size() > kMaxMutatedSize) {
     out.resize(kMaxMutatedSize);
@@ -114,7 +114,7 @@ int main(int argc, char** argv) {
     };
   }
 
-  std::mt19937 rng(0xA7B45E1u);   // Fixed: crashes must be reproducible.
+  std::mt19937 rng(0xA7B45E1u);  // Fixed: crashes must be reproducible.
   int inputs = 0;
   for (const std::string& file : files) {
     const std::vector<uint8_t> original = ReadFile(file);

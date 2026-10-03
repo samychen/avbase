@@ -53,8 +53,8 @@
 #include "base/time/time.h"
 #include "media/base/decoder_config.h"
 #include "media/base/media_error.h"
-#include "media/base/timed_text.h"
 #include "media/base/media_types.h"
+#include "media/base/timed_text.h"
 #include "media/base/waiting.h"
 #include "media/media_export.h"
 
@@ -64,11 +64,11 @@ namespace avbase::media {
 // int-valued FFP_MSG_BUFFERING_START / _END pair plus a separate
 // FFP_MSG_BUFFERING_UPDATE, so a consumer cannot observe END before START.
 enum class BufferingState {
-  kHaveNothing = 0,   // No data at all; playback cannot start.
-  kHaveMetadata,      // Probed, no media data buffered yet.
-  kHaveEnough,        // Enough buffered to play; resumes rendering.
-  kHaveFuture,        // Some data, will stall soon (drives the kBuffering
-                      // warning before the stall, not after it).
+  kHaveNothing = 0,  // No data at all; playback cannot start.
+  kHaveMetadata,     // Probed, no media data buffered yet.
+  kHaveEnough,       // Enough buffered to play; resumes rendering.
+  kHaveFuture,       // Some data, will stall soon (drives the kBuffering
+                     // warning before the stall, not after it).
 };
 
 AVBASE_MEDIA_EXPORT const char* BufferingStateToString(BufferingState state);
@@ -97,14 +97,14 @@ struct AVBASE_MEDIA_EXPORT PipelineStatistics {
   int64_t video_bytes{0};
   int64_t text_bytes{0};
   int64_t total_bytes_read{0};
-  base::TimeDelta buffered_time;         // How far ahead of the play head.
+  base::TimeDelta buffered_time;  // How far ahead of the play head.
   base::TimeDelta estimated_playback_time;
 
   // Video decode / render.
   uint64_t video_frames_decoded{0};
-  uint64_t video_frames_dropped{0};      // Late, fps-capped, or stale serial.
+  uint64_t video_frames_dropped{0};  // Late, fps-capped, or stale serial.
   uint64_t video_frames_presented{0};
-  uint64_t video_frames_repeated{0};     // Held because no new frame was due.
+  uint64_t video_frames_repeated{0};  // Held because no new frame was due.
   uint64_t video_decode_error_count{0};
   uint64_t video_keyframe_count{0};
 

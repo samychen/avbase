@@ -112,8 +112,8 @@ void NullVideoSink::RenderOne() {
   }
 }
 
-std::unique_ptr<VideoRendererSink> NullVideoSinkFactory::Create(
-    base::scoped_refptr<NativeDisplay> display) {
+std::unique_ptr<VideoRendererSink>
+NullVideoSinkFactory::Create(base::scoped_refptr<NativeDisplay> display) {
   auto sink = std::make_unique<NullVideoSink>();
   sink->SetOutputTarget(std::move(display));
   return sink;

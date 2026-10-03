@@ -9,9 +9,10 @@
 
 namespace avbase::platform::ffmpeg {
 
-base::scoped_refptr<media::VideoFrame> MapHwFrameToI420(
-    const AVFrame* hw_frame, media::Rational sar, base::TimeDelta timestamp,
-    base::TimeDelta duration, int32_t serial, media::VideoColorSpace cs) {
+base::scoped_refptr<media::VideoFrame>
+MapHwFrameToI420(const AVFrame* hw_frame, media::Rational sar,
+                 base::TimeDelta timestamp, base::TimeDelta duration,
+                 int32_t serial, media::VideoColorSpace cs) {
   AVFrame* sw_raw = av_frame_alloc();
   if (!sw_raw) {
     return nullptr;
@@ -20,8 +21,8 @@ base::scoped_refptr<media::VideoFrame> MapHwFrameToI420(
   // The hw→sw transfer. The frames context decides the CPU layout; we do not
   // pick one, because pretending to know the device's layout is how a driver
   // update turns into corrupted chroma.
-  if (av_hwframe_transfer_data(sw_frame.get(),
-                               const_cast<AVFrame*>(hw_frame), 0) < 0) {
+  if (av_hwframe_transfer_data(sw_frame.get(), const_cast<AVFrame*>(hw_frame),
+                               0) < 0) {
     return nullptr;
   }
 
@@ -33,10 +34,9 @@ base::scoped_refptr<media::VideoFrame> MapHwFrameToI420(
   if (!out) {
     return nullptr;
   }
-  SwsPtr sws(sws_getContext(width, height,
-                            static_cast<AVPixelFormat>(sw_frame->format),
-                            width, height, AV_PIX_FMT_YUV420P, SWS_BILINEAR,
-                            nullptr, nullptr, nullptr));
+  SwsPtr sws(sws_getContext(
+      width, height, static_cast<AVPixelFormat>(sw_frame->format), width,
+      height, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr));
   if (!sws) {
     return nullptr;
   }

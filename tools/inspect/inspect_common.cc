@@ -17,14 +17,17 @@ namespace avbase {
 
 const char* StreamKindName(media::StreamKind kind) {
   switch (kind) {
-    case media::StreamKind::kVideo: return "video";
-    case media::StreamKind::kAudio: return "audio";
-    case media::StreamKind::kText: return "text";
-    case media::StreamKind::kUnknown: return "unknown";
+  case media::StreamKind::kVideo:
+    return "video";
+  case media::StreamKind::kAudio:
+    return "audio";
+  case media::StreamKind::kText:
+    return "text";
+  case media::StreamKind::kUnknown:
+    return "unknown";
   }
   return "unknown";
 }
-
 
 void Usage() {
   printf(
@@ -44,11 +47,11 @@ void Usage() {
       "      the audio sample correction at each step.\n"
       "\n"
       "options:\n"
-      "  --limit N   Stop after N decoded outputs per stream (default 100000).\n"
+      "  --limit N   Stop after N decoded outputs per stream (default "
+      "100000).\n"
       "  --verbose   Enable avbase INFO logging.\n"
       "  -h, --help  This text.\n");
 }
-
 
 bool ParseArgs(int argc, char** argv, Options* out) {
   for (int i = 1; i < argc; ++i) {
@@ -101,11 +104,12 @@ bool OpenDemuxer(media::FFmpegDemuxer* demuxer, const std::string& path,
   bool done = false;
   demuxer->Initialize(media::DataSourceDescriptor::FromUri(path),
                       media::DemuxerOptions{}, host, runner,
-                      base::BindOnce([](media::Status* out, bool* flag,
-                                        media::Status s) {
-                        *out = std::move(s);
-                        *flag = true;
-                      }, &result, &done));
+                      base::BindOnce(
+                          [](media::Status* out, bool* flag, media::Status s) {
+                            *out = std::move(s);
+                            *flag = true;
+                          },
+                          &result, &done));
   if (!pump->Until([&done] { return done; })) {
     fprintf(stderr, "error: opening '%s' timed out\n", path.c_str());
     return false;

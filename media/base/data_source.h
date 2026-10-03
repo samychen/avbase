@@ -21,8 +21,8 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/task/task_runner.h"
 #include "base/time/time.h"
-#include "media/media_export.h"
 #include "media/base/media_error.h"
+#include "media/media_export.h"
 
 namespace avbase::media {
 
@@ -39,12 +39,13 @@ class AVBASE_MEDIA_EXPORT DataSource
     Host& operator=(const Host&) = delete;
     virtual void RequestAdditionalBytes(size_t bytes) = 0;
     virtual void SetDeferring(bool deferred) = 0;
+
    protected:
     Host() = default;
     virtual ~Host() = default;
   };
 
-  using ReadResult = base::expected<int, MediaError>;   // bytes read, 0 == EOF
+  using ReadResult = base::expected<int, MediaError>;  // bytes read, 0 == EOF
   using ReadCB = base::OnceCallback<void(ReadResult)>;
 
   DataSource(const DataSource&) = delete;
@@ -59,7 +60,8 @@ class AVBASE_MEDIA_EXPORT DataSource
 
   // Blocking variant used by the demuxer's own thread (docs/04 §2.1 D3).
   // Returns the number of bytes read, 0 at EOF, or an error.
-  virtual ReadResult ReadBlocking(int64_t offset, size_t size, uint8_t* data) = 0;
+  virtual ReadResult ReadBlocking(int64_t offset, size_t size,
+                                  uint8_t* data) = 0;
 
   // Aborts any in-flight blocking read. Must return promptly; this is what
   // bounds Stop() (docs/04 §5.4, Δ15).

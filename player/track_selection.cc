@@ -27,13 +27,13 @@ Status PlayerImpl::SelectTrack(media::DemuxerStreamType type,
   }
   if (current != PlayerState::kStarted && current != PlayerState::kPaused &&
       current != PlayerState::kPrepared) {
-    return base::unexpected(MediaError(
-        ErrorCode::kInvalidState,
-        std::string("SelectTrack called in state ") +
-            GetPlayerStateName(current),
-        "track switching hands over the sub-renderer, which needs a "
-        "prepared or playing pipeline",
-        "wait for kPrepared before switching tracks"));
+    return base::unexpected(
+        MediaError(ErrorCode::kInvalidState,
+                   std::string("SelectTrack called in state ") +
+                       GetPlayerStateName(current),
+                   "track switching hands over the sub-renderer, which needs a "
+                   "prepared or playing pipeline",
+                   "wait for kPrepared before switching tracks"));
   }
 
   const MediaInfo info = pipeline_ ? pipeline_->media_info() : MediaInfo();

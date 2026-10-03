@@ -17,21 +17,20 @@
 
 #include "base/functional/bind.h"
 #include "base/test/task_environment.h"
-#include "media/base/audio_decoder_factory.h"
 #include "gtest/gtest.h"
+#include "media/base/audio_decoder_factory.h"
 
 namespace avbase::media {
 namespace {
 
 // ---- fakes ----------------------------------------------------------------
 
-// Hands out a scripted list of DecoderBuffers. Read() completes inline, which is
-// stricter than the real contract ("never runs its callback inline") and so
+// Hands out a scripted list of DecoderBuffers. Read() completes inline, which
+// is stricter than the real contract ("never runs its callback inline") and so
 // exercises DecoderStream's re-entrancy guards.
 class ScriptedDemuxerStream final : public DemuxerStream {
  public:
-  explicit ScriptedDemuxerStream(
-      DemuxerStream::DecoderBufferVector buffers)
+  explicit ScriptedDemuxerStream(DemuxerStream::DecoderBufferVector buffers)
       : buffers_(std::move(buffers)) {}
 
   // Caps how many buffers one Read() returns, so a test can leave data behind
@@ -82,8 +81,8 @@ class ScriptedDemuxerStream final : public DemuxerStream {
   uint32_t max_per_read_ = 8;
 };
 
-// Turns each input buffer into |outputs_per_buffer| AudioBuffers. Can be made to
-// fail initialization or to fail every decode, to drive the fallback paths.
+// Turns each input buffer into |outputs_per_buffer| AudioBuffers. Can be made
+// to fail initialization or to fail every decode, to drive the fallback paths.
 class FakeAudioDecoder final : public AudioDecoder {
  public:
   struct Behaviour {
@@ -125,8 +124,8 @@ class FakeAudioDecoder final : public AudioDecoder {
       ++*behaviour_.decode_calls;
     }
     if (behaviour_.decode_fails) {
-      std::move(decode_cb).Run(DecoderStatus(
-          DecoderStatus::Codes::kDecodeError, "fake decode failure"));
+      std::move(decode_cb).Run(DecoderStatus(DecoderStatus::Codes::kDecodeError,
+                                             "fake decode failure"));
       return;
     }
     if (behaviour_.defer_decode) {
@@ -139,8 +138,8 @@ class FakeAudioDecoder final : public AudioDecoder {
       return;
     }
     // Stamp from the buffer, exactly as FFmpegAudioDecoder does: the serial
-    // travels with the data, so a Flush() that bumps it takes effect on the very
-    // next buffer without re-initializing the decoder.
+    // travels with the data, so a Flush() that bumps it takes effect on the
+    // very next buffer without re-initializing the decoder.
     const int32_t buffer_serial = buffer->serial();
     for (int i = 0; i < behaviour_.outputs_per_buffer; ++i) {
       output_cb_.Run(AudioBuffer::Create(
@@ -156,8 +155,8 @@ class FakeAudioDecoder final : public AudioDecoder {
     // Chromium's contract: Reset() aborts pending Decode() calls, running their
     // callbacks with kDecodingAborted, before |closure| runs.
     for (auto& cb : deferred_) {
-      std::move(cb).Run(DecoderStatus(DecoderStatus::Codes::kDecodingAborted,
-                                      "reset"));
+      std::move(cb).Run(
+          DecoderStatus(DecoderStatus::Codes::kDecodingAborted, "reset"));
     }
     deferred_.clear();
     std::move(closure).Run();
@@ -180,15 +179,12 @@ class FakeAudioDecoderFactory final : public AudioDecoderFactory {
   explicit FakeAudioDecoderFactory(std::string name,
                                    FakeAudioDecoder::Behaviour behaviour,
                                    bool declines = false)
-      : name_(std::move(name)),
-        behaviour_(behaviour),
-        declines_(declines) {}
+      : name_(std::move(name)), behaviour_(behaviour), declines_(declines) {}
 
-  std::unique_ptr<AudioDecoder> CreateAudioDecoder(
-      const AudioDecoderConfig&) override {
+  std::unique_ptr<AudioDecoder>
+  CreateAudioDecoder(const AudioDecoderConfig&) override {
     ++create_calls_;
-    return declines_ ? nullptr
-                     : std::make_unique<FakeAudioDecoder>(behaviour_);
+    return declines_ ? nullptr : std::make_unique<FakeAudioDecoder>(behaviour_);
   }
   const char* name() const override { return name_.c_str(); }
 
@@ -211,9 +207,7 @@ base::scoped_refptr<DecoderBuffer> MakeBuffer(int32_t serial, int n = 16) {
 
 class DecoderStreamTest : public ::testing::Test {
  protected:
-  void SetUp() override {
-    runner_ = env_.GetMainThreadTaskRunnerRef();
-  }
+  void SetUp() override { runner_ = env_.GetMainThreadTaskRunnerRef(); }
 
   // Drains a stream to EOS, collecting outputs. Bounded so a stall in the
   // implementation fails the test instead of hanging it.
@@ -242,7 +236,8 @@ class DecoderStreamTest : public ::testing::Test {
       }
       ++outputs_;
     }
-    ADD_FAILURE() << "stream did not reach EOS within " << max_reads << " reads";
+    ADD_FAILURE() << "stream did not reach EOS within " << max_reads
+                  << " reads";
   }
 
   base::test::TaskEnvironment env_;
@@ -263,18 +258,20 @@ TEST_F(DecoderStreamTest, DecodesWholeStreamThenReportsEndOfStream) {
   FakeAudioDecoder::Behaviour behaviour;
   behaviour.outputs_per_buffer = 2;
   std::vector<base::scoped_refptr<AudioDecoderFactory>> factories;
-  factories.push_back(base::MakeRefCounted<FakeAudioDecoderFactory>(
-      "fake", behaviour));
+  factories.push_back(
+      base::MakeRefCounted<FakeAudioDecoderFactory>("fake", behaviour));
 
   auto decoder_stream = std::make_unique<AudioDecoderStream>(runner_);
   DecoderStatus init_status;
   bool init_done = false;
   decoder_stream->Initialize(
       &stream, AudioDecoderConfig(), std::move(factories),
-      base::BindOnce([](bool* flag, DecoderStatus* out, DecoderStatus s) {
-        *flag = true;
-        *out = s;
-      }, &init_done, &init_status));
+      base::BindOnce(
+          [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+            *flag = true;
+            *out = s;
+          },
+          &init_done, &init_status));
   env_.RunUntilIdle();
   ASSERT_TRUE(init_done);
   ASSERT_TRUE(init_status.is_ok()) << init_status.AsDebugString();
@@ -301,19 +298,20 @@ TEST_F(DecoderStreamTest, FallsBackWhenFirstFactoryDeclinesTheConfig) {
 
   auto decoder_stream = std::make_unique<AudioDecoderStream>(runner_);
   std::vector<DecoderStreamEvent> events;
-  decoder_stream->set_event_cb(base::BindRepeating(
-      [](std::vector<DecoderStreamEvent>* sink, DecoderStreamEvent e) {
-        sink->push_back(e);
-      },
-      &events));
+  decoder_stream->set_event_cb(
+      base::BindRepeating([](std::vector<DecoderStreamEvent>* sink,
+                             DecoderStreamEvent e) { sink->push_back(e); },
+                          &events));
   bool init_done = false;
   DecoderStatus init_status;
   decoder_stream->Initialize(
       &stream, AudioDecoderConfig(), std::move(factories),
-      base::BindOnce([](bool* flag, DecoderStatus* out, DecoderStatus s) {
-        *flag = true;
-        *out = s;
-      }, &init_done, &init_status));
+      base::BindOnce(
+          [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+            *flag = true;
+            *out = s;
+          },
+          &init_done, &init_status));
   env_.RunUntilIdle();
 
   ASSERT_TRUE(init_done);
@@ -337,23 +335,25 @@ TEST_F(DecoderStreamTest, FallsBackAndReportsEventWhenDecoderInitFails) {
   auto first = base::MakeRefCounted<FakeAudioDecoderFactory>("hw", broken);
   auto second = base::MakeRefCounted<FakeAudioDecoderFactory>(
       "sw", FakeAudioDecoder::Behaviour());
-  std::vector<base::scoped_refptr<AudioDecoderFactory>> factories{first, second};
+  std::vector<base::scoped_refptr<AudioDecoderFactory>> factories{first,
+                                                                  second};
 
   auto decoder_stream = std::make_unique<AudioDecoderStream>(runner_);
   std::vector<DecoderStreamEvent> events;
-  decoder_stream->set_event_cb(base::BindRepeating(
-      [](std::vector<DecoderStreamEvent>* sink, DecoderStreamEvent e) {
-        sink->push_back(e);
-      },
-      &events));
+  decoder_stream->set_event_cb(
+      base::BindRepeating([](std::vector<DecoderStreamEvent>* sink,
+                             DecoderStreamEvent e) { sink->push_back(e); },
+                          &events));
   bool init_done = false;
   DecoderStatus init_status;
   decoder_stream->Initialize(
       &stream, AudioDecoderConfig(), std::move(factories),
-      base::BindOnce([](bool* flag, DecoderStatus* out, DecoderStatus s) {
-        *flag = true;
-        *out = s;
-      }, &init_done, &init_status));
+      base::BindOnce(
+          [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+            *flag = true;
+            *out = s;
+          },
+          &init_done, &init_status));
   env_.RunUntilIdle();
 
   ASSERT_TRUE(init_done);
@@ -378,19 +378,20 @@ TEST_F(DecoderStreamTest, ReportsNoDecoderAvailableWhenEveryFactoryFails) {
 
   auto decoder_stream = std::make_unique<AudioDecoderStream>(runner_);
   std::vector<DecoderStreamEvent> events;
-  decoder_stream->set_event_cb(base::BindRepeating(
-      [](std::vector<DecoderStreamEvent>* sink, DecoderStreamEvent e) {
-        sink->push_back(e);
-      },
-      &events));
+  decoder_stream->set_event_cb(
+      base::BindRepeating([](std::vector<DecoderStreamEvent>* sink,
+                             DecoderStreamEvent e) { sink->push_back(e); },
+                          &events));
   bool init_done = false;
   DecoderStatus init_status;
   decoder_stream->Initialize(
       &stream, AudioDecoderConfig(), std::move(factories),
-      base::BindOnce([](bool* flag, DecoderStatus* out, DecoderStatus s) {
-        *flag = true;
-        *out = s;
-      }, &init_done, &init_status));
+      base::BindOnce(
+          [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+            *flag = true;
+            *out = s;
+          },
+          &init_done, &init_status));
   env_.RunUntilIdle();
 
   ASSERT_TRUE(init_done);
@@ -405,10 +406,12 @@ TEST_F(DecoderStreamTest, InitializeWithNoFactoriesFailsCleanly) {
   DecoderStatus init_status;
   decoder_stream->Initialize(
       &stream, AudioDecoderConfig(), {},
-      base::BindOnce([](bool* flag, DecoderStatus* out, DecoderStatus s) {
-        *flag = true;
-        *out = s;
-      }, &init_done, &init_status));
+      base::BindOnce(
+          [](bool* flag, DecoderStatus* out, DecoderStatus s) {
+            *flag = true;
+            *out = s;
+          },
+          &init_done, &init_status));
   env_.RunUntilIdle();
   ASSERT_TRUE(init_done);
   EXPECT_FALSE(init_status.is_ok());
@@ -443,9 +446,9 @@ TEST_F(DecoderStreamTest, FlushDropsBuffersFromThePreviousSeekGeneration) {
 
   // Seek before reading anything.
   bool flush_done = false;
-  decoder_stream->Flush(/*serial=*/1,
-                        base::BindOnce([](bool* flag) { *flag = true; },
-                                       &flush_done));
+  decoder_stream->Flush(
+      /*serial=*/1,
+      base::BindOnce([](bool* flag) { *flag = true; }, &flush_done));
   env_.RunUntilIdle();
   EXPECT_TRUE(flush_done) << "Flush() must run its closure";
 
@@ -475,9 +478,9 @@ TEST_F(DecoderStreamTest, FlushDropsBuffersFromThePreviousSeekGeneration) {
 }
 
 TEST_F(DecoderStreamTest, FlushAbortsAReadThatIsStillOutstanding) {
-  // Needs a decoder that defers its DecodeCB: with inline completion no read can
-  // ever be outstanding when Flush() runs. The real contract allows deferral, so
-  // this path must not hang the caller.
+  // Needs a decoder that defers its DecodeCB: with inline completion no read
+  // can ever be outstanding when Flush() runs. The real contract allows
+  // deferral, so this path must not hang the caller.
   DemuxerStream::DecoderBufferVector buffers;
   for (int i = 0; i < 4; ++i) {
     buffers.push_back(MakeBuffer(0));
@@ -509,12 +512,13 @@ TEST_F(DecoderStreamTest, FlushAbortsAReadThatIsStillOutstanding) {
       },
       &read_done, &read_status));
   env_.RunUntilIdle();
-  ASSERT_FALSE(read_done) << "the deferred decoder should not have answered yet";
+  ASSERT_FALSE(read_done)
+      << "the deferred decoder should not have answered yet";
 
   bool flush_done = false;
-  decoder_stream->Flush(/*serial=*/1,
-                        base::BindOnce([](bool* flag) { *flag = true; },
-                                       &flush_done));
+  decoder_stream->Flush(
+      /*serial=*/1,
+      base::BindOnce([](bool* flag) { *flag = true; }, &flush_done));
   env_.RunUntilIdle();
   EXPECT_TRUE(read_done) << "Flush() must complete an outstanding Read";
   EXPECT_FALSE(read_status.is_ok());
@@ -539,10 +543,10 @@ TEST_F(DecoderStreamTest, DecodeErrorsAreCountedAndEventuallyStopTheStream) {
 
   auto decoder_stream = std::make_unique<AudioDecoderStream>(runner_);
   std::vector<DecoderStreamEvent> events;
-  decoder_stream->set_event_cb(base::BindRepeating(
-      [](std::vector<DecoderStreamEvent>* sink, DecoderStreamEvent e) {
-        sink->push_back(e);
-      }, &events));
+  decoder_stream->set_event_cb(
+      base::BindRepeating([](std::vector<DecoderStreamEvent>* sink,
+                             DecoderStreamEvent e) { sink->push_back(e); },
+                          &events));
   bool init_done = false;
   decoder_stream->Initialize(
       &stream, AudioDecoderConfig(), std::move(factories),
@@ -590,8 +594,8 @@ TEST_F(DecoderStreamTest, WatermarkStopsPullingFromTheDemuxer) {
   FakeAudioDecoder::Behaviour behaviour;
   behaviour.outputs_per_buffer = 2;
   std::vector<base::scoped_refptr<AudioDecoderFactory>> factories;
-  factories.push_back(base::MakeRefCounted<FakeAudioDecoderFactory>(
-      "fake", behaviour));
+  factories.push_back(
+      base::MakeRefCounted<FakeAudioDecoderFactory>("fake", behaviour));
 
   auto decoder_stream = std::make_unique<AudioDecoderStream>(runner_);
   bool init_done = false;

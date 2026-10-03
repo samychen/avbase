@@ -27,14 +27,29 @@ namespace avbase::media {
 // including libavutil (invariant C4).
 inline constexpr int kAvTimeBase = 1000000;
 
-
 // Codec identity as a stable string, matching FFmpeg's AVCodec::name so that
 // logs and diagnostics are comparable across the two.
 enum class VideoCodec {
-  kUnknown = 0, kH264, kHevc, kVp8, kVp9, kAv1, kMpeg4, kMpeg2Video, kTheora,
+  kUnknown = 0,
+  kH264,
+  kHevc,
+  kVp8,
+  kVp9,
+  kAv1,
+  kMpeg4,
+  kMpeg2Video,
+  kTheora,
 };
 enum class AudioCodec {
-  kUnknown = 0, kAac, kMp3, kOpus, kVorbis, kFlac, kPcmS16Le, kAc3, kEac3,
+  kUnknown = 0,
+  kAac,
+  kMp3,
+  kOpus,
+  kVorbis,
+  kFlac,
+  kPcmS16Le,
+  kAc3,
+  kEac3,
 };
 
 AVBASE_MEDIA_EXPORT const char* GetVideoCodecName(VideoCodec codec);
@@ -44,7 +59,7 @@ AVBASE_MEDIA_EXPORT AudioCodec AudioCodecFromName(std::string_view name);
 
 struct AVBASE_MEDIA_EXPORT VideoDecoderConfig {
   VideoCodec codec{VideoCodec::kUnknown};
-  std::string codec_name;              // FFmpeg's name, e.g. "h264".
+  std::string codec_name;  // FFmpeg's name, e.g. "h264".
   std::string profile;
   std::string level;
   Size coded_size;
@@ -52,7 +67,7 @@ struct AVBASE_MEDIA_EXPORT VideoDecoderConfig {
   Rational sar{1, 1};
   int rotation{0};
   VideoFormat expected_output_format{VideoFormat::kUnknown};
-  std::vector<uint8_t> extra_data;     // AVCodecParameters::extradata (SPS/PPS).
+  std::vector<uint8_t> extra_data;  // AVCodecParameters::extradata (SPS/PPS).
   Rational frame_rate{0, 1};
   Rational avg_frame_rate{0, 1};
   // The container stream's time base (AVStream::time_base). The decoder needs
@@ -71,8 +86,8 @@ struct AVBASE_MEDIA_EXPORT VideoDecoderConfig {
 // whatever private data the container attached (tx3g default track header,
 // ASS style header).
 struct AVBASE_MEDIA_EXPORT TextDecoderConfig {
-  std::string codec_name;        // "subrip"/"srt", "mov_text", "ass", "webvtt".
-  std::string language;          // ISO-639-2, empty when unknown.
+  std::string codec_name;  // "subrip"/"srt", "mov_text", "ass", "webvtt".
+  std::string language;    // ISO-639-2, empty when unknown.
   std::vector<uint8_t> extra_data;
 
   bool IsValidConfig() const { return !codec_name.empty(); }

@@ -24,7 +24,8 @@ class SimpleTestTickClock final : public TickClock {
   ~SimpleTestTickClock() override = default;
 
   TimeTicks NowTicks() const override {
-    return TimeTicks::FromMicroseconds(now_micros_.load(std::memory_order_relaxed));
+    return TimeTicks::FromMicroseconds(
+        now_micros_.load(std::memory_order_relaxed));
   }
 
   void Advance(TimeDelta delta) {

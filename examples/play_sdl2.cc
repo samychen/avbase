@@ -23,10 +23,10 @@
 
 #include "base/check.h"
 #include "base/functional/bind.h"
-#include "player/public/player.h"
 #include "platform/sdl2/sdl2_audio_sink.h"
 #include "platform/sdl2/sdl2_video_sink.h"
 #include "platform/sdl2/surface.h"
+#include "player/public/player.h"
 
 namespace {
 
@@ -57,8 +57,10 @@ bool ParseOptions(int argc, char** argv, Options* out) {
     }
   }
   if (out->url.empty()) {
-    std::fprintf(stderr, "usage: %s --url <file-or-url> "
-                         "[--max-seconds n]\n", argv[0]);
+    std::fprintf(stderr,
+                 "usage: %s --url <file-or-url> "
+                 "[--max-seconds n]\n",
+                 argv[0]);
     return false;
   }
   return true;
@@ -85,10 +87,9 @@ bool CreateSdlWindow(SDL_Window** window, SDL_Renderer** renderer) {
     std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
     return false;
   }
-  *window = SDL_CreateWindow("avbase", SDL_WINDOWPOS_CENTERED,
-                             SDL_WINDOWPOS_CENTERED, kWindowWidth,
-                             kWindowHeight,
-                             SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+  *window = SDL_CreateWindow(
+      "avbase", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, kWindowWidth,
+      kWindowHeight, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
   *renderer = SDL_CreateRenderer(
       *window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
   if (!*window || !*renderer) {
@@ -101,9 +102,9 @@ bool CreateSdlWindow(SDL_Window** window, SDL_Renderer** renderer) {
 // The main thread's only job: pump SDL events until the player completes,
 // errors, or the --max-seconds cap expires. Returns the process exit code.
 int PumpEventsUntilDone(int max_seconds) {
-  const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::seconds(max_seconds > 0 ? max_seconds
-                                                             : 86400);
+  const auto deadline =
+      std::chrono::steady_clock::now() +
+      std::chrono::seconds(max_seconds > 0 ? max_seconds : 86400);
   while (!g_quit.load() && !g_error.load() && !g_completed.load() &&
          std::chrono::steady_clock::now() < deadline) {
     SDL_Event event;
@@ -115,9 +116,9 @@ int PumpEventsUntilDone(int max_seconds) {
     }
     std::this_thread::sleep_for(kEventPollInterval);
   }
-  std::printf("stopping: %s\n",
-              g_completed.load() ? "completed"
-                                 : (g_error.load() ? "error" : "quit"));
+  std::printf("stopping: %s\n", g_completed.load()
+                                    ? "completed"
+                                    : (g_error.load() ? "error" : "quit"));
   return g_error.load() ? 1 : 0;
 }
 

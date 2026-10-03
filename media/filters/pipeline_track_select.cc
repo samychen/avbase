@@ -31,10 +31,10 @@ void PipelineImpl::SelectTrack(DemuxerStreamType type, int stream_index,
     std::move(cb).Run(PipelineStatus::kTrackSwitchError);
     return;
   }
-  media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&PipelineImpl::DoSelectTrack, base::Unretained(this),
-                     type, stream_index, std::move(cb)));
+  media_runner_->PostTask(FROM_HERE,
+                          base::BindOnce(&PipelineImpl::DoSelectTrack,
+                                         base::Unretained(this), type,
+                                         stream_index, std::move(cb)));
 }
 
 void PipelineImpl::DoSelectTrack(DemuxerStreamType type, int stream_index,
@@ -62,12 +62,11 @@ void PipelineImpl::DoSelectTrack(DemuxerStreamType type, int stream_index,
   // The renderer reports a failed handover through Client::OnError and still
   // runs the completion closure; that closure only means "the attempt
   // finished and the pipeline is consistent".
-  renderer_->OnTracksChanged(
-      type, target,
-      base::BindOnce(
-          [](PipelineStatusCallback cb) {
-            std::move(cb).Run(PipelineStatus::kOk);
-          },
-          std::move(cb)));
+  renderer_->OnTracksChanged(type, target,
+                             base::BindOnce(
+                                 [](PipelineStatusCallback cb) {
+                                   std::move(cb).Run(PipelineStatus::kOk);
+                                 },
+                                 std::move(cb)));
 }
 }  // namespace avbase::media

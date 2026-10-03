@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "base/check.h"
-#include "base/logging.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
 #include "media/base/media_error.h"
@@ -61,7 +61,7 @@ SyntheticLiveDemuxer::SyntheticLiveDemuxer(SyntheticLiveSpec spec,
                              : base::DefaultTickClock::GetInstance()) {
   media_info_.is_live = true;
   media_info_.duration = spec_.start_offset;
-  media_info_.seekable = false;   // matches IsSeekable() below
+  media_info_.seekable = false;  // matches IsSeekable() below
   media_info_.format_name = "synthetic-live";
   media_info_.uri = "synthetic-live://test";
   // duration_is_estimate: the edge is a moving target, so any duration read
@@ -166,8 +166,8 @@ int64_t SyntheticLiveDemuxer::AvailableLocked(DemuxerStreamType type) const {
     if (edge <= base::TimeDelta()) {
       return 0;
     }
-    const int64_t frames = edge.InMicroseconds() * spec_.fps_num /
-                           (spec_.fps_den * 1000000LL);
+    const int64_t frames =
+        edge.InMicroseconds() * spec_.fps_num / (spec_.fps_den * 1000000LL);
     return std::max<int64_t>(frames, 0);
   }
   if (type == DemuxerStreamType::kText) {
@@ -185,14 +185,14 @@ int64_t SyntheticLiveDemuxer::AvailableLocked(DemuxerStreamType type) const {
 
 int64_t SyntheticLiveDemuxer::ProducedLocked(DemuxerStreamType type) const {
   switch (type) {
-    case DemuxerStreamType::kVideo:
-      return video_produced_;
-    case DemuxerStreamType::kAudio:
-      return audio_produced_;
-    case DemuxerStreamType::kText:
-      return text_produced_;
-    case DemuxerStreamType::kUnknown:
-      break;
+  case DemuxerStreamType::kVideo:
+    return video_produced_;
+  case DemuxerStreamType::kAudio:
+    return audio_produced_;
+  case DemuxerStreamType::kText:
+    return text_produced_;
+  case DemuxerStreamType::kUnknown:
+    break;
   }
   return 0;
 }
@@ -208,25 +208,25 @@ void SyntheticLiveDemuxer::ProduceLocked(
     for (size_t i = 0; i < kSyntheticIndexBytes; ++i) {
       payload[i] = static_cast<uint8_t>((index >> (8 * i)) & 0xFF);
     }
-    auto buffer =
-        DecoderBuffer::CopyFrom(payload.data(), payload.size(), type,
-                                type == DemuxerStreamType::kVideo
-                        ? 0
-                        : (type == DemuxerStreamType::kAudio ? 1 : 2));
+    auto buffer = DecoderBuffer::CopyFrom(
+        payload.data(), payload.size(), type,
+        type == DemuxerStreamType::kVideo
+            ? 0
+            : (type == DemuxerStreamType::kAudio ? 1 : 2));
     // Timestamps come from the INDEX, exactly as in SyntheticDemuxer, so the
     // two doubles stamp identical times for identical indices. That is what
     // makes the edge move: the index is bounded by the clock, not by a
     // duration in the spec.
     if (type == DemuxerStreamType::kVideo) {
-      buffer->set_timestamp(base::Microseconds(
-          1000000LL * produced * spec_.fps_den / spec_.fps_num));
+      buffer->set_timestamp(base::Microseconds(1000000LL * produced *
+                                               spec_.fps_den / spec_.fps_num));
       buffer->set_keyframe(spec_.keyframe_interval > 0 &&
                            produced % spec_.keyframe_interval == 0);
       ++video_produced_;
     } else if (type == DemuxerStreamType::kAudio) {
-      buffer->set_timestamp(base::Microseconds(
-          1000000LL * produced * spec_.audio_frames_per_packet /
-          spec_.sample_rate));
+      buffer->set_timestamp(base::Microseconds(1000000LL * produced *
+                                               spec_.audio_frames_per_packet /
+                                               spec_.sample_rate));
       buffer->set_keyframe(true);
       ++audio_produced_;
     } else {
@@ -254,9 +254,9 @@ void SyntheticLiveDemuxer::ReadLive(DemuxerStreamType type, uint32_t count,
     // otherwise park forever, which is the exact failure the ceiling is for.
     // The EDGE still comes from tick_clock_, so a mock-clock test stays
     // deterministic -- only the safety net is real time.
-    const auto deadline = std::chrono::steady_clock::now() +
-                          std::chrono::microseconds(
-                              spec_.max_park.InMicroseconds());
+    const auto deadline =
+        std::chrono::steady_clock::now() +
+        std::chrono::microseconds(spec_.max_park.InMicroseconds());
     // Park until the edge has something new. DemuxerStream's contract is
     // 1..count buffers, so "not yet" cannot be an empty reply -- the wait is
     // the honest encoding, and it is what a real demuxer does in
@@ -330,9 +330,8 @@ void SyntheticLiveDemuxer::Initialize(
   if (host && media_task_runner) {
     media_task_runner->PostTask(
         FROM_HERE,
-        base::BindOnce(
-            [](InitializeCB cb) { std::move(cb).Run(OkStatus()); },
-            std::move(init_cb)));
+        base::BindOnce([](InitializeCB cb) { std::move(cb).Run(OkStatus()); },
+                       std::move(init_cb)));
     return;
   }
   std::move(init_cb).Run(OkStatus());
@@ -347,16 +346,15 @@ void SyntheticLiveDemuxer::StartPlayingFrom(base::TimeDelta time, SeekCB cb) {
   // stream has a bug, and the pipeline's chase path exists precisely so that it
   // does not have one. |actual| is the edge, which is the only position a live
   // stream can honestly claim to be at.
-  std::move(cb).Run(base::unexpected(MediaError::Of(
-                       ErrorCode::kInvalidState,
-                       "a live stream cannot be seeked",
-                       "synthetic-live was asked to seek to " +
-                           time.ToString() +
-                           ", but it has no data before its live edge",
-                       "use the pipeline's live-edge chase "
-                       "(SetLatencyHint on a live source), not a physical "
-                       "seek")),
-                 Edge());
+  std::move(cb).Run(
+      base::unexpected(MediaError::Of(
+          ErrorCode::kInvalidState, "a live stream cannot be seeked",
+          "synthetic-live was asked to seek to " + time.ToString() +
+              ", but it has no data before its live edge",
+          "use the pipeline's live-edge chase "
+          "(SetLatencyHint on a live source), not a physical "
+          "seek")),
+      Edge());
 }
 
 void SyntheticLiveDemuxer::Flush(base::OnceClosure flush_cb) {
@@ -423,7 +421,7 @@ class SyntheticLiveDemuxer::LiveStream final : public DemuxerStream {
                           ? MakeLiveAudioConfig(owner->spec())
                           : AudioDecoderConfig()),
         text_config_(type == DemuxerStreamType::kText ? MakeLiveTextConfig()
-                                                     : TextDecoderConfig()) {}
+                                                      : TextDecoderConfig()) {}
 
   void Read(uint32_t count, ReadCB read_cb) override {
     // Posted, never inline: DemuxerStream's contract. It also matters for the
@@ -440,10 +438,10 @@ class SyntheticLiveDemuxer::LiveStream final : public DemuxerStream {
     const DemuxerStreamType type = type_;
     runner->PostTask(
         FROM_HERE,
-        base::BindOnce(
-            [](SyntheticLiveDemuxer* o, DemuxerStreamType t, uint32_t n,
-               ReadCB cb) { o->ReadLive(t, n, std::move(cb)); },
-            owner, type_, count, std::move(read_cb)));
+        base::BindOnce([](SyntheticLiveDemuxer* o, DemuxerStreamType t,
+                          uint32_t n,
+                          ReadCB cb) { o->ReadLive(t, n, std::move(cb)); },
+                       owner, type_, count, std::move(read_cb)));
   }
 
   const AudioDecoderConfig& audio_decoder_config() const override {
@@ -458,14 +456,14 @@ class SyntheticLiveDemuxer::LiveStream final : public DemuxerStream {
   DemuxerStreamType type() const override { return type_; }
   int32_t stream_index() const override {
     switch (type_) {
-      case DemuxerStreamType::kVideo:
-        return 0;
-      case DemuxerStreamType::kAudio:
-        return 1;
-      case DemuxerStreamType::kText:
-        return 2;
-      case DemuxerStreamType::kUnknown:
-        break;
+    case DemuxerStreamType::kVideo:
+      return 0;
+    case DemuxerStreamType::kAudio:
+      return 1;
+    case DemuxerStreamType::kText:
+      return 2;
+    case DemuxerStreamType::kUnknown:
+      break;
     }
     return -1;
   }
@@ -499,14 +497,14 @@ class SyntheticLiveDemuxer::LiveStream final : public DemuxerStream {
 // complete type before it can convert to DemuxerStream*.
 DemuxerStream* SyntheticLiveDemuxer::GetStream(DemuxerStreamType type) {
   switch (type) {
-    case DemuxerStreamType::kVideo:
-      return video_.get();
-    case DemuxerStreamType::kAudio:
-      return audio_.get();
-    case DemuxerStreamType::kText:
-      return text_.get();
-    case DemuxerStreamType::kUnknown:
-      return nullptr;
+  case DemuxerStreamType::kVideo:
+    return video_.get();
+  case DemuxerStreamType::kAudio:
+    return audio_.get();
+  case DemuxerStreamType::kText:
+    return text_.get();
+  case DemuxerStreamType::kUnknown:
+    return nullptr;
   }
   return nullptr;
 }

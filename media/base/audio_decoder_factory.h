@@ -24,8 +24,8 @@ class AVBASE_MEDIA_EXPORT AudioDecoderFactory
   AudioDecoderFactory(const AudioDecoderFactory&) = delete;
   AudioDecoderFactory& operator=(const AudioDecoderFactory&) = delete;
 
-  virtual std::unique_ptr<AudioDecoder> CreateAudioDecoder(
-      const AudioDecoderConfig& config) = 0;
+  virtual std::unique_ptr<AudioDecoder>
+  CreateAudioDecoder(const AudioDecoderConfig& config) = 0;
   virtual const char* name() const = 0;
 
  protected:

@@ -36,7 +36,9 @@ void FakeVideoSink::Play() {
   running_.store(true);
 }
 
-void FakeVideoSink::Flush() { ++flush_count_; }
+void FakeVideoSink::Flush() {
+  ++flush_count_;
+}
 
 void FakeVideoSink::SetOutputTarget(
     base::scoped_refptr<NativeDisplay> /*display*/) {}
@@ -107,7 +109,9 @@ void FakeAudioSink::Play() {
   running_.store(true);
 }
 
-void FakeAudioSink::Flush() { ++flush_count_; }
+void FakeAudioSink::Flush() {
+  ++flush_count_;
+}
 
 bool FakeAudioSink::SetVolume(double volume) {
   volume_.store(volume);

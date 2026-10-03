@@ -42,7 +42,7 @@ struct FFmpegHwDecoderSpec {
   // Which VideoDecoderType the capability/selection layer sees (kVideoToolbox,
   // kVaapiVideoDecoder, kNvDec, ...).
   media::VideoDecoderType decoder_type{media::VideoDecoderType::kUnknown};
-  std::string display_name;   // For decoder events and status details.
+  std::string display_name;  // For decoder events and status details.
 };
 
 // Hardware video decoding through libavcodec's hwaccel API:
@@ -58,9 +58,9 @@ struct FFmpegHwDecoderSpec {
 // device, an unsupported profile or a driver reset.
 class FFmpegHwVideoDecoder final : public media::VideoDecoder {
  public:
-  FFmpegHwVideoDecoder(FFmpegHwDecoderSpec spec,
-                       base::scoped_refptr<base::SequencedTaskRunner>
-                           task_runner);
+  FFmpegHwVideoDecoder(
+      FFmpegHwDecoderSpec spec,
+      base::scoped_refptr<base::SequencedTaskRunner> task_runner);
   FFmpegHwVideoDecoder(const FFmpegHwVideoDecoder&) = delete;
   FFmpegHwVideoDecoder& operator=(const FFmpegHwVideoDecoder&) = delete;
   ~FFmpegHwVideoDecoder() override;

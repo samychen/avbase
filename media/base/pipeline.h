@@ -60,9 +60,9 @@
 #include "base/time/time.h"
 #include "media/base/demuxer.h"
 #include "media/base/media_error.h"
+#include "media/base/pipeline_status.h"
 #include "media/base/renderer.h"
 #include "media/base/renderer_client.h"
-#include "media/base/pipeline_status.h"
 #include "media/base/renderer_factory.h"
 #include "media/base/timed_text.h"
 #include "media/base/waiting.h"
@@ -135,12 +135,11 @@ class AVBASE_MEDIA_EXPORT Pipeline {
   // first Client::OnDurationChange/OnBufferingStateChange -- there is no
   // status callback here because PipelineController owns the kStarting ->
   // kReady transition and needs to observe it either way.
-  virtual void Start(
-      std::unique_ptr<Demuxer> demuxer,
-      RendererFactory* renderer_factory,
-      RendererType renderer_type,
-      base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
-      Client* client) = 0;
+  virtual void
+  Start(std::unique_ptr<Demuxer> demuxer, RendererFactory* renderer_factory,
+        RendererType renderer_type,
+        base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
+        Client* client) = 0;
 
   // Non-blocking (Δ1). Interrupts in-flight blocking I/O through the demuxer's
   // interrupt_callback (docs/04 §2.1) and requests teardown of every sequence.
@@ -162,8 +161,8 @@ class AVBASE_MEDIA_EXPORT Pipeline {
 
   virtual bool IsRunning() const = 0;
 
-  virtual void SetVolume(float volume) = 0;              // 0.0 .. 1.0
-  virtual void SetPlaybackRate(double rate) = 0;         // 0.25 .. 4.0
+  virtual void SetVolume(float volume) = 0;       // 0.0 .. 1.0
+  virtual void SetPlaybackRate(double rate) = 0;  // 0.25 .. 4.0
   // Live latency target; zero means "not live".
   virtual void SetLatencyHint(base::TimeDelta hint) = 0;
   virtual void SetPreservesPitch(bool preserves_pitch) = 0;

@@ -40,8 +40,8 @@ class AVBASE_MEDIA_EXPORT VideoRendererSink {
     // Returns the frame to display, or nullptr to keep showing the previous
     // one. |deadline_min|/|deadline_max| bracket the display window; a null
     // |deadline_max| means the sink has no vsync information.
-    virtual base::scoped_refptr<VideoFrame> Render(
-        base::TimeTicks deadline_min, base::TimeTicks deadline_max) = 0;
+    virtual base::scoped_refptr<VideoFrame>
+    Render(base::TimeTicks deadline_min, base::TimeTicks deadline_max) = 0;
     virtual void OnFrameSubmitFailure() = 0;
 
    protected:
@@ -56,7 +56,7 @@ class AVBASE_MEDIA_EXPORT VideoRendererSink {
   virtual void Stop() = 0;
   virtual void Pause() = 0;
   virtual void Play() = 0;
-  virtual void Flush() = 0;   // Only valid while not playing.
+  virtual void Flush() = 0;  // Only valid while not playing.
   // May be called while playing, from any thread; implementations must
   // serialise it against Render().
   virtual void SetOutputTarget(base::scoped_refptr<NativeDisplay> display) = 0;
@@ -93,8 +93,8 @@ class AVBASE_MEDIA_EXPORT VideoRendererSinkFactory {
   VideoRendererSinkFactory(const VideoRendererSinkFactory&) = delete;
   VideoRendererSinkFactory& operator=(const VideoRendererSinkFactory&) = delete;
 
-  virtual std::unique_ptr<VideoRendererSink> Create(
-      base::scoped_refptr<NativeDisplay> display) = 0;
+  virtual std::unique_ptr<VideoRendererSink>
+  Create(base::scoped_refptr<NativeDisplay> display) = 0;
   virtual const char* name() const = 0;
 
  protected:

@@ -27,14 +27,18 @@ namespace {
 
 int BytesPerSample(SampleFormat format) {
   switch (format) {
-    case SampleFormat::kU8:    return 1;
-    case SampleFormat::kS16:
-    case SampleFormat::kS16P:  return 2;
-    case SampleFormat::kS32:
-    case SampleFormat::kS32P:
-    case SampleFormat::kF32:
-    case SampleFormat::kF32P:  return 4;
-    case SampleFormat::kUnknown: return 0;
+  case SampleFormat::kU8:
+    return 1;
+  case SampleFormat::kS16:
+  case SampleFormat::kS16P:
+    return 2;
+  case SampleFormat::kS32:
+  case SampleFormat::kS32P:
+  case SampleFormat::kF32:
+  case SampleFormat::kF32P:
+    return 4;
+  case SampleFormat::kUnknown:
+    return 0;
   }
   return 0;
 }
@@ -81,14 +85,22 @@ std::vector<uint8_t> CopyFrameData(const AVFrame* frame, SampleFormat format,
 
 SampleFormat SampleFormatFromAV(int av_format, SampleFormat fallback) {
   switch (av_format) {
-    case AV_SAMPLE_FMT_U8:   return SampleFormat::kU8;
-    case AV_SAMPLE_FMT_S16:  return SampleFormat::kS16;
-    case AV_SAMPLE_FMT_S32:  return SampleFormat::kS32;
-    case AV_SAMPLE_FMT_FLT:  return SampleFormat::kF32;
-    case AV_SAMPLE_FMT_S16P: return SampleFormat::kS16P;
-    case AV_SAMPLE_FMT_S32P: return SampleFormat::kS32P;
-    case AV_SAMPLE_FMT_FLTP: return SampleFormat::kF32P;
-    default: return fallback;
+  case AV_SAMPLE_FMT_U8:
+    return SampleFormat::kU8;
+  case AV_SAMPLE_FMT_S16:
+    return SampleFormat::kS16;
+  case AV_SAMPLE_FMT_S32:
+    return SampleFormat::kS32;
+  case AV_SAMPLE_FMT_FLT:
+    return SampleFormat::kF32;
+  case AV_SAMPLE_FMT_S16P:
+    return SampleFormat::kS16P;
+  case AV_SAMPLE_FMT_S32P:
+    return SampleFormat::kS32P;
+  case AV_SAMPLE_FMT_FLTP:
+    return SampleFormat::kF32P;
+  default:
+    return fallback;
   }
 }
 
@@ -98,11 +110,12 @@ FFmpegAudioDecoder::FFmpegAudioDecoder() = default;
 FFmpegAudioDecoder::~FFmpegAudioDecoder() = default;
 
 DecoderStatus FFmpegAudioDecoder::OpenCodec(const AudioDecoderConfig& config) {
-  const AVCodec* codec = avcodec_find_decoder_by_name(config.codec_name.c_str());
+  const AVCodec* codec =
+      avcodec_find_decoder_by_name(config.codec_name.c_str());
   if (!codec) {
-    return DecoderStatus(
-        DecoderStatus::Codes::kUnsupportedCodec,
-        "no FFmpeg audio decoder named '" + config.codec_name + "'");
+    return DecoderStatus(DecoderStatus::Codes::kUnsupportedCodec,
+                         "no FFmpeg audio decoder named '" + config.codec_name +
+                             "'");
   }
   ctx_ = std::make_unique<Context>();
   ctx_->codec_ctx.reset(avcodec_alloc_context3(codec));
@@ -187,7 +200,8 @@ void FFmpegAudioDecoder::Initialize(const AudioDecoderConfig& config,
 bool FFmpegAudioDecoder::DecodeAvailableFrames(bool* drained) {
   *drained = false;
   while (true) {
-    const int ret = avcodec_receive_frame(ctx_->codec_ctx.get(), ctx_->frame.get());
+    const int ret =
+        avcodec_receive_frame(ctx_->codec_ctx.get(), ctx_->frame.get());
     if (ret == AVERROR(EAGAIN)) {
       return true;
     }
@@ -201,11 +215,10 @@ bool FFmpegAudioDecoder::DecodeAvailableFrames(bool* drained) {
       return false;
     }
     const int nb_samples = ctx_->frame->nb_samples;
-    const int channels = channels_ > 0 ? channels_
-                                       : ff::ChannelCount(ctx_->codec_ctx.get());
-    const int sample_rate = sample_rate_ > 0
-                                ? sample_rate_
-                                : ctx_->codec_ctx->sample_rate;
+    const int channels =
+        channels_ > 0 ? channels_ : ff::ChannelCount(ctx_->codec_ctx.get());
+    const int sample_rate =
+        sample_rate_ > 0 ? sample_rate_ : ctx_->codec_ctx->sample_rate;
     std::vector<uint8_t> data =
         CopyFrameData(ctx_->frame.get(), sample_format_, channels);
     const base::TimeDelta ts =
@@ -215,10 +228,9 @@ bool FFmpegAudioDecoder::DecodeAvailableFrames(bool* drained) {
     // Duration from the sample count is exact for CBR codecs and avoids
     // frame->duration, which several decoders leave unset.
     const base::TimeDelta dur =
-        sample_rate > 0
-            ? base::Microseconds(static_cast<int64_t>(nb_samples) * 1000000 /
-                                 sample_rate)
-            : base::TimeDelta();
+        sample_rate > 0 ? base::Microseconds(static_cast<int64_t>(nb_samples) *
+                                             1000000 / sample_rate)
+                        : base::TimeDelta();
     av_frame_unref(ctx_->frame.get());
     if (nb_samples > 0 && data.empty()) {
       // A frame we cannot represent is worse than no frame: the consumer would
@@ -227,18 +239,18 @@ bool FFmpegAudioDecoder::DecodeAvailableFrames(bool* drained) {
                    << nb_samples << " samples, " << channels << " ch)";
       continue;
     }
-    output_cb_.Run(AudioBuffer::Create(
-        sample_format_, channel_layout_, channels, sample_rate, nb_samples, ts,
-        dur, serial_, std::move(data)));
+    output_cb_.Run(AudioBuffer::Create(sample_format_, channel_layout_,
+                                       channels, sample_rate, nb_samples, ts,
+                                       dur, serial_, std::move(data)));
   }
 }
 
 void FFmpegAudioDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
                                 DecodeCB decode_cb) {
   if (!initialized_) {
-    std::move(decode_cb).Run(DecoderStatus(
-        DecoderStatus::Codes::kNotInitialized,
-        "Decode() called before a successful Initialize()"));
+    std::move(decode_cb).Run(
+        DecoderStatus(DecoderStatus::Codes::kNotInitialized,
+                      "Decode() called before a successful Initialize()"));
     return;
   }
   if (!buffer) {
@@ -255,8 +267,8 @@ void FFmpegAudioDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
     }
     bool drained = false;
     if (!DecodeAvailableFrames(&drained)) {
-      std::move(decode_cb).Run(DecoderStatus(
-          DecoderStatus::Codes::kDecodeError, "drain failed"));
+      std::move(decode_cb).Run(
+          DecoderStatus(DecoderStatus::Codes::kDecodeError, "drain failed"));
       return;
     }
     output_cb_.Run(AudioBuffer::CreateEOSBuffer());
@@ -289,17 +301,17 @@ void FFmpegAudioDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
   packet->dts = saved_dts;
   packet->duration = saved_duration;
   if (ret < 0 && ret != AVERROR(EAGAIN)) {
-    LOG(WARNING) << "[audio-dec] send_packet failed: " << ff::AvErrorString(ret);
-    std::move(decode_cb).Run(
-        DecoderStatus(DecoderStatus::Codes::kDecodeError,
-                      "avcodec_send_packet: " +
-                          std::string(ff::AvErrorString(ret))));
+    LOG(WARNING) << "[audio-dec] send_packet failed: "
+                 << ff::AvErrorString(ret);
+    std::move(decode_cb).Run(DecoderStatus(
+        DecoderStatus::Codes::kDecodeError,
+        "avcodec_send_packet: " + std::string(ff::AvErrorString(ret))));
     return;
   }
   bool drained = false;
   if (!DecodeAvailableFrames(&drained)) {
-    std::move(decode_cb).Run(DecoderStatus(
-        DecoderStatus::Codes::kDecodeError, "avcodec_receive_frame failed"));
+    std::move(decode_cb).Run(DecoderStatus(DecoderStatus::Codes::kDecodeError,
+                                           "avcodec_receive_frame failed"));
     return;
   }
   std::move(decode_cb).Run(DecoderStatus());
