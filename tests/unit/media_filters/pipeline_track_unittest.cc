@@ -316,6 +316,33 @@ TEST_F(PipelineVideoTrackTest, DemuxerEnumeratesBothVideoTracks) {
 //
 // Until one of those is answered, "the switch returned success" and "the
 // picture came back" are different claims, and only the first is tested.
+// DISABLED again. Two plausible causes were found and fixed, and NEITHER was
+// it -- recorded because both are real defects on their own terms and because
+// a wrong hypothesis that is written down is worth less than one that is
+// measured, not more.
+//
+//   FIXED, defensibly: the demux loop's backpressure wait could not end when
+//   the stream it was waiting on stopped being the active target. A switch
+//   retires the renderer draining that queue, so the queue can never drain and
+//   the wait is forever. SetActiveStream now signals resume_event_, and the
+//   wait re-checks IsActiveRoutingTarget. Neither changed this symptom.
+//
+//   MEASURED and still unexplained: the replacement arms its pump exactly once
+//   and its Read never completes (probe log in the previous commit). The
+//   demux loop is therefore NOT parked, which means the new stream is being
+//   read and simply never produces -- so the break is between the demux loop's
+//   enqueue and the replacement renderer's decode, not in the demux loop.
+//
+// That narrows it usefully: next instrument FFmpegDemuxerStream::Read and
+// DecoderStream::Read for the NEW stream index, and check whether the buffer
+// arrives and the decoder rejects it. The two source tracks differ in
+// resolution AND pixel format (yuv444p vs yuv420p), so "the new decoder
+// cannot handle this stream" is a live candidate that nothing so far has
+// tested.
+//
+// What IS proven, and worth keeping: the switch completes in both directions
+// without error, the sink is reused rather than rebuilt, a second decoder is
+// created, and the handover is correctly sequenced.
 TEST_F(PipelineVideoTrackTest,
        DISABLED_SwitchingVideoTrackKeepsPresentingFrames) {
   StartPipeline();

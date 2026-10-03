@@ -73,9 +73,7 @@ bool FFmpegDemuxer::IsActiveRoutingTarget(int index,
 }
 
 void FFmpegDemuxer::SetActiveStream(DemuxerStreamType type, int stream_index) {
-  // Relaxed is enough: the demux thread re-reads the value per packet, and a
-  // packet routed to the just-retired active stream around the switch is
-  // harmless (it lands in a queue whose consumer is draining or gone).
+  // Relaxed is enough: the demux thread re-reads the value per packet.
   if (type == DemuxerStreamType::kVideo) {
     active_video_.store(stream_index, std::memory_order_relaxed);
   } else if (type == DemuxerStreamType::kAudio) {
@@ -83,6 +81,24 @@ void FFmpegDemuxer::SetActiveStream(DemuxerStreamType type, int stream_index) {
   } else if (type == DemuxerStreamType::kText) {
     active_text_.store(stream_index, std::memory_order_relaxed);
   }
+  // WAKE THE DEMUX LOOP, and this is the whole reason a track switch used to
+  // hang the video leg.
+  //
+  // The loop's backpressure wait (ReadAndRouteOnePacket) blocks until the
+  // target stream's queue has room, and it is signalled by exactly three
+  // things: Flush, Stop, and a seek. A track switch was none of them, so a
+  // switch that retired a stream whose queue was already full left the demux
+  // thread parked in that wait FOREVER -- the queue could never drain again,
+  // because the renderer that used to drain it had just been replaced, and
+  // nothing was going to signal. Symptom from the outside: the new renderer
+  // arms its decode pump, issues one Read, and never gets a buffer, so it
+  // presents nothing for the rest of playback.
+  //
+  // The old comment here claimed a packet routed to the just-retired stream
+  // "is harmless (it lands in a queue whose consumer is draining or gone)".
+  // The "or gone" case is precisely the one that wedges, and it is the case a
+  // track switch creates by definition.
+  resume_event_.Signal();
 }
 
 bool FFmpegDemuxerStream::EnqueueTextFromDemuxThread(

@@ -59,7 +59,7 @@ LINE_LIMIT_ALLOWLIST = {
              "track selection, options and the public event surface. Its "
              "difficulty is breadth rather than any one function."),
     "media/filters/ffmpeg_demuxer.cc": (
-        1120, "FFmpeg container/codec adaptation: two config builders, the "
+        1140, "FFmpeg container/codec adaptation: two config builders, the "
               "MediaInfo walk, the demux loop and the seek path. Chromium's "
               "media/filters/ffmpeg_demuxer.cc is ~2500 lines for the same "
               "job; splitting ours by line count would scatter one contiguous "

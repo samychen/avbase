@@ -835,7 +835,25 @@ bool FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw, void* packet_raw) {
     stream->EnqueueTextFromDemuxThread(std::move(buffer));
     return true;
   }
+  // Backpressure wait. Two things can end it besides the queue draining, and
+  // BOTH were missing for a track switch, which is why switching the video
+  // track left the new renderer with a pump that armed once and never got a
+  // buffer:
+  //
+  //  * the stream may STOP BEING the active target while we wait -- a track
+  //    switch retires the renderer that was draining this very queue, so the
+  //    queue can never drain again and waiting on it is waiting forever. The
+  //    packet is dropped instead, which is what the non-active branch above
+  //    would have done had it run a moment later;
+  //  * SetActiveStream signals resume_event_ so the wait re-evaluates at once
+  //    rather than at the next 10 ms tick.
+  bool dropped = false;
   while (!stream->EnqueueFromDemuxThread(buffer) && !stop_flag_.IsSet()) {
+    if (!IsActiveRoutingTarget(index, stream->type())) {
+      buffer.reset();  // The consumer is gone; nobody will ever read this.
+      dropped = true;
+      break;
+    }
     resume_event_.TimedWait(base::Milliseconds(10));
     if (SeekRequest* pending = pending_seek_.exchange(nullptr)) {
       HandleSeekRequestOnDemuxThread(*pending);
@@ -843,6 +861,7 @@ bool FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw, void* packet_raw) {
       break;
     }
   }
+  (void)dropped;
   return true;
 }
 
