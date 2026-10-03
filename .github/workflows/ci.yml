@@ -214,6 +214,44 @@ jobs:
             tests/fuzz/seeds -max_total_time=60 -rss_limit_mb=2048 || [ $? -eq 124 ]
           ./build/fuzz/bin/avbase_fuzz_demuxer_standalone --iters 16
 
+  # Windows / MSVC (docs/12 4.5). The first target on this platform, and the
+  # one that has never been built here -- so read the claims below as claims,
+  # not as verified facts.
+  #
+  # WHAT IS ACTUALLY KNOWN vs WHAT THIS JOB IS FOR:
+  #   * KNOWN: the compiler-flag layer already branches per platform
+  #     (cmake/AvbaseCompilerFlags.cmake: /GR- /EHs-c- for MSVC versus
+  #     -fno-exceptions -fno-rtti elsewhere), because MSVC has no
+  #     -fno-exceptions equivalent. That branch is why the risk was
+  #     tractable rather than a rewrite.
+  #   * NOT KNOWN: whether the tree compiles at all under MSVC. Nobody has run
+  #     it. VLOG uses __attribute__((format)) in places, and MSVC spells
+  #     several GNU attributes differently; the strict warning set is Clang and
+  #     GCC oriented by construction.
+  #
+  # Therefore this job is scoped to the gate the project can actually hold
+  # itself to on a platform it has not validated: IT COMPILES AND THE TESTS
+  # PASS on the no-ffmpeg configuration. It is deliberately not given
+  # -Werror-equivalent strictness (/WX) -- turning on the strictest warnings for
+  # a first-time platform produces a wall of red that hides the one signal
+  # worth having, which is "does this toolchain work at all".
+  #
+  # FFmpeg is NOT built here on purpose. vcpkg's ffmpeg would add an hours-long
+  # dependency build to every run for a layer that is orthogonal to "does our
+  # own code compile on MSVC".
+  windows-msvc:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (no-ffmpeg)
+        run: cmake --preset no-ffmpeg -B build/msvc
+      - name: Build
+        run: cmake --build build/msvc --config Debug --parallel
+      - name: Test
+        run: ctest --test-dir build/msvc -C Debug --output-on-failure
+      - name: Invariants
+        run: python tools/check_invariants.py --root .
+
   # Opened in this round, once the reason it was deferred stopped being true.
   # The old note said check-format "would be red on the first run" because the
   # C23 ratchet existed to grandfather 310 over-length lines; the tree is now
