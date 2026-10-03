@@ -169,6 +169,24 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   void Flush(int32_t serial, base::OnceClosure closure);
   void Stop();
 
+  // Teardown for a renderer that is being REPLACED rather than shut down (the
+  // video-track handover). Stops the sink, then completes the outstanding
+  // decoder read INLINE with kDecodingAborted so that after this returns no
+  // task can be created that names this object -- which is what makes it safe
+  // for the caller to delete it from this sequence.
+  //
+  // The mirror of AudioRendererImpl::StopAndDrainForTeardown, and the reason
+  // video track switching could not be built without it: the audio handover
+  // retires the old renderer into a graveyard and tears it down on S4 (see
+  // RendererImpl::SwitchAudioRenderer), and the video path has no equivalent
+  // because a decoder read left in flight across a delete is a use-after-free.
+  // DestroyOn() alone -- which is all the video side had -- documents that
+  // hole itself: tasks queued behind its reset run on freed memory.
+  //
+  // |on_quiescent| runs on this sequence (S3) once the read reply has been
+  // delivered, so the caller may destroy the object there.
+  void StopAndDrainForTeardown(base::OnceClosure on_quiescent);
+
   // ---- Called by RendererImpl, posted onto S3 -----------------------------
   // The master clock has exactly one authoritative source (AvSyncController,
   // owned by RendererImpl); this is how it reaches the pacing logic.

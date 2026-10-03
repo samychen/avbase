@@ -179,7 +179,9 @@ std::unique_ptr<VideoDecoder> FakeVideoDecoderFactory::CreateVideoDecoder(
   if (declines_) {
     return nullptr;
   }
-  return std::make_unique<FakeVideoDecoder>(behaviour_, &counters_);
+  auto decoder = std::make_unique<FakeVideoDecoder>(behaviour_, &counters_);
+  last_decoder_ = decoder.get();
+  return decoder;
 }
 
 }  // namespace avbase::media::test

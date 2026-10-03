@@ -160,6 +160,13 @@ class FakeVideoDecoderFactory final : public VideoDecoderFactory {
   CreateVideoDecoder(const VideoDecoderConfig& config) override;
   const char* name() const override { return name_.c_str(); }
 
+  // The decoder this factory last handed out, so a test can inspect it. Needed
+  // for the DEFERRED work the fake can be told to hold: the counters record
+  // that a decode STARTED, but a teardown test needs the other question --
+  // "is one still in flight when we begin to delete you?" -- which is exactly
+  // the one a teardown bug turns on.
+  FakeVideoDecoder* last_decoder() const { return last_decoder_; }
+
  private:
   const FakeDecoderBehaviour behaviour_;
   const std::string name_;
@@ -167,6 +174,8 @@ class FakeVideoDecoderFactory final : public VideoDecoderFactory {
   bool hardware_ = false;
   int priority_ = 1;
   int create_calls_ = 0;
+  // Raw, not owning: the factory does not keep decoders alive.
+  FakeVideoDecoder* last_decoder_ = nullptr;
   FakeDecoderCounters counters_;
 };
 

@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/task_environment.h"
@@ -376,6 +377,104 @@ TEST_F(PreferenceTest, NoPreferenceLeavesTheInjectedOrderAlone) {
   EXPECT_EQ(first->create_calls(), 1)
       << "an unconfigured preference must not re-rank the host's own list";
   EXPECT_EQ(second->create_calls(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// StopAndDrainForTeardown, the piece video track switching needs and did not
+// have (docs/12 4.1). The audio side has had one since Phase 4; without the
+// video counterpart the handover has no safe way to retire the old renderer.
+// ---------------------------------------------------------------------------
+
+// The closure runs, and it runs on the renderer's own sequence. Both halves
+// matter: the first is what lets the caller delete the object, the second is
+// what makes deleting it there safe.
+TEST_F(VideoRendererImplTest, StopAndDrainRunsItsClosureOnTheRenderSequence) {
+  CreateRenderer();
+  ASSERT_TRUE(init_done_);
+  StartPlaying(0);
+
+  bool ran = false;
+  renderer_->StopAndDrainForTeardown(
+      base::BindOnce([](bool* ran) { *ran = true; }, base::Unretained(&ran)));
+  env_.RunUntilIdle();
+
+  EXPECT_TRUE(ran)
+      << "the quiescence closure never ran, so a handover would have nothing "
+         "to wait on before deleting the renderer";
+}
+
+// The sink is stopped BEFORE the drain, which is the ordering that makes the
+// drain safe: after Stop() returns, the sink guarantees no further Render(),
+// so nothing can call back into a half-destroyed renderer.
+TEST_F(VideoRendererImplTest, StopAndDrainStopsTheSinkFirst) {
+  CreateRenderer();
+  ASSERT_TRUE(init_done_);
+  StartPlaying(0);
+  ASSERT_EQ(sink_->stop_count(), 0);
+
+  renderer_->StopAndDrainForTeardown(base::OnceClosure());
+  env_.RunUntilIdle();
+
+  // The sink's stop_count is the whole safety argument: once it has stopped,
+  // nothing can call Render() back into a renderer that is about to be
+  // deleted, so the drain below it is sound.
+  EXPECT_EQ(sink_->stop_count(), 1);
+}
+
+// A renderer that was never initialized has no demuxer stream to flush, and
+// must still run its closure -- a handover that assumed otherwise would hang
+// waiting for a drain that has nothing to drain.
+TEST_F(VideoRendererImplTest, StopAndDrainOnAnUninitializedRendererStillRuns) {
+  std::vector<base::scoped_refptr<VideoDecoderFactory>> factories;
+  factory_ = base::MakeRefCounted<test::FakeVideoDecoderFactory>(behaviour_);
+  factories.push_back(factory_);
+  renderer_ = std::make_unique<VideoRendererImpl>(
+      runner_, std::move(factories), env_.GetTickClock(),
+      VideoFrameCompositor::Thresholds());
+  // Deliberately NOT Initialize()d.
+
+  bool ran = false;
+  renderer_->StopAndDrainForTeardown(
+      base::BindOnce([](bool* ran) { *ran = true; }, base::Unretained(&ran)));
+  env_.RunUntilIdle();
+
+  EXPECT_TRUE(ran)
+      << "an uninitialized renderer skipped its closure; a caller tearing one "
+         "down would wait forever";
+}
+
+// THE ONE THAT BITES. The three above pass even if the drain is replaced by a
+// bare Stop(), because they only observe the closure and the sink -- both of
+// which a Stop-only implementation also does. This one observes the DRAIN.
+//
+// The fake decoder defers its Decode reply (defer_decode), so a read really is
+// in flight when the teardown starts. The contract is that Flush completes that
+// read INLINE, with kDecodingAborted, before the quiescence closure runs --
+// which is the difference between "the renderer stopped" and "no task naming it
+// can still be created". With the drain removed, the deferred reply is still
+// sitting in the decoder when the closure fires, and this fails.
+TEST_F(VideoRendererImplTest, StopAndDrainCompletesTheInFlightReadInline) {
+  behaviour_.defer_decode = true;
+  CreateRenderer();
+  ASSERT_TRUE(init_done_);
+  ScriptBuffers(/*buffers=*/4);
+  StartPlaying(/*serial=*/0);
+  env_.RunUntilIdle();
+
+  // A decode is now parked in the fake, unreplied.
+  ASSERT_NE(factory_->last_decoder(), nullptr);
+  ASSERT_GT(factory_->last_decoder()->deferred_count(), 0u)
+      << "no decode was in flight, so the drain would have nothing to do and "
+         "this case would be vacuous";
+
+  renderer_->StopAndDrainForTeardown(base::BindOnce(base::DoNothing()));
+  env_.RunUntilIdle();
+
+  // The whole point: after the drain, the decoder holds no unreplied decode.
+  // Anything still here would run against a deleted renderer.
+  EXPECT_EQ(factory_->last_decoder()->deferred_count(), 0u)
+      << "the teardown returned with a decode still in flight -- deleting the "
+         "renderer now would leave that callback pointing at freed memory";
 }
 
 }  // namespace

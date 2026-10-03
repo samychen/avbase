@@ -228,9 +228,13 @@ void AudioRendererImpl::StopAndDrainForTeardown(
   // discards decoder state and the ring, which a dying object does not need;
   // the closure runs on this sequence (S4), where the delete is safe.
   const int32_t serial = decoder_stream_.demuxer_stream()->serial();
+  // Null-tolerant for the same reason as the video side: a teardown entry
+  // point should not CHECK when the caller only wanted the stop.
   decoder_stream_.Flush(serial, base::BindOnce(
                                     [](base::OnceClosure quiescent) {
-                                      std::move(quiescent).Run();
+                                      if (quiescent) {
+                                        std::move(quiescent).Run();
+                                      }
                                     },
                                     std::move(on_quiescent)));
 }

@@ -198,6 +198,38 @@ void VideoRendererImpl::Stop() {
   started_ = false;
 }
 
+void VideoRendererImpl::StopAndDrainForTeardown(
+    base::OnceClosure on_quiescent) {
+  Stop();
+  // Same contract as the audio side, and the reason the two are written the
+  // same way: Flush() completes every pending read inline with
+  // kDecodingAborted, so the reply hop back into this object has already run by
+  // the time Flush's callback fires. After that no task naming this object can
+  // be created, so the callback may delete it.
+  //
+  // The demuxer stream is only null before Initialize(), and a renderer that
+  // was never initialized has nothing to drain -- so run the closure directly
+  // rather than dereferencing it.
+  if (!decoder_stream_.demuxer_stream()) {
+    if (on_quiescent) {
+      std::move(on_quiescent).Run();
+    }
+    return;
+  }
+  const int32_t serial = decoder_stream_.demuxer_stream()->serial();
+  // A NULL closure is tolerated, not a programming error here: this is a
+  // teardown entry point, and a caller that only wants the renderer stopped
+  // has no reason to invent a callback. Running a null OnceClosure is a CHECK
+  // failure, and the first version of this method had exactly that hole.
+  decoder_stream_.Flush(serial, base::BindOnce(
+                                    [](base::OnceClosure quiescent) {
+                                      if (quiescent) {
+                                        std::move(quiescent).Run();
+                                      }
+                                    },
+                                    std::move(on_quiescent)));
+}
+
 // ---- clock and pacing inputs, all posted onto S3 by RendererImpl -----------
 
 void VideoRendererImpl::SetMasterClock(base::TimeDelta media_time,
