@@ -42,9 +42,17 @@ base::scoped_refptr<DecoderBuffer> MakeDataBuffer(DemuxerStreamType type,
 FakeDemuxerStream::FakeDemuxerStream(DemuxerStreamType type,
                                      AudioDecoderConfig audio_config,
                                      VideoDecoderConfig video_config)
+    : FakeDemuxerStream(type, std::move(audio_config), std::move(video_config),
+                        TextDecoderConfig()) {}
+
+FakeDemuxerStream::FakeDemuxerStream(DemuxerStreamType type,
+                                     AudioDecoderConfig audio_config,
+                                     VideoDecoderConfig video_config,
+                                     TextDecoderConfig text_config)
     : type_(type),
       audio_config_(std::move(audio_config)),
-      video_config_(std::move(video_config)) {}
+      video_config_(std::move(video_config)),
+      text_config_(std::move(text_config)) {}
 
 void FakeDemuxerStream::AppendBuffer(
     base::scoped_refptr<DecoderBuffer> buffer) {
@@ -78,8 +86,10 @@ void FakeMediaResource::set_stream(DemuxerStreamType type,
       return;
     case DemuxerStreamType::kUnknown:
     case DemuxerStreamType::kText:
-      // A renderer has no text path (gap 3 in media/base/media_resource.h), so
-      // the fake cannot express one either.
+      // The text leg exists as of Phase 4.2 (renderer_impl.h's PumpText), so
+      // the fake CAN express one; the old comment here predated it and made
+      // the live-cue policy untestable at the renderer level.
+      text_ = stream;
       return;
   }
 }
@@ -92,7 +102,7 @@ DemuxerStream* FakeMediaResource::GetStream(DemuxerStreamType type) {
       return video_;
     case DemuxerStreamType::kUnknown:
     case DemuxerStreamType::kText:
-      return nullptr;
+      return text_;
   }
   return nullptr;
 }

@@ -431,6 +431,34 @@ void RendererImpl::FinishAudioSwitch(bool was_rendering,
   std::move(change_completed_cb).Run();
 }
 
+// The reasoning lives at the declaration in renderer_impl.h.
+void RendererImpl::SetSourceLiveness(bool is_live,
+                                    base::TimeDelta max_cue_age) {
+  source_is_live_ = is_live;
+  // Clamped: a negative window would make every cue stale, so a misconfigured
+  // value must disable the policy rather than drop everything.
+  max_cue_age_ = max_cue_age > base::TimeDelta() ? max_cue_age
+                                                 : base::TimeDelta();
+  if (source_is_live_ && max_cue_age_ > base::TimeDelta()) {
+    LOG(INFO) << "avbase.text: live source, cues older than "
+              << max_cue_age_.InMilliseconds() << "ms will be dropped";
+  }
+}
+
+bool RendererImpl::IsCueStale(const TimedTextCue& cue) const {
+  if (!source_is_live_ || max_cue_age_ <= base::TimeDelta()) {
+    return false;   // Recorded content: a seek lands on a cue on purpose.
+  }
+  const AvSyncController::Snapshot now = av_sync_->GetSnapshot();
+  if (!now.master_valid) {
+    // No clock yet. Dropping on an unknown clock would discard every cue of a
+    // stream that is merely starting up; showing a slightly late one is the
+    // lesser error, and the window is generous by construction.
+    return false;
+  }
+  return now.master - cue.pts > max_cue_age_;
+}
+
 void RendererImpl::PumpText() {
   if (!text_stream_ || !text_decoder_ || text_read_outstanding_ ||
       text_ended_) {
@@ -472,6 +500,13 @@ void RendererImpl::OnTextRead(int generation, DemuxerStream::Status status,
     }
     if (client_) {
       for (TimedTextCue& cue : cues) {
+        if (IsCueStale(cue)) {
+          // Dropped, not clamped forward. Shifting a stale cue onto the
+          // present would display a line whose text belongs to a moment the
+          // viewer has already watched past, which is worse than no subtitle.
+          ++stale_cues_dropped_;
+          continue;
+        }
         client_->OnTimedText(cue);
       }
     }

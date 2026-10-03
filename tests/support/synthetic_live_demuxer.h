@@ -65,6 +65,10 @@ struct SyntheticLiveSpec {
   int keyframe_interval = 30;
   bool enable_video = true;
   bool enable_audio = true;
+  // A text leg, so the live-cue expiry policy (RendererImpl's
+  // SetSourceLiveness) can be exercised end to end against a moving edge. One
+  // subtitle packet per second of stream.
+  bool enable_text = false;
   // Ceiling on one parked read. A live demuxer parks by design, so a test that
   // stops advancing the clock must fail rather than hang.
   base::TimeDelta max_park = base::Seconds(10);
@@ -93,6 +97,7 @@ class SyntheticLiveDemuxer final : public Demuxer {
 
   int64_t video_packets() const;
   int64_t audio_packets() const;
+  int64_t text_packets() const;
   // How many reads gave up waiting. Non-zero in a passing test means the test
   // asserted a condition the double could not satisfy.
   int64_t park_timeouts() const;
@@ -153,6 +158,7 @@ class SyntheticLiveDemuxer final : public Demuxer {
   mutable MediaInfo media_info_;
   std::unique_ptr<LiveStream> video_;
   std::unique_ptr<LiveStream> audio_;
+  std::unique_ptr<LiveStream> text_;
   Host* host_ = nullptr;
   // Guards every mutable member below. The pipeline reads both streams from
   // two decoder sequences at once (TSan caught exactly that in the sibling
@@ -164,6 +170,7 @@ class SyntheticLiveDemuxer final : public Demuxer {
   base::TimeTicks started_ticks_;
   int64_t video_produced_ = 0;
   int64_t audio_produced_ = 0;
+  int64_t text_produced_ = 0;
   int64_t park_timeouts_ = 0;
   int64_t packets_read_ = 0;
   int32_t serial_ = 0;

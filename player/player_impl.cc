@@ -201,6 +201,12 @@ Status PlayerImpl::PrepareAsync() {
   pipeline_ = std::make_unique<media::PipelineImpl>();
   pipeline_->SetTickClock(deps_->tick_clock.get());
   pipeline_->SetClock(av_sync);
+  // The pipeline is the only layer that learns the source is live (from the
+  // demuxer), so the cue-age window travels here and the policy is decided
+  // where the fact is.
+  pipeline_->SetLiveCueMaxAge(
+      config_.subtitle.enabled ? config_.subtitle.live_cue_max_age
+                               : base::TimeDelta());
   media::DataSourceDescriptor source;
   {
     base::AutoLock scoped(state_lock_);

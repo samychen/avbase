@@ -124,6 +124,24 @@ struct AVBASE_PLAYER_EXPORT SubtitleConfig {
   bool enabled{false};                                       // "subtitle"
   int selected_stream{-1};                                   // "sst"
 
+  // How far behind the media clock a cue may be and still be shown, on a LIVE
+  // source. Zero (the default) disables the drop, which is what recorded
+  // content wants: a seek lands on a subtitle, and that cue is exactly what the
+  // viewer asked for.
+  //
+  // On a live edge it is the other way round. The demuxer keeps delivering
+  // from the point the viewer joined, so a viewer who joins late, or whose
+  // pipeline stalls, receives cues for dialogue that has already been spoken
+  // and shown. Displaying those is worse than displaying none -- the text is
+  // right, the timing is nonsense -- so a cue further behind than this window
+  // is dropped instead.
+  //
+  // The default is deliberately generous (10 s): a window that is too narrow
+  // eats subtitles during a transient stall, which is a worse failure than a
+  // late line, so this should be set to the longest stall the product is
+  // willing to paper over, not to a "typical" one.
+  base::TimeDelta live_cue_max_age{base::Seconds(10)};
+
   friend bool operator==(const SubtitleConfig&, const SubtitleConfig&) =
       default;
 };

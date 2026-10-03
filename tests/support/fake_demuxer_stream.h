@@ -26,6 +26,7 @@
 #include "media/base/decoder_config.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_resource.h"
+#include "media/base/text_decoder.h"
 
 namespace avbase::media::test {
 
@@ -51,6 +52,11 @@ class FakeDemuxerStream final : public DemuxerStream {
  public:
   FakeDemuxerStream(DemuxerStreamType type, AudioDecoderConfig audio_config,
                     VideoDecoderConfig video_config);
+  // Text legs need a codec name for the decoder to accept the config
+  // (TextDecoderConfig::IsValidConfig()), and the default one has none.
+  FakeDemuxerStream(DemuxerStreamType type, AudioDecoderConfig audio_config,
+                    VideoDecoderConfig video_config,
+                    TextDecoderConfig text_config);
 
   void AppendBuffer(base::scoped_refptr<DecoderBuffer> buffer);
 
@@ -89,6 +95,7 @@ class FakeDemuxerStream final : public DemuxerStream {
   const DemuxerStreamType type_;
   AudioDecoderConfig audio_config_;
   VideoDecoderConfig video_config_;
+  TextDecoderConfig text_config_;
   std::vector<base::scoped_refptr<DecoderBuffer>> buffers_;
   size_t next_ = 0;
   uint32_t max_per_read_ = 8;
@@ -115,6 +122,7 @@ class FakeMediaResource final : public MediaResource {
  private:
   DemuxerStream* audio_ = nullptr;
   DemuxerStream* video_ = nullptr;
+  DemuxerStream* text_ = nullptr;
 };
 
 }  // namespace avbase::media::test

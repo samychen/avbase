@@ -139,6 +139,30 @@ class AVBASE_MEDIA_EXPORT Renderer {
   // the external clock.
   virtual void SetRenderMutedAudio(bool render_muted_audio) = 0;
 
+  // Whether the source is a live edge that keeps moving, and how far behind
+  // the media clock a text cue may be before it is dropped instead of shown.
+  //
+  // WHY THE RENDERER NEEDS THIS. A MediaResource hands out streams and nothing
+  // else -- it deliberately does not expose the container -- so the renderer
+  // cannot ask whether it is live. The pipeline can: it already computes
+  // seekable_ as "info.seekable && !info.is_live". Rather than widen
+  // MediaResource (which every fake implements), the pipeline states it once,
+  // here, and the renderer applies the only policy that depends on it.
+  //
+  // |max_cue_age| is a WINDOW, not a deadline: a cue whose pts is further than
+  // this behind the current media time has already been on screen for longer
+  // than the viewer could have read it, so displaying it is worse than
+  // dropping it. Zero (or negative) disables the drop, which is the right
+  // default for recorded content -- a seek lands on a subtitle and the cue is
+  // exactly what the viewer asked for.
+  //
+  // Runs on the media sequence.
+  virtual void SetSourceLiveness(bool is_live,
+                                 base::TimeDelta max_cue_age) {
+    (void)is_live;
+    (void)max_cue_age;
+  }
+
   // ---- Valid only after Initialize() -------------------------------------
 
   // Drops every buffered packet and frame, then runs |flush_cb|. After the

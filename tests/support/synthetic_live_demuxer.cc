@@ -46,6 +46,12 @@ AudioDecoderConfig MakeLiveAudioConfig(const SyntheticLiveSpec& spec) {
   return config;
 }
 
+TextDecoderConfig MakeLiveTextConfig() {
+  TextDecoderConfig config;
+  config.codec_name = "synthetic-live-text";
+  return config;
+}
+
 }  // namespace
 
 SyntheticLiveDemuxer::SyntheticLiveDemuxer(SyntheticLiveSpec spec,
@@ -84,6 +90,13 @@ SyntheticLiveDemuxer::SyntheticLiveDemuxer(SyntheticLiveSpec spec,
     audio.channels = spec_.channels;
     media_info_.streams.push_back(audio);
   }
+  if (spec_.enable_text) {
+    StreamInfo text;
+    text.index = 2;
+    text.kind = StreamKind::kText;
+    text.codec_name = "synthetic-live-text";
+    media_info_.streams.push_back(text);
+  }
 }
 
 SyntheticLiveDemuxer::~SyntheticLiveDemuxer() {
@@ -121,6 +134,11 @@ int64_t SyntheticLiveDemuxer::audio_packets() const {
   return audio_produced_;
 }
 
+int64_t SyntheticLiveDemuxer::text_packets() const {
+  std::scoped_lock scoped(lock_);
+  return text_produced_;
+}
+
 int64_t SyntheticLiveDemuxer::park_timeouts() const {
   std::scoped_lock scoped(lock_);
   return park_timeouts_;
@@ -152,6 +170,12 @@ int64_t SyntheticLiveDemuxer::AvailableLocked(DemuxerStreamType type) const {
                            (spec_.fps_den * 1000000LL);
     return std::max<int64_t>(frames, 0);
   }
+  if (type == DemuxerStreamType::kText) {
+    // One subtitle packet per second. Sparse on purpose: a subtitle stream
+    // that emits as fast as video would not model the thing the cue-expiry
+    // policy is about, which is a cue arriving long after its moment.
+    return std::max<int64_t>(edge.InSeconds(), 0);
+  }
   if (edge <= base::TimeDelta()) {
     return 0;
   }
@@ -160,7 +184,17 @@ int64_t SyntheticLiveDemuxer::AvailableLocked(DemuxerStreamType type) const {
 }
 
 int64_t SyntheticLiveDemuxer::ProducedLocked(DemuxerStreamType type) const {
-  return type == DemuxerStreamType::kVideo ? video_produced_ : audio_produced_;
+  switch (type) {
+    case DemuxerStreamType::kVideo:
+      return video_produced_;
+    case DemuxerStreamType::kAudio:
+      return audio_produced_;
+    case DemuxerStreamType::kText:
+      return text_produced_;
+    case DemuxerStreamType::kUnknown:
+      break;
+  }
+  return 0;
 }
 
 void SyntheticLiveDemuxer::ProduceLocked(
@@ -176,7 +210,9 @@ void SyntheticLiveDemuxer::ProduceLocked(
     }
     auto buffer =
         DecoderBuffer::CopyFrom(payload.data(), payload.size(), type,
-                                type == DemuxerStreamType::kVideo ? 0 : 1);
+                                type == DemuxerStreamType::kVideo
+                        ? 0
+                        : (type == DemuxerStreamType::kAudio ? 1 : 2));
     // Timestamps come from the INDEX, exactly as in SyntheticDemuxer, so the
     // two doubles stamp identical times for identical indices. That is what
     // makes the edge move: the index is bounded by the clock, not by a
@@ -187,12 +223,16 @@ void SyntheticLiveDemuxer::ProduceLocked(
       buffer->set_keyframe(spec_.keyframe_interval > 0 &&
                            produced % spec_.keyframe_interval == 0);
       ++video_produced_;
-    } else {
+    } else if (type == DemuxerStreamType::kAudio) {
       buffer->set_timestamp(base::Microseconds(
           1000000LL * produced * spec_.audio_frames_per_packet /
           spec_.sample_rate));
       buffer->set_keyframe(true);
       ++audio_produced_;
+    } else {
+      buffer->set_timestamp(base::Seconds(produced));
+      buffer->set_keyframe(true);
+      ++text_produced_;
     }
     buffer->set_serial(serial_);
     ++packets_read_;
@@ -275,7 +315,10 @@ void SyntheticLiveDemuxer::Initialize(
   if (spec_.enable_audio) {
     audio_ = std::make_unique<LiveStream>(this, DemuxerStreamType::kAudio);
   }
-  if (!video_ && !audio_) {
+  if (spec_.enable_text) {
+    text_ = std::make_unique<LiveStream>(this, DemuxerStreamType::kText);
+  }
+  if (!video_ && !audio_ && !text_) {
     std::move(init_cb).Run(base::unexpected(MediaError::Of(
         ErrorCode::kSourceOpenFailed, "no streams enabled",
         "the synthetic live source was built with neither video nor audio",
@@ -378,7 +421,9 @@ class SyntheticLiveDemuxer::LiveStream final : public DemuxerStream {
                           : VideoDecoderConfig()),
         audio_config_(type == DemuxerStreamType::kAudio
                           ? MakeLiveAudioConfig(owner->spec())
-                          : AudioDecoderConfig()) {}
+                          : AudioDecoderConfig()),
+        text_config_(type == DemuxerStreamType::kText ? MakeLiveTextConfig()
+                                                     : TextDecoderConfig()) {}
 
   void Read(uint32_t count, ReadCB read_cb) override {
     // Posted, never inline: DemuxerStream's contract. It also matters for the
@@ -407,9 +452,22 @@ class SyntheticLiveDemuxer::LiveStream final : public DemuxerStream {
   const VideoDecoderConfig& video_decoder_config() const override {
     return video_config_;
   }
+  const TextDecoderConfig& text_decoder_config() const override {
+    return text_config_;
+  }
   DemuxerStreamType type() const override { return type_; }
   int32_t stream_index() const override {
-    return type_ == DemuxerStreamType::kVideo ? 0 : 1;
+    switch (type_) {
+      case DemuxerStreamType::kVideo:
+        return 0;
+      case DemuxerStreamType::kAudio:
+        return 1;
+      case DemuxerStreamType::kText:
+        return 2;
+      case DemuxerStreamType::kUnknown:
+        break;
+    }
+    return -1;
   }
   bool SupportsConfigChanges() const override { return false; }
   int32_t serial() const override {
@@ -434,6 +492,7 @@ class SyntheticLiveDemuxer::LiveStream final : public DemuxerStream {
   const DemuxerStreamType type_;
   const VideoDecoderConfig video_config_;
   const AudioDecoderConfig audio_config_;
+  const TextDecoderConfig text_config_;
 };
 
 // Defined here rather than beside its siblings because LiveStream must be a
@@ -445,6 +504,7 @@ DemuxerStream* SyntheticLiveDemuxer::GetStream(DemuxerStreamType type) {
     case DemuxerStreamType::kAudio:
       return audio_.get();
     case DemuxerStreamType::kText:
+      return text_.get();
     case DemuxerStreamType::kUnknown:
       return nullptr;
   }

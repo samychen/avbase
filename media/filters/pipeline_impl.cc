@@ -103,6 +103,12 @@ void PipelineImpl::OnDemuxerInitialized(Status status) {
   }
   // Demuxer ready: the renderer needs the probed stream configs, so only now
   // can it initialize against the demuxer's MediaResource view.
+  //
+  // Liveness is stated HERE, before Initialize(), because it is the first point
+  // where it is known and the renderer cannot discover it: a MediaResource
+  // hands out streams and nothing else. One call, one decision, rather than a
+  // liveness flag threaded through the renderer's whole surface.
+  renderer_->SetSourceLiveness(demuxer_->IsLive(), live_cue_max_age_);
   renderer_->Initialize(demuxer_.get(), this, media_runner_,
                         base::BindOnce(&PipelineImpl::OnRendererInitialized,
                                        base::Unretained(this)));

@@ -24,6 +24,7 @@
 #include "base/time/time.h"
 #include "media/base/decoder_config.h"
 #include "media/base/media_error.h"
+#include "media/base/timed_text.h"
 #include "media/base/renderer_client.h"
 
 namespace avbase::media::test {
@@ -58,6 +59,10 @@ class FakeRendererClient final : public RendererClient {
   // GetOverlayTaskRunner() is polled rather than reported, so it is counted
   // instead of appended to the event log.
   int overlay_runner_calls() const { return overlay_runner_calls_; }
+  // Cues the renderer actually delivered, in arrival order. Needed because
+  // "the live-cue policy dropped it" and "the policy never ran" look identical
+  // from anywhere else: the only evidence either way is what reached here.
+  const std::vector<TimedTextCue>& cues() const { return cues_; }
 
   // RendererClient.
   void OnError(MediaError error) override;
@@ -68,6 +73,7 @@ class FakeRendererClient final : public RendererClient {
   void OnDurationChange(base::TimeDelta duration) override;
   void OnStatisticsUpdate(const PipelineStatistics& stats) override;
   void OnVideoConfigChange(const VideoDecoderConfig& config) override;
+  void OnTimedText(const TimedTextCue& cue) override;
   void OnAudioOutputDeviceChanged(const std::string& device_id,
                                   bool is_default,
                                   OutputDeviceStatus status) override;
@@ -79,6 +85,7 @@ class FakeRendererClient final : public RendererClient {
  private:
   std::vector<Event> events_;
   MediaError last_error_;
+  std::vector<TimedTextCue> cues_;
   PipelineStatistics last_stats_;
   BufferingState last_buffering_state_ = BufferingState::kHaveNothing;
   base::TimeDelta last_duration_;

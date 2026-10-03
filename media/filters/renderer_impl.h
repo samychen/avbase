@@ -157,6 +157,9 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   void SetLatencyHint(std::optional<base::TimeDelta> latency_hint) override;
   void SetPreservesPitch(bool preserves_pitch) override;
   void SetRenderMutedAudio(bool render_muted_audio) override;
+  // Live-edge text policy. See Renderer::SetSourceLiveness for why the
+  // pipeline states this rather than the renderer discovering it.
+  void SetSourceLiveness(bool is_live, base::TimeDelta max_cue_age) override;
   void Flush(base::OnceClosure flush_cb) override;
   void StartPlayingFrom(base::TimeDelta time) override;
   void SetPlaybackRate(double playback_rate) override;
@@ -215,6 +218,10 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   void PumpText();
   void OnTextRead(int generation, DemuxerStream::Status status,
                   DemuxerStream::DecoderBufferVector buffers);
+  // True when |cue| is too far behind the media clock to be worth showing, per
+  // the live-edge policy SetSourceLiveness() installed. Always false when the
+  // policy is off, which is every non-live source.
+  bool IsCueStale(const TimedTextCue& cue) const;
   void FinishAudioSwitch(bool was_rendering, base::TimeDelta resume_at,
                          SwitchedAudioSettings settings,
                          base::OnceClosure change_completed_cb,
@@ -284,6 +291,15 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   bool text_read_outstanding_{false};
   bool text_ended_{false};
   int text_generation_{0};
+  // Live-edge text policy (Renderer::SetSourceLiveness). S1-only: the setter is
+  // called on the media sequence before playback starts, and IsCueStale() runs
+  // on S1 from OnTextRead.
+  bool source_is_live_{false};
+  base::TimeDelta max_cue_age_{base::TimeDelta()};
+  // Counted so the policy is observable rather than merely correct: a live
+  // stream that drops cues silently is indistinguishable from one that never
+  // decoded them. Asserted directly by the live-source suite.
+  int64_t stale_cues_dropped_ = 0;
   // Switched-out audio renderers. They are stopped and drained on S4 but NOT
   // deleted there: control tasks bound with Unretained may still be queued
   // behind the teardown task, and deleting would turn them into use-after-free

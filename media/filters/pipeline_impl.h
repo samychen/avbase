@@ -75,6 +75,15 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   // exactly one owner chain and GetMediaTime() survives renderer teardown.
   void SetClock(std::shared_ptr<AvSyncController> av_sync);
 
+  // How far behind the media clock a text cue may be on a LIVE source before
+  // the renderer drops it (config.subtitle.live_cue_max_age). Set before
+  // Start(); the pipeline combines it with the liveness it learns from the
+  // demuxer and states the result to the renderer in one place, so the
+  // renderer never has to ask a MediaResource it cannot ask.
+  void SetLiveCueMaxAge(base::TimeDelta max_age) {
+    live_cue_max_age_ = max_age;
+  }
+
   // Pipeline:
   void Start(std::unique_ptr<Demuxer> demuxer,
              RendererFactory* renderer_factory,
@@ -182,6 +191,9 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   base::scoped_refptr<base::SequencedTaskRunner> media_runner_;
   base::raw_ptr<Client> client_ = nullptr;
   base::raw_ptr<RendererFactory> renderer_factory_ = nullptr;
+  // config.subtitle.live_cue_max_age, handed to the renderer once the demuxer
+  // has told us whether the source is live. Zero disables the drop.
+  base::TimeDelta live_cue_max_age_{base::TimeDelta()};
 
   std::unique_ptr<Demuxer> demuxer_;
   std::unique_ptr<Renderer> renderer_;

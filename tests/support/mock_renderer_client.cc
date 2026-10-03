@@ -62,6 +62,11 @@ void FakeRendererClient::OnVideoConfigChange(
   events_.push_back({"video_config", base::TimeDelta()});
 }
 
+void FakeRendererClient::OnTimedText(const TimedTextCue& cue) {
+  cues_.push_back(cue);
+  events_.push_back({"timed_text", cue.pts});
+}
+
 void FakeRendererClient::OnAudioOutputDeviceChanged(
     const std::string& /*device_id*/, bool /*is_default*/,
     OutputDeviceStatus /*status*/) {
