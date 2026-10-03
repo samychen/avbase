@@ -273,6 +273,33 @@ jobs:
             --ffmpeg "$(command -v ffmpeg)" \
             --testdata tests/testdata
 
+  # Degraded network (docs/12 2.5). 2.4 proves a loopback socket works, which is
+  # the easiest network in the world; this one throttles the source to below
+  # real time and then breaks it, because a source that is faster than playback
+  # never makes the player interleave reading with rendering at all. The damage
+  # is applied in the httpd rather than with `tc netem` on purpose: netem needs
+  # root and does not exist on macOS, so it could only ever run here, and a gate
+  # only CI can run is a gate nobody can reproduce. Needs no sudo.
+  weaknet:
+    needs: ffmpeg
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain, FFmpeg and the CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config ffmpeg \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+      - run: cmake --preset ffmpeg
+      - run: cmake --build --preset ffmpeg
+      - name: Throttled, lossy and dead source
+        run: |
+          python3 tools/check_weaknet.py \
+            --headless build/ffmpeg/bin/headless \
+            --ffmpeg "$(command -v ffmpeg)" \
+            --testdata tests/testdata
+
   # Corpus + soak (docs/12 4.3 / 4.4). Both are measured rather than asserted
   # once: the corpus writes a baseline the next run compares against, and the
   # soak gates on the SLOPE of the memory curve instead of on a stopwatch.
