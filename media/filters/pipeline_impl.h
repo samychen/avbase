@@ -10,6 +10,7 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
@@ -223,6 +224,18 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   mutable base::Lock snapshot_lock_;
   PipelineStatistics last_stats_ GUARDED_BY(snapshot_lock_);
   MediaInfo media_info_ GUARDED_BY(snapshot_lock_);
+
+  // MUST be last: the factory is destroyed first, so every outstanding
+  // WeakPtr is invalidated before the rest of this object goes away
+  // (invariant C19, and the same ordering RendererImpl uses).
+  //
+  // WHY IT EXISTS. Every cross-sequence hop below is posted through
+  // media_runner_, and a caller may destroy the Player the instant an API
+  // returns -- the post is already in flight by then. Bound with
+  // base::Unretained(this) those hops run against a destroyed object; bound
+  // with this factory they become no-ops. RendererImpl had the same shape and
+  // the same fix; this class is the layer above it and had not been converted.
+  base::WeakPtrFactory<PipelineImpl> weak_factory_{this};
 
   SEQUENCE_CHECKER(sequence_checker_);
 };

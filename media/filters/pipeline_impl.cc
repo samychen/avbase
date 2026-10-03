@@ -61,7 +61,8 @@ void PipelineImpl::Start(
   // Posted, not run inline: the caller may be on any thread, and every piece
   // of media state below is media-sequence-exclusive.
   media_runner_->PostTask(FROM_HERE, base::BindOnce(&PipelineImpl::DoStart,
-                                                    base::Unretained(this),
+
+                                                    weak_factory_.GetWeakPtr(),
                                                     renderer_type));
 }
 
@@ -87,7 +88,8 @@ void PipelineImpl::DoStart(RendererType renderer_type) {
   }
   demuxer_->Initialize(source_, options_, this, media_runner_,
                        base::BindOnce(&PipelineImpl::OnDemuxerInitialized,
-                                      base::Unretained(this)));
+
+                                      weak_factory_.GetWeakPtr()));
 }
 
 void PipelineImpl::OnDemuxerInitialized(Status status) {
@@ -109,7 +111,8 @@ void PipelineImpl::OnDemuxerInitialized(Status status) {
   renderer_->SetSourceLiveness(demuxer_->IsLive(), live_cue_max_age_);
   renderer_->Initialize(demuxer_.get(), this, media_runner_,
                         base::BindOnce(&PipelineImpl::OnRendererInitialized,
-                                       base::Unretained(this)));
+
+                                       weak_factory_.GetWeakPtr()));
   {
     base::AutoLock scoped(snapshot_lock_);
     media_info_ = demuxer_->media_info();
@@ -148,8 +151,10 @@ void PipelineImpl::MaybeReady() {
 
 void PipelineImpl::Play() {
   if (media_runner_) {
-    media_runner_->PostTask(FROM_HERE, base::BindOnce(&PipelineImpl::DoPlay,
-                                                      base::Unretained(this)));
+    media_runner_->PostTask(FROM_HERE,
+                            base::BindOnce(&PipelineImpl::DoPlay,
+
+                                           weak_factory_.GetWeakPtr()));
   }
 }
 
@@ -184,8 +189,10 @@ void PipelineImpl::OnDemuxerStarted(Status status) {
 
 void PipelineImpl::Pause() {
   if (media_runner_) {
-    media_runner_->PostTask(FROM_HERE, base::BindOnce(&PipelineImpl::DoPause,
-                                                      base::Unretained(this)));
+    media_runner_->PostTask(FROM_HERE,
+                            base::BindOnce(&PipelineImpl::DoPause,
+
+                                           weak_factory_.GetWeakPtr()));
   }
 }
 
@@ -200,9 +207,11 @@ void PipelineImpl::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
   if (!media_runner_) {
     return;
   }
-  media_runner_->PostTask(
-      FROM_HERE, base::BindOnce(&PipelineImpl::DoSetOutputTarget,
-                                base::Unretained(this), std::move(display)));
+  media_runner_->PostTask(FROM_HERE,
+                          base::BindOnce(&PipelineImpl::DoSetOutputTarget,
+
+                                         weak_factory_.GetWeakPtr(),
+                                         std::move(display)));
 }
 
 void PipelineImpl::DoSetOutputTarget(
@@ -221,7 +230,8 @@ void PipelineImpl::BeginAccurateSeek(base::TimeDelta target,
   }
   media_runner_->PostTask(FROM_HERE,
                           base::BindOnce(&PipelineImpl::DoBeginAccurateSeek,
-                                         base::Unretained(this), target,
+
+                                         weak_factory_.GetWeakPtr(), target,
                                          std::move(reached_cb)));
 }
 
@@ -237,9 +247,9 @@ void PipelineImpl::EndAccurateSeek() {
   if (!media_runner_) {
     return;
   }
-  media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&PipelineImpl::DoEndAccurateSeek, base::Unretained(this)));
+  media_runner_->PostTask(FROM_HERE,
+                          base::BindOnce(&PipelineImpl::DoEndAccurateSeek,
+                                         weak_factory_.GetWeakPtr()));
 }
 
 void PipelineImpl::DoEndAccurateSeek() {
@@ -254,9 +264,10 @@ void PipelineImpl::Seek(base::TimeDelta time, base::OnceClosure seeked_cb) {
     std::move(seeked_cb).Run();
     return;
   }
-  media_runner_->PostTask(
-      FROM_HERE, base::BindOnce(&PipelineImpl::DoSeek, base::Unretained(this),
-                                time, std::move(seeked_cb)));
+  media_runner_->PostTask(FROM_HERE,
+                          base::BindOnce(&PipelineImpl::DoSeek,
+                                         weak_factory_.GetWeakPtr(), time,
+                                         std::move(seeked_cb)));
 }
 
 void PipelineImpl::DoSeek(base::TimeDelta time, base::OnceClosure seeked_cb) {
@@ -282,11 +293,11 @@ void PipelineImpl::DoSeek(base::TimeDelta time, base::OnceClosure seeked_cb) {
   // Flush the renderer and seek the demuxer in parallel (docs/04 §4.1); only
   // when both have finished is it safe to restart rendering, or a post-seek
   // frame could be scheduled against a pre-seek clock anchor.
-  renderer_->Flush(
-      base::BindOnce(&PipelineImpl::OnRendererFlushed, base::Unretained(this)));
-  demuxer_->StartPlayingFrom(
-      time,
-      base::BindOnce(&PipelineImpl::OnSeekDemuxerDone, base::Unretained(this)));
+  renderer_->Flush(base::BindOnce(&PipelineImpl::OnRendererFlushed,
+                                  weak_factory_.GetWeakPtr()));
+  demuxer_->StartPlayingFrom(time,
+                             base::BindOnce(&PipelineImpl::OnSeekDemuxerDone,
+                                            weak_factory_.GetWeakPtr()));
 }
 
 void PipelineImpl::OnRendererFlushed() {
@@ -326,7 +337,8 @@ void PipelineImpl::Stop() {
     return;
   }
   media_runner_->PostTask(
-      FROM_HERE, base::BindOnce(&PipelineImpl::DoStop, base::Unretained(this)));
+      FROM_HERE,
+      base::BindOnce(&PipelineImpl::DoStop, weak_factory_.GetWeakPtr()));
 }
 
 void PipelineImpl::DoStop() {
@@ -346,7 +358,7 @@ void PipelineImpl::DoStop() {
   // let a read reply land on a freed AudioRendererImpl (text-leg tests).
   if (renderer_) {
     renderer_->Flush(
-        base::BindOnce(&PipelineImpl::FinishStop, base::Unretained(this)));
+        base::BindOnce(&PipelineImpl::FinishStop, weak_factory_.GetWeakPtr()));
     return;
   }
   FinishStop();
@@ -375,17 +387,25 @@ bool PipelineImpl::IsRunning() const {
 // rather than capturing renderer_.get() on the caller's thread: S1 may be
 // tearing the renderer down concurrently with a call from any other thread.
 
+// The four setters below bind `self` as a LAMBDA PARAMETER rather than as a
+// member pointer, so they need the null check the member-function form gets
+// from the binding layer for free: BindOnce unwraps a bound WeakPtr into a raw
+// T* that is null once the factory has been destroyed. Same guard, different
+// shape -- worth knowing before someone "simplifies" one into the other.
 void PipelineImpl::SetVolume(float volume) {
   if (!media_runner_) {
     return;
   }
   media_runner_->PostTask(FROM_HERE, base::BindOnce(
                                          [](PipelineImpl* self, float v) {
+                                           if (!self) {
+                                             return;
+                                           }
                                            if (self->renderer_) {
                                              self->renderer_->SetVolume(v);
                                            }
                                          },
-                                         base::Unretained(this), volume));
+                                         weak_factory_.GetWeakPtr(), volume));
 }
 
 void PipelineImpl::SetPlaybackRate(double rate) {
@@ -395,11 +415,14 @@ void PipelineImpl::SetPlaybackRate(double rate) {
   media_runner_->PostTask(FROM_HERE,
                           base::BindOnce(
                               [](PipelineImpl* self, double r) {
+                                if (!self) {
+                                  return;
+                                }
                                 if (self->renderer_) {
                                   self->renderer_->SetPlaybackRate(r);
                                 }
                               },
-                              base::Unretained(this), rate));
+                              weak_factory_.GetWeakPtr(), rate));
 }
 
 void PipelineImpl::SetLatencyHint(base::TimeDelta hint) {
@@ -410,11 +433,11 @@ void PipelineImpl::SetLatencyHint(base::TimeDelta hint) {
   media_runner_->PostTask(FROM_HERE,
                           base::BindOnce(
                               [](PipelineImpl* self, base::TimeDelta h) {
-                                if (self->renderer_) {
+                                if (self && self->renderer_) {
                                   self->renderer_->SetLatencyHint(h);
                                 }
                               },
-                              base::Unretained(this), hint));
+                              weak_factory_.GetWeakPtr(), hint));
 }
 
 void PipelineImpl::SetPreservesPitch(bool preserves_pitch) {
@@ -424,11 +447,11 @@ void PipelineImpl::SetPreservesPitch(bool preserves_pitch) {
   media_runner_->PostTask(FROM_HERE,
                           base::BindOnce(
                               [](PipelineImpl* self, bool p) {
-                                if (self->renderer_) {
+                                if (self && self->renderer_) {
                                   self->renderer_->SetPreservesPitch(p);
                                 }
                               },
-                              base::Unretained(this), preserves_pitch));
+                              weak_factory_.GetWeakPtr(), preserves_pitch));
 }
 
 base::TimeDelta PipelineImpl::GetMediaTime() {
