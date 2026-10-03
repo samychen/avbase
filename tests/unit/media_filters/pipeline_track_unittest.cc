@@ -316,35 +316,41 @@ TEST_F(PipelineVideoTrackTest, DemuxerEnumeratesBothVideoTracks) {
 //
 // Until one of those is answered, "the switch returned success" and "the
 // picture came back" are different claims, and only the first is tested.
-// DISABLED again. Two plausible causes were found and fixed, and NEITHER was
-// it -- recorded because both are real defects on their own terms and because
-// a wrong hypothesis that is written down is worth less than one that is
-// measured, not more.
+// The case that took three commits to get right, and the reason is worth
+// writing down because it was NOT the product.
 //
-//   FIXED, defensibly: the demux loop's backpressure wait could not end when
-//   the stream it was waiting on stopped being the active target. A switch
-//   retires the renderer draining that queue, so the queue can never drain and
-//   the wait is forever. SetActiveStream now signals resume_event_, and the
-//   wait re-checks IsActiveRoutingTarget. Neither changed this symptom.
+// It failed as: no frames after the switch. Three candidate causes were found
+// and instrumented rather than reasoned about, and the first two were wrong:
 //
-//   MEASURED and still unexplained: the replacement arms its pump exactly once
-//   and its Read never completes (probe log in the previous commit). The
-//   demux loop is therefore NOT parked, which means the new stream is being
-//   read and simply never produces -- so the break is between the demux loop's
-//   enqueue and the replacement renderer's decode, not in the demux loop.
+//   1. "the replacement never gets SetMasterClock" -- RULED OUT by reading:
+//      PushMasterClock posts to video_.get() on a 10 ms loop that re-arms
+//      while initialized_ && !ended_, so after the swap the target IS the
+//      replacement.
+//   2. "the demux loop is parked in back-pressure" -- RULED OUT by
+//      measurement, and ruling it out was the useful part. Probing showed the
+//      replacement's decode pump arming EXACTLY ONCE and its Read never
+//      completing; a parked demux loop would look exactly like that, so it was
+//      not parked.
+//   3. THE ACTUAL CAUSE: the demux loop had exited. The log said
+//      DemuxLoop EXIT ret=-541478725, which is AVERROR_EOF -- the four-second
+//      clip was exhausted before the handover finished. The new stream HAD
+//      been demuxed (100 packets) but every one of them was dropped as
+//      non-active, because they arrived before the switch re-pointed the
+//      routing. So the switch had nothing to switch TO.
 //
-// That narrows it usefully: next instrument FFmpegDemuxerStream::Read and
-// DecoderStream::Read for the NEW stream index, and check whether the buffer
-// arrives and the decoder rejects it. The two source tracks differ in
-// resolution AND pixel format (yuv444p vs yuv420p), so "the new decoder
-// cannot handle this stream" is a live candidate that nothing so far has
-// tested.
+// The fix is a 60-second clip, not a code change. The lesson is narrower than
+// "tests need longer fixtures": a symptom that says \"the new thing produces
+// nothing\" is equally consistent with \"the source ran out\", and the two are
+// told apart by one log line at the demux loop's exit -- which was the cheapest
+// possible measurement and the one I did not do first.
 //
-// What IS proven, and worth keeping: the switch completes in both directions
-// without error, the sink is reused rather than rebuilt, a second decoder is
-// created, and the handover is correctly sequenced.
-TEST_F(PipelineVideoTrackTest,
-       DISABLED_SwitchingVideoTrackKeepsPresentingFrames) {
+// Two REAL defects were fixed along the way and are kept, because they are
+// defects whether or not they were this symptom: SetActiveStream now signals
+// resume_event_ (the back-pressure wait was signalled by Flush, Stop and seek
+// only, and a track switch was none of them), and that wait re-checks
+// IsActiveRoutingTarget instead of waiting forever on a queue whose consumer
+// has been replaced.
+TEST_F(PipelineVideoTrackTest, SwitchingVideoTrackKeepsPresentingFrames) {
   StartPipeline();
   ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }));
   pipeline_->Play();
