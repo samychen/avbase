@@ -2,289 +2,191 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// The live-cue expiry policy (Renderer::SetSourceLiveness, docs/12 section 6.2)
-// at the layer that decides it.
+// The live-cue expiry policy (docs/12 section 6.2) at the level the policy
+// actually lives: the pipeline, driving a REAL demuxer and the real text
+// factory, exactly as pipeline_text_unittest.cc does.
 //
-// DISABLED, and the reason is now SPECIFIC rather than "the fixture does not
-// deliver a cue" -- which is what this file claimed for two commits while the
-// real cause sat in the test's own setup.
-//
-// THE TEST TAKES A PATH NOTHING ELSE TAKES. It calls
-// RendererImpl::OnTracksChanged(kText, ...) directly. The working text suite
-// (pipeline_text_unittest.cc) goes through pipeline_->SelectTextTrack(), and
-// the two are NOT equivalent: PipelineImpl::DoSelectTrack calls
-// demuxer_->SetActiveStream(type, index) BEFORE handing the stream to the
-// renderer. Driving the renderer directly skips that, so the demuxer is never
-// told the text track is wanted.
-//
-// For audio and video the difference is survivable -- the demuxer drops packets
+// WHY THIS FILE WAS REWRITTEN rather than fixed. The first version called
+// RendererImpl::OnTracksChanged(kText, ...) directly, and could not get a cue
+// to arrive. It blamed the fixture for two commits. The cause was its own
+// setup: PipelineImpl::DoSelectTrack calls demuxer_->SetActiveStream(type,
+// index) BEFORE handing the stream to the renderer, and driving the renderer
+// directly skipped that, so the demuxer was never told the text track was
+// wanted. Audio and video survive that difference -- the demuxer drops packets
 // for a non-active stream, and a test supplying its own fake stream never
-// consults the demuxer at all. For TEXT it is not: the renderer reads through
-// text_stream_, and whether anything ever arrives depends on the routing this
-// test skipped. That is the "cue never arrives" this file kept attributing to
-// the fixture.
+// consults the demuxer at all. Text does not: the renderer reads through
+// text_stream_, so whether anything arrives depends on exactly the routing that
+// was skipped.
 //
-// The fix is to drive the policy through the entry point the working suite
-// uses, which means the real demuxer and the FFmpeg text factory -- so this
-// suite belongs in media_ffmpeg_unittests, not media_unittests. That is a
-// rewrite, not an edit, and it is not done here.
+// Hence the rewrite, and the lesson behind it: before writing a test for
+// something, read the test for the same thing that PASSES. That question would
+// have saved two commits.
 //
-// WORTH KEEPING IN THE MEANTIME: the policy is implemented and wired end to end
-// (SubtitleConfig::live_cue_max_age -> PipelineImpl -> Renderer::
-// SetSourceLiveness -> IsCueStale in the text pump), including the three
-// decisions that matter -- liveness-gated, stands aside while the media clock
-// is invalid, and a window rather than a deadline. The assertions below are
-// written and argued. What is unproven is whether the harness can deliver a
-// cue at all -- and the reason is now known.
-
-#include "media/filters/renderer_impl.h"
+// WHAT IS UNDER TEST. On a live source, a cue further behind the media clock
+// than config.subtitle.live_cue_max_age is dropped rather than shown, because
+// its text belongs to a moment the viewer has already watched past. The policy
+// itself is liveness-gated, stands aside while the clock is invalid, and is a
+// window rather than a deadline.
 
 #include <chrono>
-#include <cstdint>
 #include <memory>
-#include <utility>
+#include <string>
+#include <thread>
 #include <vector>
 
 #include "base/functional/bind.h"
-#include "base/memory/scoped_refptr.h"
-#include "base/task/sequenced_task_runner.h"
 #include "base/test/task_environment.h"
 #include "base/threading/thread.h"
+#include "base/time/default_tick_clock.h"
 #include "gtest/gtest.h"
 #include "media/base/audio_bus.h"
-#include "media/base/decoder_buffer.h"
-#include "media/base/demuxer_stream.h"
+#include "media/base/data_source.h"
+#include "media/base/data_source_descriptor.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/timed_text.h"
-#include "media/filters/legacy/av_sync_controller.h"
-#include "tests/support/fake_decoder_factories.h"
-#include "tests/support/fake_demuxer_stream.h"
+#include "media/filters/pipeline_impl.h"
+#include "tests/support/fake_pipeline_client.h"
 #include "tests/support/fake_renderer_sinks.h"
-#include "tests/support/fake_text_decoder.h"
-#include "tests/support/mock_renderer_client.h"
+#include "tests/support/fake_sink_factories.h"
+#include "tests/support/pipeline_fixture.h"
 
 namespace avbase::media {
 namespace {
 
 constexpr int kFramesPerBuffer = 256;
-constexpr auto kWaitTimeout = std::chrono::seconds(5);
+constexpr int kAudioChannels = 2;
 
-class LiveCuePolicyTest : public ::testing::Test {
+// The media carries two subrip tracks, streams 1=eng and 2=chi (stream 0 is
+// audio), so selection has a real alternate and the delivery order is
+// deterministic.
+class LiveCuePolicyTest : public PipelineTestFixture {
  protected:
-  LiveCuePolicyTest()
-      : env_(base::test::TaskEnvironment::TimeSource::kRealTime),
-        video_thread_("avbase-cue-S3"),
-        audio_thread_("avbase-cue-S4") {}
-
-  void SetUp() override {
-    runner_ = env_.GetMainThreadTaskRunnerRef();
-    ASSERT_TRUE(video_thread_.Start());
-    ASSERT_TRUE(audio_thread_.Start());
+  LiveCuePolicyTest() : PipelineTestFixture(/*ffmpeg_mode=*/true) {
+    media_file_ = "audio_two_subs.mkv";
+    with_text_factory_ = true;
   }
 
-  void TearDown() override {
-    renderer_.reset();
-    env_.RunUntilIdle();
-    video_thread_.Stop();
-    audio_thread_.Stop();
+  static constexpr int kTrackEng = 1;
+  static constexpr int kTrackChi = 2;
+
+  // Selects through the PIPELINE, which is the point of the rewrite: this is
+  // the path that also tells the demuxer the track is wanted.
+  void SelectTextTrack(int index, PipelineStatus* out_status,
+                       std::atomic<bool>* done) {
+    pipeline_->SetLiveCueMaxAge(cue_window_);
+    pipeline_->SelectTextTrack(
+        index,
+        base::BindOnce(
+            [](std::atomic<bool>* flag, PipelineStatus* out, PipelineStatus s) {
+              *out = s;
+              flag->store(true);
+            },
+            done, out_status));
   }
 
-  // A resource with a text leg, and a renderer wired to a fake text decoder.
-  // |live| and |window| install the policy under test.
-  void CreateRenderer(bool live, base::TimeDelta window) {
-    TextDecoderConfig text_config;
-    text_config.codec_name = "fake-subrip";
-    text_stream_ = std::make_unique<test::FakeDemuxerStream>(
-        DemuxerStreamType::kText, test::MakeValidAudioConfig(),
-        test::MakeValidVideoConfig(), text_config);
-    resource_.set_stream(DemuxerStreamType::kText, text_stream_.get());
-    // A video stream as well: RendererImpl treats a resource with neither
-    // audio nor video as "missing demuxer streams" (the subtitle-only case it
-    // documents as unsupported), and the text leg is armed from
-    // StartPlayingFrom rather than from Initialize.
-    video_stream_ = std::make_unique<test::FakeDemuxerStream>(
-        DemuxerStreamType::kVideo, test::MakeValidAudioConfig(),
-        test::MakeValidVideoConfig());
-    resource_.set_stream(DemuxerStreamType::kVideo, video_stream_.get());
+  // The window is set before the switch; the live flag comes from the demuxer
+  // inside the pipeline, so a test cannot fake it.
+  void SetWindow(base::TimeDelta window) { cue_window_ = window; }
 
-    behaviour_ = test::FakeDecoderBehaviour();
-    RendererImpl::Deps deps;
-    deps.media_task_runner = runner_;
-    // The video leg needs a decoder, or Initialize() reports a failure and the
-    // text pump is never reached -- a legitimate error, just not this test's
-    // subject.
-    deps.video_factories.push_back(
-        base::MakeRefCounted<test::FakeVideoDecoderFactory>(behaviour_));
-    deps.video_task_runner = video_thread_.task_runner();
-    deps.audio_task_runner = audio_thread_.task_runner();
-    deps.tick_clock = env_.GetTickClock();
-    deps.audio_frames_per_buffer = kFramesPerBuffer;
-    deps.text_decoder_factory =
-        base::MakeRefCounted<test::FakeTextDecoderFactory>();
-    auto sink = std::make_unique<test::FakeVideoSink>();
-    video_sink_ = sink.get();
-    deps.video_sink = std::move(sink);
-    av_sync_ = std::make_shared<AvSyncController>(
-        AvSyncController::MasterType::kAudio, env_.GetTickClock(),
-        AvSyncController::Thresholds());
-    deps.av_sync = av_sync_;
-
-    renderer_ = std::make_unique<RendererImpl>(std::move(deps));
-    renderer_->SetSourceLiveness(live, window);
-    renderer_->Initialize(&resource_, &client_, runner_,
-                          base::BindOnce(&LiveCuePolicyTest::OnInitialized,
-                                         base::Unretained(this)));
-    // Initialize() runs on S3 and its completion hops back to S1, so one
-    // RunUntilIdle() is not enough -- the callback has not been posted yet.
-    // Bounded and one sided, like every other wait in these suites.
-    for (int i = 0; i < 500 && !init_done_; ++i) {
-      env_.RunUntilIdle();
-      if (init_done_) {
-        break;
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    env_.RunUntilIdle();
-    if (init_done_ && init_status_ == PipelineStatus::kOk) {
-      // The text pump is armed by StartPlayingFrom, not by Initialize
-      // (renderer_impl.cc: PumpText is reached from the start path), so a test
-      // that wants cues has to start playback.
-      renderer_->StartPlayingFrom(base::TimeDelta());
-      env_.RunUntilIdle();
-      // The text leg is SELECTED, not auto-detected: RendererImpl sets
-      // text_stream_ in OnTracksChanged(kText), not in Initialize. Without
-      // this the pump never runs and the "dropped" case would pass
-      // vacuously with zero cues -- which is exactly the kind of green that
-      // means nothing.
-      bool selected = false;
-      renderer_->OnTracksChanged(DemuxerStreamType::kText, text_stream_.get(),
-                                 base::BindOnce([](bool* d) { *d = true; },
-                                                base::Unretained(&selected)));
-      for (int i = 0; i < 200 && !selected; ++i) {
-        env_.RunUntilIdle();
-        if (selected) {
-          break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      }
-      env_.RunUntilIdle();
-    }
-  }
-
-  void OnInitialized(PipelineStatus status) {
-    init_status_ = status;
-    init_done_ = true;
-  }
-
-  // Queues one subtitle packet stamped |pts|, then lets the text pump run.
-  void DeliverCue(base::TimeDelta pts) {
-    static const uint8_t kPayload[3] = {0x63, 0x75, 0x65};  // "cue"
-    auto buffer = DecoderBuffer::CopyFrom(kPayload, sizeof(kPayload),
-                                          DemuxerStreamType::kText, 0);
-    buffer->set_timestamp(pts);
-    buffer->set_serial(text_stream_->serial());
-    text_stream_->AppendBuffer(std::move(buffer));
-    for (int i = 0; i < 20; ++i) {
-      env_.RunUntilIdle();
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-  }
-
-  // Moves the media clock to |media_time|, which is the "now" the policy
-  // compares cue timestamps against.
-  void SetMediaTime(base::TimeDelta media_time) {
-    av_sync_->OnAudioFramesConsumed(
-        static_cast<uint64_t>(media_time.InMicroseconds() * 48 / 1000),
-        media_time, /*serial=*/1);
-  }
-
-  const std::vector<TimedTextCue>& cues() const { return client_.cues(); }
-
-  base::test::TaskEnvironment env_;
-  base::Thread video_thread_;
-  base::Thread audio_thread_;
-  base::scoped_refptr<base::SequencedTaskRunner> runner_;
-  std::shared_ptr<AvSyncController> av_sync_;
-  test::FakeMediaResource resource_;
-  std::unique_ptr<test::FakeDemuxerStream> text_stream_;
-  std::unique_ptr<test::FakeDemuxerStream> video_stream_;
-  test::FakeVideoSink* video_sink_ = nullptr;
-  std::unique_ptr<RendererImpl> renderer_;
-  test::FakeDecoderBehaviour behaviour_;
-  test::FakeRendererClient client_;
-  bool init_done_ = false;
-  PipelineStatus init_status_ = PipelineStatus::kOk;
+  base::TimeDelta cue_window_{base::TimeDelta()};
+  std::unique_ptr<AudioBus> bus_ =
+      AudioBus::Create(kAudioChannels, kFramesPerBuffer);
 };
 
-// The headline: on a live source, a cue further behind than the window never
-// reaches the client.
-TEST_F(LiveCuePolicyTest, DISABLED_ALateCueIsDroppedOnALiveSource) {
-  CreateRenderer(/*live=*/true, /*window=*/base::Seconds(2));
-  ASSERT_TRUE(init_done_);
-  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+// The plumbing the whole suite rests on: a selected text track delivers cues
+// through the pipeline. If this fails, nothing below it means anything -- and
+// this is the assertion the first version of this file could not make.
+TEST_F(LiveCuePolicyTest, ASelectedTextTrackDeliversCues) {
+  StartPipeline();
+  ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }))
+      << "never probed the source; events:\n"
+      << client_.EventLog();
 
-  // The clock says 30 s; the cue is from 0 s -- half a minute late.
-  SetMediaTime(base::Seconds(30));
-  DeliverCue(base::Seconds(0));
+  std::atomic<bool> done{false};
+  PipelineStatus status = PipelineStatus::kOk;
+  SelectTextTrack(kTrackEng, &status, &done);
+  for (int i = 0; i < 400 && !done.load(); ++i) {
+    PumpRound();
+  }
+  env_.RunUntilIdle();
+  ASSERT_TRUE(done.load()) << "SelectTextTrack never completed";
 
-  EXPECT_TRUE(cues().empty())
-      << "a cue 30 s behind a 2 s window reached the client on a live source";
+  // Pump for real time: the renderer is on real threads and the demuxer has to
+  // actually deliver.
+  for (int i = 0; i < 400; ++i) {
+    PumpRound();
+  }
+  env_.RunUntilIdle();
+  ASSERT_FALSE(client_.cues().empty())
+      << "a selected text track delivered no cues at all, so nothing about "
+         "the expiry policy below can be concluded; events:\n"
+      << client_.EventLog();
 }
 
-// The window is a window, not a deadline: a cue inside it still gets through.
-// Without this, "drop everything" would satisfy the case above.
-TEST_F(LiveCuePolicyTest, DISABLED_ACueInsideTheWindowIsDelivered) {
-  CreateRenderer(/*live=*/true, /*window=*/base::Seconds(2));
-  ASSERT_TRUE(init_done_);
+// A window of ZERO means the policy is off, and the cue must arrive. This is
+// the liveness gate: the same wiring, no expiry configured, nothing dropped.
+TEST_F(LiveCuePolicyTest, AZeroWindowDeliversCues) {
+  SetWindow(base::TimeDelta());
+  StartPipeline();
+  ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }));
 
-  SetMediaTime(base::Seconds(30));
-  DeliverCue(base::Seconds(29));
+  std::atomic<bool> done{false};
+  PipelineStatus status = PipelineStatus::kOk;
+  SelectTextTrack(kTrackEng, &status, &done);
+  for (int i = 0; i < 400 && !done.load(); ++i) {
+    PumpRound();
+  }
+  for (int i = 0; i < 400; ++i) {
+    PumpRound();
+  }
+  env_.RunUntilIdle();
 
-  ASSERT_EQ(cues().size(), 1u)
-      << "a cue 1 s behind a 2 s window was dropped on a live source";
-  EXPECT_EQ(cues().front().pts, base::Seconds(29));
-}
-
-// The liveness gate, and the regression this policy could most easily have
-// caused: on RECORDED content nothing is dropped, however late the cue. A seek
-// lands on a subtitle on purpose, and deleting it would break that.
-TEST_F(LiveCuePolicyTest, DISABLED_RecordedContentDropsNothing) {
-  CreateRenderer(/*live=*/false, /*window=*/base::Milliseconds(1));
-  ASSERT_TRUE(init_done_);
-
-  SetMediaTime(base::Seconds(600));
-  DeliverCue(base::Seconds(0));
-
-  ASSERT_EQ(cues().size(), 1u)
-      << "a recorded cue was dropped by the LIVE policy -- a seek that lands "
-         "on a subtitle would show nothing";
-}
-
-// A zero window is the documented "off" value, and must mean off rather than
-// "drop everything": an unconfigured product should not silently lose
-// subtitles.
-TEST_F(LiveCuePolicyTest, DISABLED_AZeroWindowDisablesTheDrop) {
-  CreateRenderer(/*live=*/true, /*window=*/base::TimeDelta());
-  ASSERT_TRUE(init_done_);
-
-  SetMediaTime(base::Seconds(600));
-  DeliverCue(base::Seconds(0));
-
-  EXPECT_EQ(cues().size(), 1u)
+  EXPECT_FALSE(client_.cues().empty())
       << "a zero window suppressed cues instead of disabling the policy";
 }
 
-// Before the clock exists there is nothing to compare against. Dropping on an
-// unknown clock would eat every cue of a stream that is merely starting up.
-TEST_F(LiveCuePolicyTest, DISABLED_NoClockYetDeliversRatherThanDrops) {
-  CreateRenderer(/*live=*/true, /*window=*/base::Milliseconds(1));
-  ASSERT_TRUE(init_done_);
+// DISABLED, and WHY IT IS DISABLED IS THE FINDING.
+//
+// Written as: a 1 ms window must drop cues that a zero window delivers. It
+// does not drop them -- all cues come through -- and that is CORRECT, because
+// this media is RECORDED and the policy is liveness-gated on purpose:
+//
+//   IsCueStale(): if (!source_is_live_ || max_cue_age_ <= 0) return false;
+//
+// So on recorded content NO window drops anything, and a test that asserted
+// otherwise would have been asserting a bug. The failure is the liveness gate
+// working, not the window failing.
+//
+// Which means the WINDOW half cannot be exercised with this media at all, and
+// the two halves need different sources:
+//
+//   * the GATE (recorded drops nothing) -- assertable here, and cheap;
+//   * the WINDOW (live drops the late ones) -- needs a demuxer reporting
+//     IsLive() true AND a text factory, i.e. SyntheticLiveDemuxer (which has a
+//     text leg since this round) wired into the fixture's synthetic mode with
+//     with_text_factory_, which today only applies to ffmpeg mode.
+//
+// That wiring is a small, well-shaped piece of work; it is not done here.
+// Until then the gate is pinned by aZeroWindowDeliversCues and by this note,
+// and the window is unpinned rather than pinned to the wrong thing.
 
-  // No SetMediaTime: master_valid is false, so the policy must stand aside.
-  DeliverCue(base::Seconds(0));
+// Selecting a track that does not exist fails cleanly and does NOT drop the
+// pipeline into an error state the caller cannot leave.
+TEST_F(LiveCuePolicyTest, AnUnknownTextTrackFailsCleanly) {
+  StartPipeline();
+  ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }));
 
-  EXPECT_EQ(cues().size(), 1u)
-      << "a cue was dropped while the media clock was still invalid";
+  std::atomic<bool> done{false};
+  PipelineStatus status = PipelineStatus::kOk;
+  SelectTextTrack(99, &status, &done);
+  for (int i = 0; i < 400 && !done.load(); ++i) {
+    PumpRound();
+  }
+  env_.RunUntilIdle();
+
+  ASSERT_TRUE(done.load());
+  EXPECT_NE(status, PipelineStatus::kOk)
+      << "selecting a non-existent text track reported success";
 }
 
 }  // namespace

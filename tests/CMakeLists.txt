@@ -60,7 +60,6 @@ avbase_add_unittest(media_unittests
         unit/media_filters/synthetic_demuxer_unittest.cc
         unit/media_filters/synthetic_live_demuxer_unittest.cc
         unit/media_filters/live_cue_expiry_unittest.cc
-        unit/media_filters/live_cue_policy_unittest.cc
         unit/media_filters/pipeline_counts_unittest.cc
         unit/media_filters/synthetic_decoders_unittest.cc
         unit/media_filters/video_renderer_impl_unittest.cc
@@ -90,6 +89,7 @@ if(AVBASE_ENABLE_FFMPEG)
               unit/media_filters/pipeline_throttle_unittest.cc
               unit/media_filters/pipeline_track_unittest.cc
               unit/media_filters/pipeline_text_unittest.cc
+              unit/media_filters/live_cue_policy_unittest.cc
       DEPS avbase::platform_ffmpeg avbase::media_test_support
            avbase::base_test_support)
   target_compile_definitions(media_ffmpeg_unittests PRIVATE
