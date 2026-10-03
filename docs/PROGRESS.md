@@ -628,3 +628,160 @@ X11/Wayland 未验证；Golden Test 未做（M10/Q8 未动）。
 | 许可证 | ✅ **本轮落地**：根 `LICENSE`（BSD-3 + 4 节第三方说明）· `media/filters/legacy/`（LGPL-2.1 全文 + README 准入规则 + 6 个文件头重写）；⬜ **法务确认（Q1/R8）仍未做** |
 | 仓库卫生 | ⬜ `.clang-tidy` · `.editorconfig` 仍缺（STYLE.md 与 README §8 都列了） |
 
+---
+
+## 第二十三轮：清掉两个 park 项，接上一个从未接线的配置字段，开两条门禁
+
+本轮没有新功能里程碑。主题是**把"已完成"和"已接线"这两件事分开看**：四个条目里，
+两个是修真实的缺陷，一个是补上一条从未有任何生产调用者的配置字段，两个是开门禁。
+其中两项目标没有达成，理由都写在下面而不是绕过去。
+
+### (1) 4.8b RendererImplTest 偶发挂起 —— 根因确定，15004ms → 12ms
+
+此前记为"时序敏感、两次全量一红一绿"。**它可以确定性复现**：单跑
+`StartPlayingFromOpensTheAudioDevice` 是 475 ms，排在 `InitCallbackIsNeverRunInline`
+之后是 15004 ms——恰好是 `DestroyRenderer` 的 15 s 上限。
+
+根因在测试侧：`DestroyRenderer()` 等 `!env_.HasDelayedTasks()`，而渲染器的 10 ms
+时钟推链与 1 s 统计链在 `ended_` 为真之前无限重排。该用例不到 EOS，所以队列永不
+静默，只能耗满上限。套件顺序决定前一个用例是否把 sink 排空，于是表现为"时序敏感"。
+
+修法两层：产品侧把 `RendererImpl` 投递到 S1 的 6 处 hop（ended×2 / init×2 /
+CheckBufferingTransitions / OnAccurateSeekTargetReached）由 `Unretained(this)` 改为
+weak 绑定——`~RendererImpl` 不再依赖"所有在飞 hop 都已跑完"这个调用方无法建立的性质；
+测试侧改为有界 drain。**套件整体 7131 ms → 78 ms。**
+
+**伪证检验的结论值得留着**：只回退测试侧的 15 s 等待（产品修复保留）→ 15 s 复现；
+只回退产品侧 weak 绑定（保留短 teardown）→ 套件仍全绿。即 weak 绑定是**结构性封口**，
+这套件抓不到它，不要把它当回归锚点。
+
+### (2) 4.8 throttle 测试 —— 修掉两个真缺陷，并定位到真正的阻塞
+
+重新启用后暴露两个共享夹具里的真实缺陷：
+
+- **use-after-free**：`PipelineTestFixture::StartPipeline()` 无条件重载
+  `media_bytes_`，而调用方已经基于 `media_bytes_.data()` 造好了
+  `MemoryDataSource`。只有 throttle 套件会包 source，所以只有它炸——FFmpeg 报 46 次
+  连续 "Invalid data found when processing input"，被误读成节拍问题，实际是解码器
+  拿到了**已释放内存**。两处改成"仅在为空时加载"。
+- **数据竞争**：`FakePipelineClient::have_nothing()` / `have_enough()` 无锁读标志，
+  而其他访问器都持锁。
+
+**测试仍保持 DISABLED**，但记录的理由换成了真的那个：节拍恢复循环需要"比消费慢到
+会饿死、又比消费快到能恢复"的源，而 testdata 里最长的素材只有 3 s / 327 KB
+（≈109 KB/s 实时）表达不了两者。>110 KB/s 永不饿死（实测 `bytes_served=371692`、
+3 s 素材上 `media_time=60s`）；=60 KB/s 永久饿死。解封前置：需 ≥30 s 素材。
+实时节拍泵 `PumpRoundRealtime` 与字节/停顿诊断已落地并保留。
+
+### (3) 2.3 kHardwareOnly 生产语义 —— 清单记的还轻了
+
+docs/12 §2.3 记的是"宁败不回退只在 Selector 层实现，DecoderStream 需要配置时重排"。
+实测更严重：**`DecoderSelector::SelectVideoDecoder` 没有任何生产调用者**（全仓只有
+它自己和单测）。也就是说 `config.video.decoder_preference` 在播放路径上无人读——
+文档告诉用户它能用，实际 `kHardwareOnly` 会静默回退到软解。比"未实现"更糟。
+
+排序点选在 `VideoRendererImpl::Initialize`（首次拿到流 config 的地方），而不是工厂
+列表的拥有者：排序是"流 config × 各工厂能力"的函数，提前排就等于猜 config，那正是
+要替换的 ijkplayer 病根。链路 PlayerImpl → DefaultRendererFactory::Deps →
+RendererImpl::Deps → `set_decoder_preference`。空候选表改为带可操作日志的初始化失败，
+而不是一个永不产帧的解码器。宿主自带工厂列表且未设 preference 时原样保留。
+
+6 个新测试。伪证：禁用排序 → 4 个偏好专属用例红，2 个"未配置行为"（kAuto 回退、
+宿主顺序保留）仍绿——说明它们咬的是排序本身而非周边管线。
+
+### (4) 2.2 合成直播 demuxer —— 边缘真的在动
+
+`LiveDataSource`（第十九轮）供给的是**增长的字节**，但没有任何东西供给**增长的
+时戳**。`SyntheticDemuxer` 能报 `IsLive()` 并把有限 duration 当边缘，但它的时戳是
+包索引的纯函数——一个跑在真实时间前面的消费方会永远跑在前面，而这正是直播管线
+绝不能进入、也正是追帧逻辑要纠正的状态。
+
+`SyntheticLiveDemuxer` 补上三件有限源做不到的事：边缘=墙钟流逝（`media_info().duration`
+每次查询重算，且 `duration_is_estimate` 明说）；产包受时钟约束（读不会越过边缘）；
+边缘处的读**挂起**（`DemuxerStream` 契约是 1..count，"还没有"无法用空回复表达）。
+
+三个非显然决定都写进了注释：包从 index 0 起（不从 `start_offset` 起，否则滞后被完全
+掩盖）；seek 被**拒绝**并给可操作错误（追帧正因为没有物理 seek 而存在，默默接受 seek
+的假件会正好掩盖追帧要防的 bug）；挂起上限用**真实时钟**度量（防挂起不能依赖测试可控
+的时钟——首版正是如此，结果"从不推进 mock 时钟"的用例会永久挂起，而那恰恰是上限要防
+的失败本身）。
+
+9 个用例。伪证：冻结边缘（退化为有限源）→ 4 个依赖边缘的用例红，5 个无关契约的仍绿。
+
+### (5) 4.7 format 门禁 —— 先修树，再开门
+
+按 R12 路径：一次性 `clang-format -i` 全量重排（排除 `media/filters/legacy/` LGPL
+隔离区与生成的 `option_registry.inc`）→ 开门禁。
+
+STYLE.md 旧记录里"不做全量重排"的理由是"那 323 行里有一部分是模板声明，手工重排
+有可能改变含义，而收益只有行更短"。**机器重排把前半句直接推翻**（不改语义，只重新
+折行），而后半句严重低估了收益：**C23 基线 286 → 37 行**（少 249 行），4K diff 一次性
+付清，之后每个 PR 不再为格式付费。
+
+两个副作用如实处理：`ffmpeg_demuxer.cc` 与 `audio_renderer_algorithm.cc` 因折行涨行
+触及 C1，上限随之棘轮化。`check-format` job 检查**全树**而非 diff——diff-only 更便宜
+也更容易绕开，而本项的意义正是".clang-format 是唯一真相源"。
+
+### (6) 4.5 Windows CI —— job 已加，范围按"能守住的说法"划定
+
+R12 风险 3 提到的 MSVC 分支**早已存在**（`/GR- /EHs-c-` vs `-fno-exceptions
+-fno-rtti`），缺的只是 job。而 job 必须诚实地划范围，因为**没人用 MSVC 编译过这棵树**：
+job 断言的是"能编译、测试通过"（no-ffmpeg 配置），**刻意不开 /WX**——给新平台一把
+最严的警告换来的是一片红，埋掉唯一有用的信号"这套工具链到底能不能用"。
+
+CI 的命令形式（`cmake --preset no-ffmpeg -B <dir>`）已本地验证；**能否编译通过只有
+首次运行才能回答**，而那需要 push。
+
+### (7) 4.6 覆盖率门禁 —— 脚本就绪，**门禁未接**
+
+`tools/check_coverage.py` 已写好：按 docs/07 §12 逐模块逐指标判定，`video_frame_compositor`
+与 `av_sync_controller` 要求 100% 行覆盖，core 整体 85/80，且**空 tracefile 直接判失败**
+（读了空文件就通过，比没有门禁更糟）。
+
+**没有接成门禁**，因为阈值从未在本代码库实测过（本机无 lcov，coverage 预设也没产出
+可执行文件）。抄规格的阈值和实测的阈值看起来一样，但只有后者能让人在接门禁那一刻
+就知道结果——否则要么首次运行就红（R12 说的"上线即红"，会教人忽略门禁），要么红了
+以后当场没法解释为什么。**待一次能产出 tracefile 的环境实测后再接。**
+
+### (8) 6.2 直播字幕过期 —— 实现通了，测试夹具没通
+
+策略端到端接通：`SubtitleConfig::live_cue_max_age`（默认 10 s，0 = 关闭）→
+`PipelineImpl::SetLiveCueMaxAge` → `Renderer::SetSourceLiveness` → 字幕泵的
+`IsCueStale`。过期 cue **丢弃**而非前移对齐——前移会把属于过去的台词贴到现在播。
+
+liveness 只能"下达"不能"发现"：`MediaResource` 刻意只发流、不暴露容器（否则每个假件
+都要改），渲染器问不到。管线是唯一知道的地方（它已经在算
+`seekable_ = info.seekable && !info.is_live`），于是在那一点声明一次。
+
+**5 个测试全部 DISABLED，这是本轮最该看的部分**：实现通了，夹具没通。字幕腿在当前
+夹具里送不出 cue，于是 4 个"应当送达 cue"的用例失败，而"应当丢弃 cue"的那个
+**空洞地绿了**——因为 0 个 cue 也满足"结果为空"。交这种绿等于给一个从未真正执行过的
+策略背书，比不交测试更糟，所以全部标 DISABLED 并在文件头写清状态与已查明的事实
+（`text_stream_` 在 `OnTracksChanged(kText)` 里设、**不是** `Initialize()`；字幕泵由
+`StartPlayingFrom` 启动——漏掉任一个就什么都观察不到，空洞绿正是这样被发现的）。
+
+另有一个真实交互：端到端版本（走 `PipelineImpl` + 直播源）会**挂死**——demux 循环挂在
+直播源里，而那条序列正是唯一能推进边缘的东西。已记入 `live_cue_expiry_unittest.cc`。
+
+### (9) 验证结果（macOS 24.5 arm64 / AppleClang 21 / Homebrew FFmpeg 7.1.1）
+
+- `ffmpeg` 配置：**467/467**（较本轮开始的 406 增 61：新增 6 偏好 + 9 直播源 + 5 门禁相关）
+- `no-ffmpeg` 配置：**372/372**
+- `asan`：干净（`--preset asan` 完整重建后验证）
+- `check_invariants`：**all rules pass (301 files)**，C23 基线由 286 降至 37
+- `clang-format --dry-run --Werror`：全树 0 偏离
+
+### (10) 本轮未做 / 遗留
+
+| 项 | 状态与原因 |
+|---|---|
+| 4.6 覆盖率门禁 | 脚本就绪，门禁未接——阈值需实测（本机无 lcov） |
+| 6.2 字幕过期测试 | 夹具送不出 cue，5 个用例 DISABLED；策略本身已接线 |
+| 4.8 throttle 测试 | 仍 DISABLED，阻塞是**素材长度**（需 ≥30 s）而非夹具 |
+| 3.1/3.2 零拷贝显示 | 需 VAAPI / D3D11 硬件，本机无法验证 |
+| 4.1 kVideo 轨切换 | 本轮未开始 |
+| 4.3 corpus 扩充 / 4.4 soak 48h | 本轮未开始 |
+| `check-cpplint` · `check-clang-tidy` | 仍关闭：各自没做修树轮，一次开两个门禁就是制造红板 |
+| Windows MSVC 是否真能编译 | job 已加但**未运行**，需 push 后由 CI 回答 |
+
+
