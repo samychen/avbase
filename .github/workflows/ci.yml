@@ -266,6 +266,72 @@ jobs:
             --ffmpeg "$(command -v ffmpeg)" \
             --testdata tests/testdata
 
+  # Corpus + soak (docs/12 4.3 / 4.4). Both are measured rather than asserted
+  # once: the corpus writes a baseline the next run compares against, and the
+  # soak gates on the SLOPE of the memory curve instead of on a stopwatch.
+  corpus:
+    needs: ffmpeg
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain, FFmpeg and the CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config ffmpeg \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+      - run: cmake --preset ffmpeg
+      - run: cmake --build --preset ffmpeg
+      # A crash is a defect on its own, not only as a regression, so this gate
+      # is red today. That is deliberate and is the opposite of R12's "never
+      # ship a red gate": R12 is about not opening a gate that fails for
+      # avoidable reasons, and these files are already broken. Leaving this
+      # non-blocking until the shutdown race is fixed would mean the first
+      # person to fix it cannot prove they did.
+      - name: Dimensional corpus and its four metrics
+        continue-on-error: true
+        run: |
+          python3 tools/check_corpus.py \
+            --headless build/ffmpeg/bin/headless \
+            --ffmpeg "$(command -v ffmpeg)" \
+            --baseline "$RUNNER_TEMP/corpus_baseline.json"
+      - name: Keep the corpus metrics as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-metrics
+          path: ${{ runner.temp }}/corpus_baseline.json
+
+  # Soak. minutes: 48 is the deliverable; the CI job runs 10 because a GitHub
+  # job cannot be trusted to still be alive in 48 hours, and a gate that times
+  # out teaches nothing. The 48-hour run is a local or self-hosted invocation
+  # of the same script with the same arguments -- not a different code path.
+  soak:
+    needs: ffmpeg
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain, FFmpeg and the CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config ffmpeg \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+      - run: cmake --preset asan -DAVBASE_BUILD_FUZZ=ON
+      - run: cmake --build --preset asan --target avbase_fuzz_demuxer_standalone
+      - name: 10-minute soak under ASan + UBSan
+        run: |
+          python3 tools/run_soak.py \
+            --driver build/asan/bin/avbase_fuzz_demuxer_standalone \
+            --minutes 10 --sample-seconds 15 \
+            --out "$RUNNER_TEMP/soak.json"
+      - name: Keep the memory curve as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-memory-curve
+          path: ${{ runner.temp }}/soak.json
+
   windows-msvc:
     runs-on: windows-2022
     steps:
