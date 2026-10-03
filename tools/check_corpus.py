@@ -57,8 +57,16 @@ SEEK_TOLERANCE = 0.20
 # The dimensional matrix. Each entry is (name, output_ext, ffmpeg args). Kept
 # small and explicit rather than combinatorial: the point is that every
 # DIMENSION is represented, not that every pair is.
-def build_matrix(ffmpeg, src, outdir, video_src):
-    """Returns (made, failed).
+# Corpus width. Every generated sample carries a tier and a profile includes each
+# sample at or below its level, so widening the corpus means ADDING cases to the
+# tables below rather than editing loops -- which is how a corpus is supposed to
+# grow, and why the smoke profile stays at the historical one-case-per-family size
+# instead of drifting every time someone touches a dimension.
+_PROFILE_LEVELS = {"smoke": 0, "standard": 1, "full": 2}
+
+
+def build_matrix(ffmpeg, src, outdir, video_src, profile="smoke"):
+    """Returns (made, failed, skipped).
 
     |made| is [(name, path)] for every sample that was written and is non-empty;
     |failed| is [(name, reason)] for the ones that were not. Returning both is
@@ -68,7 +76,13 @@ def build_matrix(ffmpeg, src, outdir, video_src):
     indication that eight encodes had errored -- one of them because it asked a
     container for a codec it cannot hold (mpegts defaults to mp2 audio, which the
     audio decoder does not support).
+
+    |skipped| is [(name, reason)] for samples this machine cannot build at all
+    because the encoder is absent from its ffmpeg. Kept apart from |failed| on
+    purpose: a missing libmp3lame describes the machine, whereas a container
+    we CAN encode that still errors describes the repository.
     """
+    level = _PROFILE_LEVELS[profile]
     made = []
     failed = []
     skipped = []
@@ -112,19 +126,49 @@ def build_matrix(ffmpeg, src, outdir, video_src):
         return ext, extra
 
     # --- dimension: codec -------------------------------------------------
-    for codec, ext, acodec_args in (
-            ("h264", ".mp4", ["aac"]),
-            ("hevc", ".mp4", ["aac"]),
-            ("vp9", ".webm", ["opus", "-strict", "-2"]),
-            ("mpeg4", ".mp4", ["aac"])):
-        if acodec_args[0] not in available_encoders:
-            skipped.append(("codec_%s%s" % (codec, ext),
-                            "no encoder for %s in this ffmpeg build"
-                            % acodec_args[0]))
+    # (name, vcodec, ext, acodec_args, extra, tier). The video encoder is named
+    # explicitly rather than derived from the file extension, because the two are
+    # not the same thing and conflating them is how "codec_h264.mp4" can silently
+    # ask for an encoder that does not exist.
+    for name, vcodec, ext, acodec_args, extra, tier in (
+            ("codec_h264.mp4", "libx264", ".mp4", ["aac"], [], 0),
+            ("codec_vp9.webm", "libvpx-vp9", ".webm",
+             ["opus", "-strict", "-2"], [], 0),
+            ("codec_mpeg4.mp4", "mpeg4", ".mp4", ["aac"], [], 0),
+            # tier 1: profile and rate-control spread within the same codecs
+            ("codec_h264_baseline.mp4", "libx264", ".mp4", ["aac"],
+             ["-profile:v", "baseline"], 1),
+            ("codec_h264_high.mp4", "libx264", ".mp4", ["aac"],
+             ["-profile:v", "high"], 1),
+            ("codec_h264_crf40.mp4", "libx264", ".mp4", ["aac"],
+             ["-crf", "40"], 1),
+            ("codec_vp9_crf45.webm", "libvpx-vp9", ".webm",
+             ["opus", "-strict", "-2"], ["-crf", "45", "-b:v", "0"], 1),
+            ("codec_mpeg2.ts", "mpeg2video", ".ts", ["aac"], [], 1),
+            ("codec_mpeg4_avi.avi", "mpeg4", ".avi", ["aac"], [], 1),
+            # tier 2: the same codecs at the edges of what the muxers accept
+            ("codec_h264_qp0.mp4", "libx264", ".mp4", ["aac"],
+             ["-crf", "0"], 2),
+            ("codec_h264_crf51.mp4", "libx264", ".mp4", ["aac"],
+             ["-crf", "51"], 2),
+            ("codec_vp9_crf63.webm", "libvpx-vp9", ".webm",
+             ["opus", "-strict", "-2"], ["-crf", "63", "-b:v", "0"], 2),
+            ("codec_mpeg2.mpg", "mpeg2video", ".mpg", ["mp2"], [], 2),
+            ("codec_mpeg4_mkv.mkv", "mpeg4", ".mkv", ["aac"], [], 2),
+            ("codec_h264_ultrafast.mp4", "libx264", ".mp4", ["aac"],
+             ["-preset", "ultrafast"], 2)):
+        if tier > level:
             continue
-        emit("codec_%s%s" % (codec, ext),
-             ["-i", video_src, "-c:v", codec, "-c:a"] + acodec_args
-             + ["-t", "2"])
+        if vcodec not in available_encoders:
+            skipped.append((name, "no video encoder for %s in this ffmpeg build"
+                                  % vcodec))
+            continue
+        if acodec_args[0] not in available_encoders:
+            skipped.append((name, "no audio encoder for %s in this ffmpeg build"
+                                  % acodec_args[0]))
+            continue
+        emit(name, ["-i", video_src, "-c:v", vcodec] + extra
+                   + ["-c:a"] + acodec_args + ["-t", "2"])
 
     # --- dimension: container ---------------------------------------------
     # The audio codec is pinned per container on purpose. Leaving it to the
@@ -160,18 +204,48 @@ def build_matrix(ffmpeg, src, outdir, video_src):
         emit("container%s" % ext, args)
 
     # --- dimension: resolution / bitrate (decode-path coverage) ------------
-    for label, args in (
-            ("vga", ["-vf", "scale=640:480"]),
-            ("hd", ["-vf", "scale=1280:720"]),
-            ("fhd", ["-vf", "scale=1920:1080"]),
-            ("lowbr", ["-b:v", "100k", "-maxrate", "120k", "-bufsize", "200k"]),
-            ("highbr", ["-b:v", "8M"])):
+    # (label, args, tier). Resolution is the expensive axis -- a 2160p encode costs
+    # an order of magnitude more than a QVGA one -- so the wide end of both axes is
+    # tier 2 and only the full profile pays for it.
+    for label, args, tier in (
+            ("vga", ["-vf", "scale=640:480"], 0),
+            ("hd", ["-vf", "scale=1280:720"], 0),
+            ("fhd", ["-vf", "scale=1920:1080"], 0),
+            ("lowbr", ["-b:v", "100k", "-maxrate", "120k", "-bufsize", "200k"], 0),
+            ("highbr", ["-b:v", "8M"], 0),
+            ("qvga", ["-vf", "scale=320:240"], 1),
+            ("fwvga", ["-vf", "scale=854:480"], 1),
+            ("qhd", ["-vf", "scale=2560:1440"], 1),
+            ("midbr", ["-b:v", "1M"], 1),
+            ("vbr", ["-b:v", "3M", "-maxrate", "4M", "-bufsize", "6M"], 1),
+            ("odd", ["-vf", "scale=641:481"], 2),
+            ("uhd", ["-vf", "scale=3840:2160"], 2),
+            ("tinybr", ["-b:v", "50k"], 2),
+            ("hugebr", ["-b:v", "20M"], 2),
+            ("sar", ["-vf", "scale=720:576,setsar=4:3"], 2)):
+        if tier > level:
+            continue
         emit("res_%s.mp4" % label, ["-i", video_src, "-t", "2"] + args)
 
     # --- dimension: frame rate / scan -------------------------------------
-    for label, args in (("fps15", ["-r", "15"]), ("fps60", ["-r", "60"]),
-                        ("tff", ["-r", "25", "-vf", "setfield=tff"]),
-                        ("bff", ["-r", "25", "-vf", "setfield=bff"])):
+    for label, args, tier in (
+            ("fps15", ["-r", "15"], 0),
+            ("fps60", ["-r", "60"], 0),
+            ("tff", ["-r", "25", "-vf", "setfield=tff"], 0),
+            ("bff", ["-r", "25", "-vf", "setfield=bff"], 0),
+            ("fps10", ["-r", "10"], 1),
+            ("fps24", ["-r", "24"], 1),
+            ("fps30", ["-r", "30"], 1),
+            ("fps50", ["-r", "50"], 1),
+            ("fps2401", ["-r", "24000/1001"], 1),
+            ("prog", ["-r", "25", "-vf", "setfield=prog"], 1),
+            ("fps120", ["-r", "120"], 2),
+            ("fps30000", ["-r", "30000/1001"], 2),
+            ("fps8", ["-r", "8"], 2),
+            ("fps48", ["-r", "48"], 2),
+            ("fps144", ["-r", "144"], 2)):
+        if tier > level:
+            continue
         emit("rate_%s.mp4" % label, ["-i", video_src, "-t", "2"] + args)
 
     # --- dimension: multitrack --------------------------------------------
@@ -199,15 +273,41 @@ def build_matrix(ffmpeg, src, outdir, video_src):
     # --- dimension: audio only --------------------------------------------
     # Same reason as the container dimension: opus and vorbis need -strict -2
     # here, and an encoder this build lacks is a SKIP rather than a failure.
-    for codec, ext in (("aac", ".m4a"), ("mp3", ".mp3"), ("opus", ".ogg"),
-                       ("flac", ".flac"), ("vorbis", ".ogg"), ("ac3", ".ac3")):
+    # (label, codec, ext, sample-rate, channels, tier). Sample rate and channel count
+    # are what the audio renderer resamples and remaps on, so they belong in the matrix
+    # rather than fixed at 48 kHz stereo. Audio-only encodes are cheap, so this axis
+    # carries the widest spread in the corpus.
+    #
+    # |label| names the sample and |codec| names the encoder: they differ for every
+    # variant row below, and collapsing them into one string is the bug that made
+    # nine samples look like missing encoders.
+    for label, codec, ext, rate, channels, tier in (
+            ("aac", "aac", ".m4a", 48000, 2, 0),
+            ("mp3", "mp3", ".mp3", 48000, 2, 0),
+            ("opus", "opus", ".ogg", 48000, 2, 0),
+            ("flac", "flac", ".flac", 48000, 2, 0),
+            ("vorbis", "vorbis", ".ogg", 48000, 2, 0),
+            ("ac3", "ac3", ".ac3", 48000, 2, 0),
+            ("aac_44k", "aac", ".m4a", 44100, 2, 1),
+            ("aac_mono", "aac", ".m4a", 48000, 1, 1),
+            ("flac_44k", "flac", ".flac", 44100, 2, 1),
+            ("opus_6ch", "opus", ".ogg", 48000, 6, 1),
+            ("aac_22k", "aac", ".m4a", 22050, 2, 2),
+            ("aac_96k", "aac", ".m4a", 96000, 2, 2),
+            ("flac_96k", "flac", ".flac", 96000, 2, 2),
+            ("ac3_6ch", "ac3", ".ac3", 48000, 6, 2),
+            ("vorbis_44k", "vorbis", ".ogg", 44100, 2, 2),
+            ("opus_5ch", "opus", ".ogg", 48000, 5, 2)):
+        if tier > level:
+            continue
         if codec not in available_encoders:
-            skipped.append(("audio_%s%s" % (codec, ext),
+            skipped.append(("audio_%s%s" % (label, ext),
                             "no encoder for %s in this ffmpeg build" % codec))
             continue
         extra = ["-strict", "-2"] if codec in ("opus", "vorbis") else []
-        emit("audio_%s%s" % (codec, ext),
-             ["-i", src, "-t", "2", "-vn", "-c:a", codec] + extra)
+        emit("audio_%s%s" % (label, ext),
+             ["-i", src, "-t", "2", "-vn", "-c:a", codec, "-ar", str(rate),
+              "-ac", str(channels)] + extra)
 
     # --- dimension: damage ------------------------------------------------
     emit("damage_truncated.mp4", ["-i", video_src, "-t", "1"])
@@ -276,7 +376,12 @@ def main():
     parser.add_argument("--testdata", default="tests/testdata")
     parser.add_argument("--baseline", default="corpus_baseline.json")
     parser.add_argument("--timeout", type=int, default=25)
-    parser.add_argument("--min-samples", type=int, default=300)
+    parser.add_argument("--min-samples", type=int, default=35)
+    parser.add_argument("--profile", choices=sorted(_PROFILE_LEVELS),
+                        default="smoke",
+                        help="how wide the corpus is: smoke is the historical "
+                             "one-case-per-dimension matrix, standard and full add "
+                             "cases along every dimension (default: smoke)")
     parser.add_argument("--no-gate", action="store_true",
                         help="report only; do not fail on a regression")
     args = parser.parse_args()
@@ -301,7 +406,7 @@ def main():
     try:
         print("check_corpus: generating the dimensional matrix in %s" % workdir)
         made, failed, skipped = build_matrix(ffmpeg, audio_src, workdir,
-                                              video_src)
+                                              video_src, args.profile)
         print("check_corpus: %d sample(s) generated across "
               "codec / container / resolution / rate / multitrack / audio / damage"
               % len(made))

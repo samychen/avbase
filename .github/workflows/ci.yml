@@ -299,7 +299,8 @@ jobs:
           python3 tools/check_corpus.py \
             --headless build/ffmpeg/bin/headless \
             --ffmpeg "$(command -v ffmpeg)" \
-            --baseline "$RUNNER_TEMP/corpus_baseline.json"
+            --profile full \
+            --baseline corpus_baseline.json
       - name: Keep the corpus metrics as an artifact
         if: always()
         uses: actions/upload-artifact@v4
