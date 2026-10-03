@@ -37,6 +37,12 @@ std::unique_ptr<Renderer> DefaultRendererFactory::CreateRenderer(
   impl_deps.audio_task_runner = deps_.audio_task_runner;
   impl_deps.tick_clock = deps_.tick_clock;
   impl_deps.video_factories = deps_.video_decoder_factories;
+  // The preference is passed through untouched; VideoRendererImpl applies it
+  // once the stream's config is known.
+  impl_deps.video_decoder_preference = deps_.video_decoder_preference;
+  impl_deps.video_hw_codecs = deps_.video_hw_codecs;
+  impl_deps.video_decoder_preference_set =
+      deps_.video_decoder_preference_set;
   impl_deps.audio_factories = deps_.audio_decoder_factories;
   impl_deps.text_decoder_factory = deps_.text_decoder_factory;
   impl_deps.video_sink = CreateVideoRendererSink(display_);

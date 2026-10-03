@@ -145,6 +145,11 @@ class FakeVideoDecoderFactory final : public VideoDecoderFactory {
       std::string name = "FakeVideoDecoderFactory");
 
   void set_declines(bool declines) { declines_ = declines; }
+  // Declares this factory as a hardware path, so DecoderSelector's ranking has
+  // something to sort. Without it every fake looks like software and a test
+  // cannot tell "preferred hardware" from "fell through to software".
+  void set_hardware(bool hardware) { hardware_ = hardware; }
+  void set_priority(int priority) { priority_ = priority; }
   const FakeDecoderCounters& counters() const { return counters_; }
   int create_calls() const { return create_calls_; }
 
@@ -159,6 +164,8 @@ class FakeVideoDecoderFactory final : public VideoDecoderFactory {
   const FakeDecoderBehaviour behaviour_;
   const std::string name_;
   bool declines_ = false;
+  bool hardware_ = false;
+  int priority_ = 1;
   int create_calls_ = 0;
   FakeDecoderCounters counters_;
 };

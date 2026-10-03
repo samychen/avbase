@@ -180,6 +180,13 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
     video_ = std::make_unique<VideoRendererImpl>(
         deps_.video_task_runner, deps_.video_factories, deps_.tick_clock,
         deps_.compositor_thresholds);
+    // Forwarded, not applied here: the ranking needs the stream's config, which
+    // only exists once Initialize() runs on S3 (see
+    // VideoRendererImpl::set_decoder_preference).
+    if (deps_.video_decoder_preference_set) {
+      video_->set_decoder_preference(deps_.video_decoder_preference,
+                                     deps_.video_hw_codecs);
+    }
   }
   if (has_audio_) {
     audio_stream_ = audio_stream;

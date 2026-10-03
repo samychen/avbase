@@ -88,6 +88,7 @@
 #include "media/base/video_decoder_factory.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
+#include "media/filters/decoder_selector.h"
 #include "media/filters/decoder_stream.h"
 #include "media/filters/legacy/video_frame_compositor.h"
 #include "media/media_export.h"
@@ -127,6 +128,24 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   // Runs on S3. The sink is adopted but not started until StartPlayingFrom().
   void Initialize(DemuxerStream* stream,
                   std::unique_ptr<VideoRendererSink> sink, InitializeCB cb);
+
+  // Which decoder kind to prefer, and which codecs a hardware path may take.
+  // Must be called before Initialize(); it is what makes
+  // config.video.decoder_preference mean anything at runtime (docs/12 §2.3).
+  //
+  // The ranking happens HERE rather than in the factory list's owner
+  // (PlayerImpl) for one reason: it is the first point where the STREAM's
+  // config exists, and the whole ranking is a function of that config (codec,
+  // coded size) plus each factory's declared capability. Ranking any earlier
+  // would mean guessing the config, which is exactly the bug this replaces --
+  // ijkplayer picked its decoder from booleans set before the container was
+  // even opened.
+  //
+  // Left unset, the injected order is used as-is: a host that assembled its
+  // own list has already expressed its intent, and re-ranking it would
+  // override a decision the host is better placed to make.
+  void set_decoder_preference(DecoderPreference preference,
+                              HwCodecMask hw_codecs);
 
   // Both callbacks are invoked on S6 (the sink's render thread), which is the
   // same thread that runs Render() -- the single-writer sequence the video
@@ -191,6 +210,12 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
 
   base::scoped_refptr<base::SequencedTaskRunner> task_runner_;
   std::vector<base::scoped_refptr<VideoDecoderFactory>> factories_;
+  // Set by set_decoder_preference() before Initialize(). kAuto with kAll is
+  // the "not configured" state and means the injected order is used verbatim,
+  // so a host that injected its own list keeps its decision.
+  DecoderPreference decoder_preference_{DecoderPreference::kAuto};
+  HwCodecMask hw_codecs_{static_cast<HwCodecMask>(HwCodecFlag::kAll)};
+  bool preference_set_{false};
   DecoderStream<VideoDecoderStreamTraits> decoder_stream_;
   VideoFrameCompositor compositor_;
   std::unique_ptr<VideoRendererSink> sink_;

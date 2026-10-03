@@ -217,5 +217,168 @@ TEST_F(VideoRendererImplTest, FlushDropsFramesFromThePreviousSerial) {
          "seek";
 }
 
+
+// ---------------------------------------------------------------------------
+// decoder_preference (docs/12 §2.3). These four are the regression anchor for
+// the wiring that made config.video.decoder_preference mean anything: before
+// it, the preference reached no code at all on the playback path -- the
+// factories were tried in injection order whatever the config said, so
+// kHardwareOnly ("fail instead of falling back") silently fell back.
+// ---------------------------------------------------------------------------
+
+// Builds a renderer over |factories| in the given order, optionally with a
+// preference set, and returns after Initialize() has settled.
+class PreferenceTest : public VideoRendererImplTest {
+ protected:
+  void CreateWithPreference(
+      std::vector<base::scoped_refptr<test::FakeVideoDecoderFactory>> list,
+      bool set_preference, DecoderPreference preference, HwCodecMask mask) {
+    std::vector<base::scoped_refptr<VideoDecoderFactory>> factories;
+    for (auto& f : list) {
+      factories.push_back(f);
+    }
+    renderer_ = std::make_unique<VideoRendererImpl>(
+        runner_, std::move(factories), env_.GetTickClock(),
+        VideoFrameCompositor::Thresholds());
+    if (set_preference) {
+      renderer_->set_decoder_preference(preference, mask);
+    }
+    auto sink = std::make_unique<test::FakeVideoSink>();
+    sink_ = sink.get();
+    renderer_->Initialize(
+        stream_.get(), std::move(sink),
+        base::BindOnce(&PreferenceTest::OnInitialized, base::Unretained(this)));
+    env_.RunUntilIdle();
+  }
+
+  void OnInitialized(PipelineStatus status) {
+    init_status_ = status;
+    init_done_ = true;
+  }
+};
+
+// The headline: a software decoder is INJECTED FIRST, and kHardwareOnly must
+// still not use it. Against the pre-fix code the first injected factory won,
+// which is exactly the "宁败不回退" (better to fail than fall back) promise
+// being broken.
+TEST_F(PreferenceTest, HardwareOnlySkipsAnInjectedSoftwareDecoder) {
+  auto software = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
+      behaviour_, "SoftwareFirst");
+  auto hardware = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
+      behaviour_, "HardwareSecond");
+  hardware->set_hardware(true);
+  hardware->set_priority(10);
+
+  // Injected software-first on purpose: the preference, not the order, must
+  // decide.
+  CreateWithPreference({software, hardware}, /*set_preference=*/true,
+                       DecoderPreference::kHardwareOnly,
+                       static_cast<HwCodecMask>(HwCodecFlag::kAll));
+
+  ASSERT_TRUE(init_done_);
+  EXPECT_EQ(init_status_, PipelineStatus::kOk);
+  EXPECT_EQ(software->create_calls(), 0)
+      << "kHardwareOnly used a software decoder";
+  EXPECT_EQ(hardware->create_calls(), 1);
+}
+
+// The mirror: kSoftware must skip an injected hardware decoder. Without this
+// the two preferences could be satisfied by the same code path.
+TEST_F(PreferenceTest, SoftwareSkipsAnInjectedHardwareDecoder) {
+  auto hardware = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
+      behaviour_, "HardwareFirst");
+  hardware->set_hardware(true);
+  auto software = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
+      behaviour_, "SoftwareSecond");
+
+  CreateWithPreference({hardware, software}, /*set_preference=*/true,
+                       DecoderPreference::kSoftware,
+                       static_cast<HwCodecMask>(HwCodecFlag::kAll));
+
+  ASSERT_TRUE(init_done_);
+  EXPECT_EQ(init_status_, PipelineStatus::kOk);
+  EXPECT_EQ(hardware->create_calls(), 0);
+  EXPECT_EQ(software->create_calls(), 1);
+}
+
+// kHardwareOnly with NO hardware candidate must FAIL, not quietly use the
+// software one. This is the assertion that distinguishes "honoured the
+// preference" from "reordered the list and hoped".
+TEST_F(PreferenceTest, HardwareOnlyFailsWhenOnlySoftwareExists) {
+  auto software = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
+      behaviour_, "OnlySoftware");
+  CreateWithPreference({software}, /*set_preference=*/true,
+                       DecoderPreference::kHardwareOnly,
+                       static_cast<HwCodecMask>(HwCodecFlag::kAll));
+
+  ASSERT_TRUE(init_done_) << "no initialization callback at all";
+  EXPECT_EQ(init_status_, PipelineStatus::kVideoRendererInitializationError);
+  EXPECT_EQ(software->create_calls(), 0);
+}
+
+// kAuto keeps the fallback: hardware is preferred, and when it declines the
+// software path still runs. The preference reorders; it does not amputate.
+TEST_F(PreferenceTest, AutoFallsBackToSoftwareWhenHardwareDeclines) {
+  auto hardware = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
+      behaviour_, "HardwareDeclines");
+  hardware->set_hardware(true);
+  hardware->set_priority(10);
+  hardware->set_declines(true);
+  auto software = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
+      behaviour_, "SoftwareFallback");
+
+  CreateWithPreference({software, hardware}, /*set_preference=*/true,
+                       DecoderPreference::kAuto,
+                       static_cast<HwCodecMask>(HwCodecFlag::kAll));
+
+  ASSERT_TRUE(init_done_);
+  EXPECT_EQ(init_status_, PipelineStatus::kOk)
+      << "kAuto must keep the software fallback (Δ12)";
+  EXPECT_EQ(software->create_calls(), 1);
+}
+
+// hw_codecs narrows the hardware path at the codec level: a hardware decoder
+// that is otherwise eligible is skipped when its codec is not enabled, and
+// under kHardwareOnly that means failing rather than using software.
+TEST_F(PreferenceTest, HardwareOnlyRespectsTheCodecMask) {
+  auto hardware = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
+      behaviour_, "AvcHardware");
+  hardware->set_hardware(true);
+  auto software = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
+      behaviour_, "SoftwareFallback");
+
+  // The fake stream is H.264 (MakeValidVideoConfig); enable only HEVC.
+  CreateWithPreference({software, hardware}, /*set_preference=*/true,
+                       DecoderPreference::kHardwareOnly,
+                       static_cast<HwCodecMask>(HwCodecFlag::kHevc));
+
+  ASSERT_TRUE(init_done_);
+  EXPECT_EQ(init_status_, PipelineStatus::kVideoRendererInitializationError);
+  EXPECT_EQ(hardware->create_calls(), 0)
+      << "a codec outside config.video.hw_codecs reached the hardware path";
+  EXPECT_EQ(software->create_calls(), 0);
+}
+
+// A host that injected its own list and set NO preference keeps that list
+// verbatim. Re-ranking an explicit host decision would be the base overruling
+// a caller that has more context than it does.
+TEST_F(PreferenceTest, NoPreferenceLeavesTheInjectedOrderAlone) {
+  auto first = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
+      behaviour_, "InjectedFirst");
+  first->set_hardware(true);
+  auto second = base::MakeRefCounted<test::FakeVideoDecoderFactory>(
+      behaviour_, "InjectedSecond");
+
+  CreateWithPreference({first, second}, /*set_preference=*/false,
+                       DecoderPreference::kAuto,
+                       static_cast<HwCodecMask>(HwCodecFlag::kAll));
+
+  ASSERT_TRUE(init_done_);
+  EXPECT_EQ(init_status_, PipelineStatus::kOk);
+  EXPECT_EQ(first->create_calls(), 1)
+      << "an unconfigured preference must not re-rank the host's own list";
+  EXPECT_EQ(second->create_calls(), 0);
+}
+
 }  // namespace
 }  // namespace avbase::media

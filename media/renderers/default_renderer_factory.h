@@ -16,6 +16,7 @@
 #include "media/base/renderer_factory.h"
 #include "media/base/text_decoder.h"
 #include "media/base/video_decoder_factory.h"
+#include "media/filters/decoder_selector.h"
 #include "media/base/video_renderer_sink.h"
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/legacy/video_frame_compositor.h"
@@ -59,6 +60,14 @@ class AVBASE_MEDIA_EXPORT DefaultRendererFactory final
     AvSyncController::MasterType sync_master{
         AvSyncController::MasterType::kAudio};
     int audio_frames_per_buffer = 1024;
+    // config.video.decoder_preference and config.video.hw_codecs, forwarded to
+    // VideoRendererImpl so the ranking happens against the real stream config
+    // (see the setter's comment for why it is not done here). Unset means the
+    // injected factory order is authoritative -- a host that built its own
+    // list has already decided, and re-ranking would overrule it.
+    DecoderPreference video_decoder_preference{DecoderPreference::kAuto};
+    HwCodecMask video_hw_codecs{static_cast<HwCodecMask>(HwCodecFlag::kAll)};
+    bool video_decoder_preference_set = false;
     // config.video.disabled / config.audio.disabled ("vn"/"an"): the stream
     // is hidden from the renderer, exactly as if the container had none.
     bool video_disabled = false;

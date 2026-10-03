@@ -163,7 +163,8 @@ FakeVideoDecoderFactory::FakeVideoDecoderFactory(
 
 VideoDecoderCapability FakeVideoDecoderFactory::GetCapability() const {
   VideoDecoderCapability capability;
-  capability.priority = 1;
+  capability.priority = priority_;
+  capability.hardware = hardware_;
   return capability;
 }
 

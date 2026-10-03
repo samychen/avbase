@@ -220,6 +220,13 @@ Status PlayerImpl::PrepareAsync() {
   factory_deps.av_sync = std::move(av_sync);
   factory_deps.video_disabled = config_.video.disabled;
   factory_deps.audio_disabled = config_.audio.disabled;
+  // This is where config.video.decoder_preference stops being documentation.
+  // It reaches VideoRendererImpl, which ranks the candidates against the real
+  // stream config; before this wiring the field was honoured nowhere at
+  // runtime and kHardwareOnly silently fell back to software (docs/12 §2.3).
+  factory_deps.video_decoder_preference = config_.video.decoder_preference;
+  factory_deps.video_hw_codecs = config_.video.hw_codecs;
+  factory_deps.video_decoder_preference_set = true;
   renderer_factory_ =
       std::make_unique<media::DefaultRendererFactory>(std::move(factory_deps));
   {

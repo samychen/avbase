@@ -55,6 +55,13 @@ void VideoRendererImpl::set_frame_presented_cb(FramePresentedCB cb) {
   frame_presented_cb_ = std::move(cb);
 }
 
+void VideoRendererImpl::set_decoder_preference(DecoderPreference preference,
+                                              HwCodecMask hw_codecs) {
+  decoder_preference_ = preference;
+  hw_codecs_ = hw_codecs;
+  preference_set_ = true;
+}
+
 void VideoRendererImpl::Initialize(DemuxerStream* stream,
                                   std::unique_ptr<VideoRendererSink> sink,
                                   InitializeCB cb) {
@@ -64,10 +71,51 @@ void VideoRendererImpl::Initialize(DemuxerStream* stream,
     return;
   }
   sink_ = std::move(sink);
+  // Rank the factories NOW, with the stream's own config in hand. This is what
+  // makes config.video.decoder_preference observable: before this,
+  // kHardwareOnly meant "try the hardware factories in whatever order they
+  // were injected, then silently continue into the software one" -- i.e. the
+  // opposite of what it says, and a bug a user cannot see or work around.
+  //
+  // A host that injected its own list and set no preference keeps that list
+  // untouched (preference_set_ false): it has already made the decision, and
+  // re-ranking would overrule a choice made with more context than we have.
+  std::vector<base::scoped_refptr<VideoDecoderFactory>> ranked;
+  if (preference_set_) {
+    const VideoDecoderConfig config =
+        VideoDecoderStreamTraits::ConfigFromStream(stream);
+    std::vector<std::string> reasons;
+    ranked = DecoderSelector::SelectVideoDecoder(
+        factories_, config, decoder_preference_, hw_codecs_, &reasons);
+    for (const std::string& reason : reasons) {
+      LOG(INFO) << "avbase.vdec: " << reason;
+    }
+    if (ranked.empty()) {
+      LOG(ERROR) << "avbase.vdec: no decoder candidate for codec="
+                 << GetVideoCodecName(config.codec) << " under the configured "
+                 << "preference (hardware="
+                 << (decoder_preference_ == DecoderPreference::kSoftware
+                         ? "excluded"
+                         : "allowed")
+                 << ", hw_codecs mask=0x" << std::hex << hw_codecs_
+                 << std::dec << ")";
+      // Reported through the same callback as any other initialization
+      // failure, so the pipeline reports one status rather than a decoder
+      // that silently never produces a frame.
+      std::move(cb).Run(PipelineStatus::kVideoRendererInitializationError);
+      return;
+    }
+    LOG(INFO) << "avbase.vdec: decoder preference resolved, "
+              << ranked.size() << " candidate(s), first="
+              << ranked.front()->name();
+  } else {
+    ranked = factories_;
+  }
   decoder_stream_.set_event_cb(base::BindRepeating(
       &VideoRendererImpl::OnDecoderStreamEvent, base::Unretained(this)));
   decoder_stream_.Initialize(
-      stream, VideoDecoderStreamTraits::ConfigFromStream(stream), factories_,
+      stream, VideoDecoderStreamTraits::ConfigFromStream(stream),
+      std::move(ranked),
       base::BindOnce(&VideoRendererImpl::OnDecoderInitialized,
                      base::Unretained(this), std::move(cb)));
 }

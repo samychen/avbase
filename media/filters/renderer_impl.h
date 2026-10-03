@@ -83,6 +83,7 @@
 #include "media/base/renderer.h"
 #include "media/base/renderer_client.h"
 #include "media/filters/audio_renderer_impl.h"
+#include "media/filters/decoder_selector.h"
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/legacy/video_frame_compositor.h"
 #include "media/filters/video_renderer_impl.h"
@@ -110,6 +111,12 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
     base::scoped_refptr<base::SequencedTaskRunner> audio_task_runner;   // S4
     const base::TickClock* tick_clock = nullptr;
     std::vector<base::scoped_refptr<VideoDecoderFactory>> video_factories;
+    // config.video.decoder_preference + hw_codecs, applied by
+    // VideoRendererImpl once the stream config is known. Unset leaves the
+    // injected order authoritative.
+    DecoderPreference video_decoder_preference{DecoderPreference::kAuto};
+    HwCodecMask video_hw_codecs{static_cast<HwCodecMask>(HwCodecFlag::kAll)};
+    bool video_decoder_preference_set = false;
     std::vector<base::scoped_refptr<AudioDecoderFactory>> audio_factories;
     // Text leg (Phase 4.2). Null = text selection is not available in this
     // build (no-ffmpeg): SelectTrack(kText) then reports kNotImplemented.
