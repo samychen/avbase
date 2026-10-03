@@ -53,7 +53,9 @@
 #include "tests/support/fake_renderer_sinks.h"
 #include "tests/support/fake_sink_factories.h"
 #include "tests/support/synthetic_decoders.h"
+#include "tests/support/fake_text_decoder.h"
 #include "tests/support/synthetic_demuxer.h"
+#include "tests/support/synthetic_live_demuxer.h"
 
 #ifdef AVBASE_TESTDATA_DIR
 #define AVBASE_PIPELINE_FIXTURE_HAS_TESTDATA 1
@@ -115,7 +117,14 @@ class PipelineTestFixture : public ::testing::Test {
 
   // Testdata file name for ffmpeg mode (memory-backed by default).
   std::string media_file_;
-  // Enables the FFmpeg text-decoder factory (text-leg suites).
+  // Use SyntheticLiveDemuxer (moving edge) instead of SyntheticDemuxer, in
+  // synthetic mode. Opt-in because it parks reads at the edge, so a test using
+  // it needs a pump that can make progress while a read is parked.
+  bool live_source_ = false;
+  // Enables a text-decoder factory (text-leg suites). ffmpeg mode gets the
+  // FFmpeg one; synthetic mode gets FakeTextDecoderFactory, which maps a
+  // buffer's timestamp onto the cue -- which is the field the live-cue expiry
+  // policy reads, so the synthetic source can exercise it.
   bool with_text_factory_ = false;
 
   // ---- shared state ---------------------------------------------------------
@@ -186,6 +195,14 @@ class PipelineTestFixture : public ::testing::Test {
       }
 #endif
     } else {
+      if (with_text_factory_) {
+        // The synthetic path gets a text factory as well. It used to be
+        // FFmpeg-only, which is why the live-cue WINDOW half had nowhere to
+        // run: the window needs a demuxer reporting IsLive() AND a text
+        // decoder, and the only live demuxer is synthetic.
+        deps.text_decoder_factory =
+            base::MakeRefCounted<test::FakeTextDecoderFactory>();
+      }
       deps.video_decoder_factories.push_back(
           base::MakeRefCounted<test::SyntheticVideoDecoderFactory>(spec_));
       deps.audio_decoder_factories.push_back(
@@ -226,6 +243,25 @@ class PipelineTestFixture : public ::testing::Test {
       pipeline_->SetSource(DataSourceDescriptor::FromSource(source_), options);
 #endif
     } else {
+      if (live_source_) {
+        test::SyntheticLiveSpec live_spec;
+        live_spec.width = spec_.width;
+        live_spec.height = spec_.height;
+        live_spec.fps_num = spec_.fps_num;
+        live_spec.fps_den = spec_.fps_den;
+        live_spec.sample_rate = spec_.sample_rate;
+        live_spec.channels = spec_.channels;
+        live_spec.audio_frames_per_packet = spec_.audio_frames_per_packet;
+        live_spec.keyframe_interval = spec_.keyframe_interval;
+        live_spec.enable_video = spec_.enable_video;
+        live_spec.enable_audio = spec_.enable_audio;
+        live_spec.enable_text = with_text_factory_;
+        auto live = std::make_unique<test::SyntheticLiveDemuxer>(live_spec,
+                                                                  nullptr);
+        pipeline_->Start(std::move(live), renderer_factory_.get(),
+                         RendererType::kRendererImpl, runner_, &client_);
+        return;
+      }
       auto synthetic = std::make_unique<test::SyntheticDemuxer>(spec_);
       if (spec_.paced) {
         // The source and the renderer must agree on what "now" means, or a
