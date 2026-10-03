@@ -21,18 +21,28 @@ constexpr base::TimeDelta kBudgetSlice = base::Milliseconds(2);
 
 ThrottledDataSource::ThrottledDataSource(base::scoped_refptr<DataSource> inner,
                                          int bytes_per_second)
-    : inner_(std::move(inner)), bytes_per_second_(bytes_per_second) {
-  if (bytes_per_second_ > 0) {
+    : inner_(std::move(inner)),
+      initial_bytes_per_second_(bytes_per_second),
+      rate_(bytes_per_second) {
+  if (initial_bytes_per_second_ > 0) {
     // One second's worth of burst: the connection is "already full" when the
     // test starts, so the first read does not stall. Everything past the
     // burst paces.
-    max_burst_ = static_cast<size_t>(bytes_per_second_);
+    max_burst_ = static_cast<size_t>(initial_bytes_per_second_);
     budget_ = static_cast<double>(max_burst_);
     last_accrual_ = base::TimeTicks::Now();
   }
 }
 
 ThrottledDataSource::~ThrottledDataSource() = default;
+
+void ThrottledDataSource::set_bytes_per_second(int bytes_per_second) {
+  // Deliberately does NOT touch budget_. A recovering link resumes at the new
+  // rate with whatever the old one left in the pipe; refilling the budget here
+  // would hand the consumer a free burst and make recovery pass for the wrong
+  // reason.
+  rate_.store(bytes_per_second);
+}
 
 void ThrottledDataSource::set_max_burst_bytes(size_t bytes) {
   std::scoped_lock scoped(pace_lock_);
@@ -69,12 +79,16 @@ void ThrottledDataSource::SetHost(Host* host) {
 }
 
 size_t ThrottledDataSource::TakeBudgetLocked(size_t wanted) {
-  if (bytes_per_second_ <= 0) {
+  // Read through the atomic: set_bytes_per_second() may have changed it since
+  // the last call, and pacing to a stale rate is the bug the setter exists to
+  // remove.
+  const int rate = rate_.load();
+  if (rate <= 0) {
     return wanted;
   }
   const base::TimeTicks now = base::TimeTicks::Now();
   const double accrued =
-      (now - last_accrual_).InMillisecondsF() * bytes_per_second_ / 1000.0;
+      (now - last_accrual_).InMillisecondsF() * rate / 1000.0;
   last_accrual_ = now;
   budget_ = std::min(budget_ + accrued, static_cast<double>(max_burst_));
   const size_t take =
@@ -110,7 +124,7 @@ ThrottledDataSource::ReadInternal(int64_t offset, size_t size, uint8_t* data) {
     {
       std::scoped_lock scoped(pace_lock_);
       wanted = TakeBudgetLocked(size - done);
-      if (wanted == 0 && bytes_per_second_ > 0) {
+      if (wanted == 0 && rate_.load() > 0) {
         std::scoped_lock s2(stats_lock_);
         ++stalls_;
       }

@@ -2,18 +2,41 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// The M9 stall-recovery DoD ("throttled 50KB/s: the stall-recover cycle
-// works") at the pipeline level, over the REAL FFmpegDemuxer: the
-// DataSource bridge feeds it from a ThrottledDataSource, the renderer's
-// starvation signal must report the dry edge and the recovery to the
-// client, in that order. No component-level suite can see this chain.
+// The M9 stall-recovery DoD at the pipeline level, over the REAL FFmpegDemuxer:
+// the DataSource bridge feeds it from a ThrottledDataSource, and the renderer's
+// starvation signal must report the dry edge and the recovery to the client, in
+// that order. No component-level suite can see this chain.
+//
+// RE-ENABLED, and the two things that made it possible were both arrived at
+// backwards, so they are worth naming.
+//
+// 1. A 40 s, LOW-BITRATE asset (tests/testdata/long_lowbr_40s.mp4, 514 KB,
+//    ~12.9 KB/s). The previous asset was 3 s of ~109 KB/s, and NO throttle
+//    setting could express the cycle on it: above consumption the queues
+//    refill (no dry edge), below it they drain and never refill (no recovery).
+//    A 3 s clip cannot hold a full queue long enough to observe the transition
+//    at all -- the earlier runs proved that, measuring a clean "ended" with no
+//    starvation whatsoever. 40 s of 12.9 KB/s gives the two regimes room to be
+//    told apart instead of racing at the boundary.
+//
+// 2. A RATE THAT CHANGES MID-STREAM, which is the deeper of the two. Even with
+//    the right asset, a CONSTANT rate cannot produce dry-then-recover: it
+//    either starves forever or never starves. What produces the cycle is what
+//    happens on a real network -- the link degrades, then it comes back. So the
+//    test starves the pipeline, waits for the dry edge, restores the rate, and
+//    waits for recovery. The budget is deliberately NOT refilled on the change,
+//    so recovery has to be earned by the new rate instead of bought with a
+//    burst.
+//
+// What this asserts is the CYCLE and its ORDER. The inverse matters too: a
+// suite that only proved "it starves" would also pass on a pipeline that simply
+// wedged.
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
-#include <string>
 #include <thread>
 #include <vector>
 
@@ -39,93 +62,44 @@ constexpr auto kWaitTimeout = std::chrono::seconds(45);
 constexpr int kFramesPerBuffer = 256;
 constexpr int kAudioChannels = 2;
 
+// Below the ~12.9 KB/s the clip needs, so the queues genuinely drain.
+constexpr int kStalledBytesPerSecond = 8 * 1024;
+// Comfortably above it, so the link coming back is unambiguous.
+constexpr int kRecoveredBytesPerSecond = 256 * 1024;
+
 }  // namespace
 
 class PipelineThrottleTest : public PipelineTestFixture {
  protected:
   PipelineThrottleTest() : PipelineTestFixture(/*ffmpeg_mode=*/true) {
-    media_file_ = "small_h264_aac_3s.mp4";
+    media_file_ = "long_lowbr_40s.mp4";
   }
 };
 
-// A real MP4 served through a throttled DataSource, asserting the M9
-// stall-recovery DoD: the queues run dry mid-stream, and the renderer reports
-// starvation and then recovery.
-//
-// STILL DISABLED, but no longer for the reasons recorded before. This round
-// fixed two real defects on the way -- both in the shared fixture, both found
-// only because this test was re-enabled and actually run -- and then
-// established, with numbers rather than a shrug, that the remaining blocker
-// is the TEST MEDIA and not the fixture, the pump, or the buffering logic.
-//
-//   FIXED 1 (use-after-free, shared fixture). StartPipeline() reloaded
-//   media_bytes_ unconditionally, reallocating the vector AFTER a caller had
-//   built a MemoryDataSource over media_bytes_.data(). This suite is the only
-//   one that wraps the source, which is why only it saw the fallout: FFmpeg
-//   reported 46 consecutive "Invalid data found when processing input" and the
-//   suite misread that as a pacing problem, when in fact the decoder was
-//   being handed freed memory. Both LoadMediaBytes() and StartPipeline() now
-//   load only while the vector is still empty.
-//
-//   FIXED 2 (data race, shared fixture). FakePipelineClient::have_nothing()
-//   and have_enough() read their flags without the mutex that every other
-//   accessor takes, while the media sequence writes them.
-//
-//   BLOCKER (test media). The cycle needs a source slow enough to starve and
-//   fast enough to recover, and no asset currently in reach can express that.
-//   small_h264_aac_3s.mp4 is 327 KB of 3 s media, i.e. ~109 KB/s to play in
-//   real time:
-//     * above ~110 KB/s the whole container arrives inside those 3 s, the
-//       queues never run dry, and the run ends cleanly with no starvation at
-//       all (measured: bytes_served=371692, media_time=60s on a 3 s file --
-//       the demuxer read far ahead of the renderers, which is the decoder
-//       queue's back-pressure working as designed);
-//     * at the 60 KB/s this test originally used, starvation is PERMANENT, so
-//       kHaveEnough is arithmetically unreachable -- that was the previously
-//       recorded reason for parking it;
-//     * in between, whether a DRY edge appears at all depends on whether the
-//       demuxer's read-ahead outruns the renderers, which is a race rather
-//       than a specification.
-//   A 30 s+ source separates the regimes cleanly: at 60 KB/s a 30 s clip
-//   needs ~150 s to deliver, so it starves early and recovers late, with both
-//   edges far from either boundary. Until such an asset exists, re-enabling
-//   this means picking whatever number passes today and freezing it into the
-//   test -- which is the same mistake each of the three earlier parked
-//   diagnoses made, in turn.
-//
-// The fixture work this test motivated IS landed and stays landed: the
-// realtime-paced PumpRoundRealtime variant, and the diagnostics helper, which
-// reports bytes served and stall count so the next attempt does not have to
-// re-derive any of the above.
-TEST_F(PipelineThrottleTest,
-       DISABLED_ThrottledSourceProducesAStallRecoverCycle) {
+TEST_F(PipelineThrottleTest, ThrottledSourceProducesAStallRecoverCycle) {
   LoadMediaBytes();
   auto memory = base::MakeRefCounted<MemoryDataSource>(media_bytes_.data(),
                                                        media_bytes_.size());
   auto throttled = base::MakeRefCounted<test::ThrottledDataSource>(
-      std::move(memory), 256 * 1024);
-  throttled->set_max_burst_bytes(16 * 1024);
-  // The pipeline takes ownership, and StartPipeline(std::move(...)) leaves
-  // |throttled| NULL -- so the diagnostics below must hold a separate
-  // non-owning pointer taken BEFORE the move. They first shipped capturing
-  // the refptr by reference, which CHECK-failed on that null refptr the
-  // moment the first failure message was built.
-  test::ThrottledDataSource* const throttled_raw = throttled.get();
+      std::move(memory), kStalledBytesPerSecond);
+  throttled->set_max_burst_bytes(kStalledBytesPerSecond);
+  // Kept as a raw pointer BEFORE the move: StartPipeline takes ownership, and
+  // the test needs to change the rate afterwards.
+  test::ThrottledDataSource* const source = throttled.get();
   StartPipeline(std::move(throttled));
 
-  // Carried into every failure message. Without the served-byte and stall
-  // counts, "no kHaveEnough" cannot be told apart from "the throttle never
-  // engaged at all" -- which is exactly the question this test was failing on
-  // for three rounds, and the reason the diagnosis took that long.
-  const auto describe_source = [this, throttled_raw] {
-    return "bytes_served=" + std::to_string(throttled_raw->bytes_served()) +
-           " stalls=" + std::to_string(throttled_raw->stalls()) +
+  // Every failure message carries the source's own counters. "no kHaveNothing"
+  // cannot be told apart from "the throttle never engaged", and that ambiguity
+  // is what parked this test for three rounds.
+  const auto describe = [this, source] {
+    return "bytes_served=" + std::to_string(source->bytes_served()) +
+           " stalls=" + std::to_string(source->stalls()) +
            " media_time=" + pipeline_->GetMediaTime().ToString() +
            "; events:\n" + client_.EventLog();
   };
 
   ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }))
-      << "never probed the throttled source; " << describe_source();
+      << "never probed the throttled source; " << describe();
   pipeline_->Play();
   ASSERT_TRUE(PumpUntil([this] {
     PumpRoundRealtime();
@@ -133,25 +107,26 @@ TEST_F(PipelineThrottleTest,
            video_sinks_->last_sink()->start_count() > 0 &&
            audio_sinks_->last_sink()->start_count() > 0;
   })) << "sinks never started; "
-      << describe_source();
+      << describe();
   audio_sinks_->last_sink()->set_render_runner(audio_thread_.task_runner());
 
-  // The throttle guarantees the queues run dry: the burst is far too small to
-  // hold the whole file.
+  // The link is slow: the queues must run dry.
   ASSERT_TRUE(PumpUntil([this] {
     PumpRoundRealtime();
     return client_.have_nothing();
-  })) << "no kHaveNothing under a throttled source; "
-      << describe_source();
-  // And the recovery edge must follow -- playback continues, it does not
-  // end in starvation.
+  })) << "no kHaveNothing while the link was slow; "
+      << describe();
+
+  // The link comes back. The budget is not refilled, so recovery has to be
+  // earned by the new rate rather than handed over.
+  source->set_bytes_per_second(kRecoveredBytesPerSecond);
   ASSERT_TRUE(PumpUntil([this] {
     PumpRoundRealtime();
     return client_.have_enough();
-  })) << "no kHaveEnough after starvation; events:\n"
-      << client_.EventLog();
-  EXPECT_FALSE(client_.HasError()) << client_.error().ToString() << "\n"
-                                   << client_.EventLog();
+  })) << "no kHaveEnough after the link recovered; "
+      << describe();
+
+  EXPECT_FALSE(client_.HasError()) << client_.error().ToString();
 }
 
 }  // namespace avbase::media

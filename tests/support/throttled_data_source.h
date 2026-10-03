@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <atomic>
 #include <cstddef>
 #include <mutex>
 
@@ -49,6 +50,23 @@ class ThrottledDataSource final : public DataSource {
   // throttles.
   void set_max_burst_bytes(size_t bytes);
 
+  // Changes the delivery rate WHILE the source is open.
+  //
+  // WHY THIS EXISTS, because a constant rate cannot express the thing the test
+  // is for. A fixed rate either exceeds consumption (the queues refill, so
+  // kHaveNothing never fires) or falls below it (the queues drain and never
+  // recover, so kHaveEnough never fires). Neither produces a STALL-RECOVER
+  // cycle, which is the thing M9's DoD actually asks for.
+  //
+  // What does produce it is what happens on a real network: the link goes
+  // slow, playback starves, the link comes back, playback resumes. So the
+  // rate moves mid-stream, and the test drives it.
+  //
+  // The budget is not reset, deliberately: a link that recovers does not hand
+  // the viewer a fresh connection's worth of buffered bytes, and resetting it
+  // would make recovery trivially easy for the wrong reason.
+  void set_bytes_per_second(int bytes_per_second);
+
   // ---- test observation ----------------------------------------------------
   int64_t bytes_served() const;
   // How many times a read had to wait for budget to accrue (i.e. the throttle
@@ -75,15 +93,22 @@ class ThrottledDataSource final : public DataSource {
   ReadResult ReadInternal(int64_t offset, size_t size, uint8_t* data);
 
   base::scoped_refptr<DataSource> inner_;
-  const int bytes_per_second_;
+  // The rate is read through rate_ (settable at runtime); this is the
+  // constructor's initial value.
+  const int initial_bytes_per_second_;
 
   // Pace state. |budget_| is bytes available right now; it accrues with wall
   // time and is capped at |max_burst_| so a slow consumer cannot hoard an
   // hour of budget and then serve a file instantly.
+  //
+  // |rate_| is atomic because set_bytes_per_second() is called from the test
+  // thread while the pacing runs on the demux thread; everything else stays
+  // under |pace_lock_|.
   std::mutex pace_lock_;
   double budget_ = 0.0;
   base::TimeTicks last_accrual_;
   size_t max_burst_ = 0;
+  std::atomic<int> rate_{0};
 
   // Fault state.
   std::mutex fault_lock_;
