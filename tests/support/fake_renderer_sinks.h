@@ -113,6 +113,11 @@ class FakeAudioSink final : public AudioRendererSink {
   int play_count() const { return play_count_.load(); }
   int flush_count() const { return flush_count_.load(); }
   double volume() const { return volume_.load(); }
+  // Total audio frames the device has been handed across every period pulled.
+  // The count docs/07 section 5 asserts on ("10 s of audio is 480000 samples")
+  // is only checkable if the fake remembers what it was given -- the pipeline's
+  // own statistics count what it WROTE, not what left the device.
+  int64_t frames_rendered() const { return frames_rendered_.load(); }
 
   // AudioRendererSink.
   void Initialize(const AudioParameters& params,
@@ -146,6 +151,7 @@ class FakeAudioSink final : public AudioRendererSink {
   std::atomic<int> play_count_{0};
   std::atomic<int> flush_count_{0};
   std::atomic<double> volume_{1.0};
+  std::atomic<int64_t> frames_rendered_{0};
 };
 
 }  // namespace avbase::media::test

@@ -123,10 +123,19 @@ int FakeAudioSink::PullPeriod(AudioBus* dest) {
   if (!callback || !dest) {
     return 0;
   }
+  // Counted HERE, once, after either dispatch path returns. Counting inside the
+  // marshalled lambda instead would mean threading `this` through the bind,
+  // which is a lifetime question the device callback does not need to be part
+  // of.
   if (!render_runner_) {
-    return callback->Render(base::TimeDelta(), base::TimeTicks(),
-                            AudioGlitchInfo(), dest);
+    const int written = callback->Render(base::TimeDelta(), base::TimeTicks(),
+                                         AudioGlitchInfo(), dest);
+    if (written > 0) {
+      frames_rendered_.fetch_add(written);
+    }
+    return written;
   }
+
   // One device period, rendered on the renderer's own sequence. The caller
   // blocks until it is done, which is what makes this equivalent to a device
   // thread pulling at this instant -- and what keeps every renderer state
@@ -143,6 +152,9 @@ int FakeAudioSink::PullPeriod(AudioBus* dest) {
                      },
                      callback, dest, &written, &done));
   done.Wait();
+  if (written > 0) {
+    frames_rendered_.fetch_add(written);
+  }
   return written;
 }
 

@@ -61,6 +61,7 @@ avbase_add_unittest(media_unittests
         unit/media_filters/synthetic_live_demuxer_unittest.cc
         unit/media_filters/live_cue_expiry_unittest.cc
         unit/media_filters/live_cue_policy_unittest.cc
+        unit/media_filters/pipeline_counts_unittest.cc
         unit/media_filters/synthetic_decoders_unittest.cc
         unit/media_filters/video_renderer_impl_unittest.cc
         unit/media_filters/video_frame_compositor_unittest.cc
