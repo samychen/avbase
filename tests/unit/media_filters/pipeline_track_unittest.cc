@@ -205,16 +205,14 @@ class PipelineVideoTrackTest : public PipelineTestFixture {
             done, status));
   }
 
-  // Pulls the sinks the way a device would, on the renderer's sequences.
-  void PumpSinks() {
-    if (test::FakeAudioSink* audio = audio_sinks_->last_sink()) {
-      audio->set_render_runner(audio_thread_.task_runner());
-      audio->PullPeriod(bus_.get());
-    }
-    if (test::FakeVideoSink* video = video_sinks_->last_sink()) {
-      video->PullFrames(2);
-    }
-  }
+  // The BASE pump, deliberately. It sleeps 4 ms per round, and that sleep is
+  // load-bearing: the renderer's master clock is pushed on a 10 ms timer, so a
+  // loop that spins without pausing never lets the compositor decide a frame is
+  // due and presents nothing. The first version of this suite pumped by hand
+  // with no sleep and measured 0 frames both before and after the switch --
+  // which reads exactly like "the video leg is dead" and is why the case that
+  // depended on it had to be disabled.
+  int PumpSinks() { return PumpRound(); }
 
   bool SelectAndWait(int index) {
     std::atomic<bool> done{false};
@@ -223,7 +221,6 @@ class PipelineVideoTrackTest : public PipelineTestFixture {
     for (int i = 0; i < 400 && !done.load(); ++i) {
       env_.RunUntilIdle();
       PumpSinks();
-      std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     env_.RunUntilIdle();
     EXPECT_TRUE(done.load()) << "SelectVideoTrack(" << index
@@ -271,15 +268,46 @@ TEST_F(PipelineVideoTrackTest, DemuxerEnumeratesBothVideoTracks) {
 // What is missing is a pump that drives the video side the way
 // pipeline_seek_unittest does. That is the fix, and it is a fixture question,
 // not a product one -- the same shape as the parked counts suite.
+// DISABLED, and this one is a REAL GAP rather than a fixture problem -- which
+// is why it is worth stating precisely rather than as "flaky".
+//
+// What works: the switch completes in both directions, the sink is reused
+// rather than rebuilt, and a second decoder really is created.
+//
+// What does not: the replacement renderer presents NOTHING. Measured 22 frames
+// before the switch and 22 after, and still 23 vs 23 after 600 pump rounds
+// (~2.4 s) -- so it is not warm-up. The pump is not the cause either: the
+// precondition assertion below (frames before the switch) passes, and getting
+// it to pass is what proved the 4 ms sleep in the base PumpRound is load-
+// bearing (the renderer's master clock is pushed on a 10 ms timer, so a
+// spin-without-sleep loop presents nothing and reads exactly like a dead
+// video leg).
+//
+// So the handover mechanics are sound and the OUTPUT DOES NOT RESUME. The
+// open questions, in the order I would check them:
+//   1. does the replacement ever get SetMasterClock? PushMasterClock targets
+//      video_ and is re-armed on a 10 ms loop, so it should -- but only if
+//      rendering_ is still true, which the handover reads once at the start;
+//   2. is the replacement's StartPlayingFrom landing BEFORE its Initialize
+//      callback, i.e. is the S3 post order actually preserved;
+//   3. is the new stream actually being demuxed into, given
+//      SetActiveStream runs before the handover rather than after.
+//
+// Until one of those is answered, "the switch returned success" and "the
+// picture came back" are different claims, and only the first is tested.
 TEST_F(PipelineVideoTrackTest,
        DISABLED_SwitchingVideoTrackKeepsPresentingFrames) {
   StartPipeline();
   ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }));
   pipeline_->Play();
-  for (int i = 0; i < 200; ++i) {
-    env_.RunUntilIdle();
-    PumpSinks();
+  int presented_before = 0;
+  for (int i = 0; i < 60; ++i) {
+    presented_before += PumpSinks();
   }
+  ASSERT_GT(presented_before, 0)
+      << "no frames before the switch either, so this case would be measuring "
+         "a pump that never presented anything; log:\n"
+      << client_.EventLog();
 
   ASSERT_TRUE(SelectAndWait(kTrackLarge));
 
@@ -290,7 +318,7 @@ TEST_F(PipelineVideoTrackTest,
   const size_t before = video_sinks_->last_sink()
                             ? video_sinks_->last_sink()->frames().size()
                             : 0;
-  for (int i = 0; i < 200; ++i) {
+  for (int i = 0; i < 600; ++i) {
     env_.RunUntilIdle();
     PumpSinks();
   }
