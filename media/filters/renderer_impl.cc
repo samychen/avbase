@@ -107,6 +107,14 @@ RendererImpl::~RendererImpl() {
   for (auto& retired : retired_audio_) {
     QuiesceAndDestroyOn(deps_.audio_task_runner.get(), &retired);
   }
+  // The video graveyard uses DestroyOn rather than QuiesceAndDestroyOn: a
+  // handed-back sink means the retiring renderer has nothing left to quiesce
+  // (its sink is null), so the in-flight-decode drain that the audio path
+  // needs has already happened inside the handover itself.
+  DestroyOn(deps_.video_task_runner.get(), &video_);
+  for (auto& retired : retired_video_) {
+    DestroyOn(deps_.video_task_runner.get(), &retired);
+  }
   av_sync_.reset();
 }
 
@@ -176,6 +184,10 @@ void RendererImpl::Initialize(
 void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
                                       DemuxerStream* audio_stream) {
   if (has_video_) {
+    // Recorded next to the renderer, for the same reason audio_stream_ is
+    // (media/base/media_resource.h: identity for "no switch needed" and for a
+    // handover to re-anchor against).
+    video_stream_ = video_stream;
     video_ = std::make_unique<VideoRendererImpl>(
         deps_.video_task_runner, deps_.video_factories, deps_.tick_clock,
         deps_.compositor_thresholds);

@@ -187,6 +187,22 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   // delivered, so the caller may destroy the object there.
   void StopAndDrainForTeardown(base::OnceClosure on_quiescent);
 
+  // Hands the sink back for REUSE by a replacement renderer; nullptr after.
+  //
+  // WHY, given audio_sink is a scoped_refptr and this is a unique_ptr. The
+  // asymmetry is the whole reason the video handover was not buildable: a
+  // unique_ptr can be moved once, so a second VideoRendererImpl had nothing to
+  // be given. The alternative -- changing VideoRendererSinkFactory::Create to
+  // return a scoped_refptr -- would be symmetric but changes a public
+  // interface that every sink factory implements. Returning the sink is what a
+  // unique_ptr owner does when it is being replaced, and it touches nothing
+  // outside this class.
+  //
+  // Order matters and is not enforced here: StopAndDrainForTeardown() FIRST, so
+  // the sink is stopped and no Render() can arrive while its callback is being
+  // replaced underneath it.
+  std::unique_ptr<VideoRendererSink> TakeSinkForHandover();
+
   // ---- Called by RendererImpl, posted onto S3 -----------------------------
   // The master clock has exactly one authoritative source (AvSyncController,
   // owned by RendererImpl); this is how it reaches the pacing logic.
@@ -204,6 +220,13 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   // Runtime surface swap (Player::SetVideoSurface). May be called from any
   // thread; the sink serialises it against its own Render().
   void SetOutputTarget(base::scoped_refptr<NativeDisplay> display);
+
+  // The stream's decoder config, for the client to be told what the picture
+  // now is. A track switch may change resolution and pixel format, and the
+  // upward OnVideoConfigChange is how the SDK surface learns that.
+  const VideoDecoderConfig& video_decoder_config() const {
+    return decoder_stream_.config();
+  }
 
   bool initialized() const { return initialized_; }
   bool ended() const { return ended_; }

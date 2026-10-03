@@ -207,6 +207,19 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   };
   void SwitchAudioRenderer(DemuxerStream* new_stream,
                            base::OnceClosure change_completed_cb);
+  // The video counterpart (docs/12 4.1), same shape as the audio one. The
+  // video leg has one extra step the audio leg does not: the sink is a
+  // unique_ptr, so the retiring renderer has to HAND IT BACK before the
+  // replacement can be built (VideoRendererImpl::TakeSinkForHandover).
+  void SwitchVideoRenderer(DemuxerStream* new_stream,
+                           base::OnceClosure change_completed_cb);
+  // S1, after the retired renderer returned its sink on S3. Builds and
+  // initializes the replacement.
+  void FinishVideoHandoverSinkReady();
+  // S1, from the replacement's Initialize callback (which runs on S3).
+  void OnSwitchedVideoInitialized(bool was_rendering, base::TimeDelta resume_at,
+                                  base::OnceClosure change_completed_cb,
+                                  PipelineStatus status);
   void OnSwitchedAudioInitialized(bool was_rendering, base::TimeDelta resume_at,
                                   SwitchedAudioSettings settings,
                                   base::OnceClosure change_completed_cb,
@@ -280,6 +293,13 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // for the "same track, nothing to do" no-op in OnTracksChanged. Lifetime is
   // the MediaResource's (same contract as the sub-renderer's stream pointer).
   DemuxerStream* audio_stream_{nullptr};
+  // The video stream the current VideoRendererImpl was built with. The audio
+  // leg has had this since Phase 4; the video leg needed it for the same two
+  // reasons: a "same track, nothing to do" check in OnTracksChanged, and a
+  // stream to re-anchor on after a handover. Lifetime is the MediaResource's
+  // (the same contract as the audio one, and as VideoRendererImpl's own
+  // stream pointer).
+  DemuxerStream* video_stream_{nullptr};
   // Text leg (Phase 4.2): the base renders nothing -- it decodes subtitle
   // packets on S1 and hands cues to the client. |text_generation_| invalidates
   // in-flight Read replies across switches and flushes (the stream aborts
@@ -307,6 +327,21 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // is destroyed on S4 from ~RendererImpl, after the sequences' own teardown
   // ordering drains those in-flight tasks.
   std::vector<std::unique_ptr<AudioRendererImpl>> retired_audio_;
+  // Retired VIDEO renderers, same graveyard contract as the audio ones: inert
+  // from the moment their teardown task starts, but not deleted until it has,
+  // because control tasks bound with Unretained may still be queued behind it.
+  std::vector<std::unique_ptr<VideoRendererImpl>> retired_video_;
+  // A video handover in flight. The sink is owned by NOBODY in this window --
+  // the retiring renderer gave it up, the replacement has not taken it -- which
+  // is a real gap in the type system that a comment has to describe.
+  struct PendingVideoSwitch {
+    DemuxerStream* stream{nullptr};
+    bool was_rendering{false};
+    base::TimeDelta resume_at;
+    base::OnceClosure change_completed_cb;
+  };
+  PendingVideoSwitch pending_video_switch_;
+  std::unique_ptr<VideoRendererSink> video_sink_in_handover_;
   bool has_video_{false};
   bool has_audio_{false};
   bool ended_{false};

@@ -230,6 +230,10 @@ void VideoRendererImpl::StopAndDrainForTeardown(
                                     std::move(on_quiescent)));
 }
 
+std::unique_ptr<VideoRendererSink> VideoRendererImpl::TakeSinkForHandover() {
+  return std::move(sink_);
+}
+
 // ---- clock and pacing inputs, all posted onto S3 by RendererImpl -----------
 
 void VideoRendererImpl::SetMasterClock(base::TimeDelta media_time,

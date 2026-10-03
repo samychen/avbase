@@ -259,15 +259,41 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
     return;
   }
   if (track_type == DemuxerStreamType::kVideo) {
-    // Video switching means re-initialising the video renderer AND retargeting
-    // the sink's expectations (size/format change mid-playback); audio first,
-    // video lands with the track-switch follow-up.
-    ReportError(MediaError(
-        ErrorCode::kNotImplemented, "video track selection is not supported",
-        "switching the video stream needs a video renderer re-initialisation "
-        "with live sink retarget, which is not wired yet",
-        "restart playback with PlayerConfig's video.selected_stream set"));
-    std::move(change_completed_cb).Run();
+    // ---- video: the wired path (docs/12 4.1) ---------------------------
+    if (!initialized_ || ended_) {
+      ReportError(MediaError(
+          ErrorCode::kInvalidState, "cannot switch the video track now",
+          "the switch hands over the video renderer, which needs an "
+          "initialised, still-playing pipeline",
+          "switch while prepared, playing or paused (Reset() first after an "
+          "error or completion)"));
+      std::move(change_completed_cb).Run();
+      return;
+    }
+    if (!video_ || !enabled_track) {
+      ReportError(MediaError(
+          ErrorCode::kNotImplemented,
+          "enabling or disabling the video track at runtime is not supported",
+          "runtime switching covers swapping between existing video streams; "
+          "the enable/disable path owns the surface lifecycle",
+          "restart playback with the video track enabled (or "
+          "config.video.disabled false)"));
+      std::move(change_completed_cb).Run();
+      return;
+    }
+    if (enabled_track->type() != DemuxerStreamType::kVideo) {
+      ReportError(MediaError(
+          ErrorCode::kInvalidArgument, "that stream is not a video stream",
+          "SelectTrack(kVideo) was given a stream of a different type",
+          "pick an index from media_info().streams whose kind is kVideo"));
+      std::move(change_completed_cb).Run();
+      return;
+    }
+    if (enabled_track == video_stream_) {
+      std::move(change_completed_cb).Run();  // Same track: nothing to do.
+      return;
+    }
+    SwitchVideoRenderer(enabled_track, std::move(change_completed_cb));
     return;
   }
 
@@ -355,6 +381,164 @@ void RendererImpl::SwitchAudioRenderer(DemuxerStream* new_stream,
           base::BindOnce(&RendererImpl::OnSwitchedAudioInitialized,
                          base::Unretained(this), was_rendering, resume_at,
                          settings, std::move(change_completed_cb))));
+}
+
+void RendererImpl::SwitchVideoRenderer(DemuxerStream* new_stream,
+                                       base::OnceClosure change_completed_cb) {
+  const bool was_rendering = rendering_;
+  base::TimeDelta resume_at = GetMediaTime();
+  if (resume_at == kNoTimestamp || resume_at < base::TimeDelta()) {
+    resume_at = start_time_;
+  }
+
+  // THE SINK HAND-OVER, and it is the step the audio path does not have.
+  //
+  // Order is the whole safety argument. StopAndDrainForTeardown() runs FIRST:
+  // it stops the sink (so no further Render() can arrive) and completes the
+  // in-flight decode read inline (so no task names the old renderer). Only
+  // once that has finished is it safe to take the sink back -- taking it
+  // first would hand the replacement a sink whose RenderCallback still points
+  // into the renderer being destroyed.
+  VideoRendererImpl* old = video_.get();
+  deps_.video_task_runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](VideoRendererImpl* retiring, RendererImpl* self) {
+            retiring->StopAndDrainForTeardown(base::BindOnce(
+                [](RendererImpl* owner, VideoRendererImpl* dead) {
+                  // On S3, so taking the sink here is safe.
+                  std::unique_ptr<VideoRendererSink> sink =
+                      dead->TakeSinkForHandover();
+                  // Back to S1, which is where the replacement is built.
+                  owner->deps_.media_task_runner->PostTask(
+                      FROM_HERE,
+                      base::BindOnce(
+                          [](RendererImpl* owner_s1,
+                             std::unique_ptr<VideoRendererSink> returned) {
+                            owner_s1->video_sink_in_handover_ =
+                                std::move(returned);
+                            owner_s1->FinishVideoHandoverSinkReady();
+                          },
+                          base::Unretained(owner), std::move(sink)));
+                },
+                base::Unretained(self), base::Unretained(retiring)));
+          },
+          base::Unretained(old), base::Unretained(this)));
+
+  // Park the retiring renderer immediately: it is inert once its teardown task
+  // starts, and parking it here frees the member without waiting for S3.
+  retired_video_.emplace_back(video_.release());
+  video_ = std::make_unique<VideoRendererImpl>(
+      deps_.video_task_runner, deps_.video_factories, deps_.tick_clock,
+      deps_.compositor_thresholds);
+  video_->set_ended_cb(base::BindRepeating(&RendererImpl::PostVideoEnded,
+                                           base::Unretained(this)));
+  video_->set_frame_presented_cb(base::BindRepeating(
+      &RendererImpl::OnVideoFramePresented, base::Unretained(this)));
+  video_initialized_ = false;
+  pending_video_switch_.stream = new_stream;
+  pending_video_switch_.was_rendering = was_rendering;
+  pending_video_switch_.resume_at = resume_at;
+  pending_video_switch_.change_completed_cb = std::move(change_completed_cb);
+}
+
+void RendererImpl::FinishVideoHandoverSinkReady() {
+  DemuxerStream* stream = pending_video_switch_.stream;
+  if (!stream) {
+    return;  // Nothing pending: the caller's callback already ran.
+  }
+  if (!video_sink_in_handover_) {
+    // The retiring renderer had no sink to give back, so there is nothing for
+    // the replacement to render into. Reported rather than left as a silent
+    // video-less pipeline.
+    ReportError(MediaError(
+        ErrorCode::kInvalidState, "the video track switch could not start",
+        "the outgoing renderer did not return its sink, so the replacement "
+        "has nothing to render into",
+        "this needs a video sink that survives Stop() and can be "
+        "re-Initialized; check the sink implementation"));
+    if (pending_video_switch_.change_completed_cb) {
+      std::move(pending_video_switch_.change_completed_cb).Run();
+    }
+    pending_video_switch_ = {};
+    return;
+  }
+  std::unique_ptr<VideoRendererSink> sink = std::move(video_sink_in_handover_);
+  const bool was_rendering = pending_video_switch_.was_rendering;
+  const base::TimeDelta resume_at = pending_video_switch_.resume_at;
+  base::OnceClosure done = std::move(pending_video_switch_.change_completed_cb);
+  pending_video_switch_ = {};
+  video_stream_ = stream;
+
+  deps_.video_task_runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](VideoRendererImpl* v, DemuxerStream* s,
+             std::unique_ptr<VideoRendererSink> sink, RendererImpl* self,
+             bool was_rendering, base::TimeDelta resume_at,
+             base::OnceClosure done) {
+            v->Initialize(
+                s, std::move(sink),
+                base::BindOnce(&RendererImpl::OnSwitchedVideoInitialized,
+                               base::Unretained(self), was_rendering, resume_at,
+                               std::move(done)));
+          },
+          base::Unretained(video_.get()), stream, std::move(sink),
+          base::Unretained(this), was_rendering, resume_at, std::move(done)));
+}
+
+void RendererImpl::OnSwitchedVideoInitialized(
+    bool was_rendering, base::TimeDelta resume_at,
+    base::OnceClosure change_completed_cb, PipelineStatus status) {
+  // Runs on S3 (VideoRendererImpl::Initialize fires it inline); the decision
+  // belongs to S1.
+  deps_.media_task_runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](RendererImpl* self, bool was_rendering, base::TimeDelta resume_at,
+             base::OnceClosure cb, PipelineStatus s) {
+            if (s != PipelineStatus::kOk) {
+              // The outgoing renderer is already gone. Report and continue
+              // audio-only rather than tearing playback down over a track
+              // switch -- the same call the audio handover makes.
+              self->video_initialized_ = false;
+              self->ReportError(PipelineStatusToMediaError(s));
+              if (cb) {
+                std::move(cb).Run();
+              }
+              return;
+            }
+            self->video_initialized_ = true;
+            if (was_rendering) {
+              // Re-anchor: the replacement's compositor is empty by
+              // construction, so playback resumes at |resume_at| rather than
+              // wherever the old one happened to be. Without this the first
+              // frame after a switch is judged against a stale clock and
+              // dropped as late.
+              //
+              // POSTED, not called here. VideoRendererImpl runs on S3 and its
+              // sequence checker says so; the audio handover avoids this
+              // because AudioRendererImpl::StartPlayingFrom is reached
+              // through its own Initialize. Calling it from S1 tripped
+              // CalledOnValidSequence() the first time this ran.
+              VideoRendererImpl* replacement = self->video_.get();
+              self->deps_.video_task_runner->PostTask(
+                  FROM_HERE, base::BindOnce(
+                                 [](VideoRendererImpl* v, base::TimeDelta at) {
+                                   v->StartPlayingFrom(at);
+                                 },
+                                 base::Unretained(replacement), resume_at));
+            }
+            if (self->client_) {
+              self->client_->OnVideoConfigChange(
+                  self->video_->video_decoder_config());
+            }
+            if (cb) {
+              std::move(cb).Run();
+            }
+          },
+          base::Unretained(this), was_rendering, resume_at,
+          std::move(change_completed_cb), status));
 }
 
 void RendererImpl::OnSwitchedAudioInitialized(

@@ -111,6 +111,7 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   Statistics GetStatistics() const override;
   void Seek(base::TimeDelta time, base::OnceClosure seeked_cb) override;
   void SelectAudioTrack(int stream_index, PipelineStatusCallback cb) override;
+  void SelectVideoTrack(int stream_index, PipelineStatusCallback cb) override;
   void SelectTextTrack(int stream_index, PipelineStatusCallback cb) override;
   bool CanSeekForward() const override;
   bool CanSeekBackward() const override;

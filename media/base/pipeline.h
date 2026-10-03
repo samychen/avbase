@@ -190,6 +190,15 @@ class AVBASE_MEDIA_EXPORT Pipeline {
   // track. A failed switch keeps the current one playing and reports the
   // reason through Client::OnError; this default answers for pipelines that
   // do not support switching at all.
+  // Video-track switch (docs/12 4.1). Same contract as SelectAudioTrack: the
+  // closure means "the attempt finished and the pipeline is consistent", not
+  // "the new track is on screen". A failed switch reports through the client
+  // and still runs the closure, so a caller waiting on it is never stuck.
+  virtual void SelectVideoTrack(int stream_index, PipelineStatusCallback cb) {
+    (void)stream_index;
+    std::move(cb).Run(PipelineStatus::kTrackSwitchError);
+  }
+
   virtual void SelectAudioTrack(int stream_index, PipelineStatusCallback cb) {
     std::move(cb).Run(PipelineStatus::kTrackSwitchError);
   }

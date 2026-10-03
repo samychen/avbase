@@ -166,6 +166,12 @@ class AVBASE_MEDIA_EXPORT DecoderStream {
                   InitCB init_cb);
   void set_event_cb(EventCB event_cb) { event_cb_ = std::move(event_cb); }
 
+  // The config this stream was initialized with. Exposed because a runtime
+  // track switch has to tell its client what the new stream is: the handover
+  // completes a decoder, and "which picture is it now" is answered by the
+  // config, not by anything the renderer kept a copy of.
+  const ConfigType& config() const { return config_; }
+
   // Delivers one decoded output, or a status explaining why there is none.
   // Exactly one Read may be outstanding at a time.
   void Read(ReadCB read_cb);

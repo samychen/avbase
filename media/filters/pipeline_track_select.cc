@@ -25,6 +25,11 @@ void PipelineImpl::SelectTextTrack(int stream_index,
   SelectTrack(DemuxerStreamType::kText, stream_index, std::move(cb));
 }
 
+void PipelineImpl::SelectVideoTrack(int stream_index,
+                                    PipelineStatusCallback cb) {
+  SelectTrack(DemuxerStreamType::kVideo, stream_index, std::move(cb));
+}
+
 void PipelineImpl::SelectTrack(DemuxerStreamType type, int stream_index,
                                PipelineStatusCallback cb) {
   if (!media_runner_) {

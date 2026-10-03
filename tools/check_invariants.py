@@ -50,9 +50,10 @@ LINE_LIMIT_ALLOWLIST = {
     # load-bearing (they record why liveness cannot be discovered by the
     # renderer, which is the non-obvious part).
     "media/filters/renderer_impl_controls.cc": (
-        525, "Renderer control surface: playback start, pause, accurate seek, "
-             "the audio-track switch and the text leg. Splitting the text leg "
-             "into its own TU is the pending fix."),
+        700, "Renderer control surface: playback start, pause, accurate seek, "
+             "the audio AND video track switches, and the text leg. The video "
+             "switch added ~170 lines (docs/12 4.1); splitting the track "
+             "switches into their own TU is the pending fix."),
     "player/player_impl.cc": (
         530, "The facade: config validation, the source/pipeline lifecycle, "
              "track selection, options and the public event surface. Its "
