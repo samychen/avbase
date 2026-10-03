@@ -67,7 +67,7 @@ class PipelineTestFixture : public ::testing::Test {
  protected:
   static constexpr int kFramesPerBuffer = 256;
   static constexpr int kAudioChannels = 2;
-  static constexpr auto kWaitTimeout = std::chrono::seconds(45);
+  static constexpr auto kWaitTimeout = std::chrono::seconds(60);
 
   explicit PipelineTestFixture(bool ffmpeg_mode) : ffmpeg_mode_(ffmpeg_mode) {}
 

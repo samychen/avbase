@@ -127,7 +127,9 @@ SyntheticDemuxer::SyntheticDemuxer(SyntheticSpec spec)
   video.natural_size = video.coded_size;
   video.frame_rate = Rational{spec_.fps_num, spec_.fps_den};
   video.avg_frame_rate = video.frame_rate;
-  media_info_.streams.push_back(video);
+  if (spec_.enable_video) {
+    media_info_.streams.push_back(video);
+  }
 
   StreamInfo audio;
   audio.index = 1;
@@ -136,7 +138,9 @@ SyntheticDemuxer::SyntheticDemuxer(SyntheticSpec spec)
   audio.duration = spec_.duration;
   audio.sample_rate = spec_.sample_rate;
   audio.channels = spec_.channels;
-  media_info_.streams.push_back(audio);
+  if (spec_.enable_audio) {
+    media_info_.streams.push_back(audio);
+  }
 }
 
 SyntheticDemuxer::~SyntheticDemuxer() = default;
@@ -235,9 +239,9 @@ void SyntheticDemuxer::Stop() {}
 DemuxerStream* SyntheticDemuxer::GetStream(DemuxerStreamType type) {
   switch (type) {
     case DemuxerStreamType::kVideo:
-      return video_.get();
+      return spec_.enable_video ? video_.get() : nullptr;
     case DemuxerStreamType::kAudio:
-      return audio_.get();
+      return spec_.enable_audio ? audio_.get() : nullptr;
     case DemuxerStreamType::kUnknown:
     case DemuxerStreamType::kText:
       return nullptr;

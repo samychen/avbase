@@ -65,6 +65,12 @@ struct SyntheticSpec {
   // chase (docs/12 section 2.1) evaluates against the finite duration as a
   // stand-in edge. The growing-edge demuxer is the follow-up.
   bool live = false;
+  // Stream enablement (docs/07 section 5's audio-only / video-only cases):
+  // a disabled stream reports nullptr from GetStream and disappears from
+  // MediaInfo, exactly as if the container had none. RendererImpl falls
+  // back to the external clock for video-only, per ffplay.
+  bool enable_video = true;
+  bool enable_audio = true;
   double base_tone_hz = 440.0;
   int keyframe_interval = 30;
 

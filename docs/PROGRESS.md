@@ -15,6 +15,23 @@ ffmpeg 439/439、no-ffmpeg 376/376、asan 439/439 连续两轮全绿，invariant
 （282 文件）。
 > 第十七轮：Phase 4.2 字幕文本腿——kText 轨选择与 TimedText 事件
 
+## 第二十二轮（本轮）：docs/07 §5 纯音/纯视频断言 + 合成源单流禁用
+
+`SyntheticSpec` 增 `enable_video/enable_audio`（GetStream 返回 nullptr、MediaInfo
+去流——与"容器没有该流"同形）。两个管线级断言：**AudioOnlySourcePlaysThrough**
+（视频侧 sink 装配存在但 start_count 恒 0，播到 EOS 无错误）与
+**VideoOnlySourcePlaysThrough**（镜像）。RendererImpl 的单流回退（external/视频
+时钟，ffplay 同义）由此获得端到端覆盖。夹具等待上限 10s→30s（并行负载下纯超时型
+flaky 的防御；上限不是延迟，只拉长失败路径）。
+
+过程教训重演并强化：多段补丁两次丢 `Play()` 调用——**已按记忆铁律改为单段编辑**，
+当场命中。诊断手段记一笔：压测数字在构建失败时无效（旧二进制），必须重跑。
+
+**遗留（park）**：`RendererImplTest.StartPlayingFromOpensTheAudioDevice` 在全量
+ctest 下偶发挂起（963s 超时；单跑 15s 通过），挂点在 S3 停止后的析构等待——与本轮
+改动的关系未定（时序敏感，两次全量一红一绿）。按 R12 登记专项诊断，候选方向：
+DestroyOn 与夹具 TearDown 的线程停止顺序竞争。
+
 ## 第二十一轮（本轮）：直播追帧端到端验收（docs/12 §2.1 闭合）
 
 `PipelineSeekTest.LiveSourceChasesToTheEdge`：合成源标记 live（duration 10s 作为

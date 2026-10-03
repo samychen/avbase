@@ -304,5 +304,55 @@ TEST_F(PipelineSeekTest, LiveSourceChasesToTheEdge) {
       << client_.error().ToString() << "\n" << client_.EventLog();
 }
 
+// docs/07 section 5's audio-only and video-only cases: the renderer falls
+// back per ffplay (video-only uses the external/video clock via
+// SetStreamAvailability), plays the whole file, and reports no error.
+TEST_F(PipelineSeekTest, AudioOnlySourcePlaysThrough) {
+  spec_.enable_video = false;
+  StartPipeline();
+  ASSERT_TRUE(PumpUntil([this] { return client_.Started(); }));
+  // Single-sided wait: the shared helper requires both sinks, and the
+  // disabled video side never starts by design.
+  Play();
+  ASSERT_TRUE(PumpUntil([this] {
+    PumpRound();
+    return audio_sinks_->last_sink() &&
+           audio_sinks_->last_sink()->start_count() > 0;
+  })) << "audio sink never started; events:\n" << client_.EventLog();
+  audio_sinks_->last_sink()->set_render_runner(audio_thread_.task_runner());
+  // The factories create both sinks at assembly; the disabled side must
+  // never START (it has no stream to serve).
+  EXPECT_EQ(video_sinks_->last_sink()->start_count(), 0);
+  ASSERT_TRUE(PumpUntil([this] {
+    PumpRound();
+    return client_.ended();
+  }));
+  EXPECT_EQ(video_sinks_->last_sink()->start_count(), 0)
+      << "the disabled video sink started";
+  EXPECT_FALSE(client_.HasError())
+      << client_.error().ToString() << "\n" << client_.EventLog();
+}
+
+TEST_F(PipelineSeekTest, VideoOnlySourcePlaysThrough) {
+  spec_.enable_audio = false;
+  StartPipeline();
+  ASSERT_TRUE(PumpUntil([this] { return client_.Started(); }));
+  Play();
+  ASSERT_TRUE(PumpUntil([this] {
+    PumpRound();
+    return video_sinks_->last_sink() &&
+           video_sinks_->last_sink()->start_count() > 0;
+  })) << "video sink never started; events:\n" << client_.EventLog();
+  ASSERT_TRUE(PumpUntil([this] {
+    PumpRound();
+    return client_.ended();
+  }));
+  EXPECT_EQ(audio_sinks_->last_sink()->start_count(), 0)
+      << "the disabled audio sink started";
+  EXPECT_GT(video_sinks_->last_sink()->frames().size(), 0u);
+  EXPECT_FALSE(client_.HasError())
+      << client_.error().ToString() << "\n" << client_.EventLog();
+}
+
 }  // namespace
 }  // namespace avbase::media
