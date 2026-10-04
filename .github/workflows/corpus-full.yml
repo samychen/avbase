@@ -1,0 +1,37 @@
+# The full corpus matrix on a schedule, not on every PR: at the 300-sample
+# target the full profile is ~11 minutes of runner time, while the standard
+# profile in ci.yml already runs every family per push and blocks on
+# per-family regressions. This workflow re-measures the full matrix weekly
+# (and on demand via workflow_dispatch) and refreshes the baseline artifact.
+name: corpus-full
+on:
+  schedule:
+    - cron: '0 3 * * 1'   # Mondays 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  corpus-full:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain, FFmpeg and the CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config ffmpeg \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+      - run: cmake --preset ffmpeg
+      - run: cmake --build --preset ffmpeg
+      - name: Full dimensional corpus and its four metrics
+        run: |
+          python3 tools/check_corpus.py \
+            --headless build/ffmpeg/bin/headless \
+            --ffmpeg "$(command -v ffmpeg)" \
+            --profile full \
+            --baseline corpus_baseline.json
+      - name: Keep the corpus metrics as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-metrics-full
+          path: ${{ runner.temp }}/corpus_baseline.json

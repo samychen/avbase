@@ -22,6 +22,19 @@ C23 基线 37（第二十三轮全量 clang-format 后 286→37）。
 > 第十八轮：fuzz 目标（libFuzzer + standalone 双驱动 + 语料入库）
 剩余工作以 [12-剩余工作清单](12-剩余工作清单.md) 为准（该项由各轮同步维护,是唯一权威清单）。
 
+## 第二十六轮（本轮）：三个收口项——重连接线 · 直播字幕窗口锚点 · clang-tidy 门禁
+
+| 项 | 内容 |
+|---|---|
+| 2.5 断线重连 GAP 清零 | 新 `platform/ffmpeg/url_data_source.{h,cc}`（avio 承载:open 即装中断回调、ReadBlocking 每 read 寻址、私有 worker 上异步读、回调必投递不内联）；`PlayerImpl::Prepare` 把 http(s) URI 接成 UrlDataSource+RetryDataSource 进入桥（rtmp/rtsp/srt 留协议层）。weaknet 挂断用例 kError 0.2s → **kCompleted 23.7s（5 请求）**。ReconnectNow 如实声明"自动重试已激活",手动强踢需要安全的重开原语(Abort 是永久停止)已记录 |
+| 6.2 直播字幕窗口锚点 | `CuesBeyondTheWindowAreDropped` 转绿(3 连跑):改写为**迟到订阅**形状(播 2s 后选轨,积压逐个判过期),断言锚定选轨时刻的媒体时间。两次中间失败均为测试错(选轨时机/钟偏斜边界),策略本身正确 |
+| 4.7 clang-tidy | 修树轮实测 15 个跨层文件 **0 发现**,`check-clang-tidy` 以阻塞模式接入 CI(非测试非 legacy 源) |
+| corpus CI 分层 | PR 跑 standard,新增 `corpus-full.yml` 每周(周一 03:00 UTC)+手动触发跑 full(300 目标 ~11 分钟属周常不属 PR) |
+| 新单测 | `url_data_source_unittest.cc` 5 例(file:// 同 avio 路径) |
+
+验证：ffmpeg **487/487**、no-ffmpeg **376/376**、asan **487/487**、weaknet 5 例全过且 **0 GAP**、invariant 302 文件全过。
+
+
 ## 第二十二轮（本轮）：docs/07 §5 纯音/纯视频断言 + 合成源单流禁用
 
 `SyntheticSpec` 增 `enable_video/enable_audio`（GetStream 返回 nullptr、MediaInfo

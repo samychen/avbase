@@ -196,40 +196,66 @@ class LiveCueExpiryTest : public ::testing::Test {
 // The assertion below is correct; what is missing is a producer for the live
 // source (docs/12 §6.2). Enabling this before that lands would assert a
 // policy against a clock that cannot move.
-TEST_F(LiveCueExpiryTest, DISABLED_CuesBeyondTheWindowAreDropped) {
-  StartLivePipeline(/*window=*/base::Milliseconds(200));
+// The window policy's REAL trigger is a backlog: a viewer who joins a live
+// stream late gets every cue that already aired, and the expiry window is
+// what stops the first minutes of subtitles from being dumped on screen at
+// once. A cue delivered while it is still fresh is never dropped (delivery
+// tracks media time in a healthy pipeline), so the deterministic way to pin
+// the policy is to SELECT the text track two seconds into playback and let
+// the pump judge the accumulated backlog: cues older than the 200 ms window
+// must be dropped, the recent ones must survive.
+TEST_F(LiveCueExpiryTest, CuesBeyondTheWindowAreDropped) {
+  StartLivePipeline(/*window=*/base::Milliseconds(200),
+                    /*select_text=*/false);
   ASSERT_TRUE(client_.HaveMetadata());
-  const size_t produced_before = client_.cues().size();
-
-  // Long enough that cues from the first seconds are minutes behind the clock
-  // the renderer is comparing against.
+  pipeline_->Play();
   RunFor(base::Seconds(2));
   env_.RunUntilIdle();
+  ASSERT_TRUE(client_.cues().empty())
+      << "cues arrived before any text track was selected";
 
-  EXPECT_GT(client_.cues().size(), produced_before)
-      << "no cues arrived at all, so nothing was exercised";
-  // The window is 200 ms and the run is 2 s, so the cues that survive are the
-  // recent ones. What must NOT happen is the early ones being shown.
-  //
-  // The direction here was inverted for a while, and the inversion is worth
-  // naming because it is the kind that survives review: EXPECT_LT was
-  // asserting that every SURVIVOR carries a LOW timestamp, which is the
-  // opposite of the policy -- the policy drops the low ones. It failed on
-  // exactly the cues that prove the policy works, and it would have passed
-  // on the one cue that proves it does not. Read the loop as "no cue from
-  // the first second may still be on this list".
+  std::atomic<bool> done{false};
+  PipelineStatus status = PipelineStatus::kOk;
+  pipeline_->SelectTextTrack(
+      2, base::BindOnce(
+             [](std::atomic<bool>* d, PipelineStatus* s, PipelineStatus v) {
+               d->store(true);
+               *s = v;
+             },
+             &done, &status));
+  for (int i = 0; i < 300 && !done.load(); ++i) {
+    env_.RunUntilIdle();
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  ASSERT_TRUE(done.load()) << "late text selection never completed";
+  EXPECT_EQ(status, PipelineStatus::kOk);
+  // The anchor for the whole assertion: media time when the selection landed.
+  // The text pump cannot deliver anything before this point, so every kept
+  // cue satisfies pts >= (this value - the window).
+  const base::TimeDelta media_at_selection = pipeline_->GetMediaTime();
+
+  RunFor(base::Seconds(1));
+  env_.RunUntilIdle();
+
+  // The backlog at selection time held cues with pts 0..2s. The policy judges
+  // each cue against media time AT ITS DELIVERY; every delivery happened at
+  // or after |media_at_selection|, so every KEPT cue must satisfy
+  // pts >= media_at_selection - window. A policy that drops nothing delivers
+  // the pts-0 cue (well below the floor) and fails the loop; one that drops
+  // everything fails the non-empty guard.
+  const base::TimeDelta floor = media_at_selection - base::Milliseconds(200);
   const std::vector<TimedTextCue> cues = client_.cues();
-  ASSERT_FALSE(cues.empty());
+  ASSERT_FALSE(cues.empty())
+      << "no cue survived: either nothing was delivered at all, or the "
+         "policy is dropping everything instead of just the stale ones";
   for (const TimedTextCue& cue : cues) {
-    EXPECT_GE(cue.pts, base::Seconds(1))
-        << "a cue from the first second survived a 200ms window after 2s of "
-           "playback: the expiry policy is not being applied";
+    EXPECT_GE(cue.pts, floor)
+        << "a cue older than media-at-selection minus the window survived "
+           "(media_at_selection=" << media_at_selection
+           << "): expiry is not being applied";
   }
 }
 
-// The inverse, and the case that keeps the policy from being a bug: on RECORDED
-// content nothing is dropped, however far behind the cue is. A seek lands on a
-// subtitle on purpose, and deleting it would be a regression.
 TEST_F(LiveCueExpiryTest, RecordedContentDropsNothing) {
   // A zero window is the documented "policy off" value, and the pipeline
   // applies it to any source; asserting the recorded case through the same code

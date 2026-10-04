@@ -352,12 +352,18 @@ jobs:
       # consecutive runs), so the gate can go green and a regression can now
       # actually block. Leaving it non-blocking after the fix would mean the
       # next regression is reported by a person rather than by CI.
-      - name: Dimensional corpus and its four metrics
+      #
+      # PRs run the standard profile: the full matrix is ~11 minutes at the
+      # 300-sample target and that cost belongs on the weekly run, not on
+      # every PR. The standard profile keeps every family represented, so a
+      # per-family regression still blocks; the weekly corpus-full workflow
+      # re-measures the full matrix and refreshes the baseline.
+      - name: Dimensional corpus and its four metrics (standard)
         run: |
           python3 tools/check_corpus.py \
             --headless build/ffmpeg/bin/headless \
             --ffmpeg "$(command -v ffmpeg)" \
-            --profile full \
+            --profile standard \
             --baseline corpus_baseline.json
       - name: Keep the corpus metrics as an artifact
         if: always()
@@ -438,7 +444,32 @@ jobs:
           echo "checking ${#FILES[@]} files"
           clang-format --dry-run --Werror --style=file "${FILES[@]}"
 
-  # Still absent, and for the same reason as before: check-cpplint and
-  # check-clang-tidy have not been through a fix-the-tree pass, so both would
-  # be red on the first run. R12 again -- they are opened one at a time, each
-  # after its own sweep, not all at once. See STYLE.md's "工具落地状态".
+  # clang-tidy over the project config (.clang-tidy). The tree-fixing round
+  # measured ZERO findings across 15 representative files on every layer, so
+  # this job goes straight in as blocking (R12: a gate must arrive green to
+  # be believed). Scoped to non-test, non-legacy sources: tests carry
+  # gtest idioms the config was not tuned for, and media/filters/legacy/ is
+  # the LGPL quarantine where formatting/provenance rules deliberately
+  # differ. cpplint stays absent -- it has not had its tree-fixing round.
+  check-clang-tidy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain, FFmpeg and clang-tidy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config clang \
+            clang-tidy libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+      - run: cmake --preset ffmpeg
+      - run: cmake --build --preset ffmpeg
+      - name: clang-tidy over non-test sources
+        run: |
+          files=$(git ls-files 'base/*.cc' 'media/*.cc' 'player/*.cc' \
+                         'platform/*.cc' 'tools/*.cc' | grep -v 'legacy/' )
+          /usr/lib/llvm-18/bin/run-clang-tidy -p build/ffmpeg -quiet -j4 \
+            -header-filter '^((?!third_party|legacy|/tests/).)*$' $files
+
+  # Still absent: check-cpplint has not been through a fix-the-tree pass.
+  # clang-tidy left this list the same commit that opened it -- see the job
+  # above; R12 again -- one gate at a time, each after its own sweep.
