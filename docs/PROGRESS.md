@@ -2,18 +2,25 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M11 ✅（播放链路 + SDL2 出画）· M9 收口中（三级 HWM/精确 seek/RetryDataSource/饥饿信号 ✅）· Phase 0 更名 avbase ✅ · Phase 3 硬解零拷贝 ✅（VideoToolbox 实测）· 音/字幕轨切换 ✅ · fuzz 目标 ✅**
+## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅**
 
-最后更新：2026-10-03（第十八轮）—— **Phase 4.5 开篇：libFuzzer 目标 + 确定性 standalone 驱动。**
-`tests/fuzz/fuzz_demuxer.cc` 把每份输入推过真实的 demux 前门（MemoryDataSource →
-AVIOContext 桥 → avformat 探测 → 有界 Read → Stop），全部等待限时、字节拷贝与
-demuxer 同批在 media 线程上销毁（harness 特意泄漏，避开退出期静态析构顺序雷）。
-驱动双轨：libFuzzer（CI Linux，覆盖引导）+ 固定种子 standalone（本机 asan 可跑，
-325 输入全干净）。CI 新增 fuzz-smoke job。顺带修复 `expected.h` 的
-`#if defined()` 宏序雷（BuildConfig 恒定义 0 的名字会劫持 include 顺序敏感的 TU）。
-ffmpeg 439/439、no-ffmpeg 376/376、asan 439/439 连续两轮全绿，invariant 全过
-（282 文件）。
-> 第十七轮：Phase 4.2 字幕文本腿——kText 轨选择与 TimedText 事件
+最后更新：2026-10-03（第二十五轮，另一开发机接续推进）—— **macOS 播放器取证与固化**：
+`macos-sdl2` 预设 + `macos-player` CI job,"Mac 上还能编"从此每次 push 都有回答。
+本机（MacBook）复核：ffmpeg **481/481**、no-ffmpeg **376/376**、invariant **302 文件**全过、
+C23 基线 37（第二十三轮全量 clang-format 后 286→37）。
+> 第二十五轮：macOS 播放器实测与固化（预设 + CI 守护）
+> 第二十四轮：全量崩溃清扫（corpus 14/29 关闭竞态根因修复→0/35;TearDown 未 Stop 的
+> DISABLED 掩盖崩溃;反向断言）· corpus 矩阵分级（smoke/standard/full,74 产出崩溃 0）·
+> 覆盖率门禁接入（棘轮 + 基线入库）· 弱网工具与 CI（暴露 RetryDataSource 不在生产路径）·
+> kHardwareOnly 生产接线（SelectVideoDecoder 原本无生产调用者）· SyntheticLiveDemuxer ·
+> 视频轨切换闭合（真因=4s 素材交接前读完,非产品缺陷）· throttle 测试三修后转绿
+> （40s/12.9KBps 素材 + 变速率节流源）
+> 第二十三轮：LiveDataSource + 直播追帧判定核与端到端验收 · HLS/HTTP 协议验收入 CI ·
+> format 门禁（C23 286→37）· Windows CI job · RendererImpl 6 处 S1 hop weak 化
+> 第二十二轮：纯音/纯视频断言（docs/07 §5）· 合成源单流禁用
+> 第十九至二十一轮：LiveDataSource · 追帧判定核 · 追帧端到端验收
+> 第十八轮：fuzz 目标（libFuzzer + standalone 双驱动 + 语料入库）
+剩余工作以 [12-剩余工作清单](12-剩余工作清单.md) 为准（该项由各轮同步维护,是唯一权威清单）。
 
 ## 第二十二轮（本轮）：docs/07 §5 纯音/纯视频断言 + 合成源单流禁用
 
