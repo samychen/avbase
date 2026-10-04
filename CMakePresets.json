@@ -150,6 +150,14 @@
         "AVBASE_ENABLE_FFMPEG": "ON",
         "AVBASE_FFMPEG_ROOT": "$env{AVBASE_FFMPEG_ROOT}"
       }
+    },
+    {
+      "name": "full",
+      "inherits": "macos-sdl2",
+      "displayName": "Everything: FFmpeg + SDL2 player + tests + examples + fuzz",
+      "cacheVariables": {
+        "AVBASE_BUILD_FUZZ": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -205,6 +213,11 @@
     {
       "name": "linux-ffmpeg711",
       "configurePreset": "linux-ffmpeg711"
+    },
+    {
+      "name": "full",
+      "configurePreset": "full",
+      "displayName": "Build everything (full preset)"
     }
   ],
   "testPresets": [
