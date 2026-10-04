@@ -16,6 +16,7 @@
 #include "media/base/media_info.h"
 #include "media/base/pipeline.h"
 #include "media/filters/pipeline_impl.h"
+#include "media/filters/retry_data_source.h"
 #include "media/renderers/default_renderer_factory.h"
 #include "player/buffer_controller.h"
 #include "player/event_hub.h"
@@ -143,6 +144,10 @@ class PlayerImpl final : public media::Pipeline::Client {
   // The audio track SelectTrack last switched to (-1 = the container default),
   // so kTrackChanged can report old/new without re-probing.
   std::atomic<int> audio_track_index_{-1};
+  // The retry decorator on the network path, when config.net.reconnect and
+  // an http(s) source produced one (Phase 2: the weaknet GAP). Kept so
+  // ReconnectNow()/diagnostics can name the live object.
+  base::scoped_refptr<media::RetryDataSource> retry_source_;
 
   std::unique_ptr<media::DefaultRendererFactory> renderer_factory_;
   std::unique_ptr<media::PipelineImpl> pipeline_;

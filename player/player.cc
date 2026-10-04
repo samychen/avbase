@@ -121,7 +121,14 @@ Status Player::TakeSnapshot(base::TimeDelta, std::string) {
       "read the frame from a custom VideoRendererSink instead"));
 }
 void Player::ReconnectNow() {
-  LOG(WARNING) << "Player::ReconnectNow lands with M9's RetryDataSource";
+  // Since the UrlDataSource wiring, failed network reads are re-attempted
+  // automatically per config.net.reconnect_max_retries -- this call needs no
+  // counterpart to make retry work. A manual "force reconnect NOW" kick
+  // would need a safe reopen primitive on the retry chain (Abort() here is a
+  // PERMANENT stop, not a kick); add one to RetryDataSource/UrlDataSource if
+  // a host actually needs the button.
+  LOG(INFO) << "ReconnectNow: automatic retry is active on the network path "
+               "(config.net.reconnect); nothing to force";
 }
 
 PlayerState Player::state() const {

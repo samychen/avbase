@@ -89,6 +89,7 @@ if(AVBASE_ENABLE_FFMPEG)
               unit/media_filters/pipeline_throttle_unittest.cc
               unit/media_filters/pipeline_track_unittest.cc
               unit/media_filters/pipeline_text_unittest.cc
+              unit/media_filters/url_data_source_unittest.cc
               unit/media_filters/live_cue_policy_unittest.cc
               unit/media_filters/live_cue_policy_unittest.cc
       DEPS avbase::platform_ffmpeg avbase::media_test_support

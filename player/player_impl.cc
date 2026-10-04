@@ -26,6 +26,8 @@
 #include "media/filters/ffmpeg_decoder_factories.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/ffmpeg_text_decoder.h"
+#include "media/filters/retry_data_source.h"
+#include "platform/ffmpeg/url_data_source.h""
 #endif
 namespace avbase {
 namespace {
@@ -212,6 +214,34 @@ Status PlayerImpl::PrepareAsync() {
     base::AutoLock scoped(state_lock_);
     source = source_;
   }
+#if AVBASE_ENABLE_FFMPEG
+  // Production retry wiring (docs/12 §2.5 GAP closed): http(s) URIs leave
+  // FFmpeg's protocol layer and enter the DataSource bridge as an avio-backed
+  // UrlDataSource wrapped in RetryDataSource. The protocol layer's own
+  // reconnect only covers mid-stream errors; a reset during connect or a hard
+  // reset mid-transfer surfaces as a read error HERE, and the retry
+  // decorator is what turns it into a fresh connection. rtmp/rtsp/srt stay
+  // on the protocol layer (streaming semantics the bridge does not model).
+  if (source.kind == media::DataSourceDescriptor::Kind::kUri &&
+      (source.uri.rfind("http://", 0) == 0 ||
+       source.uri.rfind("https://", 0) == 0) &&
+      config_.net.reconnect) {
+    auto url_source =
+        base::MakeRefCounted<platform::ffmpeg::UrlDataSource>(source.uri);
+    auto retry = base::MakeRefCounted<media::RetryDataSource>(
+        std::move(url_source),
+        media::RetryDataSource::Config{config_.net.reconnect_max_retries,
+                                       config_.net.reconnect_delay});
+    {
+      base::AutoLock scoped(state_lock_);
+      retry_source_ = retry;
+    }
+    source = media::DataSourceDescriptor::FromSource(std::move(retry));
+    // Keep the URI for logs and MediaInfo: the bridge ignores the filename,
+    // but the error messages should still say which URL broke.
+    source.uri = source_.uri;
+  }
+#endif
   pipeline_->SetSource(std::move(source), std::move(options));
 
   media::DefaultRendererFactory::Deps factory_deps;
