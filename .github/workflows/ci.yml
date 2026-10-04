@@ -117,14 +117,23 @@ jobs:
   # -Werror, over the FFmpeg layer too. The compiler is clang on purpose: the
   # strict set adds GCC's -Wuseless-cast (cmake/AvbaseCompilerFlags.cmake),
   # which has never been vetted against this tree, and a gate that arrives red
-  # teaches people to ignore gates. The GCC half of this job waits for someone
-  # who can vet that flag locally first.
+  # teaches people to ignore gates. The GCC half of this job is now open:
+  # the last blocker (the make_shared<atomic<int>> -Wnull-dereference false
+  # positive) was wrapped out of the tree, and -Wuseless-cast gets its first
+  # vetting here -- if the GCC lane lands red, that is a real finding to fix,
+  # not noise.
   strict:
     needs: ffmpeg
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { cc: clang, cxx: clang++ }
+          - { cc: gcc,   cxx: g++ }
     runs-on: ubuntu-24.04
     env:
-      CC: clang
-      CXX: clang++
+      CC: ${{ matrix.compiler.cc }}
+      CXX: ${{ matrix.compiler.cxx }}
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain and FFmpeg

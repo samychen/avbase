@@ -119,17 +119,24 @@ TEST(ThreadTest, DestructorStopsTheThread) {
 TEST(ThreadTest, WeakPtrBoundTaskIsInertAfterOwnerDies) {
   // Counter lives outside Target so the recording survives the target's death
   // and the test can assert on it afterwards.
-  auto touches = std::make_shared<std::atomic<int>>(0);
+  // Wrapped in an aggregate rather than make_shared<std::atomic<int>>: the
+  // atomic's value-init path inside shared_ptr_base.h trips a GCC
+  // -Wnull-dereference false positive at -O2 (both were the last blockers for
+  // AVBASE_WERROR; docs/12 6.3). The wrapper is observably identical here.
+  struct AtomicCounter {
+    std::atomic<int> value{0};
+  };
+  auto touches = std::make_shared<AtomicCounter>();
 
   class Target {
    public:
-    explicit Target(std::shared_ptr<std::atomic<int>> counter)
+    explicit Target(std::shared_ptr<AtomicCounter> counter)
         : counter_(std::move(counter)) {}
-    void Touch() { counter_->fetch_add(1); }
+    void Touch() { counter_->value.fetch_add(1); }
     WeakPtr<Target> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
    private:
-    std::shared_ptr<std::atomic<int>> counter_;
+    std::shared_ptr<AtomicCounter> counter_;
     // Last member on purpose: it must invalidate every WeakPtr before the rest
     // of the object goes away (check_invariants rule C19).
     WeakPtrFactory<Target> weak_factory_{this};
@@ -161,7 +168,7 @@ TEST(ThreadTest, WeakPtrBoundTaskIsInertAfterOwnerDies) {
                        },
                        target.GetWeakPtr(), &ran)));
     ASSERT_TRUE(ran.TimedWait(Seconds(5)));
-    EXPECT_EQ(touches->load(), 1);
+    EXPECT_EQ(touches->value.load(), 1);
 
     // Now queue a long-delayed call bound to the WeakPtr, then destroy the
     // target before it can run.
@@ -176,7 +183,7 @@ TEST(ThreadTest, WeakPtrBoundTaskIsInertAfterOwnerDies) {
   // would dereference freed memory (ASan) or set touches to -1.
   std::this_thread::sleep_for(Milliseconds(400).ToChronoMicros());
   // Still 1: the delayed Touch() was skipped because the WeakPtr went invalid.
-  EXPECT_EQ(touches->load(), 1);
+  EXPECT_EQ(touches->value.load(), 1);
   thread.Stop();
 }
 
