@@ -17,6 +17,7 @@
 | FFmpeg 版本锁定 | `tools/setup_ffmpeg.sh`（从源码编一个固定版本到 prefix） | — |
 | SDL2 后端 | ✅ 已实现（M11 的代码提前落地）：`-DAVBASE_ENABLE_SDL2=ON`，另需 SDL2 开发包 | 见 §4 |
 | 原生 Linux 后端（X11/Wayland） | ❌ **尚未实现**（M12）。打开 `AVBASE_ENABLE_LINUX_NATIVE` 会直接 `FATAL_ERROR` | 见 §4 |
+| macOS 构建 | ✅ **已落地（第二十五轮）**：`cmake --preset macos-sdl2`，需 Homebrew 的 SDL2 + FFmpeg | 见 §3.6 |
 
 Debian/Ubuntu 一次装齐（不含 FFmpeg）：
 
@@ -130,6 +131,24 @@ cmake --build --preset linux-ffmpeg711          # 或任何 AVBASE_ENABLE_FFMPEG
 `AvSyncController` 并打印 `media_time / master / av_diff`。
 **`sync` 是历史上抓到 bug #32（主时钟被 uptime 偏移）的那个命令**——它比单测更能发现
 时钟类问题，因为单测用的 `SimpleTestTickClock` 起点是 0，会掩盖一整类偏移错误。
+
+### 3.6 macOS（第二十五轮起）
+
+macOS 上的 SDL2 真窗口后端与完整测试套件已验证通过（`macos-sdl2` 预设 + `macos-player`
+CI job 守护）。需要 Homebrew 安装依赖：
+
+```bash
+brew install sdl2 ffmpeg cmake ninja
+cmake --preset macos-sdl2
+cmake --build --preset macos-sdl2
+ctest --preset macos-sdl2 --output-on-failure     # 预期 481 用例全绿
+```
+
+`macos-sdl2` 产出 `play_sdl2` 真窗口二进制（`otool -L` 确认链接 `libSDL2-2.0.0` +
+`libavformat.61`）。VideoToolbox 硬解走 `platform/ffmpeg/ffmpeg_hw_video_decoder.cc`
+的 libavcodec hwaccel，**需实机验证**（CI 沙箱无 VideoToolbox 设备）。
+
+也支持不带 SDL2 的无 FFmpeg 配置（`cmake --preset no-ffmpeg`，同 Linux）。
 
 ---
 
