@@ -10,8 +10,13 @@
 #
 # Usage:
 #   tools/setup_ffmpeg.sh [version] [prefix] [jobs]
-#   export AVBASE_FFMPEG_ROOT=/opt/ffmpeg-7.1.1
-#   cmake --preset linux-ffmpeg711
+#   cmake --preset linux-ffmpeg711        # no env needed: FindFFmpeg picks up
+#                                         # the repo-local tools/build prefix
+#
+# The default prefix is the repo-local tools/build (MediaComponent's
+# convention): no sudo, per-checkout, and FindFFmpeg prefers it over system
+# packages automatically. Pass an explicit prefix (e.g. /opt/ffmpeg-7.1.1)
+# to install outside the checkout, then point AVBASE_FFMPEG_ROOT at it.
 #
 # The default component list is deliberately minimal: it covers everything the
 # demuxer/decoder tests need and keeps the build near 3 minutes on 2 cores.
@@ -43,11 +48,11 @@
 #   AVBASE_FFMPEG_SHA256   expected checksum, overriding the built-in pin.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERSION="${1:-7.1.1}"
-PREFIX="${2:-/opt/ffmpeg-${VERSION}}"
+PREFIX="${2:-${SCRIPT_DIR}/build}"
 LINK="${AVBASE_FFMPEG_LINK:-shared}"
 SRC_URL="https://ffmpeg.org/releases/ffmpeg-${VERSION}.tar.xz"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="${AVBASE_FFMPEG_SRC_DIR:-${SCRIPT_DIR}/deps}"
 DOWNLOADS="${SRC_DIR}/downloads"
 TARBALL="${DOWNLOADS}/ffmpeg-${VERSION}.tar.xz"
@@ -475,4 +480,4 @@ echo "==> Installed:"
 ls "${PREFIX}/lib" | grep -E '\.(so\.[0-9]+|dylib|a)$' | head -40 || true
 grep -m1 LIBAVCODEC_VERSION_MAJOR "${PREFIX}/include/libavcodec/version_major.h"
 echo
-echo "Now run:  cmake --preset linux-ffmpeg711   (or -DAVBASE_FFMPEG_ROOT=${PREFIX})"
+echo "Now run:  cmake --preset linux-ffmpeg711   (auto-detected; or -DAVBASE_FFMPEG_ROOT=${PREFIX})"

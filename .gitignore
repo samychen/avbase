@@ -10,3 +10,4 @@ bench-history.local.jsonl
 __pycache__/
 *.pyc
 tools/deps/
+tools/build/

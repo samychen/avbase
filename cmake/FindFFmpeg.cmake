@@ -22,8 +22,20 @@ endif()
 set(_avbase_ff_hints "")
 if(AVBASE_FFMPEG_ROOT)
   list(APPEND _avbase_ff_hints "${AVBASE_FFMPEG_ROOT}")
+elseif(DEFINED ENV{AVBASE_FFMPEG_ROOT})
+  list(APPEND _avbase_ff_hints "$ENV{AVBASE_FFMPEG_ROOT}")
 elseif(DEFINED ENV{FFMPEG_ROOT})
   list(APPEND _avbase_ff_hints "$ENV{FFMPEG_ROOT}")
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/build/include/libavformat/avformat.h")
+  # MediaComponent's convention: tools/setup_ffmpeg.sh installs into the
+  # repo-local tools/build prefix, no env vars and no sudo. Prefer it over
+  # whatever the system happens to have so the pinned build wins by default
+  # (the consistency probe below guards against a stale prefix). Override
+  # with AVBASE_FFMPEG_ROOT, or delete the directory to fall back to
+  # pkg-config / system packages.
+  list(APPEND _avbase_ff_hints "${CMAKE_CURRENT_SOURCE_DIR}/tools/build")
+  message(STATUS "FindFFmpeg: using repo-local ${CMAKE_CURRENT_SOURCE_DIR}/tools/build prefix "
+                 "(set AVBASE_FFMPEG_ROOT to override)")
 endif()
 
 # ---- 1. CMake config package ------------------------------------------------

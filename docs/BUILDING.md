@@ -57,18 +57,18 @@ ctest --preset no-ffmpeg --output-on-failure
 ### 3.2 带真实媒体的完整测试
 
 ```bash
-cmake --preset linux-ffmpeg711      # 需要先 export AVBASE_FFMPEG_ROOT
+tools/setup_ffmpeg.sh 7.1.1                # 装到仓库内 tools/build（免 sudo）
+cmake --preset linux-ffmpeg711             # FindFFmpeg 自动发现，无需任何 env
 cmake --build --preset linux-ffmpeg711
 ctest --test-dir build/linux-ffmpeg711 --output-on-failure
 ```
 
-预期 **359 = 324 + 35** 全绿。`AVBASE_FFMPEG_ROOT` 指向一个 FFmpeg 安装前缀；
-用 `tools/setup_ffmpeg.sh` 生成一个版本锁定的：
-
-```bash
-tools/setup_ffmpeg.sh 7.1.1                    # 装到 /opt/ffmpeg-7.1.1
-export AVBASE_FFMPEG_ROOT=/opt/ffmpeg-7.1.1
-```
+预期 **359 = 324 + 35** 全绿。默认装进仓库内的 `tools/build/`（gitignored），
+`FindFFmpeg` 在 `AVBASE_FFMPEG_ROOT` 未设置时自动优先使用它——MediaComponent 的
+「头文件在仓库里、clone 即用」的体验，等价但不破坏 C4 头隔离约束；要装到别处
+（如 `/opt/ffmpeg-7.1.1`）就传第二个参数并 `-DAVBASE_FFMPEG_ROOT=<prefix>`（或
+同名环境变量）。`tools/build` 存在时系统 FFmpeg（brew/apt）会被忽略，删除该目录
+即回退到系统包。
 
 脚本的行为（都是从 MediaComponent 的 `build_ffmpeg.sh` 教训里同步过来的）：
 
@@ -106,8 +106,9 @@ cmake --preset linux-sdl2             # FFmpeg + SDL2 双后端（需要 SDL2 �
 cmake --build build/linux-sdl2        # 唯一能建出 play_sdl2 的 preset
 ```
 
-`ffmpeg` 与 `linux-sdl2` 都只需要发行版/Homebrew 的 FFmpeg，不需要
-`AVBASE_FFMPEG_ROOT`；`linux-sdl2` 也是 CI 里用来验证 SDL2 后端能在 Linux 上编译的那份配置。
+`ffmpeg` 与 `linux-sdl2` 只需要发行版/Homebrew 的 FFmpeg，不需要
+`AVBASE_FFMPEG_ROOT`（例外：仓库内存在 `tools/build/` 时会优先用它，见 §3.2）；
+`linux-sdl2` 也是 CI 里用来验证 SDL2 后端能在 Linux 上编译的那份配置。
 
 ### 3.3 Debug + `-Werror`（第一次构建应该跑这个）
 
