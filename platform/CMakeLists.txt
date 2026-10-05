@@ -52,6 +52,13 @@ if(AVBASE_ENABLE_FFMPEG)
       PRIVATE FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil
               FFmpeg::swscale FFmpeg::swresample)
   target_compile_definitions(avbase_platform_ffmpeg PRIVATE AVBASE_ENABLE_FFMPEG=1)
+  # Optional SIMD fast paths for video_convert.cc; when absent the module
+  # compiles to a sws_scale-only fallback and nothing else changes.
+  find_package(Libyuv QUIET)
+  if(Libyuv_FOUND)
+    target_link_libraries(avbase_platform_ffmpeg PRIVATE libyuv::libyuv)
+    target_compile_definitions(avbase_platform_ffmpeg PUBLIC AVBASE_HAVE_LIBYUV=1)
+  endif()
   avbase_configure_target(avbase_platform_ffmpeg)
   # One precompiled header for the whole vendor layer: av_includes.h is the
   # single extern "C" wrap point, so every TU here needs it anyway.

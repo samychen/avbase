@@ -37,6 +37,8 @@
 #     librtmp   rtmp/rtmps/... protocols (auto-pulls openssl; replaces the
 #               native rtmp client)
 #     srt       SRT protocol (needs openssl or mbedtls; auto-adds mbedtls)
+#     libyuv    SIMD pixel conversion fast paths (optional: without it
+#               video_convert falls back to sws_scale)
 #
 # Caching and link mode:
 #   AVBASE_FFMPEG_SRC_DIR  persistent scratch dir for the tarball + extracted
@@ -134,6 +136,7 @@ dep_git_url() {
     librtmp)  echo "https://git.ffmpeg.org/rtmpdump.git" ;;
     mbedtls)  echo "https://github.com/Mbed-TLS/mbedtls.git" ;;
     srt)      echo "https://github.com/Haivision/srt.git" ;;
+    libyuv)   echo "https://github.com/lemenkov/libyuv.git" ;;
   esac
 }
 dep_tag() {
@@ -145,6 +148,7 @@ dep_tag() {
     librtmp)  echo "" ;;  # no tags; HEAD snapshot
     mbedtls)  echo "mbedtls-3.5.0" ;;
     srt)      echo "v1.5.3" ;;
+    libyuv)   echo "" ;;  # no release tags; HEAD snapshot
   esac
 }
 dep_commit() {
@@ -156,19 +160,20 @@ dep_commit() {
     librtmp)  echo "138fdb258d9fc26f1843fd1b891180416c9dc575" ;;
     mbedtls)  echo "1ec69067fa1351427f904362c1221b31538c8b57" ;;
     srt)      echo "09f35c0f1743e23f514cb41444504a7faeacf89e" ;;
+    libyuv)   echo "aa6cedb39c87910b4c28e5c71c2121fc45fd234b" ;;
   esac
 }
 
 # Normalize + validate AVBASE_FFMPEG_DEPS into dependency-safe order, with the
 # implicit requirements pulled in explicitly (a notice beats a mystery link
 # error 20 minutes in).
-SUPPORTED_DEPS=" openssl mbedtls x264 fdk-aac opus librtmp srt "
+SUPPORTED_DEPS=" openssl mbedtls x264 fdk-aac opus librtmp srt libyuv "
 REQUESTED_DEPS="$(echo "${AVBASE_FFMPEG_DEPS:-}" | tr ',+' '  ')"
 DEPS=""
 for dep in ${REQUESTED_DEPS}; do
   case "${SUPPORTED_DEPS}" in
     *" ${dep} "*) ;;
-    *) echo "error: unsupported AVBASE_FFMPEG_DEPS entry '${dep}' (supported: openssl mbedtls x264 fdk-aac opus librtmp srt)" >&2
+    *) echo "error: unsupported AVBASE_FFMPEG_DEPS entry '${dep}' (supported: openssl mbedtls x264 fdk-aac opus librtmp srt libyuv)" >&2
        exit 1 ;;
   esac
   case " ${DEPS} " in
@@ -196,7 +201,7 @@ if [ -n "${DEPS}" ]; then
   # Canonical build order: TLS backends first (srt/librtmp compile against
   # them), then codecs, then the protocol stacks that consume them.
   ORDERED=""
-  for dep in openssl mbedtls x264 fdk-aac opus librtmp srt; do
+  for dep in openssl mbedtls x264 fdk-aac opus librtmp srt libyuv; do
     case " ${DEPS} " in
       *" ${dep} "*) ORDERED="${ORDERED} ${dep}" ;;
     esac
@@ -329,6 +334,12 @@ EOF
            -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
            -DENABLE_APPS=OFF -DENABLE_TEST=OFF -DENABLE_TESTTOOLS=OFF \
            -DUSE_ENCLIB="${enclib}" \
+        && cmake --build build -j"${JOBS}" \
+        && cmake --install build) ;;
+    libyuv)
+      (cd "${dest}" && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+           -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+           -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
         && cmake --build build -j"${JOBS}" \
         && cmake --install build) ;;
   esac

@@ -17,6 +17,7 @@
 #include "platform/ffmpeg/av_packet_storage.h"
 #include "platform/ffmpeg/color_space_bridge.h"
 #include "platform/ffmpeg/compat.h"
+#include "platform/ffmpeg/video_convert.h"
 
 namespace avbase::media {
 namespace {
@@ -86,11 +87,7 @@ bool NeedsConversion(AVPixelFormat src, VideoFormat dst) {
 struct FFmpegVideoDecoder::Context {
   ff::CodecCtxPtr codec_ctx;
   ff::FramePtr frame;
-  ff::SwsPtr sws;
-  int sws_src_w{0};
-  int sws_src_h{0};
-  AVPixelFormat sws_src_fmt{AV_PIX_FMT_NONE};
-  VideoFormat sws_dst_format{VideoFormat::kUnknown};
+  ff::VideoConverter converter;
 };
 
 FFmpegVideoDecoder::FFmpegVideoDecoder(
@@ -221,25 +218,16 @@ bool FFmpegVideoDecoder::DecodeAvailableFrames() {
     const int width = frame->width;
     const int height = frame->height;
     if (NeedsConversion(src_format, dst_format)) {
-      if (!ctx_->sws || ctx_->sws_src_w != width || ctx_->sws_src_h != height ||
-          ctx_->sws_src_fmt != src_format ||
-          ctx_->sws_dst_format != dst_format) {
-        ctx_->sws =
-            ff::SwsPtr(sws_getContext(width, height, src_format, width, height,
-                                      ToAvPixelFormat(dst_format), SWS_BILINEAR,
-                                      nullptr, nullptr, nullptr));
-        if (!ctx_->sws) {
-          ++conversion_failures_;
-          av_frame_unref(frame);
-          return false;
-        }
-        ctx_->sws_src_w = width;
-        ctx_->sws_src_h = height;
-        ctx_->sws_src_fmt = src_format;
-        ctx_->sws_dst_format = dst_format;
+      // Configure() is a no-op while the geometry and formats are unchanged;
+      // it rebuilds the fallback context only when they move.
+      if (!ctx_->converter.Configure(width, height, src_format, width, height,
+                                     ToAvPixelFormat(dst_format))) {
+        ++conversion_failures_;
+        av_frame_unref(frame);
+        return false;
       }
     } else {
-      ctx_->sws.reset();
+      ctx_->converter.Reset();
     }
 
     Rational sar{1, 1};
@@ -261,7 +249,7 @@ bool FFmpegVideoDecoder::DecodeAvailableFrames() {
     }
     out->set_color_space(ff::ColorSpaceFromAvFrame(frame, config_));
 
-    if (ctx_->sws) {
+    if (ctx_->converter.Configured()) {
       uint8_t* dst[4] = {nullptr, nullptr, nullptr, nullptr};
       int dst_stride[4] = {0, 0, 0, 0};
       const int planes = VideoFormatPlaneCount(dst_format);
@@ -273,9 +261,7 @@ bool FFmpegVideoDecoder::DecodeAvailableFrames() {
         dst[p] = out->mutable_data(plane).data();
         dst_stride[p] = out->stride(plane);
       }
-      const int scaled = sws_scale(ctx_->sws.get(), frame->data,
-                                   frame->linesize, 0, height, dst, dst_stride);
-      if (scaled <= 0) {
+      if (!ctx_->converter.Convert(*frame, dst, dst_stride)) {
         ++conversion_failures_;
         av_frame_unref(frame);
         continue;
@@ -383,7 +369,7 @@ void FFmpegVideoDecoder::Reset(base::OnceClosure closure) {
   if (ctx_->codec_ctx) {
     avcodec_flush_buffers(ctx_->codec_ctx.get());
   }
-  ctx_->sws.reset();
+  ctx_->converter.Reset();
   decoding_eos_ = false;
   // Every outstanding request is answered before |closure|, per the contract.
   RunAllDecodeCallbacks(

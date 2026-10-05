@@ -302,7 +302,8 @@ def check_cmake_sources(root: pathlib.Path, report: Report) -> None:
     a comment refers to it.
     """
     for cm in sorted(root.rglob("CMakeLists.txt")):
-        if any(part in (".git", "build", "third_party") for part in cm.parts):
+        if any(part in (".git", "build", "third_party", "deps")
+                    for part in cm.parts):
             continue
         text = re.sub(r"#[^\n]*", "",
                       cm.read_text(encoding="utf-8", errors="replace"))
@@ -364,7 +365,8 @@ def check_sources_in_a_target(root: pathlib.Path, report: Report) -> None:
     """
     covered: set[pathlib.Path] = set()
     for cm in sorted(root.rglob("CMakeLists.txt")):
-        if any(part in (".git", "build", "third_party") for part in cm.parts):
+        if any(part in (".git", "build", "third_party", "deps")
+                    for part in cm.parts):
             continue
         text = re.sub(r"#[^\n]*", "",
                       cm.read_text(encoding="utf-8", errors="replace"))
@@ -381,7 +383,7 @@ def check_sources_in_a_target(root: pathlib.Path, report: Report) -> None:
             covered.add((cm.parent / src).resolve())
 
     for path in sorted(root.rglob("*.cc")):
-        if any(part in (".git", "build", "third_party")
+        if any(part in (".git", "build", "third_party", "deps")
                or part.startswith("build") for part in path.parts):
             continue
         rel = path.relative_to(root).as_posix()

@@ -31,6 +31,7 @@ extern "C" {
 #include <libavutil/mathematics.h>
 #include <libavutil/mem.h>
 #include <libavutil/opt.h>
+#include <libavutil/pixdesc.h>
 #include <libavutil/pixfmt.h>
 #include <libavutil/rational.h>
 #include <libavutil/samplefmt.h>

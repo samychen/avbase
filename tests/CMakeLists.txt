@@ -91,11 +91,16 @@ if(AVBASE_ENABLE_FFMPEG)
               unit/media_filters/pipeline_text_unittest.cc
               unit/media_filters/url_data_source_unittest.cc
               unit/media_filters/live_cue_policy_unittest.cc
-              unit/media_filters/live_cue_policy_unittest.cc
+              unit/media_filters/video_convert_unittest.cc
       DEPS avbase::platform_ffmpeg avbase::media_test_support
            avbase::base_test_support)
   target_compile_definitions(media_ffmpeg_unittests PRIVATE
       AVBASE_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata")
+  # The vendor headers are PRIVATE to avbase_platform_ffmpeg; tests that touch
+  # AVFrame fields need them explicitly, and pinned-prefix headers beat
+  # whatever /usr/local/include happens to hold.
+  target_include_directories(media_ffmpeg_unittests SYSTEM PRIVATE
+      ${FFmpeg_INCLUDE_DIRS})
 endif()
 endif()
 

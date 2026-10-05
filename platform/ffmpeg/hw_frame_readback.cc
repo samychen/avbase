@@ -6,6 +6,7 @@
 
 #include "platform/ffmpeg/av_includes.h"
 #include "platform/ffmpeg/compat.h"
+#include "platform/ffmpeg/video_convert.h"
 
 namespace avbase::platform::ffmpeg {
 
@@ -34,10 +35,13 @@ MapHwFrameToI420(const AVFrame* hw_frame, media::Rational sar,
   if (!out) {
     return nullptr;
   }
-  SwsPtr sws(sws_getContext(
-      width, height, static_cast<AVPixelFormat>(sw_frame->format), width,
-      height, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr));
-  if (!sws) {
+  // VideoConverter picks the libyuv fast path for the NV12/NV21 frames most
+  // hw decoders transfer out, and falls back to sws (with the frame's
+  // colorspace) for anything else.
+  VideoConverter converter;
+  if (!converter.Configure(width, height,
+                           static_cast<AVPixelFormat>(sw_frame->format), width,
+                           height, AV_PIX_FMT_YUV420P)) {
     return nullptr;
   }
   uint8_t* dst[4] = {nullptr, nullptr, nullptr, nullptr};
@@ -48,8 +52,7 @@ MapHwFrameToI420(const AVFrame* hw_frame, media::Rational sar,
     dst[p] = out->mutable_data(plane).data();
     dst_stride[p] = out->stride(plane);
   }
-  if (sws_scale(sws.get(), sw_frame->data, sw_frame->linesize, 0, height, dst,
-                dst_stride) <= 0) {
+  if (!converter.Convert(*sw_frame, dst, dst_stride)) {
     return nullptr;
   }
   out->set_color_space(cs);

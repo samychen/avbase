@@ -88,7 +88,10 @@ ctest --test-dir build/linux-ffmpeg711 --output-on-failure
   比文件哈希更强）；隐式依赖自动补齐（`srt`→mbedtls、`librtmp`→openssl；
   TLS 后端冲突时 openssl 优先）。选了 `x264`/`fdk-aac` 会连带打开
   mp4/matroska/adts muxer 和原生 aac 编码器。注意 `fdk-aac` 使产物变成
-  `--enable-nonfree`，不能以 Apache/BSD 身份再分发。
+  `--enable-nonfree`，不能以 Apache/BSD 身份再分发。`libyuv` 启用
+  `platform/ffmpeg/video_convert.cc` 的 SIMD 像素转换快速路径（NV12/422/10bit→I420、
+  I420→RGB 带色彩矩阵），是**可选的**：没编 libyuv 时该模块自动退化为纯 sws_scale，
+  行为不变只是慢一些。
 - **头/库同源探测**：配置 avbase 时，`cmake/FindFFmpeg.cmake` 会编译并运行一个
   调 `avcodec_version()` 的探针程序，把**链接到的库**的真实版本与**头文件**解析出的
   版本比对，不一致直接 `FATAL_ERROR`——这正是"编译期无提示、运行期 SIGBUS"的那类
