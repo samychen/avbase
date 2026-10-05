@@ -143,4 +143,117 @@ if(FFmpeg_FOUND)
   endif()
   message(STATUS "FindFFmpeg: libavcodec major ${AVBASE_FFMPEG_MAJOR}"
                  " (avformat ${FFmpeg_avformat_VERSION}) at ${FFmpeg_INCLUDE_DIRS}")
+
+  # ---- 4. Header/library consistency probe --------------------------------
+  # Everything above reads the HEADERS; nothing yet guarantees that the
+  # library actually linked is from the same build. FFmpeg tolerates the
+  # mismatch at compile time and dies at runtime (struct layout drift ->
+  # SIGBUS; the classic case is a pinned include dir with a distro dylib
+  # picked up by the linker). Compile and run a trivial probe that reports
+  # the library's own avcodec_version() and compare it with the headers.
+  option(AVBASE_SKIP_FFMPEG_PROBE
+      "Skip the configure-time FFmpeg header/library consistency probe" OFF)
+  if(CMAKE_CROSSCOMPILING)
+    message(STATUS "FindFFmpeg: header/library probe skipped (cross-compiling)")
+  elseif(AVBASE_SKIP_FFMPEG_PROBE)
+    message(STATUS "FindFFmpeg: header/library probe skipped (AVBASE_SKIP_FFMPEG_PROBE)")
+  else()
+    set(_probe_src "${CMAKE_BINARY_DIR}/CMakeFiles/avbase-ffmpeg-version-probe.c")
+    configure_file("${CMAKE_CURRENT_LIST_DIR}/FFmpegVersionProbe.c"
+                   "${_probe_src}" COPYONLY)
+
+    # Header major, parsed here because strategies 1/2 don't always set
+    # FFmpeg_avcodec_VERSION_MAJOR from the headers.
+    set(_probe_header "")
+    foreach(_inc IN LISTS FFmpeg_INCLUDE_DIRS)
+      if(EXISTS "${_inc}/libavcodec/version_major.h")
+        set(_probe_header "${_inc}/libavcodec/version_major.h")
+        break()
+      endif()
+      if(EXISTS "${_inc}/libavcodec/version.h")
+        set(_probe_header "${_inc}/libavcodec/version.h")
+        break()
+      endif()
+    endforeach()
+    set(_probe_linkitems "")
+    set(_probe_linkdirs "")
+    if(_probe_header)
+      file(STRINGS "${_probe_header}" _probe_vline REGEX
+           "^#define[ \t]+LIBAVCODEC_VERSION_MAJOR[ \t]+[0-9]+")
+      string(REGEX REPLACE ".*_MAJOR[ \t]+([0-9]+).*" "\\1"
+             _probe_header_major "${_probe_vline}")
+    endif()
+    foreach(_comp IN LISTS FFmpeg_FIND_COMPONENTS)
+      if(FFmpeg_${_comp}_LIBRARY AND EXISTS "${FFmpeg_${_comp}_LIBRARY}")
+        list(APPEND _probe_linkitems "${FFmpeg_${_comp}_LIBRARY}")
+        get_filename_component(_libdir "${FFmpeg_${_comp}_LIBRARY}" DIRECTORY)
+        list(APPEND _probe_linkdirs "${_libdir}")
+      else()
+        # No concrete file (pkg-config / config package): fall back to -l
+        # flags plus whatever link directories the strategies recorded.
+        get_target_property(_dirs FFmpeg::${_comp} INTERFACE_LINK_DIRECTORIES)
+        if(_dirs)
+          list(APPEND _probe_linkdirs ${_dirs})
+        endif()
+        if(PC_${_comp}_LINK_LIBRARIES)
+          list(APPEND _probe_linkitems ${PC_${_comp}_LINK_LIBRARIES})
+        else()
+          list(APPEND _probe_linkitems "-l${_comp}")
+        endif()
+      endif()
+    endforeach()
+
+    if(NOT _probe_header)
+      message(STATUS "FindFFmpeg: header/library probe skipped (no libavcodec headers found)")
+    elseif(NOT _probe_linkitems)
+      message(STATUS "FindFFmpeg: header/library probe skipped (no linkable avcodec library)")
+    else()
+      list(REMOVE_DUPLICATES _probe_linkdirs)
+      set(_probe_dir_flags "")
+      foreach(_dir IN LISTS _probe_linkdirs)
+        list(APPEND _probe_dir_flags "-DLINK_DIRECTORIES:PATH=${_dir}")
+      endforeach()
+      try_run(_probe_run _probe_compiled
+          "${CMAKE_BINARY_DIR}/CMakeTmp/avbase-ffmpeg-probe"
+          "${_probe_src}"
+          CMAKE_FLAGS
+            "-DINCLUDE_DIRECTORIES:PATH=${FFmpeg_INCLUDE_DIRS}"
+            "-DCMAKE_BUILD_RPATH:PATH=${_probe_linkdirs}"
+            ${_probe_dir_flags}
+          LINK_LIBRARIES ${_probe_linkitems}
+          RUN_OUTPUT_VARIABLE _probe_output)
+      if(NOT _probe_compiled)
+        message(FATAL_ERROR
+            "FindFFmpeg: the header/library consistency probe failed to COMPILE.\n"
+            "Headers: ${_probe_header}\nLibraries: ${_probe_linkitems}\n"
+            "This means the include/lib combination cannot be linked at all; "
+            "check AVBASE_FFMPEG_ROOT / pkg-config paths. Re-run with "
+            "-DAVBASE_SKIP_FFMPEG_PROBE=ON to bypass (at your own risk).")
+      elseif(NOT _probe_run MATCHES "^[0-9]+$")
+        message(FATAL_ERROR
+            "FindFFmpeg: the header/library consistency probe FAILED TO RUN.\n"
+            "Headers say libavcodec major ${_probe_header_major} but the binary "
+            "crashed before reporting the library version — the classic "
+            "headers-from-one-build / library-from-another mismatch that "
+            "otherwise surfaces as SIGBUS at playback time. Point "
+            "AVBASE_FFMPEG_ROOT at a consistent build. Re-run with "
+            "-DAVBASE_SKIP_FFMPEG_PROBE=ON to bypass (at your own risk).")
+      else()
+        string(STRIP "${_probe_output}" _probe_output)
+        math(EXPR _probe_lib_major "${_probe_output} / 65536")
+        if(NOT _probe_lib_major EQUAL _probe_header_major)
+          message(FATAL_ERROR
+              "FindFFmpeg: header/library VERSION MISMATCH. Headers: "
+              "libavcodec ${_probe_header_major}.x; linked library reports "
+              "${_probe_lib_major}.x (avcodec_version()=${_probe_output}). "
+              "This combination compiles but crashes at runtime (struct "
+              "layout drift). Point AVBASE_FFMPEG_ROOT at a build whose "
+              "headers and libraries come from the same source, or re-run "
+              "with -DAVBASE_SKIP_FFMPEG_PROBE=ON to bypass (at your own risk).")
+        endif()
+        message(STATUS "FindFFmpeg: header/library probe OK "
+                       "(libavcodec major ${_probe_lib_major}, headers agree)")
+      endif()
+    endif()
+  endif()
 endif()

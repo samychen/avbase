@@ -70,6 +70,31 @@ tools/setup_ffmpeg.sh 7.1.1                    # 装到 /opt/ffmpeg-7.1.1
 export AVBASE_FFMPEG_ROOT=/opt/ffmpeg-7.1.1
 ```
 
+脚本的行为（都是从 MediaComponent 的 `build_ffmpeg.sh` 教训里同步过来的）：
+
+- **tarball sha256 校验**：7.1.1 的校验值内置于脚本；对不上（下载截断/镜像被篡改）
+  在解压前就报错。新版本要么加进脚本的 `PINNED_SHA256`，要么
+  `AVBASE_FFMPEG_SHA256=<hash>` 临时传入。
+- **持久缓存 + 增量构建**：tarball、解压源码、各构建树都在
+  `tools/deps/`（可用 `AVBASE_FFMPEG_SRC_DIR` 改），已加入 `.gitignore`。
+  第二次运行命中缓存直接进 make；改了 prefix 或开关后按 configure 指纹自动重配。
+- **链接模式**：默认只编动态库（与旧行为一致）。`AVBASE_FFMPEG_LINK=static`
+  编静态（自动 `--enable-pic`，可安全链入共享对象）；`=both` 同 prefix 两个
+  构建树各出一套，给 Android prebuilt / 自包含分发用。
+- **可选依赖链**（对齐 MediaComponent 的 `build_ffmpeg.sh` 体验，默认不开）：
+  `AVBASE_FFMPEG_DEPS="openssl x264 fdk-aac opus librtmp mbedtls srt"`，全部
+  从源码编进与 FFmpeg 同一个 prefix，FFmpeg 的对应 configure 开关（TLS/编码器/
+  协议/muxer）自动追加。依赖来源一律 git clone 并钉死 commit（tag→commit 校验，
+  比文件哈希更强）；隐式依赖自动补齐（`srt`→mbedtls、`librtmp`→openssl；
+  TLS 后端冲突时 openssl 优先）。选了 `x264`/`fdk-aac` 会连带打开
+  mp4/matroska/adts muxer 和原生 aac 编码器。注意 `fdk-aac` 使产物变成
+  `--enable-nonfree`，不能以 Apache/BSD 身份再分发。
+- **头/库同源探测**：配置 avbase 时，`cmake/FindFFmpeg.cmake` 会编译并运行一个
+  调 `avcodec_version()` 的探针程序，把**链接到的库**的真实版本与**头文件**解析出的
+  版本比对，不一致直接 `FATAL_ERROR`——这正是"编译期无提示、运行期 SIGBUS"的那类
+  故障（MediaComponent 的最大教训）。交叉编译会自动跳过；强行绕过用
+  `-DAVBASE_SKIP_FFMPEG_PROBE=ON`（后果自负）。
+
 也可以直接用发行版 FFmpeg（这正是设计目标之一，验收标准 A14）：
 
 ```bash
@@ -296,6 +321,7 @@ grep -rln "STATUS: DRAFT" --include='*.h' --include='*.cc' .
 |---|---|
 | `AVBASE_ENABLE_LINUX_NATIVE is scheduled for milestone M12` | 不是 bug，是有意的 `FATAL_ERROR`：原生 GL 后端还没写。SDL2 后端已经可用，见 §4 |
 | `FindFFmpeg` 报版本为空 / 门禁形同虚设 | 第四轮修过一个：版本正则用小写组件名而实际宏是 `LIBAVCODEC_VERSION_MAJOR`。若再现，检查 `cmake/FindFFmpeg.cmake` 的 `string(TOUPPER)` |
+| `header/library consistency probe FAILED TO RUN` / `VERSION MISMATCH` | 头文件与实际链接的 libav\* 不是同一次构建——编译期无提示、运行期 SIGBUS 的那类问题，现在是配置期报错。把 `AVBASE_FFMPEG_ROOT` 指向 `tools/setup_ffmpeg.sh` 的产物，或清理 pkg-config 路径里的混装。确认要强行绕过才用 `-DAVBASE_SKIP_FFMPEG_PROBE=ON` |
 | `av_dict_iterate` 未声明 | 那是 FFmpeg 6.0 才有的；5.x 走 `AVBASE_FFMPEG_HAS_DICT_ITERATE` 分支。兼容层已在 7.1.1 与 5.1.9 双版本验证过 |
 | 工具跑出来的结果与源码不符 | `__pycache__` 陈旧字节码，见 §5 的警告 |
 | `check_invariants` 报 C1 超长 | DRAFT 文件豁免；非 DRAFT 文件要么拆，要么在 `LINE_LIMIT_ALLOWLIST` 登记**带理由**的豁免（每条豁免要关联 issue，见 R12） |
