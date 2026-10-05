@@ -142,7 +142,8 @@ class Report:
 def iter_sources(root: pathlib.Path):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames
-                       if d not in {"build", ".git", "third_party", "docs"}
+                       if d not in {"build", ".git", "third_party", "docs",
+                                    "deps"}
                        and not d.startswith("build")]
         for name in filenames:
             if name.endswith((".h", ".cc")):

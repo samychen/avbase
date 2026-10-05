@@ -9,3 +9,4 @@ cov-html/
 bench-history.local.jsonl
 __pycache__/
 *.pyc
+tools/deps/
