@@ -6,7 +6,7 @@
 // renderer (embedding is the core mode, docs/09 §2), avbase renders into them,
 // and the main thread's only jobs are SDL_PollEvent and quitting.
 //
-//   ./play_sdl2 --url video.mp4 [--max-seconds n]
+//   ./play_sdl2 --url video.mp4 [--max-seconds n] [--gl]
 //
 // Exit codes: 0 played to completion (or the --max-seconds cap), 1 error.
 
@@ -44,6 +44,10 @@ std::atomic<bool> g_completed{false};
 struct Options {
   std::string url;
   int max_seconds{0};
+  // --gl: present through the YUV→RGB shader path (surface.h's gl_context)
+  // instead of SDL_Renderer. Default off keeps the verified SDL_Renderer
+  // path the default.
+  bool gl{false};
 };
 
 bool ParseOptions(int argc, char** argv, Options* out) {
@@ -54,12 +58,14 @@ bool ParseOptions(int argc, char** argv, Options* out) {
       out->url = argv[++i];
     } else if (arg == "--max-seconds" && i + 1 < argc) {
       out->max_seconds = std::atoi(argv[++i]);
+    } else if (arg == "--gl") {
+      out->gl = true;
     }
   }
   if (out->url.empty()) {
     std::fprintf(stderr,
                  "usage: %s --url <file-or-url> "
-                 "[--max-seconds n]\n",
+                 "[--max-seconds n] [--gl]\n",
                  argv[0]);
     return false;
   }
@@ -79,17 +85,96 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
   }
 }
 
-// Creates the window and renderer the host owns (rule 1 in surface.h).
-bool CreateSdlWindow(SDL_Window** window, SDL_Renderer** renderer) {
+// A 10-second functional check that the GL runtime actually works: on some
+// hosts SDL_GL_CreateContext succeeds but shader-object entry points fail at
+// call time. Compile a trivial shader and catch that before playback starts,
+// so --gl can fall back instead of presenting nothing.
+bool GlRuntimeWorks(SDL_GLContext context) {
+  using GlCreateShader = unsigned int (*)(unsigned int);
+  using GlShaderSource =
+      void (*)(unsigned int, int, const char* const*, const int*);
+  using GlCompileShader = void (*)(unsigned int);
+  using GlGetShaderiv = void (*)(unsigned int, unsigned int, int*);
+  auto create =
+      reinterpret_cast<GlCreateShader>(SDL_GL_GetProcAddress("glCreateShader"));
+  auto source =
+      reinterpret_cast<GlShaderSource>(SDL_GL_GetProcAddress("glShaderSource"));
+  auto compile = reinterpret_cast<GlCompileShader>(
+      SDL_GL_GetProcAddress("glCompileShader"));
+  auto getiv =
+      reinterpret_cast<GlGetShaderiv>(SDL_GL_GetProcAddress("glGetShaderiv"));
+  if (!create || !source || !compile || !getiv) {
+    return false;
+  }
+  const unsigned int shader = create(0x8B33);  // GL_VERTEX_SHADER
+  if (shader == 0) {
+    return false;
+  }
+  const char* src = "void main() { gl_Position = vec4(0.0); }";
+  source(shader, 1, &src, nullptr);
+  compile(shader);
+  int status = 0;
+  getiv(shader, 0x8B81, &status);  // GL_COMPILE_STATUS
+  auto delete_shader = reinterpret_cast<void (*)(unsigned int)>(
+      SDL_GL_GetProcAddress("glDeleteShader"));
+  if (delete_shader) {
+    delete_shader(shader);
+  }
+  return status != 0;
+}
+
+// Creates the window the host owns (rule 1 in surface.h). With |want_gl| the
+// window is created GL-capable and an SDL_GLContext (GL 3.3 core) is created
+// for the sink's shader path; the SDL_Renderer is skipped in that mode (the
+// two presentation backends cannot share a window). If the GL runtime turns
+// out to be broken, the context is discarded and the SDL_Renderer path is
+// used instead -- playback always wins over shader purity.
+bool CreateSdlWindow(bool want_gl, SDL_Window** window, SDL_Renderer** renderer,
+                     SDL_GLContext* gl_context) {
   DCHECK(window);
   DCHECK(renderer);
+  DCHECK(gl_context);
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
     std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
     return false;
   }
+  if (want_gl) {
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
+                        SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    *window = SDL_CreateWindow("avbase", SDL_WINDOWPOS_CENTERED,
+                               SDL_WINDOWPOS_CENTERED, kWindowWidth,
+                               kWindowHeight,
+                               SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
+                                   SDL_WINDOW_OPENGL);
+    if (*window) {
+      *gl_context = SDL_GL_CreateContext(*window);
+      if (*gl_context && GlRuntimeWorks(*gl_context)) {
+        return true;
+      }
+      if (!*gl_context) {
+        std::fprintf(stderr, "SDL GL context failed: %s\n", SDL_GetError());
+      } else {
+        std::fprintf(stderr,
+                     "GL runtime broken on this host (shader creation fails);"
+                     " falling back to SDL_Renderer\n");
+        SDL_GL_MakeCurrent(*window, nullptr);
+        SDL_GL_DeleteContext(*gl_context);
+        *gl_context = nullptr;
+      }
+      SDL_DestroyWindow(*window);
+      *window = nullptr;
+    } else {
+      std::fprintf(stderr, "SDL GL window failed: %s\n", SDL_GetError());
+    }
+    // Fall through to the SDL_Renderer path.
+  }
   *window = SDL_CreateWindow(
       "avbase", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, kWindowWidth,
-      kWindowHeight, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+      kWindowHeight,
+      SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
   *renderer = SDL_CreateRenderer(
       *window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
   if (!*window || !*renderer) {
@@ -132,15 +217,17 @@ int main(int argc, char** argv) {
 
   SDL_Window* window = nullptr;
   SDL_Renderer* renderer = nullptr;
-  if (!CreateSdlWindow(&window, &renderer)) {
+  SDL_GLContext gl_context = nullptr;
+  if (!CreateSdlWindow(options.gl, &window, &renderer, &gl_context)) {
     return 1;
   }
 
-  // The host owns both SDL objects and keeps |surface| alive for the whole
+  // The host owns the SDL objects and keeps |surface| alive for the whole
   // playback; the display just carries the pointers through (surface.h).
   Sdl2Surface surface;
   surface.window = window;
   surface.renderer = renderer;
+  surface.gl_context = gl_context;
   auto display = avbase::media::NativeDisplay::FromSdl2Window(&surface);
 
   auto deps = std::make_unique<avbase::Deps>();
@@ -166,7 +253,14 @@ int main(int argc, char** argv) {
   const int exit_code = PumpEventsUntilDone(options.max_seconds);
   player.Stop();
 
-  SDL_DestroyRenderer(renderer);
+  if (gl_context) {
+    // The sink released the context in Stop(); destroying it here is the
+    // host's half of the ownership split.
+    SDL_GL_DeleteContext(gl_context);
+  }
+  if (renderer) {
+    SDL_DestroyRenderer(renderer);
+  }
   SDL_DestroyWindow(window);
   SDL_Quit();
   return exit_code;

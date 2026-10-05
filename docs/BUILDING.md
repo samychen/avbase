@@ -179,6 +179,14 @@ ctest --preset macos-sdl2 --output-on-failure     # 预期 481 用例全绿
 
 也支持不带 SDL2 的无 FFmpeg 配置（`cmake --preset no-ffmpeg`，同 Linux）。
 
+`play_sdl2 --gl` 走 GL 3.3 core 的 YUV→RGB shader 呈现路径（`platform/sdl2/gl_present.cc`，
+移植自 MediaComponent 的 GL program 结构：YUV 平面纹理上传 + 色彩矩阵 uniform，
+矩阵按帧的 colorspace/range 选择，与 `video_convert.cc` 同一套色彩纪律）。宿主通过
+`Sdl2Surface::gl_context` 交出 GL context 即启用，不加则维持 SDL_Renderer 路径。
+`--gl` 带自愈：创建 context 后先做 shader 冒烟测试，GL 运行时坏的机器（如部分
+macOS 版本的 Apple OpenGL）自动回退 SDL_Renderer。FBO/多 pass（文字叠加、转场）
+是后续里程碑，本步刻意未移植。
+
 ---
 
 ## 4. 播放：现在能跑了（第十轮起）

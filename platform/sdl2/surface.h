@@ -14,9 +14,17 @@
 // (Cocoa requires it on macOS); the sink then uses the renderer exclusively
 // from its own render thread, and the host sticks to SDL_PollEvent on the
 // main thread. Those two rules are what keep every SDL object single-threaded.
+//
+// When |gl_context| is set (an SDL_GLContext the host created for |window|,
+// never made current on the host thread), the sink presents through the GL
+// shader path in gl_present.h instead of SDL_Renderer, and |renderer| is
+// unused. The context must be created with a GL 3.3 core profile; the sink
+// makes it current on its render thread, so the host must not touch it after
+// handing it over.
 struct Sdl2Surface {
   void* window{nullptr};    // SDL_Window*
   void* renderer{nullptr};  // SDL_Renderer*
+  void* gl_context{nullptr};  // SDL_GLContext, optional; selects the GL path.
 };
 
 #endif  // AVBASE_PLATFORM_SDL2_SURFACE_H_

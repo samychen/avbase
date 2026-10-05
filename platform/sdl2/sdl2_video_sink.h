@@ -19,8 +19,13 @@
 
 namespace avbase::media {
 
+class GlPresenter;
+
 // The SDL2 video output endpoint: SDL_Renderer + SDL_Texture, driven from a
-// dedicated render thread at the display cadence.
+// dedicated render thread at the display cadence. When the host handed a GL
+// context in through Sdl2Surface (see surface.h), presentation goes through
+// GlPresenter's YUV→RGB shader path instead -- same thread, same cadence,
+// same stats.
 //
 // THREADING (see surface.h): the host created the window/renderer on its main
 // thread; this sink then uses the renderer only from its own thread, so no
@@ -70,6 +75,9 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
   void* texture_{nullptr};
   int texture_width_{0};
   int texture_height_{0};
+  // Set when the host supplied an SDL_GLContext; owns the shader path.
+  void* gl_context_{nullptr};
+  std::unique_ptr<GlPresenter> presenter_;
 
   // Cross-thread flags: written from any thread (Pause/Play/SetOutputTarget
   // are callable anywhere), read on the render thread.

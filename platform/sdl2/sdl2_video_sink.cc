@@ -6,9 +6,12 @@
 
 #include "SDL.h"
 
+#include <memory>
+
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "platform/sdl2/gl_present.h"
 #include "platform/sdl2/surface.h"
 
 #include <atomic>
@@ -60,6 +63,7 @@ void Sdl2VideoSink::Start() {
   if (!discard_.load()) {
     const auto* surface = static_cast<const Sdl2Surface*>(display_->raw());
     renderer_ = surface->renderer;
+    gl_context_ = surface->gl_context;
   }
   thread_ = std::make_unique<base::Thread>("avbase-sdl-video");
   thread_->Start();
@@ -77,11 +81,16 @@ void Sdl2VideoSink::Stop() {
     thread_.reset();
     render_runner_ = nullptr;
   }
+  // The presenter must die after the render thread is gone (its GL objects
+  // belong to that thread's context) but before the host may destroy the
+  // context it lent us.
+  presenter_.reset();
   if (texture_) {
     SDL_DestroyTexture(static_cast<SDL_Texture*>(texture_));
     texture_ = nullptr;
   }
   renderer_ = nullptr;
+  gl_context_ = nullptr;
 }
 
 void Sdl2VideoSink::Pause() {
@@ -105,7 +114,16 @@ void Sdl2VideoSink::SetOutputTarget(
                  !display_->raw());
   // Pick up the new renderer on the next present; swapping mid-frame is not
   // possible without owning the render sequence, and the next tick is at
-  // most one interval away.
+  // most one interval away. The GL context travels the same way: the next
+  // present (re)builds the presenter for it, so drop the old one here.
+  presenter_.reset();
+  if (display_ && display_->kind() == NativeDisplayKind::kSdl2Window &&
+      display_->raw()) {
+    const auto* surface = static_cast<const Sdl2Surface*>(display_->raw());
+    gl_context_ = surface->gl_context;
+  } else {
+    gl_context_ = nullptr;
+  }
 }
 
 bool Sdl2VideoSink::IsRunning() const {
@@ -173,6 +191,25 @@ void Sdl2VideoSink::PresentOne() {
 }
 
 bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
+  // GL path: the host supplied a context with the display. The presenter is
+  // created lazily here because Init() must run on the render thread (it
+  // makes the context current there).
+  if (gl_context_ && !presenter_) {
+    const auto* surface = static_cast<const Sdl2Surface*>(display_->raw());
+    auto presenter = std::make_unique<GlPresenter>(surface->window,
+                                                   gl_context_);
+    if (!presenter->Init()) {
+      // Context exists but the shader path is unusable (e.g. a GL 2.0-era
+      // driver): report failure rather than silently degrade the picture.
+      LOG(ERROR) << "gl presenter init failed";
+      gl_context_ = nullptr;
+      return false;
+    }
+    presenter_ = std::move(presenter);
+  }
+  if (presenter_) {
+    return presenter_->Present(frame);
+  }
   SDL_Renderer* renderer = static_cast<SDL_Renderer*>(renderer_);
   if (!renderer) {
     return false;
