@@ -20,6 +20,7 @@
 #include "media/filters/decoder_selector.h"
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/legacy/video_frame_compositor.h"
+#include "media/filters/audio_filter_stage.h"
 #include "media/media_export.h"
 
 namespace avbase::media {
@@ -60,6 +61,10 @@ class AVBASE_MEDIA_EXPORT DefaultRendererFactory final
     AvSyncController::MasterType sync_master{
         AvSyncController::MasterType::kAudio};
     int audio_frames_per_buffer = 1024;
+    // config.audio.filter_graph ("af") plus the stage factory the host
+    // injected. Forwarded through RendererImpl into AudioRendererImpl.
+    std::string audio_filter_graph;
+    AudioFilterStageFactory audio_filter_factory;
     // config.video.decoder_preference and config.video.hw_codecs, forwarded to
     // VideoRendererImpl so the ranking happens against the real stream config
     // (see the setter's comment for why it is not done here). Unset means the

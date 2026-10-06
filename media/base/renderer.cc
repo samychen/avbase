@@ -47,6 +47,16 @@ void Renderer::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
   (void)display;
 }
 
+void Renderer::TakeSnapshot(base::TimeDelta at,
+                            SnapshotFrameCallback callback) {
+  std::move(callback).Run(
+      MediaError(ErrorCode::kNotImplemented,
+                 "this renderer holds no snapshot-able video leg",
+                 "TakeSnapshot on a renderer built without a video stream",
+                 "only request snapshots while a video track is selected"),
+      nullptr);
+}
+
 Renderer::Renderer() = default;
 Renderer::~Renderer() = default;
 

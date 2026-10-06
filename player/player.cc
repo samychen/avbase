@@ -113,12 +113,8 @@ Status Player::SelectTrack(media::DemuxerStreamType type, int stream_index) {
 void Player::SetVideoSurface(base::scoped_refptr<NativeDisplay> display) {
   impl_->core.SetVideoSurface(std::move(display));
 }
-Status Player::TakeSnapshot(base::TimeDelta, std::string) {
-  return base::unexpected(MediaError(
-      ErrorCode::kNotImplemented, "TakeSnapshot is not wired up yet",
-      "snapshots need a compositor frame grab exposed through the pipeline "
-      "(post-M9)",
-      "read the frame from a custom VideoRendererSink instead"));
+Status Player::TakeSnapshot(base::TimeDelta at, std::string file_path) {
+  return impl_->core.TakeSnapshot(at, std::move(file_path));
 }
 void Player::ReconnectNow() {
   // Since the UrlDataSource wiring, failed network reads are re-attempted

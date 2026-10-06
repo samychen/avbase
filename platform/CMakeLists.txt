@@ -52,6 +52,10 @@ if(AVBASE_ENABLE_FFMPEG)
       ../media/filters/ffmpeg_demuxer_track_select.cc
       ../media/filters/ffmpeg_audio_decoder.cc
       ../media/filters/ffmpeg_video_decoder.cc
+      ../media/filters/ffmpeg_image_snapshot.cc
+      ../media/filters/ffmpeg_audio_filter.cc
+      ../media/filters/ffmpeg_remuxer.cc
+      ../media/filters/ffmpeg_video_filter.cc
       ../media/filters/ffmpeg_decoder_factories.cc
       ../media/filters/ffmpeg_text_decoder.cc
       ffmpeg/data_source_io.cc)
@@ -62,7 +66,7 @@ if(AVBASE_ENABLE_FFMPEG)
   target_link_libraries(avbase_platform_ffmpeg
       PUBLIC  avbase::media
       PRIVATE FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil
-              FFmpeg::swscale FFmpeg::swresample)
+              FFmpeg::swscale FFmpeg::swresample FFmpeg::avfilter)
   target_compile_definitions(avbase_platform_ffmpeg PRIVATE AVBASE_ENABLE_FFMPEG=1)
   # Optional SIMD fast paths for video_convert.cc; when absent the module
   # compiles to a sws_scale-only fallback and nothing else changes.

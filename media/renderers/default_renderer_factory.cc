@@ -50,6 +50,8 @@ std::unique_ptr<Renderer> DefaultRendererFactory::CreateRenderer(
   impl_deps.sync_thresholds = deps_.sync_thresholds;
   impl_deps.sync_master = deps_.sync_master;
   impl_deps.audio_frames_per_buffer = deps_.audio_frames_per_buffer;
+  impl_deps.audio_filter_graph = deps_.audio_filter_graph;
+  impl_deps.audio_filter_factory = deps_.audio_filter_factory;
   impl_deps.video_disabled = deps_.video_disabled;
   impl_deps.audio_disabled = deps_.audio_disabled;
   impl_deps.av_sync = deps_.av_sync;

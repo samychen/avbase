@@ -95,6 +95,12 @@ if(AVBASE_ENABLE_FFMPEG)
   avbase_add_unittest(media_ffmpeg_unittests
       SOURCES unit/media_filters/ffmpeg_audio_decoder_unittest.cc
               unit/media_filters/ffmpeg_demuxer_unittest.cc
+              unit/media_filters/hls_demuxer_unittest.cc
+              unit/media_filters/sei_timecode_unittest.cc
+              unit/media_filters/ffmpeg_image_snapshot_unittest.cc
+              unit/media_filters/ffmpeg_audio_filter_unittest.cc
+              unit/media_filters/ffmpeg_remuxer_unittest.cc
+              unit/media_filters/ffmpeg_video_filter_unittest.cc
               unit/media_filters/ffmpeg_video_decoder_unittest.cc
               unit/media_filters/pipeline_throttle_unittest.cc
               unit/media_filters/pipeline_track_unittest.cc

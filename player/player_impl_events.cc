@@ -11,6 +11,8 @@
 
 #include "player/player_impl.h"
 
+#include "media/filters/ffmpeg_image_snapshot.h"
+
 #include <algorithm>
 #include <string>
 #include <utility>
@@ -462,6 +464,45 @@ void PlayerImpl::CompleteAccurateSeek(bool reached) {
                                  "raise config.seek.accurate_timeout, or use "
                                  "SeekMode::kPreviousKeyframe"))));
   }
+}
+
+Status PlayerImpl::TakeSnapshot(base::TimeDelta at,
+                                const std::string& file_path) {
+  PlayerState current;
+  {
+    base::AutoLock scoped(state_lock_);
+    current = machine_.state();
+  }
+  if (current != PlayerState::kPrepared && current != PlayerState::kStarted &&
+      current != PlayerState::kPaused) {
+    return base::unexpected(
+        MediaError(ErrorCode::kInvalidState,
+                   std::string("TakeSnapshot called in state ") +
+                       GetPlayerStateName(current),
+                   "snapshots need a pipeline that is holding frames",
+                   "wait for kPrepared (or later) before requesting"));
+  }
+  pipeline_->TakeSnapshot(
+      at,
+      base::BindOnce(
+          [](EventHub* hub, base::TimeDelta at, std::string path,
+             MediaError error, base::scoped_refptr<media::VideoFrame> frame) {
+            if (error) {
+              hub->PostError(std::move(error), media::kNoTimestamp);
+              return;
+            }
+            SnapshotCompletedPayload payload;
+            payload.at = at;
+            payload.file_path = path;
+            if (const Status write = media::WriteJpegSnapshot(*frame, path);
+                !write) {
+              payload.result = write.error();
+            }
+            hub->Post(EventType::kSnapshotCompleted, std::move(payload),
+                      media::kNoTimestamp);
+          },
+          &event_hub_, at, file_path));
+  return Status();
 }
 
 }  // namespace avbase

@@ -158,6 +158,11 @@ class AVBASE_MEDIA_EXPORT Pipeline {
   // Runtime surface swap, backing Player::SetVideoSurface() on a live
   // pipeline. No-op before the renderer exists.
   virtual void SetOutputTarget(base::scoped_refptr<NativeDisplay> display);
+  // Requests the currently-presented frame for Player::TakeSnapshot; the
+  // callback runs on the pipeline's media sequence. Default: reports
+  // kNotImplemented (the no-op pipelines need no override).
+  virtual void TakeSnapshot(base::TimeDelta at,
+                            Renderer::SnapshotFrameCallback callback);
 
   virtual bool IsRunning() const = 0;
 

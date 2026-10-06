@@ -58,6 +58,31 @@ const libyuv::YuvConstants* SelectYuvMatrix(const AVFrame& src) {
 
 }  // namespace
 
+AVPixelFormat AvPixelFormatFromVideoFormat(media::VideoFormat format) {
+  switch (format) {
+  case media::VideoFormat::kI420:
+  case media::VideoFormat::kYV12:
+    return AV_PIX_FMT_YUV420P;
+  case media::VideoFormat::kNV12:
+    return AV_PIX_FMT_NV12;
+  case media::VideoFormat::kNV21:
+    return AV_PIX_FMT_NV21;
+  case media::VideoFormat::kARGB:
+    return AV_PIX_FMT_0RGB32;
+  case media::VideoFormat::kRGB24:
+    return AV_PIX_FMT_RGB24;
+  case media::VideoFormat::kRGB565:
+    return AV_PIX_FMT_RGB565LE;
+  case media::VideoFormat::kP010:
+    return AV_PIX_FMT_P010LE;
+  case media::VideoFormat::kYUY2:
+  case media::VideoFormat::kYUV420P10:
+  case media::VideoFormat::kUnknown:
+    break;
+  }
+  return AV_PIX_FMT_NONE;
+}
+
 VideoConverter::VideoConverter() = default;
 
 VideoConverter::~VideoConverter() = default;

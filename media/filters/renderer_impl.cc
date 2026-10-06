@@ -205,6 +205,10 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
                                         deps_.audio_frames_per_buffer);
     audio_ = std::make_unique<AudioRendererImpl>(
         deps_.audio_task_runner, deps_.audio_factories, av_sync_.get());
+    if (!deps_.audio_filter_graph.empty()) {
+      audio_->set_filter_graph(deps_.audio_filter_graph,
+                               deps_.audio_filter_factory);
+    }
   }
 
   // Initialise the sub-renderers on their own sequences. Both callbacks come
@@ -470,6 +474,7 @@ void RendererImpl::PushStatistics() {
       kStatsInterval);
 }
 
+
 PipelineStatistics RendererImpl::GetStatistics() const {
   PipelineStatistics stats;
   if (av_sync_) {
@@ -494,6 +499,55 @@ PipelineStatistics RendererImpl::GetStatistics() const {
     stats.audio_underruns = audio_->underruns();
   }
   return stats;
+}
+
+void RendererImpl::TakeSnapshot(base::TimeDelta at,
+                                Renderer::SnapshotFrameCallback callback) {
+  if (!video_) {
+    std::move(callback).Run(
+        MediaError(ErrorCode::kNotImplemented,
+                   "this pipeline has no video renderer",
+                   "TakeSnapshot on an audio-only source",
+                   "only request snapshots while a video track is selected"),
+        nullptr);
+    return;
+  }
+  // S3 grab, S1 deliver. The lambdas carry the WeakPtr as CAPTURED state --
+  // binding a WeakPtr as an argument would unwrap it to a raw pointer at the
+  // dispatch layer, losing the liveness check (see base/functional/bind.h).
+  base::WeakPtr<RendererImpl> self = weak_factory_.GetWeakPtr();
+  auto* video = video_.get();
+  auto* media_runner = deps_.media_task_runner.get();
+  deps_.video_task_runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [video, self, media_runner, at,
+           callback = std::move(callback)]() mutable {
+            if (!self) {
+              return;
+            }
+            video->TakeSnapshot(
+                at,
+                base::BindOnce(
+                    [self, media_runner,
+                     callback = std::move(callback)](
+                        MediaError error,
+                        base::scoped_refptr<VideoFrame>
+                            frame) mutable {
+                      media_runner->PostTask(
+                          FROM_HERE,
+                          base::BindOnce(
+                              [self, callback = std::move(callback)](
+                                  MediaError error,
+                        base::scoped_refptr<VideoFrame> frame) mutable {
+                                if (self) {
+                                  std::move(callback).Run(error,
+                                                          std::move(frame));
+                                }
+                              },
+                              error, std::move(frame)));
+                    }));
+          }));
 }
 
 void RendererImpl::Flush(base::OnceClosure flush_cb) {

@@ -187,6 +187,25 @@ ctest --preset macos-sdl2 --output-on-failure     # 预期 481 用例全绿
 macOS 版本的 Apple OpenGL）自动回退 SDL_Renderer。FBO/多 pass 链（转场等多级
 滤镜）仍未移植——但字幕叠加这条第二绘制 pass 已就位。
 
+**快照 / 滤镜 / remux / HLS（P0–P3 已落地）**：
+
+- `TakeSnapshot`：真实现（不再是 kNotImplemented）。请求经
+  Pipeline → RendererImpl → compositor 当前帧，回跳 S1 后经
+  `ffmpeg_image_snapshot.cc` 编码 JPEG 落盘，结果以 `kSnapshotCompleted`
+  事件回报。语义：拍"请求落地时正在显示的帧"（|at| 仅作宿主关联记录）。
+- 音频滤镜：`config.audio.filter_graph`（"af"，avfilter 语法，如
+  `volume=0.5,aecho=...`）在解码输出与渲染算法之间执行；实现为注入式
+  `AudioFilterStage`（G2：media 层无 FFmpeg 符号）。格式恒定 f32p 进出，
+  改格式的图需自带 aresample+aformat 尾巴。
+- remux：`RemuxContainer(src, dst)` 包级流拷贝（mp4/mkv/adts 容器），
+  不重编码。
+- 视频滤镜：`VideoFilterStage` + FFmpeg 实现已就绪并通过像素级单测
+  （hflip 等），接线进 VideoRendererImpl 的注入点与 P2 同型，是最后一个
+  未接线的消费点。
+- HLS：pinned FFmpeg 启用 `hls` demuxer，经常规 Demuxer 直接打开 m3u8
+  （本地与 http 均可；https 需 `AVBASE_FFMPEG_DEPS=openssl`）。
+- SEI 时码：`TimecodeFromFrame` 读 ST 12-1 side data（直播对齐用）。
+
 **字幕端到端**（两条呈现路径都支持）：播放器选中字幕轨后，cue 以
 `kTimedText` 事件交给宿主（`RendererImpl` 的 text 泵 + 直播丢旧策略早已存在）；
 `play_sdl2` 用 `platform/sdl2/text_raster.cc`（FreeType 光栅，可选依赖，没有

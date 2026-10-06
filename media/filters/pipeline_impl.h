@@ -109,6 +109,8 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   base::TimeDelta GetBufferedTime() const override;
   base::TimeDelta GetDuration() const override;
   Statistics GetStatistics() const override;
+  void TakeSnapshot(base::TimeDelta at,
+                    Renderer::SnapshotFrameCallback callback) override;
   void Seek(base::TimeDelta time, base::OnceClosure seeked_cb) override;
   void SelectAudioTrack(int stream_index, PipelineStatusCallback cb) override;
   void SelectVideoTrack(int stream_index, PipelineStatusCallback cb) override;
@@ -157,6 +159,8 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   void FinishSeekIfBothDone();
   void DoStop();
   void DoSetOutputTarget(base::scoped_refptr<NativeDisplay> display);
+  void DoTakeSnapshot(base::TimeDelta at,
+      Renderer::SnapshotFrameCallback callback);
   void DoBeginAccurateSeek(base::TimeDelta target, base::OnceClosure cb);
   void DoEndAccurateSeek();
 

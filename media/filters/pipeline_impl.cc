@@ -214,6 +214,35 @@ void PipelineImpl::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
                                          std::move(display)));
 }
 
+void PipelineImpl::TakeSnapshot(base::TimeDelta at,
+                                Renderer::SnapshotFrameCallback callback) {
+  if (!media_runner_) {
+    std::move(callback).Run(
+        MediaError(ErrorCode::kInvalidState,
+                   "the pipeline is not initialized",
+                   "TakeSnapshot arrived before a successful prepare",
+                   "wait for the kPrepared state"),
+        nullptr);
+    return;
+  }
+  media_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&PipelineImpl::DoTakeSnapshot,
+                     weak_factory_.GetWeakPtr(), at, std::move(callback)));
+}
+
+void PipelineImpl::DoTakeSnapshot(base::TimeDelta at,
+                                  Renderer::SnapshotFrameCallback callback) {
+  if (renderer_) {
+    renderer_->TakeSnapshot(at, std::move(callback));
+  } else {
+    std::move(callback).Run(
+        MediaError(ErrorCode::kInvalidState, "the pipeline has no renderer",
+                   "TakeSnapshot arrived before the renderer was created",
+                   "wait for the kPrepared state"),
+        nullptr);
+  }
+}
 void PipelineImpl::DoSetOutputTarget(
     base::scoped_refptr<NativeDisplay> display) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);

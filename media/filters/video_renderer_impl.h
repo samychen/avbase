@@ -85,6 +85,7 @@
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "media/base/pipeline_status.h"
+#include "media/base/renderer.h"
 #include "media/base/video_decoder_factory.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
@@ -231,6 +232,12 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   bool initialized() const { return initialized_; }
   bool ended() const { return ended_; }
   VideoFrameCompositor::Stats compositor_stats() const;
+
+  // S3. Hands back the frame the compositor currently holds; the callback
+  // runs on the CALLING sequence with kInvalidState when nothing has been
+  // presented yet. RendererImpl wraps it to hop back to S1.
+  void TakeSnapshot(base::TimeDelta at,
+                    Renderer::SnapshotFrameCallback callback);
   size_t frames_pending() const;
 
   // ---- VideoRendererSink::RenderCallback, i.e. S6 -------------------------

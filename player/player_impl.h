@@ -52,6 +52,10 @@ class PlayerImpl final : public media::Pipeline::Client {
   void Stop();
   void StopSync(base::TimeDelta timeout);
   void Reset();
+  // Issues a snapshot request; the outcome arrives as kSnapshotCompleted
+  // (or kError) on the event handler -- synchronous Status only says whether
+  // the request was accepted.
+  Status TakeSnapshot(base::TimeDelta at, const std::string& file_path);
   Result<int64_t> SeekTo(base::TimeDelta position, SeekMode mode,
                          Player::SeekCB cb);
   // Runtime track switch (Phase 4). Accepted from any thread; the switch

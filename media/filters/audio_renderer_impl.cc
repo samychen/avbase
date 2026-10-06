@@ -130,6 +130,9 @@ void AudioRendererImpl::StartPlayingFrom(base::TimeDelta time) {
   }
   decoder_stream_.HoldReads(false);
   algorithm_.FlushBuffers();
+  // A seek invalidates the filter's buffered samples; rebuilding it is cheap
+  // and simpler than a graph-level flush.
+  filter_.reset();
   {
     base::AutoLock scoped(handoff_lock_);
     ring_count_ = 0;
@@ -160,6 +163,9 @@ void AudioRendererImpl::Flush(base::OnceClosure closure) {
     sink_->Flush();
   }
   algorithm_.FlushBuffers();
+  // A seek invalidates the filter's buffered samples; rebuilding it is cheap
+  // and simpler than a graph-level flush.
+  filter_.reset();
   {
     base::AutoLock scoped(handoff_lock_);
     ring_count_ = 0;
@@ -353,7 +359,47 @@ void AudioRendererImpl::OnDecoderOutput(
     // non-ok status here, so this is terminal rather than recoverable.
     return;
   } else if (buffer) {
-    algorithm_.EnqueueBuffer(std::move(buffer));
+    if (filter_graph_.empty()) {
+      algorithm_.EnqueueBuffer(std::move(buffer));
+    } else {
+      // The "af" stage: created on the first buffer, when the stream's real
+      // sample rate is known. A filter that fails to start is a config bug --
+      // fall back to the unfiltered path and say so once.
+      if (!filter_) {
+        if (!filter_factory_) {
+          LOG(ERROR) << "avbase.afilter: filter_graph set but no stage "
+                        "factory was injected (no-ffmpeg build?); playing "
+                        "unfiltered";
+          filter_graph_.clear();
+          algorithm_.EnqueueBuffer(std::move(buffer));
+          PreStretch();
+          task_runner_->PostTask(FROM_HERE, std::move(pump_again));
+          return;
+        }
+        filter_ = filter_factory_();
+        if (!filter_->Initialize(filter_graph_, buffer->sample_rate(),
+                                 buffer->channel_count(),
+                                 params_.frames_per_buffer())) {
+          LOG(ERROR) << "avbase.afilter: graph \"" << filter_graph_
+                     << "\" failed to start; playing unfiltered";
+          filter_.reset();
+          filter_graph_.clear();
+          algorithm_.EnqueueBuffer(std::move(buffer));
+          PreStretch();
+          task_runner_->PostTask(FROM_HERE, std::move(pump_again));
+          return;
+        }
+      }
+      std::vector<base::scoped_refptr<AudioBuffer>> filtered;
+      if (!filter_->Process(std::move(buffer), &filtered)) {
+        return;
+      }
+      for (auto& filtered_buffer : filtered) {
+        if (!filtered_buffer->end_of_stream()) {
+          algorithm_.EnqueueBuffer(std::move(filtered_buffer));
+        }
+      }
+    }
   } else {
     // kOk with no buffer is DecoderStream's drained-stream signal; without
     // this branch a fully buffered stream pumped a null read forever and the

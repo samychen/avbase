@@ -84,6 +84,7 @@
 #include "media/base/renderer_client.h"
 #include "media/base/text_decoder.h"
 #include "media/filters/audio_renderer_impl.h"
+#include "media/filters/audio_filter_stage.h"
 #include "media/filters/decoder_selector.h"
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/legacy/video_frame_compositor.h"
@@ -136,6 +137,10 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
     // Device period used until media/audio/ exists (gap 2). 1024 frames at
     // 48 kHz is ~21 ms, which is what ALSA and PulseAudio both default to.
     int audio_frames_per_buffer = 1024;
+    // config.audio.filter_graph ("af") + stage factory; forwarded into the
+    // audio renderer.
+    std::string audio_filter_graph;
+    AudioFilterStageFactory audio_filter_factory;
     // config.video.disabled / config.audio.disabled ("vn"/"an").
     bool video_disabled = false;
     bool audio_disabled = false;
@@ -179,6 +184,8 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
                        DemuxerStream* enabled_track,
                        base::OnceClosure change_completed_cb) override;
   RendererType GetRendererType() override;
+  void TakeSnapshot(base::TimeDelta at,
+                    Renderer::SnapshotFrameCallback callback) override;
 
   // For PipelineImpl's statistics aggregation.
   PipelineStatistics GetStatistics() const;

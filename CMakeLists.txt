@@ -45,7 +45,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 find_package(Threads REQUIRED)
 
 if(AVBASE_ENABLE_FFMPEG)
-  find_package(FFmpeg REQUIRED COMPONENTS avformat avcodec avutil swscale swresample)
+  find_package(FFmpeg REQUIRED COMPONENTS avformat avcodec avutil swscale swresample avfilter)
 endif()
 if(AVBASE_BUILD_TESTS)
   include(AvbaseThirdParty)

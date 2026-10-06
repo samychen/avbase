@@ -61,6 +61,7 @@
 #include "media/base/media_resource.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/renderer_client.h"
+#include "media/base/video_frame.h"
 #include "media/media_export.h"
 
 namespace avbase::media {
@@ -224,6 +225,17 @@ class AVBASE_MEDIA_EXPORT Renderer {
   virtual void EndAccurateSeek() {}
 
   virtual RendererType GetRendererType() = 0;
+
+  // Requests the frame the video leg is currently holding, for
+  // Player::TakeSnapshot. The callback runs on the media sequence: an error
+  // when the renderer has no video leg or holds no frame yet. The default
+  // runs the callback with that error immediately, so audio-only and mock
+  // renderers need no override. |at| is recorded for the host's
+  // correlation; the frame is "whatever is displayed when the request
+  // lands" -- snapshotting a past timestamp is accurate-seek territory.
+  using SnapshotFrameCallback =
+      base::OnceCallback<void(MediaError, base::scoped_refptr<VideoFrame>)>;
+  virtual void TakeSnapshot(base::TimeDelta at, SnapshotFrameCallback callback);
 
  protected:
   Renderer();

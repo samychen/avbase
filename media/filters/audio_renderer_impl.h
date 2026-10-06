@@ -104,6 +104,7 @@
 #include "media/filters/audio_renderer_algorithm.h"
 #include "media/filters/decoder_stream.h"
 #include "media/filters/legacy/av_sync_controller.h"
+#include "media/filters/audio_filter_stage.h"
 #include "media/media_export.h"
 
 namespace avbase::media {
@@ -141,6 +142,14 @@ class AVBASE_MEDIA_EXPORT AudioRendererImpl final
       base::scoped_refptr<base::SequencedTaskRunner> task_runner,
       std::vector<base::scoped_refptr<AudioDecoderFactory>> factories,
       AvSyncController* av_sync);
+  // config.audio.filter_graph ("af") plus the FFmpeg-side stage factory,
+  // injected by the host: the media layer never names the FFmpeg
+  // implementation (G2). An empty graph, or a graph without a factory, means
+  // the decode output feeds the algorithm directly.
+  void set_filter_graph(std::string graph, AudioFilterStageFactory factory) {
+    filter_graph_ = std::move(graph);
+    filter_factory_ = std::move(factory);
+  }
   AudioRendererImpl(const AudioRendererImpl&) = delete;
   AudioRendererImpl& operator=(const AudioRendererImpl&) = delete;
   ~AudioRendererImpl() override;
@@ -262,6 +271,11 @@ class AVBASE_MEDIA_EXPORT AudioRendererImpl final
 
   DecoderStream<AudioDecoderStreamTraits> decoder_stream_;
   AudioRendererAlgorithm algorithm_;
+  // The "af" filter stage, created lazily on the first decoded buffer (the
+  // graph needs the stream's real sample rate, which the decoder knows first).
+  std::string filter_graph_;
+  AudioFilterStageFactory filter_factory_;
+  std::unique_ptr<AudioFilterStage> filter_;
   base::scoped_refptr<AudioRendererSink> sink_;
 
   AudioParameters params_;

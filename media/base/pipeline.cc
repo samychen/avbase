@@ -32,6 +32,15 @@ void Pipeline::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
   (void)display;
 }
 
+void Pipeline::TakeSnapshot(base::TimeDelta at,
+                            Renderer::SnapshotFrameCallback callback) {
+  (void)at;
+  std::move(callback).Run(
+      MediaError(ErrorCode::kNotImplemented,
+                 "this pipeline does not support snapshots", {}, {}),
+      nullptr);
+}
+
 Pipeline::Pipeline() = default;
 Pipeline::~Pipeline() = default;
 
