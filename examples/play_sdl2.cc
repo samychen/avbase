@@ -10,6 +10,7 @@
 //
 // Exit codes: 0 played to completion (or the --max-seconds cap), 1 error.
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -26,6 +27,8 @@
 #include "platform/sdl2/sdl2_audio_sink.h"
 #include "platform/sdl2/sdl2_video_sink.h"
 #include "platform/sdl2/surface.h"
+#include "platform/sdl2/text_raster.h"
+#include "media/base/timed_text.h"
 #include "player/public/player.h"
 
 namespace {
@@ -40,6 +43,62 @@ constexpr int kWindowHeight = 540;
 std::atomic<bool> g_quit{false};
 std::atomic<bool> g_error{false};
 std::atomic<bool> g_completed{false};
+
+// The subtitle overlay the host publishes into (surface.h's TextOverlaySlot
+// contract): kTimedText events rasterize into it, kStats media time expires
+// it. Lives as long as |surface| below.
+TextOverlaySlot g_overlay;
+avbase::media::TimedTextCue g_current_cue;
+std::string g_font_path;
+bool g_text_track_selected{false};
+avbase::Player* g_player{nullptr};  // Set in main; outlives the event loop.
+
+// A first-cut font resolution: the demo is not the SDK. A real host points
+// at the user's configured font; these cover this machine's defaults.
+std::string FindDemoFont() {
+  for (const char* path :
+       {"/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"}) {
+    if (std::FILE* f = std::fopen(path, "rb")) {
+      std::fclose(f);
+      return path;
+    }
+  }
+  return "";
+}
+
+void OnTimedText(const avbase::TimedTextPayload& payload) {
+  if (g_font_path.empty()) {
+    return;
+  }
+  std::fprintf(stderr, "subtitle: %s\n", payload.text.c_str());
+  avbase::media::TextRaster raster;
+  avbase::media::RgbaBitmap bitmap;
+  const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  if (!raster.Rasterize(g_font_path, 28, white, payload.text, &bitmap) ||
+      bitmap.rgba.empty()) {
+    g_overlay.Clear();
+    g_current_cue = avbase::media::TimedTextCue();
+    return;
+  }
+  TextOverlay overlay;
+  overlay.width = bitmap.width;
+  overlay.height = bitmap.height;
+  overlay.rgba = std::move(bitmap.rgba);
+  // Bottom-center, sized against the demo window; a real host lays out
+  // against the actual drawable size and the cue's ASS rect if present.
+  constexpr int kWindowWidth = 960, kWindowHeight = 540;
+  overlay.w = std::min(0.9f, static_cast<float>(overlay.width) / kWindowWidth);
+  overlay.h = std::min(0.35f,
+                       static_cast<float>(overlay.height) / kWindowHeight);
+  overlay.x = (1.0f - overlay.w) / 2.0f;
+  overlay.y = 1.0f - overlay.h - 0.06f;
+  g_overlay.Publish(std::move(overlay));
+  g_current_cue.text = payload.text;
+  g_current_cue.pts = payload.pts;
+  g_current_cue.duration = payload.duration;
+}
 
 struct Options {
   std::string url;
@@ -80,7 +139,39 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
     g_error.store(true);
   } else if (e.type == avbase::EventType::kCompleted) {
     g_completed.store(true);
+  } else if (e.type == avbase::EventType::kStateChanged) {
+    // One-shot: auto-select the first text track once the pipeline is
+    // prepared, so the demo shows subtitles without extra flags. A real
+    // host drives this from its own track-picker UI.
+    const auto* state = avbase::AsStateChanged(e);
+    if (!g_text_track_selected && state &&
+        state->to == avbase::PlayerState::kPrepared) {
+      g_text_track_selected = true;
+      if (const auto info = g_player->media_info()) {
+        const int text_index =
+            info->FirstStreamOfKind(avbase::media::StreamKind::kText);
+        if (text_index >= 0) {
+          const auto st = g_player->SelectTrack(
+              avbase::media::DemuxerStreamType::kText, text_index);
+          std::fprintf(stderr, "DBG select(%d)=%d %s\n", text_index,
+                       st.has_value() ? 1 : 0,
+                       st.has_value() ? "" : st.error().ToString().c_str());
+        }
+      }
+    }
+  } else if (e.type == avbase::EventType::kTimedText) {
+    if (const auto* payload = avbase::AsTimedText(e)) {
+      OnTimedText(*payload);
+    }
   } else if (e.type == avbase::EventType::kStats) {
+    // Expire the published cue once the media clock passes its end. The 1 Hz
+    // stats cadence makes this coarse by up to a second; a host that cares
+    // schedules against its own clock instead.
+    if (g_current_cue.duration > avbase::base::TimeDelta() &&
+        e.media_time > g_current_cue.pts + g_current_cue.duration) {
+      g_overlay.Clear();
+      g_current_cue = avbase::media::TimedTextCue();
+    }
     std::printf("position %s / %s\n", e.media_time.ToString().c_str(), "--");
   }
 }
@@ -228,6 +319,8 @@ int main(int argc, char** argv) {
   surface.window = window;
   surface.renderer = renderer;
   surface.gl_context = gl_context;
+  surface.overlay = &g_overlay;
+  g_font_path = FindDemoFont();
   auto display = avbase::media::NativeDisplay::FromSdl2Window(&surface);
 
   auto deps = std::make_unique<avbase::Deps>();
@@ -237,6 +330,7 @@ int main(int argc, char** argv) {
       std::make_shared<avbase::media::Sdl2AudioSinkFactory>();
 
   avbase::Player player(avbase::PlayerConfig(), std::move(deps));
+  g_player = &player;
   player.SetEventHandler(avbase::base::BindRepeating(&OnPlayerEvent));
   player.SetVideoSurface(display);
   if (const avbase::Status s = player.SetDataSource(options.url); !s) {

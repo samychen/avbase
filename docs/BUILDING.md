@@ -184,8 +184,18 @@ ctest --preset macos-sdl2 --output-on-failure     # 预期 481 用例全绿
 矩阵按帧的 colorspace/range 选择，与 `video_convert.cc` 同一套色彩纪律）。宿主通过
 `Sdl2Surface::gl_context` 交出 GL context 即启用，不加则维持 SDL_Renderer 路径。
 `--gl` 带自愈：创建 context 后先做 shader 冒烟测试，GL 运行时坏的机器（如部分
-macOS 版本的 Apple OpenGL）自动回退 SDL_Renderer。FBO/多 pass（文字叠加、转场）
-是后续里程碑，本步刻意未移植。
+macOS 版本的 Apple OpenGL）自动回退 SDL_Renderer。FBO/多 pass 链（转场等多级
+滤镜）仍未移植——但字幕叠加这条第二绘制 pass 已就位。
+
+**字幕端到端**（两条呈现路径都支持）：播放器选中字幕轨后，cue 以
+`kTimedText` 事件交给宿主（`RendererImpl` 的 text 泵 + 直播丢旧策略早已存在）；
+`play_sdl2` 用 `platform/sdl2/text_raster.cc`（FreeType 光栅，可选依赖，没有
+FreeType 时宿主仍可发布自制位图）把 cue 画成 RGBA，经
+`Sdl2Surface::overlay`（`TextOverlaySlot`，线程安全的宿主发布/sink 快照契约）
+交给 sink，在视频上 alpha 混合。demo 自动选中第一条字幕轨并在 stderr 打印每条
+cue。注意：pinned FFmpeg 组件清单已包含 srt/ass/webvtt/mov_text 解码器——
+如果你有旧的 `tools/deps` 构建树，重跑一次 `tools/setup_ffmpeg.sh`（configure
+指纹变了会自动重配）。
 
 ---
 

@@ -15,6 +15,18 @@ if(AVBASE_ENABLE_SDL2)
       $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
   target_link_libraries(avbase_platform_sdl2 PUBLIC avbase::media SDL2::SDL2)
   target_compile_definitions(avbase_platform_sdl2 PRIVATE AVBASE_ENABLE_SDL2=1)
+  # Optional FreeType: the subtitle overlay's CPU rasterizer (text_raster.cc).
+  # Without it the overlay slot still works with host-supplied bitmaps; only
+  # TextRaster::Rasterize() is compiled out.
+  find_package(Freetype QUIET)
+  if(Freetype_FOUND)
+    target_link_libraries(avbase_platform_sdl2 PRIVATE Freetype::Freetype)
+    target_compile_definitions(avbase_platform_sdl2 PUBLIC
+        AVBASE_HAVE_FREETYPE=1)
+    message(STATUS "FreeType found -- TextRaster enabled")
+  else()
+    message(STATUS "FreeType not found -- TextRaster compiled out")
+  endif()
   avbase_configure_target(avbase_platform_sdl2)
 endif()
 if(AVBASE_ENABLE_LINUX_NATIVE)

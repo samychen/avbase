@@ -13,6 +13,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/threading/thread.h"
 #include "media/base/native_display.h"
+#include "platform/sdl2/surface.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
 #include "media/media_export.h"
@@ -59,6 +60,8 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
 
  private:
   void PresentOne();
+  // SDL_Renderer-path overlay pass; see Present()'s GL counterpart.
+  void PresentOverlay(void* renderer);  // SDL_Renderer*.
   // Uploads |frame| into the sink-owned streaming texture and presents it.
   // Returns false when the frame format is not one the sink draws.
   bool UploadAndPresent(const VideoFrame& frame);
@@ -75,9 +78,16 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
   void* texture_{nullptr};
   int texture_width_{0};
   int texture_height_{0};
+  // SDL_Renderer-path overlay state (mirrors the GL presenter's).
+  void* overlay_texture_{nullptr};
+  int overlay_width_{0};
+  int overlay_height_{0};
+  int last_overlay_version_{-1};
   // Set when the host supplied an SDL_GLContext; owns the shader path.
   void* gl_context_{nullptr};
   std::unique_ptr<GlPresenter> presenter_;
+  // Borrowed from the display's Sdl2Surface; may be null.
+  TextOverlaySlot* overlay_slot_{nullptr};
 
   // Cross-thread flags: written from any thread (Pause/Play/SetOutputTarget
   // are callable anywhere), read on the render thread.

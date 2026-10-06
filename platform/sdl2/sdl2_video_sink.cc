@@ -64,6 +64,7 @@ void Sdl2VideoSink::Start() {
     const auto* surface = static_cast<const Sdl2Surface*>(display_->raw());
     renderer_ = surface->renderer;
     gl_context_ = surface->gl_context;
+    overlay_slot_ = surface->overlay;
   }
   thread_ = std::make_unique<base::Thread>("avbase-sdl-video");
   thread_->Start();
@@ -91,6 +92,7 @@ void Sdl2VideoSink::Stop() {
   }
   renderer_ = nullptr;
   gl_context_ = nullptr;
+  overlay_slot_ = nullptr;
 }
 
 void Sdl2VideoSink::Pause() {
@@ -121,8 +123,10 @@ void Sdl2VideoSink::SetOutputTarget(
       display_->raw()) {
     const auto* surface = static_cast<const Sdl2Surface*>(display_->raw());
     gl_context_ = surface->gl_context;
+    overlay_slot_ = surface->overlay;
   } else {
     gl_context_ = nullptr;
+    overlay_slot_ = nullptr;
   }
 }
 
@@ -198,6 +202,7 @@ bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
     const auto* surface = static_cast<const Sdl2Surface*>(display_->raw());
     auto presenter = std::make_unique<GlPresenter>(surface->window,
                                                    gl_context_);
+    presenter->SetOverlaySource(overlay_slot_);
     if (!presenter->Init()) {
       // Context exists but the shader path is unusable (e.g. a GL 2.0-era
       // driver): report failure rather than silently degrade the picture.
@@ -266,8 +271,58 @@ bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
   }
   SDL_RenderClear(renderer);
   SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+  PresentOverlay(renderer_);
   SDL_RenderPresent(renderer);
   return true;
+}
+
+// The SDL_Renderer overlay pass: uploads the slot's bitmap into a streaming
+// RGBA texture when it changed and blends it at the host-published rect.
+// Mirrors the GL path's semantics so both backends composite identically.
+void Sdl2VideoSink::PresentOverlay(void* renderer) {
+  SDL_Renderer* sdl_renderer = static_cast<SDL_Renderer*>(renderer);
+  if (!overlay_slot_) {
+    return;
+  }
+  const TextOverlay overlay = overlay_slot_->Snapshot();
+  if (!overlay.valid || overlay.rgba.size() !=
+                            static_cast<size_t>(overlay.width) *
+                                static_cast<size_t>(overlay.height) * 4u) {
+    if (overlay_texture_) {
+      SDL_DestroyTexture(static_cast<SDL_Texture*>(overlay_texture_));
+      overlay_texture_ = nullptr;
+      last_overlay_version_ = -1;
+    }
+    return;
+  }
+  if (!overlay_texture_ || last_overlay_version_ != overlay.version ||
+      overlay_width_ != overlay.width || overlay_height_ != overlay.height) {
+    if (overlay_texture_) {
+      SDL_DestroyTexture(static_cast<SDL_Texture*>(overlay_texture_));
+    }
+    overlay_texture_ =
+        SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_ABGR8888,
+                          SDL_TEXTUREACCESS_STREAMING, overlay.width,
+                          overlay.height);
+    if (!overlay_texture_) {
+      return;
+    }
+    SDL_SetTextureBlendMode(static_cast<SDL_Texture*>(overlay_texture_),
+                            SDL_BLENDMODE_BLEND);
+    overlay_width_ = overlay.width;
+    overlay_height_ = overlay.height;
+    last_overlay_version_ = overlay.version;
+    SDL_UpdateTexture(static_cast<SDL_Texture*>(overlay_texture_), nullptr,
+                      overlay.rgba.data(), overlay.width * 4);
+  }
+  int out_w = 0;
+  int out_h = 0;
+  SDL_GetRendererOutputSize(sdl_renderer, &out_w, &out_h);
+  const SDL_Rect dest{
+      static_cast<int>(overlay.x * out_w), static_cast<int>(overlay.y * out_h),
+      static_cast<int>(overlay.w * out_w), static_cast<int>(overlay.h * out_h)};
+  SDL_RenderCopy(sdl_renderer,
+                 static_cast<SDL_Texture*>(overlay_texture_), nullptr, &dest);
 }
 
 std::unique_ptr<VideoRendererSink>

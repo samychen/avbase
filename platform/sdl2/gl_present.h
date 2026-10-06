@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "media/base/video_frame.h"
+#include "platform/sdl2/surface.h"
 
 namespace avbase::media {
 
@@ -41,6 +42,11 @@ class GlPresenter {
   // points and builds the program. Must be the first call.
   bool Init();
 
+  // Source for the overlay pass; may be null (no overlay) and may be called
+  // before or after Init(). Borrowed: the host keeps the slot alive for the
+  // sink's lifetime.
+  void SetOverlaySource(TextOverlaySlot* slot) { overlay_slot_ = slot; }
+
   // Uploads |frame| (kI420 / kYV12 / kNV12) and presents it. Returns false
   // when the format or geometry is not drawable; the caller reports a submit
   // failure. Honors the frame's colorspace/range by uploading the matching
@@ -55,6 +61,9 @@ class GlPresenter {
  private:
   struct Loader;  // Resolved GL entry points; defined in the .cc only.
   bool BuildProgram();
+  bool BuildOverlayProgram();
+  bool CompileProgram(const char* vertex_src, const char* fragment_src,
+                      unsigned int* out);
   // (Re)creates the three textures when the coded size or format moved.
   bool EnsureTextures(const VideoFrame& frame);
   void UploadPlanes(const VideoFrame& frame);
@@ -62,16 +71,28 @@ class GlPresenter {
   // in doubles, for the same reason video_convert.cc selects matrices
   // explicitly: a hard-wired BT.601 kernel is wrong for BT.709 HD sources.
   void UpdateColorUniforms(const VideoFrame& frame);
+  // (Re)creates the overlay RGBA texture when the slot published a new
+  // version.
+  bool EnsureOverlayTexture(const TextOverlay& overlay);
+  // Second draw pass: alpha-blends the slot's current bitmap over the video.
+  // A no-op without a slot or with nothing published.
+  void DrawOverlay();
 
   void* window_;     // SDL_Window*
   void* context_;    // SDL_GLContext
   bool gl_current_{false};
   std::unique_ptr<Loader> loader_;
+  TextOverlaySlot* overlay_slot_{nullptr};  // Borrowed; may be null.
 
-  unsigned int program_{0};  // GLuint
+  unsigned int program_{0};         // Video pass.
+  unsigned int overlay_program_{0};  // Overlay pass.
   unsigned int vao_{0};
   unsigned int vbo_{0};
   unsigned int textures_[3] = {0, 0, 0};
+  unsigned int overlay_texture_{0};
+  int overlay_version_{-1};
+  int overlay_width_{0};
+  int overlay_height_{0};
   int texture_width_{0};
   int texture_height_{0};
   int texture_format_{0};  // VideoFormat as int; 0 = kUnknown, i.e. none.

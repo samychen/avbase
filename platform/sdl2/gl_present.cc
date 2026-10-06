@@ -7,6 +7,7 @@
 #include <SDL.h>
 
 #include "base/logging.h"
+#include "platform/sdl2/gl_loader.h"
 
 // GL 3.3 core, resolved through SDL_GL_GetProcAddress. No GLEW: the entry
 // points live in this file's loader, the GL types are aliased locally, and
@@ -15,93 +16,6 @@
 
 namespace avbase::media {
 namespace {
-
-using GLuint = unsigned int;
-using GLenum = unsigned int;
-using GLint = int;
-using GLsizei = int;
-using GLfloat = float;
-using GLboolean = unsigned char;
-using GLsizeiptr = long;
-
-constexpr GLenum kGLTexture2D = 0x0DE1;
-constexpr GLenum kGLRed = 0x1903;
-constexpr GLenum kGLRG = 0x8227;
-constexpr GLenum kGLR8 = 0x8229;
-constexpr GLenum kGLRG8 = 0x822A;
-constexpr GLenum kGLUnsignedByte = 0x1401;
-constexpr GLenum kGLFloat = 0x1406;
-constexpr GLenum kGLLinear = 0x2601;
-constexpr GLenum kGLClampToEdge = 0x812F;
-constexpr GLenum kGLTextureWrapS = 0x2802;
-constexpr GLenum kGLTextureWrapT = 0x2803;
-constexpr GLenum kGLTextureMinFilter = 0x2801;
-constexpr GLenum kGLTextureMagFilter = 0x2800;
-constexpr GLenum kGLUnpackAlignment = 0x0CF5;
-constexpr GLenum kGLArrayBuffer = 0x8892;
-constexpr GLenum kGLStaticDraw = 0x88E4;
-constexpr GLenum kGLTriangleStrip = 0x0005;
-constexpr GLenum kGLColorBufferBit = 0x00004000;
-constexpr GLenum kGLActiveTexture0 = 0x84C0;
-constexpr GLenum kGLActiveTexture1 = 0x84C1;
-constexpr GLenum kGLActiveTexture2 = 0x84C2;
-constexpr GLenum kGLFragmentShader = 0x8B30;
-constexpr GLenum kGLVertexShader = 0x8B33;
-constexpr GLenum kGLCompileStatus = 0x8B81;
-constexpr GLenum kGLLinkStatus = 0x8B82;
-
-// GLAPIENTRY is not defined without GL headers; every entry point here uses
-// the platform's standard calling convention.
-#ifndef GLAPIENTRY
-#define GLAPIENTRY
-#endif
-
-// One entry point per row: (name, return type, parameter list); resolved
-// once in Init() via SDL_GL_GetProcAddress.
-#define AVBASE_GL_FOREACH(F)                                                   \
-  F(CreateShader, GLuint, (GLenum))                                            \
-  F(ShaderSource, void, (GLuint, GLsizei, const char* const*, const GLint*))   \
-  F(CompileShader, void, (GLuint))                                             \
-  F(GetShaderiv, void, (GLuint, GLenum, GLint*))                               \
-  F(GetShaderInfoLog, void, (GLuint, GLsizei, GLsizei*, char*))                \
-  F(CreateProgram, GLuint, (void))                                             \
-  F(AttachShader, void, (GLuint, GLuint))                                      \
-  F(LinkProgram, void, (GLuint))                                               \
-  F(GetProgramiv, void, (GLuint, GLenum, GLint*))                              \
-  F(GetProgramInfoLog, void, (GLuint, GLsizei, GLsizei*, char*))               \
-  F(UseProgram, void, (GLuint))                                                \
-  F(GetUniformLocation, GLint, (GLuint, const char*))                          \
-  F(Uniform1i, void, (GLint, GLint))                                           \
-  F(Uniform3f, void, (GLint, GLfloat, GLfloat, GLfloat))                       \
-  F(UniformMatrix3fv, void, (GLint, GLsizei, GLboolean, const GLfloat*))       \
-  F(DeleteShader, void, (GLuint))                                              \
-  F(DeleteProgram, void, (GLuint))                                             \
-  F(GenVertexArrays, void, (GLsizei, GLuint*))                                 \
-  F(BindVertexArray, void, (GLuint))                                           \
-  F(DeleteVertexArrays, void, (GLsizei, const GLuint*))                        \
-  F(GenBuffers, void, (GLsizei, GLuint*))                                      \
-  F(BindBuffer, void, (GLenum, GLuint))                                        \
-  F(BufferData, void, (GLenum, GLsizeiptr, const void*, GLenum))               \
-  F(DeleteBuffers, void, (GLsizei, const GLuint*))                             \
-  F(EnableVertexAttribArray, void, (GLuint))                                   \
-  F(VertexAttribPointer, void,                                                 \
-    (GLuint, GLint, GLenum, GLboolean, GLsizei, const void*))                  \
-  F(GenTextures, void, (GLsizei, GLuint*))                                     \
-  F(BindTexture, void, (GLenum, GLuint))                                       \
-  F(DeleteTextures, void, (GLsizei, const GLuint*))                            \
-  F(TexImage2D, void,                                                          \
-    (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum,            \
-     const void*))                                                             \
-  F(TexSubImage2D, void,                                                       \
-    (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum,            \
-     const void*))                                                             \
-  F(TexParameteri, void, (GLenum, GLenum, GLint))                              \
-  F(PixelStorei, void, (GLenum, GLint))                                        \
-  F(ActiveTexture, void, (GLenum))                                             \
-  F(Viewport, void, (GLint, GLint, GLsizei, GLsizei))                          \
-  F(ClearColor, void, (GLfloat, GLfloat, GLfloat, GLfloat))                    \
-  F(Clear, void, (GLenum))                                                     \
-  F(DrawArrays, void, (GLenum, GLint, GLsizei))
 
 // Ported from MediaComponent framework/render/gl/shader_source_common.h
 // (kQuadVertexShader), trimmed to what a display pass needs.
@@ -131,6 +45,29 @@ void main() {
         : vec2(texture(uTexU, vTexCoord).r, texture(uTexV, vTexCoord).r);
     vec3 rgb = uMatrix * (vec3(y, uv) - uOffset);
     fragColor = vec4(clamp(rgb, 0.0, 1.0), 1.0);
+}
+)";
+
+// The overlay pass: same quad geometry, positioned by uRect (NDC), straight
+// alpha blended over whatever the video pass left in the framebuffer.
+constexpr char kOverlayVertexShader[] = R"(#version 330 core
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec2 aTexCoord;
+out vec2 vTexCoord;
+uniform vec4 uRect;
+void main() {
+    vec2 pos = aPos * uRect.zw + uRect.xy;
+    gl_Position = vec4(pos, 0.0, 1.0);
+    vTexCoord = aTexCoord;
+}
+)";
+
+constexpr char kOverlayFragmentShader[] = R"(#version 330 core
+in vec2 vTexCoord;
+out vec4 fragColor;
+uniform sampler2D uTex;
+void main() {
+    fragColor = texture(uTex, vTexCoord);
 }
 )";
 
@@ -182,14 +119,9 @@ YuvMatrix SelectMatrix(const VideoColorSpace& cs) {
 
 }  // namespace
 
-// The resolved entry points. A separate struct keeps the sink header free of
-// anything GL-shaped.
-struct GlPresenter::Loader {
-#define AVBASE_GL_MEMBER(name, ret, params) \
-  ret(GLAPIENTRY* name) params = nullptr;
-  AVBASE_GL_FOREACH(AVBASE_GL_MEMBER)
-#undef AVBASE_GL_MEMBER
-};
+// The resolved entry points, as a distinct type so the sink header stays
+// free of anything GL-shaped.
+struct GlPresenter::Loader : GlLoader {};
 
 GlPresenter::GlPresenter(void* window, void* context)
     : window_(window), context_(context) {}
@@ -209,16 +141,11 @@ bool GlPresenter::Init() {
   }
   gl_current_ = true;
   loader_ = std::make_unique<Loader>();
-#define AVBASE_GL_RESOLVE(name, ret, params)                          \
-  loader_->name =                                                     \
-      reinterpret_cast<decltype(loader_->name)>(                      \
-          SDL_GL_GetProcAddress("gl" #name));                              \
-  if (!loader_->name) {                                               \
-    LOG(ERROR) << "gl present: missing GL entry point " << #name;     \
-    return false;                                                     \
+  std::string missing;
+  if (!ResolveGl(loader_.get(), &missing)) {
+    LOG(ERROR) << "gl present: missing GL entry point " << missing;
+    return false;
   }
-  AVBASE_GL_FOREACH(AVBASE_GL_RESOLVE)
-#undef AVBASE_GL_RESOLVE
   if (!BuildProgram()) {
     return false;
   }
@@ -245,16 +172,19 @@ bool GlPresenter::Init() {
   loader_->Uniform1i(loader_->GetUniformLocation(program_, "uTexY"), 0);
   loader_->Uniform1i(loader_->GetUniformLocation(program_, "uTexU"), 1);
   loader_->Uniform1i(loader_->GetUniformLocation(program_, "uTexV"), 2);
+  if (!BuildOverlayProgram()) {
+    return false;
+  }
   return true;
 }
 
-bool GlPresenter::BuildProgram() {
+bool GlPresenter::CompileProgram(const char* vertex_src,
+                                 const char* fragment_src,
+                                 unsigned int* out) {
   const GLuint vertex = loader_->CreateShader(kGLVertexShader);
   const GLuint fragment = loader_->CreateShader(kGLFragmentShader);
-  const char* vertex_src = kVertexShader;
   loader_->ShaderSource(vertex, 1, &vertex_src, nullptr);
   loader_->CompileShader(vertex);
-  const char* fragment_src = kFragmentShader;
   loader_->ShaderSource(fragment, 1, &fragment_src, nullptr);
   loader_->CompileShader(fragment);
   auto check_shader = [&](GLuint shader, const char* what) {
@@ -270,21 +200,84 @@ bool GlPresenter::BuildProgram() {
   if (!check_shader(vertex, "vertex") || !check_shader(fragment, "fragment")) {
     return false;
   }
-  program_ = loader_->CreateProgram();
-  loader_->AttachShader(program_, vertex);
-  loader_->AttachShader(program_, fragment);
-  loader_->LinkProgram(program_);
+  const GLuint program = loader_->CreateProgram();
+  loader_->AttachShader(program, vertex);
+  loader_->AttachShader(program, fragment);
+  loader_->LinkProgram(program);
   GLint status = 0;
-  loader_->GetProgramiv(program_, kGLLinkStatus, &status);
+  loader_->GetProgramiv(program, kGLLinkStatus, &status);
   if (!status) {
     char log[512] = {0};
-    loader_->GetProgramInfoLog(program_, sizeof(log), nullptr, log);
+    loader_->GetProgramInfoLog(program, sizeof(log), nullptr, log);
     LOG(ERROR) << "gl present: link: " << log;
     return false;
   }
   loader_->DeleteShader(vertex);
   loader_->DeleteShader(fragment);
+  *out = program;
   return true;
+}
+
+bool GlPresenter::BuildProgram() {
+  return CompileProgram(kVertexShader, kFragmentShader, &program_);
+}
+
+bool GlPresenter::BuildOverlayProgram() {
+  if (!CompileProgram(kOverlayVertexShader, kOverlayFragmentShader,
+                      &overlay_program_)) {
+    return false;
+  }
+  loader_->UseProgram(overlay_program_);
+  loader_->Uniform1i(loader_->GetUniformLocation(overlay_program_, "uTex"), 0);
+  return true;
+}
+
+// (Re)creates the overlay RGBA texture and records which slot version it
+// holds; Present re-uploads whenever the slot publishes a new version.
+bool GlPresenter::EnsureOverlayTexture(const TextOverlay& overlay) {
+  if (overlay_texture_ && overlay_version_ == overlay.version &&
+      overlay_width_ == overlay.width && overlay_height_ == overlay.height) {
+    return true;
+  }
+  if (!overlay_texture_) {
+    loader_->GenTextures(1, &overlay_texture_);
+  }
+  loader_->BindTexture(kGLTexture2D, overlay_texture_);
+  loader_->TexImage2D(kGLTexture2D, 0, kGLRGBA8, overlay.width, overlay.height,
+                      0, kGLRGBA, kGLUnsignedByte, overlay.rgba.data());
+  loader_->TexParameteri(kGLTexture2D, kGLTextureMinFilter, kGLLinear);
+  loader_->TexParameteri(kGLTexture2D, kGLTextureMagFilter, kGLLinear);
+  loader_->TexParameteri(kGLTexture2D, kGLTextureWrapS, kGLClampToEdge);
+  loader_->TexParameteri(kGLTexture2D, kGLTextureWrapT, kGLClampToEdge);
+  overlay_version_ = overlay.version;
+  overlay_width_ = overlay.width;
+  overlay_height_ = overlay.height;
+  return true;
+}
+
+void GlPresenter::DrawOverlay() {
+  if (!overlay_slot_) {
+    return;
+  }
+  const TextOverlay overlay = overlay_slot_->Snapshot();
+  if (!overlay.valid || overlay.rgba.size() !=
+                            static_cast<size_t>(overlay.width) *
+                                static_cast<size_t>(overlay.height) * 4u) {
+    return;
+  }
+  if (!EnsureOverlayTexture(overlay)) {
+    return;
+  }
+  loader_->Enable(kGLBlend);
+  loader_->BlendFunc(kGLSrcAlpha, kGLOneMinusSrcAlpha);
+  loader_->UseProgram(overlay_program_);
+  loader_->Uniform4f(loader_->GetUniformLocation(overlay_program_, "uRect"),
+                     overlay.x, overlay.y, overlay.w, overlay.h);
+  loader_->ActiveTexture(kGLActiveTexture0);
+  loader_->BindTexture(kGLTexture2D, overlay_texture_);
+  loader_->BindVertexArray(vao_);
+  loader_->DrawArrays(kGLTriangleStrip, 0, 4);
+  loader_->Disable(kGLBlend);
 }
 
 bool GlPresenter::EnsureTextures(const VideoFrame& frame) {
@@ -408,6 +401,7 @@ bool GlPresenter::Present(const VideoFrame& frame) {
   loader_->BindTexture(kGLTexture2D, textures_[2]);
   loader_->BindVertexArray(vao_);
   loader_->DrawArrays(kGLTriangleStrip, 0, 4);
+  DrawOverlay();
   SDL_GL_SwapWindow(static_cast<SDL_Window*>(window_));
   return true;
 }
@@ -422,6 +416,10 @@ void GlPresenter::Shutdown() {
                      static_cast<SDL_GLContext>(context_));
   loader_->DeleteTextures(3, textures_);
   textures_[0] = textures_[1] = textures_[2] = 0;
+  if (overlay_texture_) {
+    loader_->DeleteTextures(1, &overlay_texture_);
+    overlay_texture_ = 0;
+  }
   loader_->DeleteBuffers(1, &vbo_);
   vbo_ = 0;
   loader_->DeleteVertexArrays(1, &vao_);

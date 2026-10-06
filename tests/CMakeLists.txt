@@ -79,6 +79,16 @@ avbase_add_unittest(player_unittests
     SOURCES ${AVBASE_PLAYER_UNITTEST_SOURCES}
     DEPS avbase::player avbase::base_test_support)
 
+# ---- platform/sdl2: CPU-side pieces of the SDL2 backend (the text
+# rasterizer). Runs headless; the GL presentation itself has no window in CI.
+if(AVBASE_ENABLE_SDL2)
+  file(GLOB AVBASE_SDL2_UNITTEST_SOURCES CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/unit/sdl2/*.cc")
+  avbase_add_unittest(sdl2_unittests
+      SOURCES ${AVBASE_SDL2_UNITTEST_SOURCES}
+      DEPS avbase::platform_sdl2)
+endif()
+
 # ---- media + FFmpeg: real containers, labelled needs-ffmpeg so the
 # no-ffmpeg gate (design goal G2) skips them.
 if(AVBASE_ENABLE_FFMPEG)
