@@ -199,9 +199,9 @@ macOS 版本的 Apple OpenGL）自动回退 SDL_Renderer。FBO/多 pass 链（�
   改格式的图需自带 aresample+aformat 尾巴。
 - remux：`RemuxContainer(src, dst)` 包级流拷贝（mp4/mkv/adts 容器），
   不重编码。
-- 视频滤镜：`VideoFilterStage` + FFmpeg 实现已就绪并通过像素级单测
-  （hflip 等），接线进 VideoRendererImpl 的注入点与 P2 同型，是最后一个
-  未接线的消费点。
+- 视频滤镜：`config.video.filter_graph`（"vf"）与音频同构——注入式
+  `VideoFilterStage`，在解码输出与 compositor 之间执行；分辨率变化（Δ3）
+  自动重建滤镜，seek 冲刷即重置。像素级单测（hflip/null/非法图）。
 - HLS：pinned FFmpeg 启用 `hls` demuxer，经常规 Demuxer 直接打开 m3u8
   （本地与 http 均可；https 需 `AVBASE_FFMPEG_DEPS=openssl`）。
 - SEI 时码：`TimecodeFromFrame` 读 ST 12-1 side data（直播对齐用）。

@@ -24,6 +24,7 @@
 #include "media/base/media_log.h"
 #if AVBASE_ENABLE_FFMPEG
 #include "media/filters/ffmpeg_audio_filter.h"
+#include "media/filters/ffmpeg_video_filter.h"
 #include "media/filters/ffmpeg_decoder_factories.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/ffmpeg_text_decoder.h"
@@ -247,10 +248,15 @@ Status PlayerImpl::PrepareAsync() {
 
   media::DefaultRendererFactory::Deps factory_deps;
   factory_deps.audio_filter_graph = config_.audio.filter_graph;
+  factory_deps.video_filter_graph = config_.video.filter_graph;
 #if AVBASE_ENABLE_FFMPEG
   factory_deps.audio_filter_factory = [] {
     return std::unique_ptr<media::AudioFilterStage>(
         std::make_unique<media::FFmpegAudioFilter>());
+  };
+  factory_deps.video_filter_factory = [] {
+    return std::unique_ptr<media::VideoFilterStage>(
+        std::make_unique<media::FFmpegVideoFilter>());
   };
 #endif
   factory_deps.video_task_runner = video_thread_.task_runner();

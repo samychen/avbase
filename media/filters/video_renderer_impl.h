@@ -86,6 +86,7 @@
 #include "base/time/time.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/renderer.h"
+#include "media/filters/video_filter_stage.h"
 #include "media/base/video_decoder_factory.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
@@ -129,6 +130,15 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   // Runs on S3. The sink is adopted but not started until StartPlayingFrom().
   void Initialize(DemuxerStream* stream,
                   std::unique_ptr<VideoRendererSink> sink, InitializeCB cb);
+
+  // config.video.filter_graph ("vf") plus the FFmpeg-side stage factory,
+  // injected by the host (same G2-safe seam as the audio stage). Set before
+  // Initialize(). Empty (default) means decoded frames feed the compositor
+  // directly.
+  void set_filter_graph(std::string graph, VideoFilterStageFactory factory) {
+    filter_graph_ = std::move(graph);
+    filter_factory_ = std::move(factory);
+  }
 
   // Which decoder kind to prefer, and which codecs a hardware path may take.
   // Must be called before Initialize(); it is what makes
@@ -266,6 +276,12 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   bool preference_set_{false};
   DecoderStream<VideoDecoderStreamTraits> decoder_stream_;
   VideoFrameCompositor compositor_;
+  // The "vf" filter stage, created lazily on the first decoded frame (the
+  // graph needs the real coded geometry). A resolution change (Δ3) rebuilds
+  // it; a seek flush discards it.
+  std::string filter_graph_;
+  VideoFilterStageFactory filter_factory_;
+  std::unique_ptr<VideoFilterStage> filter_;
   std::unique_ptr<VideoRendererSink> sink_;
   base::RepeatingClosure ended_cb_;
   FramePresentedCB frame_presented_cb_;

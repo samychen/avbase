@@ -21,6 +21,7 @@
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/legacy/video_frame_compositor.h"
 #include "media/filters/audio_filter_stage.h"
+#include "media/filters/video_filter_stage.h"
 #include "media/media_export.h"
 
 namespace avbase::media {
@@ -65,6 +66,8 @@ class AVBASE_MEDIA_EXPORT DefaultRendererFactory final
     // injected. Forwarded through RendererImpl into AudioRendererImpl.
     std::string audio_filter_graph;
     AudioFilterStageFactory audio_filter_factory;
+    std::string video_filter_graph;
+    VideoFilterStageFactory video_filter_factory;
     // config.video.decoder_preference and config.video.hw_codecs, forwarded to
     // VideoRendererImpl so the ranking happens against the real stream config
     // (see the setter's comment for why it is not done here). Unset means the

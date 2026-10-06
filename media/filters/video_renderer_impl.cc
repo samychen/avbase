@@ -159,6 +159,7 @@ void VideoRendererImpl::StartPlayingFrom(base::TimeDelta time) {
   }
   decoder_stream_.HoldReads(false);
   compositor_.Flush();
+  filter_.reset();
   ended_ = false;
   paused_ = false;
   compositor_.SetPaused(false);
@@ -180,6 +181,7 @@ void VideoRendererImpl::Flush(int32_t serial, base::OnceClosure closure) {
     sink_->Flush();
   }
   compositor_.Flush();
+  filter_.reset();
   ended_ = false;
   serial_ = serial;
   // Hold reads until StartPlayingFrom adopts the new generation: the pump is
@@ -351,6 +353,44 @@ void VideoRendererImpl::OnDecoderOutput(base::OnceClosure pump_again,
     return;
   }
   if (frame) {
+    // The "vf" stage: created on the first frame (real coded geometry), and
+    // rebuilt whenever the geometry moves (Δ3 resolution change). A filter
+    // that fails to start is a config bug -- fall back to unfiltered and
+    // say so once.
+    if (!filter_graph_.empty()) {
+      if (filter_ && filter_->CodedSize() != frame->coded_size()) {
+        filter_.reset();
+      }
+      if (!filter_) {
+        if (!filter_factory_) {
+          LOG(ERROR) << "avbase.vfilter: filter_graph set but no stage "
+                        "factory was injected (no-ffmpeg build?); playing "
+                        "unfiltered";
+          filter_graph_.clear();
+        } else {
+          filter_ = filter_factory_();
+          if (!filter_->Initialize(filter_graph_, frame->format(),
+                                   frame->coded_size())) {
+            LOG(ERROR) << "avbase.vfilter: graph \"" << filter_graph_
+                       << "\" failed to start; playing unfiltered";
+            filter_.reset();
+            filter_graph_.clear();
+          }
+        }
+      }
+    }
+    if (filter_) {
+      base::scoped_refptr<VideoFrame> filtered;
+      if (!filter_->Process(std::move(frame), &filtered)) {
+        return;
+      }
+      frame = std::move(filtered);
+    }
+    if (!frame) {
+      // The graph buffered the frame (EAGAIN); nothing to present now.
+      task_runner_->PostTask(FROM_HERE, std::move(pump_again));
+      return;
+    }
     // Publish immediately: decode and pacing are one causal step (see the
     // threading note in the header for why this is not posted to S1).
     compositor_.PutCurrentFrame(std::move(frame));

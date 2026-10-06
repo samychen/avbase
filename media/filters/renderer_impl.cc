@@ -191,6 +191,10 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
     video_ = std::make_unique<VideoRendererImpl>(
         deps_.video_task_runner, deps_.video_factories, deps_.tick_clock,
         deps_.compositor_thresholds);
+    if (!deps_.video_filter_graph.empty()) {
+      video_->set_filter_graph(deps_.video_filter_graph,
+                               deps_.video_filter_factory);
+    }
     // Forwarded, not applied here: the ranking needs the stream's config, which
     // only exists once Initialize() runs on S3 (see
     // VideoRendererImpl::set_decoder_preference).

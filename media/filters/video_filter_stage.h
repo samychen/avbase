@@ -30,6 +30,10 @@ class AVBASE_MEDIA_EXPORT VideoFilterStage {
   // null out. False on internal failure.
   virtual bool Process(base::scoped_refptr<VideoFrame> in,
                        base::scoped_refptr<VideoFrame>* out) = 0;
+
+  // The geometry the stage was built for; the renderer rebuilds the stage
+  // when a frame arrives with a different one (resolution change, Δ3).
+  virtual const Size& CodedSize() const = 0;
 };
 
 using VideoFilterStageFactory =

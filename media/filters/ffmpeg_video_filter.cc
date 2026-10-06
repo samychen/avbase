@@ -122,6 +122,10 @@ bool FFmpegVideoFilter::Initialize(const std::string& graph,
   return true;
 }
 
+const Size& FFmpegVideoFilter::CodedSize() const {
+  return ctx_->coded_size;
+}
+
 bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
                                 base::scoped_refptr<VideoFrame>* out) {
   if (!ctx_ || !out) {

@@ -26,6 +26,7 @@ class FFmpegVideoFilter final : public VideoFilterStage {
                   const Size& coded_size) override;
   bool Process(base::scoped_refptr<VideoFrame> in,
                base::scoped_refptr<VideoFrame>* out) override;
+  const Size& CodedSize() const override;
 
  private:
   struct Context;

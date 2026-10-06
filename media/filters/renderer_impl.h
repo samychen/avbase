@@ -86,6 +86,7 @@
 #include "media/filters/audio_renderer_impl.h"
 #include "media/filters/audio_filter_stage.h"
 #include "media/filters/decoder_selector.h"
+#include "media/filters/video_filter_stage.h"
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/legacy/video_frame_compositor.h"
 #include "media/filters/video_renderer_impl.h"
@@ -141,6 +142,10 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
     // audio renderer.
     std::string audio_filter_graph;
     AudioFilterStageFactory audio_filter_factory;
+    // config.video.filter_graph ("vf") + stage factory; forwarded into the
+    // video renderer.
+    std::string video_filter_graph;
+    VideoFilterStageFactory video_filter_factory;
     // config.video.disabled / config.audio.disabled ("vn"/"an").
     bool video_disabled = false;
     bool audio_disabled = false;
