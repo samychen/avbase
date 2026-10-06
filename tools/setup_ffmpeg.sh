@@ -443,6 +443,7 @@ configure_flags() {
 --enable-demuxer=mov,matroska,mpegts,flv,mp3,wav,ogg,aac,h264,hevc,avi,mpegps
 --enable-parser=h264,hevc,aac,mp3,vp9,opus,mpeg4video
 --enable-decoder=h264,hevc,aac,mp3,vp9,opus,mpeg4
+--enable-decoder=srt,ass,webvtt,mov_text,subrip
 --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
 --enable-muxer=null
 --enable-filter=null
@@ -465,14 +466,16 @@ build_one() {
   local stamp="${build_dir}/.avbase-configured"
 
   echo "==> Configuring (${mode}) into ${build_dir}"
-  if [ -f "${stamp}" ] && [ "$(cat "${stamp}")" = "${PREFIX}|${VERSION}|${mode}|${DEPS}|${FF_EXTRA_FLAGS}" ]; then
+  local flags_fingerprint
+  flags_fingerprint="$(configure_flags | shasum | cut -c1-12)"
+  if [ -f "${stamp}" ] && [ "$(cat "${stamp}")" = "${PREFIX}|${VERSION}|${mode}|${DEPS}|${FF_EXTRA_FLAGS}|${flags_fingerprint}" ]; then
     echo "    configure stamp matches, skipping (delete ${build_dir} to force)"
   else
     rm -rf "${build_dir}"
     mkdir -p "${build_dir}"
     (cd "${build_dir}" && PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
         "${SRC_TREE}/configure" $(configure_flags) "${extra_flags[@]}" ${FF_EXTRA_FLAGS})
-    echo "${PREFIX}|${VERSION}|${mode}|${DEPS}|${FF_EXTRA_FLAGS}" > "${stamp}"
+    echo "${PREFIX}|${VERSION}|${mode}|${DEPS}|${FF_EXTRA_FLAGS}|${flags_fingerprint}" > "${stamp}"
   fi
 
   echo "==> Building (${mode}) with -j${JOBS}"
