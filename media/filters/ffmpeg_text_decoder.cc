@@ -35,9 +35,12 @@ TimedTextCue MakeCue(const AVSubtitle& sub, base::TimeDelta packet_pts,
         ass += "\n";
       }
       ass += rect->ass;
-      // ASS dialogue lines carry their own formatting prefix
-      // (Dialogue: ...,layer,...,Text). For the plain-text view, strip the
-      // ASS markup braces so the default consumer still sees the words.
+      // ASS dialogue lines carry their own formatting prefix and markup.
+      // For the plain-text view: strip the {...} override blocks, cut the
+      // dialogue field header (ffmpeg's rect->ass is
+      // "ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text" -- the text starts
+      // after the 8th comma), and turn ASS line-break escapes into real
+      // newlines so the default consumer still sees the words.
       std::string line = rect->ass;
       std::string plain;
       bool in_braces = false;
@@ -49,6 +52,29 @@ TimedTextCue MakeCue(const AVSubtitle& sub, base::TimeDelta packet_pts,
         } else if (!in_braces) {
           plain += ch;
         }
+      }
+      int commas = 0;
+      size_t text_start = 0;
+      for (size_t i = 0; i < plain.size() && commas < 8; ++i) {
+        if (plain[i] == ',') {
+          ++commas;
+          text_start = i + 1;
+        }
+      }
+      if (commas == 8) {
+        plain = plain.substr(text_start);
+      }
+      for (size_t pos = plain.find("\\N"); pos != std::string::npos;
+           pos = plain.find("\\N")) {
+        plain.replace(pos, 2, "\n");
+      }
+      for (size_t pos = plain.find("\\n"); pos != std::string::npos;
+           pos = plain.find("\\n")) {
+        plain.replace(pos, 2, "\n");
+      }
+      for (size_t pos = plain.find("\\h"); pos != std::string::npos;
+           pos = plain.find("\\h")) {
+        plain.replace(pos, 2, " ");
       }
       if (!text.empty()) {
         text += "\n";
