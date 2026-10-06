@@ -55,9 +55,12 @@ LINE_LIMIT_ALLOWLIST = {
              "switch added ~170 lines (docs/12 4.1); splitting the track "
              "switches into their own TU is the pending fix."),
     "player/player_impl.cc": (
-        530, "The facade: config validation, the source/pipeline lifecycle, "
+        500, "The facade: config validation, the source/pipeline lifecycle, "
              "track selection, options and the public event surface. Its "
-             "difficulty is breadth rather than any one function."),
+             "difficulty is breadth rather than any one function. Was 530 "
+             "while Stop/StopSync/Reset lived here; the stopping half moved "
+             "to player_impl_stop.cc (C1 split) and the ceiling moved down "
+             "with it."),
     "media/filters/ffmpeg_demuxer.cc": (
         1140, "FFmpeg container/codec adaptation: two config builders, the "
               "MediaInfo walk, the demux loop and the seek path. Chromium's "

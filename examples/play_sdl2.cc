@@ -51,6 +51,8 @@ TextOverlaySlot g_overlay;
 avbase::media::TimedTextCue g_current_cue;
 std::string g_font_path;
 bool g_text_track_selected{false};
+int g_video_width{0};
+int g_video_height{0};
 avbase::Player* g_player{nullptr};  // Set in main; outlives the event loop.
 
 // A first-cut font resolution: the demo is not the SDK. A real host points
@@ -86,14 +88,31 @@ void OnTimedText(const avbase::TimedTextPayload& payload) {
   overlay.width = bitmap.width;
   overlay.height = bitmap.height;
   overlay.rgba = std::move(bitmap.rgba);
-  // Bottom-center, sized against the demo window; a real host lays out
-  // against the actual drawable size and the cue's ASS rect if present.
-  constexpr int kWindowWidth = 960, kWindowHeight = 540;
-  overlay.w = std::min(0.9f, static_cast<float>(overlay.width) / kWindowWidth);
-  overlay.h = std::min(0.35f,
-                       static_cast<float>(overlay.height) / kWindowHeight);
-  overlay.x = (1.0f - overlay.w) / 2.0f;
-  overlay.y = 1.0f - overlay.h - 0.06f;
+  // Placement: an ASS-positioned cue (nonzero w/h, in video pixels) is
+  // honoured against the video size; anything else goes bottom-center, the
+  // subtitle convention. Fraction units, because the sink scales to the
+  // drawable on both presentation paths.
+  if (payload.w > 0 && payload.h > 0 && g_video_width > 0 &&
+      g_video_height > 0) {
+    overlay.x = std::min(1.0f, static_cast<float>(payload.x) /
+                                   static_cast<float>(g_video_width));
+    overlay.y = std::min(1.0f, static_cast<float>(payload.y) /
+                                   static_cast<float>(g_video_height));
+    overlay.w = std::min(1.0f - overlay.x,
+                         static_cast<float>(payload.w) /
+                             static_cast<float>(g_video_width));
+    overlay.h = std::min(1.0f - overlay.y,
+                         static_cast<float>(payload.h) /
+                             static_cast<float>(g_video_height));
+  } else {
+    constexpr int kWindowWidth = 960, kWindowHeight = 540;
+    overlay.w =
+        std::min(0.9f, static_cast<float>(overlay.width) / kWindowWidth);
+    overlay.h =
+        std::min(0.35f, static_cast<float>(overlay.height) / kWindowHeight);
+    overlay.x = (1.0f - overlay.w) / 2.0f;
+    overlay.y = 1.0f - overlay.h - 0.06f;
+  }
   g_overlay.Publish(std::move(overlay));
   g_current_cue.text = payload.text;
   g_current_cue.pts = payload.pts;
@@ -158,6 +177,11 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
                        st.has_value() ? "" : st.error().ToString().c_str());
         }
       }
+    }
+  } else if (e.type == avbase::EventType::kVideoSizeChanged) {
+    if (const auto* payload = avbase::AsVideoSizeChanged(e)) {
+      g_video_width = payload->natural_size.width;
+      g_video_height = payload->natural_size.height;
     }
   } else if (e.type == avbase::EventType::kTimedText) {
     if (const auto* payload = avbase::AsTimedText(e)) {

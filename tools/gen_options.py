@@ -112,7 +112,28 @@ def parse_player_config(root: pathlib.Path) -> dict:
     path = root / CONFIG_H
     if not path.exists():
         return {}
-    lines = strip_comments(path.read_text(encoding="utf-8", errors="replace"))
+    raw = strip_comments(path.read_text(encoding="utf-8", errors="replace"))
+    # Join physical lines into statements: an initializer may wrap
+    # ("base::TimeDelta accurate_timeout{\n base::Seconds(5)};"), and the
+    # FIELD_RE below is a one-line matcher -- a wrapped field used to vanish
+    # from the parsed set and surface as a bogus FIELD_MISSING.
+    lines: list[str] = []
+    buf = ""
+    for line in raw:
+        buf += line
+        stripped = buf.strip()
+        # Statement boundaries: a ';' ends a field; a declaration block's
+        # opening '{' (namespace/struct/class/enum) ends its header line. A
+        # FIELD's own '{' must NOT split -- "base::TimeDelta x{" continuing
+        # on the next line is exactly the wrapped-initializer case being
+        # fixed here, and its first word is a type, not a block keyword.
+        if stripped.endswith(";") or (
+            stripped.endswith("{")
+            and re.match(r"(namespace|struct|class|enum|union)\b", stripped)):
+            lines.append(buf)
+            buf = ""
+    if buf.strip():
+        lines.append(buf)
     members: dict[str, str] = {}
     fields: dict[str, tuple] = {}
     scope = ""

@@ -211,9 +211,26 @@ def scan_one_file(rel: str, text: str) -> dict:
     constant takes: an inline constexpr, a default member initialiser, or a bare
     literal whose trailing comment names the ffplay macro."""
     found: dict = {}
-    clean_lines = strip_comments(text).splitlines()
+    clean = strip_comments(text).splitlines()
+    # Join physical lines into statements (see gen_options.py's note): a
+    # wrapped default member initialiser ("base::TimeDelta accurate_timeout{\n
+    # base::Seconds(5)};") is one constant, and the one-line FIELD_RE below
+    # used to miss it -- NOT_IN_AVBASE on a value that is right there.
+    stmts: list[tuple[str, str]] = []
+    buf_raw = buf_code = ""
+    for raw, code in zip(text.splitlines(), clean):
+        buf_raw = f"{buf_raw}\n{raw}" if buf_raw else raw
+        buf_code = f"{buf_code}\n{code}" if buf_code else code
+        stripped = buf_code.strip()
+        if stripped.endswith(";") or (
+            stripped.endswith("{")
+            and re.match(r"(namespace|struct|class|enum|union)\b", stripped)):
+            stmts.append((buf_raw, buf_code))
+            buf_raw = buf_code = ""
+    if buf_code.strip():
+        stmts.append((buf_raw, buf_code))
     scope = ""
-    for raw, code in zip(text.splitlines(), clean_lines):
+    for raw, code in stmts:
         # "struct AVBASE_PLAYER_EXPORT BufferConfig {" -- the export macro is a
         # token, not the name, so skip every ALL-CAPS token after struct/class.
         m = STRUCT_RE.match(code)
