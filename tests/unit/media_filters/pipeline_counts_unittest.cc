@@ -2,66 +2,42 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// DISABLED, and the pacing work landed underneath it: SyntheticSpec::paced
-// plus SyntheticDemuxer::set_tick_clock() now bound production to the clock
-// and park a read at the edge, which is what the counts actually needed (the
-// numbers below were measured with the source racing, at 3.56 s of media in
-// ~2.5 s of wall).
+// The two counts docs/07 section 5 names first, at the pipeline level, over
+// the SYNTHETIC demuxer, paced to the wall clock at 1x. The path to a passing
+// count had three stages, and only the third moved the number:
 //
-// It still does not run, and the reason is the seam the pacing exposed: the
-// parked read runs on the MEDIA sequence, which is the same sequence the
-// fixture's PumpRound drains inline on the test thread. A park that waits for
-// wall time therefore waits for the pump that is itself blocked inside the
-// park. SyntheticLiveDemuxer does not hit this because its suite pumps that
-// sequence from a separate thread.
+//  1. The graph was stood up on the suite's OWN S3/S4 while inheriting a
+//     fixture whose pump drove a DIFFERENT pair. That hung every time; the fix
+//     was to go through the base fixture's StartPipeline() and PumpRound()
+//     like every other pipeline suite.
+//  2. Unpaced, the synthetic demuxer handed out packets as fast as the decoder
+//     asked, so the media clock ran AHEAD of real time (measured 3.56 s of
+//     media in ~2.5 s of wall) and the compositor correctly presented only the
+//     frames the master clock said were due -- 30 frames where 300 were
+//     expected. SyntheticSpec::paced + set_tick_clock() fixed the SOURCE.
+//  3. With the source paced, the pump had to follow: PumpRound drains three
+//     audio periods per 4 ms (~4x realtime), which empties the queues faster
+//     than a paced source refills them, so PlayFor() pumps realtime
+//     (PumpRoundRealtime) for the clip's full duration rather than a fixed
+//     2.5 s.
 //
-// So the fix is the pump, not the source: this suite needs a pump thread (or a
-// tick clock the test can advance without draining S1). The source-side work
-// stays landed because it is correct and is what any such pump will need.
+// STILL DISABLED -- the paced source and the blocking pull DEADLOCK, and the
+// stack shows exactly where. A paced read parks at the edge (synthetic_demuxer
+// AudioStream::Read -> parked_.TimedWait, holding no lock), but it is reached
+// only when the decoder stream asks for the next buffer -- and the decoder
+// stream asks from S4, which is entered from FakeAudioSink::PullPeriod's
+// done.Wait() on the test thread. PullPeriod blocks on that Wait until S4
+// finishes one Render, S4 blocks in Read waiting for the wall clock to advance
+// past the edge, and the wall clock only advances while the test thread keeps
+// pumping -- but the test thread is inside the Wait. Three waiters, no
+// progress. The old note's "this suite needs a pump thread (or a tick clock
+// the test can advance without draining S1)" is the same answer: PullPeriod
+// must not synchronously block the thread that advances time, or the paced
+// source must advance against a clock the test drives rather than the wall.
+// Until that seam is reworked, enabling these three would ship a hang, which
+// is worse than an honest DISABLED.
 //
-// THE HANG IS FIXED. The suite used to declare its OWN S3/S4, build its own
-// DefaultRendererFactory and drive its own pump, while inheriting a fixture
-// whose pump drives a DIFFERENT pair. It now goes through the base fixture's
-// StartPipeline() and PumpRound() like every other pipeline suite -- the fix
-// this file's own header recommended two commits ago and I had not applied.
-//
-// It runs now, and the numbers say something new:
-//     presented 30 frames after 3.56 s of a 10 s clip (expected 300 +/- 2)
-//     emitted 74752 samples of 480000
-// So it is not losing frames to a broken pipeline. The SYNTHETIC demuxer hands
-// out packets as fast as the decoder asks, with no relation to the wall clock,
-// so the media clock runs AHEAD of real time (3.56 s of media in ~2.5 s of
-// wall) and the compositor -- correctly -- presents only the frames the master
-// clock says are due. The count is low because the SOURCE races, not because
-// frames go missing.
-//
-// That makes these assertions a statement about how the synthetic source is
-// paced, not about the pipeline: "10 s of media produces 300 frames" is only
-// true if the source is fed at 1x. Fixing it means pacing the synthetic demuxer
-// to the clock (the same lesson the throttle suite learned the hard way: a
-// fixed-rate fake cannot express a real-time regime), which is a change to the
-// SYNTHETIC SOURCE, not to this suite.
-//
-// Kept disabled rather than re-tuned: the assertions are written and argued
-// above, and loosening a tolerance until a racing source passes would make
-// them measure nothing.
-//
-// (The original note follows for history.)
-//
-// The counting is right and the tolerances are argued above; what does not work
-// is standing the graph up on this suite's OWN S3/S4 while inheriting a fixture
-// whose pump drives a DIFFERENT pair. Two shapes were tried and both hang:
-// using the base PumpRound (which pulls the base sinks, not these) and pumping
-// these sinks directly (which is closer but leaves the media sequence and the
-// device out of step). The suite that already gets this right is
-// pipeline_seek_unittest, which uses the base fixture's threads rather than
-// declaring its own -- so the fix is to follow that shape, not to keep tuning
-// the pump here.
-//
-// Marked DISABLED rather than left red so the suite is honest: an enabled test
-// that hangs is worse than a disabled one that explains itself.
-//
-// The supporting change this needed IS landed and used elsewhere:
+// The supporting change this needed is landed and used elsewhere:
 // FakeAudioSink::frames_rendered(), without which the audio count docs/07
 // section 5 asks for is not measurable at all -- the pipeline's own statistics
 // count what it WROTE, not what left the device.
@@ -140,7 +116,12 @@ class PipelineCountsTest : public PipelineTestFixture {
     const auto deadline = std::chrono::steady_clock::now() +
                           std::chrono::milliseconds(wall.InMilliseconds());
     while (std::chrono::steady_clock::now() < deadline) {
-      PumpRound();  // the base pump: sleeps 4 ms, which is load-bearing
+      // Realtime-paced: the source feeds at 1x and parks at the edge, so the
+      // pump must let WALL time track MEDIA time. The 4 ms PumpRound drains
+      // three audio periods per 4 ms (~4x realtime), which empties the queues
+      // faster than a paced source refills them and makes the count an
+      // assertion about the pump's overspeed, not about the pipeline.
+      PumpRoundRealtime();
       if (client_.ended()) {
         break;
       }
@@ -172,7 +153,7 @@ TEST_F(PipelineCountsTest,
   BuildPipeline();
   Play();
   ASSERT_TRUE(client_.HaveMetadata());
-  const base::TimeDelta played = PlayFor(base::Milliseconds(2500));
+  const base::TimeDelta played = PlayFor(spec_.duration);
   const int frames = PresentedFrames();
 
   EXPECT_NEAR(frames, kExpectedFrames, 2)
@@ -188,7 +169,7 @@ TEST_F(PipelineCountsTest,
   BuildPipeline();
   Play();
   ASSERT_TRUE(client_.HaveMetadata());
-  PlayFor(base::Milliseconds(2500));
+  PlayFor(spec_.duration);
 
   const int64_t samples = RenderedSamples();
   const int64_t one_period = static_cast<int64_t>(kFramesPerBuffer);
