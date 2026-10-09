@@ -73,6 +73,14 @@ class FFmpegDemuxerTest : public ::testing::Test {
 
   base::test::TaskEnvironment task_environment_;
   base::scoped_refptr<MediaLog> media_log_;
+  // Bytes handed to the demuxer as a memory buffer. A MemoryDataSource does NOT
+  // copy them, and the demux thread keeps reading them for as long as it runs
+  // -- so this has to outlive |demuxer_|, not the test body. It is declared
+  // BEFORE |demuxer_| because members are destroyed in reverse order, which is
+  // what makes that true. As a local it was a heap-use-after-free: with ASan
+  // this test aborted roughly one run in ten (measured 3/30), always inside
+  // MemoryDataSource::ReadBlocking from the demux thread.
+  std::vector<uint8_t> bytes_;
   std::unique_ptr<FFmpegDemuxer> demuxer_;
   RecordingHost host_;
 };
@@ -96,11 +104,10 @@ std::vector<uint8_t> ReadFileBytes(const std::string& path) {
 }  // namespace
 
 TEST_F(FFmpegDemuxerTest, OpensAMemoryBufferThroughTheDataSourceBridge) {
-  const std::vector<uint8_t> bytes =
-      ReadFileBytes(TestFile("small_h264_aac_3s.mp4"));
-  ASSERT_GT(bytes.size(), 1000u);
+  bytes_ = ReadFileBytes(TestFile("small_h264_aac_3s.mp4"));
+  ASSERT_GT(bytes_.size(), 1000u);
   const DataSourceDescriptor descriptor =
-      DataSourceDescriptor::FromMemory(bytes.data(), bytes.size());
+      DataSourceDescriptor::FromMemory(bytes_.data(), bytes_.size());
   const Status status = OpenDescriptor(descriptor);
   ASSERT_TRUE(status) << status.error().ToString();
 
@@ -110,16 +117,15 @@ TEST_F(FFmpegDemuxerTest, OpensAMemoryBufferThroughTheDataSourceBridge) {
   EXPECT_GT(info.duration, base::Seconds(2));
   EXPECT_LT(info.duration, base::Seconds(4));
   // avio_size() through the bridge's AVSEEK_SIZE path reports the buffer.
-  EXPECT_EQ(info.file_size, static_cast<int64_t>(bytes.size()));
+  EXPECT_EQ(info.file_size, static_cast<int64_t>(bytes_.size()));
   EXPECT_TRUE(host_.errors.empty());
 }
 
 TEST_F(FFmpegDemuxerTest, OpensAHostSuppliedDataSource) {
-  const std::vector<uint8_t> bytes =
-      ReadFileBytes(TestFile("small_h264_aac_3s.mp4"));
-  ASSERT_GT(bytes.size(), 1000u);
+  bytes_ = ReadFileBytes(TestFile("small_h264_aac_3s.mp4"));
+  ASSERT_GT(bytes_.size(), 1000u);
   auto memory =
-      base::MakeRefCounted<MemoryDataSource>(bytes.data(), bytes.size());
+      base::MakeRefCounted<MemoryDataSource>(bytes_.data(), bytes_.size());
   const Status status =
       OpenDescriptor(DataSourceDescriptor::FromSource(std::move(memory)));
   ASSERT_TRUE(status) << status.error().ToString();
