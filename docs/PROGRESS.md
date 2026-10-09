@@ -2,16 +2,16 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）**
+## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）**
 
-最后更新：2026-10-09（第三十轮）—— **音频编码器通用化（AAC → 任意 libavcodec 音频编码器）**：
-`FFmpegAacEncoder` 改名 `FFmpegAudioEncoder`（`ffmpeg_aac_encoder.{h,cc}` →
-`ffmpeg_audio_encoder.{h,cc}`），与视频侧 `FFmpegVideoEncoder` 对称；`Params.codec_name`
-（默认 `"aac"`）经 `avcodec_find_encoder_by_name` 解析，`AudioCodecSpec.codec` 从此被真正
-端到端兑现；转码音频轨与封装写端的 `codec_name` 一律取**解析后的名字**（请求 `libopus`
-却在容器头写 `aac` 会描述一条根本不存在的流）。本机复核：ffmpeg **109 通过/1 跳过**、
-asan 受影响套件 **19 通过/1 跳过（零 sanitizer 报错）**、no-ffmpeg **126 通过**（音频编码器
-属 ffmpeg 目标，不受触及）。
+最后更新：2026-10-09（第三十一轮）—— **E3b：Transcode 的异步入口（线程 + 协作式取消）**：
+补上第二十七轮登记、第二十八轮跳过的「异步」——真正缺的不是线程而是**取消**。新增
+`TranscodeCancelToken`（`Transcode()` 加可默认的 `cancel` 参数，为 null 即永不取消）+
+**AVIO interrupt callback**（在 `avformat_open_input` 之前装上，阻塞的 open/read 也能被
+立即打断，中断被识别为取消而非 EOF）+ `TranscodeJob` 句柄（工作线程 + `Start/Cancel/Wait/
+IsRunning` + `TranscodeDoneCB`，析构 = Cancel + Wait）。取消后状态 `kCancelled`。本机复核：
+ffmpeg **540 通过 / 0 失败**、tsan **21 通过 / 1 跳过（零数据竞争）**、no-ffmpeg **126 通过**、
+`check_invariants` all rules pass（360 文件）。
 > 第二十五轮：macOS 播放器实测与固化（预设 + CI 守护）
 > 第二十四轮：全量崩溃清扫（corpus 14/29 关闭竞态根因修复→0/35;TearDown 未 Stop 的
 > DISABLED 掩盖崩溃;反向断言）· corpus 矩阵分级（smoke/standard/full,74 产出崩溃 0）·
@@ -26,7 +26,65 @@ asan 受影响套件 **19 通过/1 跳过（零 sanitizer 报错）**、no-ffmpe
 > 第十八轮：fuzz 目标（libFuzzer + standalone 双驱动 + 语料入库）
 剩余工作以 [12-剩余工作清单](12-剩余工作清单.md) 为准（该项由各轮同步维护,是唯一权威清单）。
 
-## 第三十轮（本轮）：音频编码器通用化——从 AAC 专用到任意 libavcodec 编码器
+## 第三十一轮（本轮）：E3b —— Transcode 的异步入口
+
+### (1) 缺口其实不是「线程」，是「取消」
+
+第二十七轮给 E3 登记的范围是「trim / 进度 / **异步**」，第二十八轮落了前两个，异步一直挂着，
+理由写的是"没有调用方之前不加调度器（调用方 `std::thread` 即可）"。这句话只说对了一半：
+调用方确实能自己起线程，但它自己起的线程**拿不到任何东西去停**——`Transcode()` 是
+run-to-completion 的，唯一的"停止方式"是等它跑完。所以"异步"真正缺的不是调度器，是**取消**；
+一个没有取消的异步入口，只是把"卡住"从调用线程搬到了工作线程。
+
+### (2) 三层改动
+
+1. **协作式取消 token**。新增 `TranscodeCancelToken`（一个 `std::atomic<bool>`），
+   `Transcode()` 增加一个可默认的 `const TranscodeCancelToken* cancel = nullptr`。为 null
+   即永不取消——这正是**既有同步调用方与全部既有用例一行不改**的原因。
+2. **取消点 = 包边界 + 阻塞读**。主循环条件改为 `!cancelled() && av_read_frame(...)`；
+   循环之后、两段 flush 之前各补一次检查。真正让它"立刻"生效的是 **AVIO interrupt
+   callback**：现在 `avformat_alloc_context()` 由我们分配、并在 `avformat_open_input`
+   **之前**装上中断回调，于是一次卡住的 open 或 read 能被马上打断——否则 token 得等那次读
+   自己返回才被看见。**关键的一处正确性**：中断造成的读失败，在循环后被**识别为取消**而不是
+   被当成 EOF——否则"用户取消了"会被写成一次"成功"。
+3. **异步句柄 `TranscodeJob`**：持有工作线程，`Start`（已有任务在跑则返回 false）/
+   `Cancel`（任意线程可调，**包括回调内**）/ `Wait` / `IsRunning`，外加 `TranscodeDoneCB`
+   收最终 `Status`。回调在工作线程上跑，且**永不晚于 `Wait()`/析构返回**；析构 =
+   `Cancel()` + `Wait()`，工作线程绝不比句柄活得久。`Start` 对"从回调里再 `Start`"（即
+   join 自己）直接拒绝，而不是死锁。
+
+**顺手删掉**：`Transcode()` 里一个声明之后从未使用的 `ff::DictPtr open_opts(nullptr)`。
+
+### (3) C1 又一次挡住了"就挤一下"
+
+加完异步句柄后，`ffmpeg_transcode_job.cc` 正好 **499 行**——贴着 500 上限。异步句柄（只管
+线程与取消，不碰 FFmpeg）与转码泵（FFmpeg 循环）本就是两个关注点，于是按真 seam 拆出
+`ffmpeg_transcode_job_async.cc`（97 行），泵回到 414 行。这条 ratchet 的价值在这一轮最直白：
+它逼我把"多出来的一坨"命名为一个独立的东西，而不是塞进一个 499 行的文件。
+
+### (4) 验证结果（macOS 26 arm64 / AppleClang 17 / pinned FFmpeg 61.x）
+
+- `ctest --test-dir build/ffmpeg`：**540 通过 / 0 失败**（较上轮 +2），3 disabled + 1 skipped 未计入；
+- `tsan`：受影响四套件（Transcode/Concat/EncodeMuxer/AudioEncoder）**21 通过 / 1 跳过，
+  零数据竞争**——新代码是线程 + 原子 + 取消，TSan 正是本轮最该过的门；
+- `no-ffmpeg`：`ninja: no work to do`（异步 TU 属 ffmpeg 目标），套件 **126 通过**；
+- `check_invariants`：**all rules pass**（360 文件，较上轮 +1）；C23 回到基线 37。
+
+两个新用例都**可判伪**：
+
+- `AsyncJobRunsAndReportsCompletion`：同一句柄连跑两次（覆盖"重收上一个工作线程"的路径），
+  断言 100% 进度、最终 Ok，且产物能**解回**成有真实时长的容器；
+- `CancelStopsTheJobWithCancelledStatus`：在**第一个进度回调内**调 `Cancel()`，断言最终状态
+  是 `kCancelled`——若取消是个空操作，状态会是 Ok，`ASSERT_FALSE(final_status)` 就会红。
+
+### (5) 本轮未做 / 边界
+
+| 项 | 状态与原因 |
+|---|---|
+| 取消时清理半成品 | 未做：留给宿主决定（`CancelledStatus` 的 suggestion 已明说半成品仍在盘上） |
+| 硬编实测（E5） | 仍 ⬜：本套 pinned FFmpeg 无 hw encoder，需另一套构建 + 真机 |
+
+## 第三十轮：音频编码器通用化——从 AAC 专用到任意 libavcodec 编码器
 
 ### (1) 缺陷的形态：编码器被写死，而调用方早就以为它不写死
 
@@ -188,7 +246,7 @@ FIFO 成帧**，不报错。所以"把 AAC 换成任意编码器"在成帧这一
 |---|---|
 | 硬编（VT/VAAPI/NVENC）实测 | ⬜ 本套 FFmpeg 无这些编码器（探针实测），需另一套构建 + 真机；目前只到“已接线 + 已单测” |
 | E4 慢路径（参数不一致 → 重编码再拼） | ⬜→✅ **第二十九轮已收尾**：检测不一致即走重编码路径，320ms+348ms → 710ms 逐位吻合 |
-| E3 异步入口 | ⬜ 第二十七轮登记的范围里有“异步”，实际只落了 trim 与进度回调；没有调用方之前不加调度器（调用方 `std::thread` 即可） |
+| E3 异步入口 | ⬜→✅ **第三十一轮已落地**：缺的不是调度器而是取消——`TranscodeCancelToken` + AVIO 中断回调 + `TranscodeJob` 工作线程句柄（见第三十一轮） |
 | 拷贝模式的时间基假设 | ⬜→✅ **第二十九轮已修**：`RescaleTimestamps` 按 `src_tb → dst_tb` 重基，MKV/ADTS 时间戳差数量级的缺陷关闭 |
 | 非浮点解码输出 | ⬜ `AudioState::swr` 字段预留但未接线：本 job 打交道的 codec 都解成 float；遇到 s16 解码器会出垃圾音，需真样本再补 |
 | check_invariants C1 | 🔴→✅ **第二十九轮已清**：4 处历史违规 + 本轮引入的 `ffmpeg_transcode_streams.cc`，按真 seam 拆出 5 个 TU，`check_invariants` 现 all rules pass |
