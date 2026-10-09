@@ -282,8 +282,9 @@ CI（`.github/workflows/ci.yml`）跑五组：`quick`（no-ffmpeg + `check_invar
 （GCC 11/13 · asan · tsan · ubsan · coverage · macOS no-ffmpeg · macOS + Homebrew FFmpeg）。
 
 **仍未开的是 `e2e-linux`（`if: false`）**：它要的是 xvfb + llvmpipe 把两个 Linux 后端
-真跑起来（G12/A16，M11/M12），还需要尚未存在的 `verify_e2e.py`。`check-format`、
-`check-cpplint`、`check-clang-tidy` 三个门禁也刻意没开——见下文 §7 的说明。
+真跑起来（G12/A16，M11/M12），还需要尚未存在的 `verify_e2e.py`。风格门禁
+`check-format`（第二十三轮）、`check-clang-tidy`（第二十六轮）、`check-cpplint`（第三十三轮）
+现已全部以阻塞模式接入——见 §7 的说明。
 
 ---
 

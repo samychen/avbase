@@ -2,19 +2,19 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）**
+## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）**
 
-最后更新：2026-10-09（第三十二轮）—— **全树 clang-format 扫尾 + 揪出一个自第 26 轮潜伏的引号 typo**：
-`check-format`（第 23 轮开启，**全树**扫描 + `--Werror`）当初的前提是"树 clean"，但这批提交
-**从未 push**，门禁的"绿"只是没跑过。用 CI 同版 clang-format 18.1.3（Ubuntu 24.04 apt 装的
-那个）量出 **46 文件漂移**（video_convert.cc 63、gl_loader.h 55、gl_present.cc 34，也含第 30 轮
-新提交的转码 TU）。逐文件格式化到全树 **0 违规**（354 文件），改动全是格式化产物（switch/case
-缩进、宏反斜杠对齐、实参与 include 折行），无 token 变化。扫尾中 `player_impl.cc:32` 的
-`#include "platform/ffmpeg/url_data_source.h""`（**多一个引号**，自 `a3137d2` 第 26 轮）被
-clang-format 拆行放大成真语法错误——编译器此前按 "extra tokens at end of #include directive"
-的 warning 放行，是格式化把被宽容的旧 typo 逼成了硬错误（先删引号再格式化）。本机复核：
-ffmpeg **540 通过 / 0 失败**、no-ffmpeg **277 通过**、asan **111 通过 / 1 跳过**、
-`check_invariants` all rules pass（360 文件，C23 基线 37 行不变）。
+最后更新：2026-10-09（第三十三轮）—— **cpplint 修树轮 + `check-cpplint` 阻塞门禁**：
+最后一个关闭的风格门禁打开。以 CI 同版 `cpplint==1.6.1` 扫非测试非 legacy 源（118 文件，
+scope 对齐 `check-clang-tidy`）量出 **59 处违规**，分五类。只有 `build/c++11` 是**约定偏离**
+——它把 `<chrono>/<mutex>/<thread>` 当过时的"未批准 C++11 头"，而项目是 C++20，整类关闭并
+写进新增的 `CPPLINT.cfg`（与 `.clang-format`/`.clang-tidy` 并列的真相源）。其余 48 处当真缺陷
+修：`include_order`（16，`.clang-format` 的 `IncludeCategories` 本就是 Google 次序，只是
+`IncludeBlocks: Preserve` 让"项目头块排在系统头块前"的漂移没被发现）、`include_what_you_use`
+（29，补 `<utility>/<memory>/<string>/<vector>`）、`runtime/int`（2，`long`→`std::ptrdiff_t`）、
+`runtime/references`（1，全树唯一的非 const 引用形参改指针）。本机复核：cpplint 全 scope
+**0 违规**、ffmpeg **540 通过 / 0 失败**、no-ffmpeg **277 + 25 通过**、asan **111 通过 / 1 跳过**、
+`check_invariants` all rules pass（360 文件，C23 基线 37 行不变）、clang-format 全树 0 违规。
 > 第二十五轮：macOS 播放器实测与固化（预设 + CI 守护）
 > 第二十四轮：全量崩溃清扫（corpus 14/29 关闭竞态根因修复→0/35;TearDown 未 Stop 的
 > DISABLED 掩盖崩溃;反向断言）· corpus 矩阵分级（smoke/standard/full,74 产出崩溃 0）·
@@ -29,7 +29,58 @@ ffmpeg **540 通过 / 0 失败**、no-ffmpeg **277 通过**、asan **111 通过 
 > 第十八轮：fuzz 目标（libFuzzer + standalone 双驱动 + 语料入库）
 剩余工作以 [12-剩余工作清单](12-剩余工作清单.md) 为准（该项由各轮同步维护,是唯一权威清单）。
 
-## 第三十二轮（本轮）：全树 clang-format 扫尾——「树是干净的」这句承诺已经过期
+## 第三十三轮（本轮）：cpplint 修树轮——把最后一个关闭的风格门禁打开
+
+### (1) 先量，再决定什么该"修"、什么该"关"
+
+`check-cpplint` 一直没开，理由写的是"未做修树轮"。按 R12（门禁必须首发即绿），修树轮分两步：
+先量违规，再判断哪些是**真缺陷**、哪些是**项目约定偏离**。
+
+以 CI 同版 `cpplint==1.6.1`（`--repository=.`，scope 对齐 `check-clang-tidy`：
+`base/ media/ player/ platform/ tools/` 下的非测试非 legacy `.cc`，118 文件）量出 **59 处违规**：
+`build/include_what_you_use` 29、`build/include_order` 16、`build/c++11` 11、`runtime/int` 2、
+`runtime/references` 1。
+
+只有一类是**约定偏离**：`build/c++11` 是一份过时的 Google 白名单，把 `<chrono>/<mutex>/<thread>`
+当作"未获批准的 C++11 头"。项目按 C++20 构建（`.clang-format: Standard: c++20`），第 31 轮的
+异步转码入口正建在 `<thread>/<mutex>` 上，所以整类关掉，写进新增的 **`CPPLINT.cfg`**
+（与 `.clang-format`/`.clang-tidy` 并列为一处真相源：`set noparent` + `linelength=80` +
+`filter=-build/c++11`）。其余 **48 处全部当真缺陷修**。
+
+### (2) include_order 不是"有意分块"，是 Preserve 漏掉的漂移
+
+16 处 include 次序违规初看像作者有意分块。但 `.clang-format` 的 `IncludeCategories` 优先级
+是 **C 系统 2 → C++ 系统 3 → 项目 4**——**这正是 Google 次序**，只是 `IncludeBlocks: Preserve`
+让它**不跨块合并**，于是"项目头块排在系统头块之前"这种漂移既没被格式化抓到、也没被门禁看见。
+所以修法是把系统头块移到项目头块之前，而不是关掉规则。
+
+读 cpplint 源码（`_ClassifyInclude`）还定位到一处**针对 C1 拆分的非对称**：它按"文件基名"
+判定"本文档实现的那个头"。`pipeline_impl_host.cc` 里的 `pipeline_impl.h` 首段（`pipeline`）
+与文件名首段相同 → `_POSSIBLE_MY_HEADER`（可居首、不报错）；而 `track_selection.cc` 里的
+`player_impl.h` 首段（`player`）≠ 文件名首段（`track`）→ `_OTHER_HEADER`（必须排在系统头之后）。
+所以 `track_selection.cc` 只能以系统头开头——这是"没有同名头"的那类 C1 拆分 TU 的固有形态，
+不是笔误。
+
+### (3) 其余三类原地修
+
+- `build/include_what_you_use`（29）：为直接使用、却只靠传递包含拿到的标准库补 include
+  （`std::move`→`<utility>`、`make_unique`→`<memory>`、`string`/`vector`→`<string>`/`<vector>`）。
+- `runtime/int`（2）：`media_log.cc` / `event_hub.cc` 里给 `vector::erase` 算距离的
+  `static_cast<long>` 改成 `static_cast<std::ptrdiff_t>`（补 `<cstddef>`）——`long` 在 Windows
+  是 32 位，`ptrdiff_t` 才是迭代器差值的正确类型。
+- `runtime/references`（1）：`ffmpeg_transcode_audio.cc` 的 `ScratchFrame(AvFramePtr& slot, ...)`
+  出参改指针（`AvFramePtr*`）。这是全树**唯一**一个非 const 引用形参——按 Google 约定（出参用
+  指针）修掉，而不是把规则关掉。
+
+### (4) 验收
+
+改动 **34 文件 +65/−31**，全部是 include 增补/重排再加上面 3 处语义改动（两个类型 + 一个形参）。
+本机复核：cpplint 全 scope **0 违规**；`ctest build/ffmpeg` **540 通过 / 0 失败**；no-ffmpeg
+**277 + 25 通过**；asan **111 通过 / 1 跳过**；`check_invariants` all rules pass（360 文件，
+C23 基线 37 行不变）；clang-format 全树 0 违规。`check-cpplint` 以**阻塞**模式接入 CI
+（Linux，venv 装 `cpplint==1.6.1`，与 `check-clang-tidy` 同 scope、同文件列表）。
+
+## 第三十二轮：全树 clang-format 扫尾——「树是干净的」这句承诺已经过期
 
 ### (1) 门禁开着，树却漂了
 
