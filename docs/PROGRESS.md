@@ -2,7 +2,7 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）**
+## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）· 4.6 覆盖率链路本机闭环复现（见第三十五轮）· docs/07 §5 计数三例两例转绿、顺线修掉一个真死锁（见第三十六轮）**
 
 最后更新：2026-10-09（第三十四轮）—— **corpus 加宽到 315 字条，而它当场揪出三个真崩溃**：
 先给矩阵补上一个**组合维度**（tier 2，`full` 独有：12 recipe × 4 scale × 5 fps = 240 条编码，
@@ -26,6 +26,11 @@ seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设�
 `ffmpeg_demuxer_configs.cc`，**1154 → 1022**，白名单上限随之下调到 1030（棘轮只许往下）。
 > 第三十三轮：cpplint 修树轮 + `check-cpplint` 阻塞门禁（59 违规分五类；48 处真修，
 > `build/c++11` 因项目是 C++20 整类关闭并写进新增 `CPPLINT.cfg`）
+> 第三十六轮：docs/07 §5 计数三例两例转绿 —— 顺线揪出 `SyntheticDemuxer::VideoStream::Read`
+> **解锁一个从未持有的 mutex**（paced 一开必死锁），并给夹具补上 S7 设备序列、摊开 pull 节奏、
+> 把停止条件从"墙钟预算"改成"媒体目标"；第三例（双速）因**源侧**原因留 DISABLED
+> 第三十五轮：4.6 覆盖率链路本机完整闭环复现（门禁/棘轮/基线早已在位）· 4.3b 根因升级为
+> "阻塞 pull vs park 死锁" · 2.4 协议验收核实为 pinned FFmpeg 无 rtmp/rtsp/srt（环境项）
 > 第二十五轮：macOS 播放器实测与固化（预设 + CI 守护）
 > 第二十四轮：全量崩溃清扫（corpus 14/29 关闭竞态根因修复→0/35;TearDown 未 Stop 的
 > DISABLED 掩盖崩溃;反向断言）· corpus 矩阵分级（smoke/standard/full,74 产出崩溃 0）·
@@ -40,7 +45,158 @@ seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设�
 > 第十八轮：fuzz 目标（libFuzzer + standalone 双驱动 + 语料入库）
 剩余工作以 [12-剩余工作清单](12-剩余工作清单.md) 为准（该项由各轮同步维护,是唯一权威清单）。
 
-## 第三十四轮（本轮）：corpus 加宽到 315 —— 它当场揪出三个真崩溃，修完又撞了 C1
+## 第三十六轮（本轮）：docs/07 §5 计数三例两例转绿 —— 顺线揪出一个真死锁
+
+这一轮的起点是上一轮留下的结论："要改的是泵策略（给 `PullPeriod` 非阻塞路径，或让 paced 源
+用 test-driven clock）。"方向没错，但**真正坏掉的东西不在泵里**——它在合成源里，而且是一个
+自第十四轮就潜伏、只在 `paced` 打开时才可达的**未定义行为**。
+
+### (1) 先修的那一件：`VideoStream::Read` 解锁一个从未持有的 mutex
+
+`SyntheticDemuxer` 的两条腿长得不像一对：`AudioStream::Read` 开头就
+`std::unique_lock<std::mutex> guard(owner_->lock_)`，而 `VideoStream::Read` **整个函数体
+没有任何入口加锁**，却在 paced park 分支里直接 `owner_->lock_.unlock(); ...; owner_->lock_.lock();`。
+
+这不是"少写一行"，而是一处**与文件自己的注释相矛盾**的写法。`lock_` 的声明处写着两条流会被
+**并发**读；`decoder_stream.cc` 的 `ReadFromDemuxer` 也写得很清楚：`DemuxerStream::Read()` 是在
+**renderer 自己的序列**上直接调用的（video = S3，audio = S4），只有**回调**才 `PostTask` 回 S3/S4。
+两条腿因此**真的并发**进 `Read()`，共享 `owner_->lock_`，也共享 `packets_read_` 这个游标。
+`SyntheticDemuxer::VideoStream::Read` 那条"只在 media 序列上调用、所以无锁"的旧注释，是错的。
+
+后果不是"偶发"而是"确定性"：Darwin 的 normal mutex 对**非持有者 unlock** 不会干净失败——它把
+mutex 的内部状态改成"有人持锁"，而那个人不存在。于是**音频腿**（它 park 之后会 relock 同一个
+mutex）在 `guard.lock()` 上**永久阻塞**。unpaced 时 park 分支不可达，这个 bare unlock 一次都走不到；
+`paced` 一开必挂。**修法**：video 腿也持锁整个 read，与 audio 腿一致；并把 `synthetic_demuxer.h`
+里那条过时注释改对。
+
+### (2) 三处泵改造（`pipeline_fixture.h` `PumpRoundRealtime` 重写为 `PullOneRealtimeInterval`）
+
+死锁修掉之后**数字还是不对**，而且每一层错都有自己的可观测症状。四层，逐层剥：
+
+1. **设备序列独立（S7）**。render 原本被 marshal 到 **S4**——而 S4 是**解码泵**序列，paced 源正在
+   那里 park 等墙钟。排在 park 后面的 render 于是被堵住，整个套件跑成**四分之一速**（每轮实际
+   64 ms，而不是 16 ms）。新增 `base::Thread render_thread_{"avbase-pipe-S7"}`——S7 正是
+   `audio_renderer_ring.cc` 给**设备回调线程**的名字，此前只在注释里存在，这一轮把它落地。
+2. **pull 摊开**。3 个 device period 背靠背拉，会在 1 ms 内抽干 audio ready ring（深度只有
+   `kReadyChunks` = 4 个 chunk），而 1x 源**补不上** 16 ms 媒体——于是每个突发都从**空 ring**
+   起步，大约**每七个 period 有一个返回静音**。改成一整轮里均匀摊开；显示帧
+   （`PullFrames(1)`）并进**最后一段**，让它的开销被那段的余量吸收，而不是加在整轮 deadline 之后。
+3. **`PaceUntil` 改纯自旋**。本机 `sleep_until` 实测过冲：请求 15.688 ms，实际睡到
+   15.783–19.394 ms（最高 +3.8 ms）。一轮里有三个子 deadline，过冲会吃掉**整轮**——而这几条断言
+   数的正是轮。代价是 paced 跑起来占满一个核，换来一个计数可以信的时间轴。
+4. **停止条件从"墙钟预算"改成"媒体目标"**。这是决定性的一步：原先 `PlayFor` 按墙钟跑，等于把泵
+   自身的速度**折进期望值**——泵慢 2% 就少覆盖 2% 媒体，计数短了，理由却与管线无关。改成
+   `while (pipeline_->GetMediaTime() < media)`：某轮静音就不推进媒体，循环**自动多跑一轮**。
+   **泵仍然按墙钟自我 pacing**（源和显示必须同步），被挪走的只是**停止条件**。
+
+`PumpRoundRealtime` 另顺手改了一处：`start` 提前到 `RunUntilIdle()` **之前**，让 S1 排空算进这一轮
+的媒体预算，而不是额外叠加在预算之上（十秒跑下来那就是白白扔掉的一个轮）。
+`pipeline_throttle_unittest.cc` 里显式的 `set_render_runner` 一并删掉：夹具每轮都会 arm render
+runner，那一行已是 no-op。
+
+### (3) 结果
+
+- **视频、音频两例转绿并恢复启用**（`TenSecondsOfVideoPresentsThreeHundredFrames` 631 轮、
+  `TenSecondsOfAudioEmitsFourHundredAndEightyThousandSamples` 626 轮 → 媒体 **10.01 s**）。
+- **第三例（双速）保持 DISABLED，理由在源侧**：本套件的源是 **1x** paced，而 2x 消费者需要一个
+  **能喂动它的源**。实测：驱动到 5 s 媒体，2x 下仍然花掉 5 s 墙钟（因为卡在源的速度上），落点
+  75 帧——恰好是**源的那一半**，而断言要 150。这需要 `SyntheticDemuxer` 补一个 **VOD 形态**
+  （包按消费者请求速度交付，"什么到期"由时钟而非源决定），属 **rate 模型**改动，不是泵的改动。
+  按项目一贯原则：**宁可 DISABLED 也不假绿**，并且把原因写成源侧的事实而非"已知问题"。
+- 两个转绿的用例，断言消息里都带上 `play_rounds_`（这次 PlayFor 花了几轮）——因为"因为管线原因
+  短了"和"因为撞了墙钟护栏短了"在数字上**长得一模一样**，不报轮数就分不出来。
+
+### (4) 验证
+
+| 面 | 结果 |
+|---|---|
+| `ctest build/ffmpeg` | **551 通过 / 0 失败**（较上轮 +2） |
+| `ctest build/no-ffmpeg` | **439 通过 / 0 失败** |
+| `ctest build/asan` | **551 通过 / 0 失败** |
+| `check_invariants` | all rules pass（364 文件，C23 基线 37 不变） |
+| `clang-format` | 五个改动文件全 clean |
+
+ASan 全套件跑出过两次失败、且两次失败的用例还不一样——**是负载偶发**：当时我在**并行构建
+ffmpeg**。系统空闲后重跑 **551/551**，单跑与空闲连跑各 3/3。教训写进日志：**asan 全量跑时
+不要并行构建**。
+
+### (5) 遗留：双速用例需要的是 VOD 源，不是泵
+
+这是这轮唯一没闭合的一格，且它的"没闭合"是有形状的：`SyntheticSpec::paced` 表达的是
+"**直播**边缘按 1x 推进"，而双速要测的是"**消费者**按 2x 消费 VOD"。两者需要源模型不同：
+前者由**源**决定 due，后者由**时钟**决定 due。补 VOD 形态是下一件该做的事。
+
+### (6) 教训
+
+- **"先跑再改"再记一笔**：上一轮的文件头注释写着"THE HANG IS FIXED"，而 pacing 一落地，挂起
+  就换成了**死锁**——病因换了，注释没换。读注释不等于读事实。
+- **`sample <pid>` 抓栈**定位死锁，比往代码里塞日志快，而且不污染版本库（三个等待者互锁时，
+  栈上谁等谁一眼可见）。
+- **因果链要一层层剥**：死锁（video 腿缺锁）→ 四分之一速（render 在 S4）→ 突发抽干 ring
+  （≤1 ms 拉 3 个 period）→ pacing 精度（sleep 过冲）→ 停止条件（改媒体驱动）。**每一层都单独
+  可观测、可验证**，所以不是一次"大重构"，而是五次各自站得住的修正。
+- **一处自相矛盾的注释就是一处未判定的设计**：`lock_` 的注释说"并发读"，`VideoStream::Read`
+  的注释说"无锁因为单序列"。两份注释各自都读过、都像对的；把它们放在一起，缺陷就自己现形了。
+
+---
+
+## 第三十五轮：剩余清单收口 —— 4.6 闭环复现 · 4.3b 根因升级 · 2.4 核实为环境项
+
+### (1) 4.6 覆盖率门禁：清单中段那句"门禁未接"是过期文字
+
+`tools/check_coverage.py` 按 docs/07 §12 逐模块判定。本机把整条链路完整复现了一遍：
+
+- `cmake --preset coverage` + `cmake --build build/coverage -j8`（208 目标）全绿；
+- `ctest build/coverage` **549 通过** → 产出 **167 个 `.gcda`**（193 个 `.gcno`）；
+- `python3 tools/gcov_to_lcov.py --root build/coverage --source . -o cov.info`
+  → 167 gcda → 275 源文件，核心整体行覆盖 **83.17%**；
+- `python3 tools/check_coverage.py --info cov.info --root .`（**绝对阈值**）→ **FAIL**：
+  核心整体行 **74.3%** < 85%，`media/base` **66.9%** < 95%。gap 与清单 4.6 行的历史记录吻合，
+  **稳定、不是新问题**；
+- `--baseline coverage_baseline.json --ratchet` → **全绿**（所有模块记为地板）。
+
+**结论**：转换器 + 门禁脚本 + CI 接线 + 基线文件**全部就位且已在跑**（`ci.yml` 的 coverage job
+用 `gcov_to_lcov.py --exclude third_party/` + `check_coverage.py --baseline ... --ratchet`）。
+本机 core 74.3% vs 基线 75.47%，差异来自 `--exclude third_party/` 与构建环境，量级一致。
+**4.6 无需再动手**——它是完成态，只是清单中段的文字没删干净导致误读；真正的待办是
+"把覆盖率补到 spec"，那是**补测试**的活，不是门禁的活。
+
+### (2) 4.3b：根因从"泵的线程归属"升级为"阻塞 pull vs park 死锁"
+
+三个 DISABLED 用例的真实现状与旧摘要**不同**：文件头注释已经历两段历史（自建 S3/S4 挂起 →
+已走 `StartPipeline` 修好挂起），而 `paced` 落地后数字仍不对（30 帧 vs 300）。去掉 DISABLED、
+把 `PlayFor` 换成 `PumpRoundRealtime()`、并跑满 `spec_.duration`（而非硬编码 2500 ms）——方向
+正确，但**当场暴露死锁**：renderer ready 之后卡死。用 `sample $PID` 抓 macOS 进程栈，精确定位
+到**三方等待闭环**：
+
+- 主线程 `FakeAudioSink::PullPeriod` → `done.Wait()` 同步阻塞，等 S4 完成一次 `Render`；
+- S4 在 `DecoderStream::ReadFromDemuxer` → `SyntheticDemuxer::AudioStream::Read` 的 park 循环
+  `guard.lock()` 上等墙钟越过边缘；
+- 而墙钟只能由**主线程继续泵**推进，主线程却卡在 `done.Wait()`。
+
+三个等待者互锁，零进展。这不是"改三个常量"能解决的，是**夹具泵策略**问题：`PullPeriod` 的
+同步阻塞语义与 paced 源的 park 语义互斥。按"宁可 DISABLED 也不假绿"**恢复 DISABLED**（启用但
+死锁比禁用但诚实更糟），把死锁机制写进文件头注释，并**保留** `PlayFor` 的正确实现供下一步用
+（提交 `d7f6d7b`）。
+
+### (3) 2.4：pinned FFmpeg 没有 rtmp/rtsp/srt
+
+`tools/setup_ffmpeg.sh` 的协议表是 `file,http,tcp,httpproxy,crypto`——**没有** rtmp/rtsp/srt。
+这三个需要 `AVBASE_FFMPEG_DEPS="librtmp srt"` 显式开启并链接第三方库（librtmp→openssl，
+srt→mbedtls），当前最小集没带。且 `tools/build/` 只有 `.dylib`，没有 ffmpeg/ffprobe 命令行。
+**结论**：剩余协议验收在本机**不能闭环**，需重配一套带协议栈的 FFmpeg + 真实 peer（或本地起的
+rtmp/rtsp 服务器），属**环境**相关工作项。
+
+### (4) 教训
+
+**"修测试"之前先跑一次。** 文件头注释里的"THE HANG IS FIXED"是**上一阶段的结论**，不是当前
+事实；pacing 落地后挂起换成了死锁，病因换了而旧注释没更新。另外，同一轮里三件事的**性质**要
+分清：4.6 是"已经好了、只是文档说了反话"，4.3b 是"真坏、但坏在夹具"，2.4 是"本机测不了、
+不是仓库的问题"——把这三者混成一句"未完成"，后面的每轮都会踩回来。
+
+---
+
+## 第三十四轮：corpus 加宽到 315 —— 它当场揪出三个真崩溃，修完又撞了 C1
 
 ### (1) 加宽：给矩阵补上"组合"维度，full 从 74 条到 315 条
 
