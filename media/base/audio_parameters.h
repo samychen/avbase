@@ -51,18 +51,30 @@ AVBASE_MEDIA_EXPORT float DecodeSample(const uint8_t* src, SampleFormat format);
 class AVBASE_MEDIA_EXPORT AudioParameters {
  public:
   AudioParameters() = default;
+  // |channels| defaults to 0, which means "take it from |layout|". Pass it
+  // explicitly when the layout cannot carry the count: ChannelLayout::kDiscrete
+  // is what the demuxer falls back to for any channel count that has no named
+  // layout (3, 4, 5, 7, ...), and ChannelLayoutToChannelCount() answers 0 for
+  // it. Deriving from the layout there is how a 4-channel file reached the
+  // audio renderer as "0 channels" and aborted on its CHECK.
   AudioParameters(ChannelLayout layout, SampleFormat format, int sample_rate,
-                  int frames_per_buffer)
+                  int frames_per_buffer, int channels = 0)
       : channel_layout_(layout),
         sample_format_(format),
         sample_rate_(sample_rate),
-        frames_per_buffer_(frames_per_buffer) {}
+        frames_per_buffer_(frames_per_buffer),
+        channels_(channels) {}
 
   ChannelLayout channel_layout() const { return channel_layout_; }
   SampleFormat sample_format() const { return sample_format_; }
   int sample_rate() const { return sample_rate_; }
   int frames_per_buffer() const { return frames_per_buffer_; }
-  int channels() const { return ChannelLayoutToChannelCount(channel_layout_); }
+  // The explicit count wins when one was given; otherwise it comes from the
+  // layout, which is right for every named layout and 0 for kDiscrete/kNone.
+  int channels() const {
+    return channels_ > 0 ? channels_
+                         : ChannelLayoutToChannelCount(channel_layout_);
+  }
   int bytes_per_frame() const {
     return channels() * SampleFormatBytesPerChannel(sample_format_);
   }
@@ -72,8 +84,17 @@ class AVBASE_MEDIA_EXPORT AudioParameters {
                                     1000000 / sample_rate_)
                : base::TimeDelta();
   }
+  // The sample format is deliberately NOT part of validity. It describes what
+  // the SOURCE declares, and a container is allowed not to declare one: a bare
+  // .ac3, an Ogg/Vorbis or an MPEG-PS with mp2 leaves
+  // AVCodecParameters::format at AV_SAMPLE_FMT_NONE, which the demuxer reports
+  // as SampleFormat::kUnknown. AudioDecoderConfig::IsValidConfig() already
+  // accepts that, and nothing on the render path reads this field for sizing --
+  // the decoder reports the real format with every decoded buffer. Requiring it
+  // here is what turned "the container did not say" into a process abort on a
+  // perfectly playable file.
   bool is_valid() const {
-    return sample_rate_ > 0 && frames_per_buffer_ > 0 && bytes_per_frame() > 0;
+    return sample_rate_ > 0 && frames_per_buffer_ > 0 && channels() > 0;
   }
   friend bool operator==(const AudioParameters&,
                          const AudioParameters&) = default;
@@ -83,6 +104,7 @@ class AVBASE_MEDIA_EXPORT AudioParameters {
   SampleFormat sample_format_{SampleFormat::kS16};
   int sample_rate_{48000};
   int frames_per_buffer_{1024};
+  int channels_{0};
 };
 
 }  // namespace avbase::media

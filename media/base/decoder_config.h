@@ -114,6 +114,17 @@ struct AVBASE_MEDIA_EXPORT AudioDecoderConfig {
   bool IsValidConfig() const {
     return codec != AudioCodec::kUnknown && sample_rate > 0 && channels > 0;
   }
+
+  // True when the container gave enough to build renderable parameters.
+  // Deliberately WEAKER than IsValidConfig(): it does not require a resolvable
+  // codec, because "this build has no decoder for AC-3" is a decoder-layer
+  // fact, whereas 0 channels is the container admitting it could not measure
+  // the stream at all -- libavformat logs "Could not find codec parameters"
+  // for exactly that case, and an MPEG-PS file can carry such a stream beside
+  // a perfectly good one. Such a stream is not playable, and the difference
+  // matters: the demuxer drops those, while it must keep reporting the ones it
+  // merely cannot decode here.
+  bool HasUsableParameters() const { return sample_rate > 0 && channels > 0; }
 };
 
 }  // namespace avbase::media

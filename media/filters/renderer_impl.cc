@@ -126,8 +126,14 @@ RendererImpl::MakeAudioParameters(const AudioDecoderConfig& config,
   // return something the hardware prefers; until media/audio/ exists this is a
   // fixed guess, and AudioRendererSink::IsOptimizedForHardwareParameters() is
   // how a backend says "you guessed wrong".
+  //
+  // config.channels is passed explicitly rather than left to be derived from
+  // config.channel_layout: the layout collapses every count without a named
+  // form (3, 4, 5, 7) to kDiscrete, which reads back as 0 channels and used to
+  // abort the audio renderer.
   return AudioParameters(config.channel_layout, config.sample_format,
-                         config.sample_rate, frames_per_buffer);
+                         config.sample_rate, frames_per_buffer,
+                         config.channels);
 }
 
 void RendererImpl::Initialize(

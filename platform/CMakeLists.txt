@@ -49,6 +49,7 @@ if(AVBASE_ENABLE_FFMPEG)
       ${AVBASE_FFMPEG_DIR_SOURCES}
       ../media/filters/ffmpeg_glue.cc
       ../media/filters/ffmpeg_demuxer.cc
+      ../media/filters/ffmpeg_demuxer_configs.cc
       ../media/filters/ffmpeg_demuxer_track_select.cc
       ../media/filters/ffmpeg_audio_decoder.cc
       ../media/filters/ffmpeg_video_decoder.cc

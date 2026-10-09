@@ -62,15 +62,21 @@ LINE_LIMIT_ALLOWLIST = {
              "to player_impl_stop.cc (C1 split) and the ceiling moved down "
              "with it."),
     "media/filters/ffmpeg_demuxer.cc": (
-        1140, "FFmpeg container/codec adaptation: two config builders, the "
-              "MediaInfo walk, the demux loop and the seek path. Chromium's "
-              "media/filters/ffmpeg_demuxer.cc is ~2500 lines for the same "
-              "job; splitting ours by line count would scatter one contiguous "
-              "AVFormatContext lifecycle across files, which is how "
-              "use-after-free bugs get introduced. Track selection and the "
-              "text leg were split out to ffmpeg_demuxer_track_select.cc "
-              "(1137 -> 1080), after which the tree-wide clang-format pass "
-              "reflowed it back up to 1118. Ratcheted: it may only move down."),
+        1030, "FFmpeg container/codec adaptation: the AVStream-to-config "
+              "builders, the MediaInfo walk, the demux loop and the seek path. "
+              "Chromium's media/filters/ffmpeg_demuxer.cc is ~2500 lines for "
+              "the same job; splitting ours by line count would scatter one "
+              "contiguous AVFormatContext lifecycle across files, which is how "
+              "use-after-free bugs get introduced. Two splits so far, both "
+              "along seams the code already had: track selection and the text "
+              "leg went to ffmpeg_demuxer_track_select.cc (1137 -> 1080), and "
+              "the three pure AVStream -> decoder-config builders went to "
+              "ffmpeg_demuxer_configs.cc (1154 -> 1022). Those builders take "
+              "an AVStream and return a value; they never touch the "
+              "AVFormatContext, so moving them cannot move a lifetime. What "
+              "is left is exactly the part that cannot be cut safely, and it "
+              "is now the smallest it has been. Ratcheted: it may only move "
+              "down."),
     "media/filters/legacy/video_frame_compositor.cc": (
         700, "Port of ffplay video_refresh(); splitting it would obscure the "
              "provenance comments that map each branch to the original. "
