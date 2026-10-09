@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <string>
 
 namespace avbase::base {
 

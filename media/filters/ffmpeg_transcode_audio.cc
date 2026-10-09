@@ -23,13 +23,13 @@
 namespace avbase::media {
 namespace {
 
-// (Re)allocates |slot| as a planar-float scratch frame of |nb_samples|.
-AVFrame* ScratchFrame(AvFramePtr& slot, int nb_samples, int rate,
+// (Re)allocates |*slot| as a planar-float scratch frame of |nb_samples|.
+AVFrame* ScratchFrame(AvFramePtr* slot, int nb_samples, int rate,
                       int channels) {
-  if (!slot) {
-    slot = AvFramePtr(av_frame_alloc());
+  if (!*slot) {
+    *slot = AvFramePtr(av_frame_alloc());
   }
-  AVFrame* f = slot.get();
+  AVFrame* f = slot->get();
   av_frame_unref(f);
   f->format = AV_SAMPLE_FMT_FLTP;
   f->sample_rate = rate;
@@ -71,7 +71,7 @@ bool EnsureResampler(AudioState* st, AVFrame* frame) {
 void DrainWholeFrames(AudioState* st, int frame_size,
                       std::vector<base::scoped_refptr<AudioBuffer>>* out) {
   while (av_audio_fifo_size(st->fifo) >= frame_size) {
-    AVFrame* f = ScratchFrame(st->framed, frame_size, st->out_sample_rate,
+    AVFrame* f = ScratchFrame(&st->framed, frame_size, st->out_sample_rate,
                               st->out_channels);
     if (!f) {
       return;
@@ -197,7 +197,7 @@ std::vector<base::scoped_refptr<AudioBuffer>> FramesForEncoder(  // NOLINT
   if (capacity <= 0) {
     return out;
   }
-  AVFrame* scratch = ScratchFrame(st->resampled, capacity, st->out_sample_rate,
+  AVFrame* scratch = ScratchFrame(&st->resampled, capacity, st->out_sample_rate,
                                   st->out_channels);
   if (!scratch) {
     return out;
@@ -228,7 +228,7 @@ std::vector<base::scoped_refptr<AudioBuffer>> FlushResampler(AudioState* st,
   if (st->swr) {
     // Push a null input to make the resampler give up what it is holding.
     for (;;) {
-      AVFrame* scratch = ScratchFrame(st->resampled, frame_size,
+      AVFrame* scratch = ScratchFrame(&st->resampled, frame_size,
                                       st->out_sample_rate, st->out_channels);
       if (!scratch) {
         break;
@@ -246,7 +246,7 @@ std::vector<base::scoped_refptr<AudioBuffer>> FlushResampler(AudioState* st,
   // Whatever is left is the tail; the encoder accepts a short LAST frame.
   const int left = av_audio_fifo_size(st->fifo);
   if (left > 0) {
-    AVFrame* f = ScratchFrame(st->framed, frame_size, st->out_sample_rate,
+    AVFrame* f = ScratchFrame(&st->framed, frame_size, st->out_sample_rate,
                               st->out_channels);
     if (f) {
       const int got =

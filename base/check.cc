@@ -5,6 +5,7 @@
 #include "base/check.h"
 
 #include <cstdlib>
+#include <string>
 
 namespace avbase::base::internal {
 

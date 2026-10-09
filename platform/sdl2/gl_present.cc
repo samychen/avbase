@@ -5,6 +5,7 @@
 #include "platform/sdl2/gl_present.h"
 
 #include <SDL.h>
+#include <string>
 
 #include "base/logging.h"
 #include "platform/sdl2/gl_loader.h"

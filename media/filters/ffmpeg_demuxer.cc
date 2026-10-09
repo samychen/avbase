@@ -11,6 +11,10 @@
 
 #include "media/filters/ffmpeg_demuxer.h"
 
+extern "C" {
+#include <libavutil/display.h>
+}
+
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -22,9 +26,6 @@
 #include "base/memory/ptr_util.h"
 #include "media/base/media_constants.h"
 #include "platform/ffmpeg/av_includes.h"
-extern "C" {
-#include <libavutil/display.h>
-}
 #include "platform/ffmpeg/av_packet_storage.h"
 #include "platform/ffmpeg/compat.h"
 #include "platform/ffmpeg/data_source_io.h"

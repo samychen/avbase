@@ -7,14 +7,13 @@
 // file because both player_impl.cc and player_impl_events.cc sit at the
 // C1 line-limit ceiling and this path grows independently of both.
 
-#include "player/player_impl.h"
-
 #include <string>
 #include <utility>
 
 #include "base/functional/bind.h"
 #include "media/base/media_info.h"
 #include "media/base/pipeline_status.h"
+#include "player/player_impl.h"
 
 namespace avbase {
 

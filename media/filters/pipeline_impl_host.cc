@@ -11,8 +11,6 @@
 
 #include "media/filters/pipeline_impl.h"
 
-#include "media/filters/live_edge_policy.h"
-
 #include <memory>
 #include <string>
 #include <utility>
@@ -20,6 +18,7 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "media/filters/live_edge_policy.h"
 
 namespace avbase::media {
 

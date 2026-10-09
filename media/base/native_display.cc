@@ -4,6 +4,8 @@
 
 #include "media/base/native_display.h"
 
+#include <utility>
+
 namespace avbase::media {
 
 const char* GetNativeDisplayKindName(NativeDisplayKind kind) {

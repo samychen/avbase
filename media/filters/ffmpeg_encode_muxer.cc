@@ -5,6 +5,8 @@
 #include "media/filters/ffmpeg_encode_muxer.h"
 
 #include <cstring>
+#include <memory>
+#include <utility>
 
 #include "base/logging.h"
 #include "platform/ffmpeg/av_includes.h"

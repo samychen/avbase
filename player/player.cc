@@ -11,6 +11,9 @@
 
 #include "player/public/player.h"
 
+#include <utility>
+#include <vector>
+
 #include "base/check.h"
 #include "base/logging.h"
 #include "player/player_impl.h"

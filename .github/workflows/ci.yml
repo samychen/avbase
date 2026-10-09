@@ -459,7 +459,8 @@ jobs:
   # be believed). Scoped to non-test, non-legacy sources: tests carry
   # gtest idioms the config was not tuned for, and media/filters/legacy/ is
   # the LGPL quarantine where formatting/provenance rules deliberately
-  # differ. cpplint stays absent -- it has not had its tree-fixing round.
+  # differ. When a second gate shares this scope it says so here: the
+  # check-cpplint job below mirrors this file list exactly.
   check-clang-tidy:
     runs-on: ubuntu-24.04
     steps:
@@ -479,6 +480,31 @@ jobs:
           /usr/lib/llvm-18/bin/run-clang-tidy -p build/ffmpeg -quiet -j4 \
             -header-filter '^((?!third_party|legacy|/tests/).)*$' $files
 
-  # Still absent: check-cpplint has not been through a fix-the-tree pass.
-  # clang-tidy left this list the same commit that opened it -- see the job
-  # above; R12 again -- one gate at a time, each after its own sweep.
+  # cpplint over the project config (CPPLINT.cfg). Its fix-the-tree round
+  # brought the non-test, non-legacy tree to zero findings, which is what let
+  # it go in blocking instead of advisory (R12: a gate must arrive green to be
+  # believed). Scoped like check-clang-tidy -- tests carry gtest idioms and
+  # media/filters/legacy/ is the LGPL quarantine -- and CPPLINT.cfg is the
+  # source of truth, so cpplint runs with no extra flags. The one category
+  # turned off there is build/c++11, a stale whitelist that rejects <chrono>,
+  # <mutex>, <thread>; the project is C++20 and uses them deliberately.
+  check-cpplint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cpplint
+        run: |
+          python3 -m venv "$RUNNER_TEMP/cpplint-venv"
+          "$RUNNER_TEMP/cpplint-venv/bin/pip" install "cpplint==1.6.1"
+      - name: cpplint must report no errors
+        run: |
+          # Same file list check-clang-tidy uses (see the comment above that
+          # job): non-test, non-legacy sources.
+          files=$(git ls-files 'base/*.cc' 'media/*.cc' 'player/*.cc' \
+                         'platform/*.cc' 'tools/*.cc' | grep -v 'legacy/')
+          "$RUNNER_TEMP/cpplint-venv/bin/cpplint" --repository=. $files
+
+  # Every style gate the project keeps is now present and blocking:
+  # check-format, check-clang-tidy and check-cpplint. Still open (docs/12-剩余工作清单.md):
+  # check-no-vendor-leak, the coverage job (a `lcov --summary || true` that
+  # cannot fail), and the ffmpeg-matrix / e2e-linux jobs, both still `if: false`.

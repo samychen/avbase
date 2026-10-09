@@ -4,6 +4,7 @@
 
 #include "media/filters/ffmpeg_decoder_factories.h"
 
+#include <memory>
 #include <utility>
 
 #include "media/filters/ffmpeg_audio_decoder.h"

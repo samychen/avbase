@@ -12,14 +12,13 @@
 
 #include "player/player_impl.h"
 
-#include "media/filters/ffmpeg_image_snapshot.h"
-
 #include <algorithm>
 #include <string>
 #include <utility>
 
 #include "base/functional/bind.h"
 #include "media/base/media_constants.h"
+#include "media/filters/ffmpeg_image_snapshot.h"
 
 namespace avbase {
 

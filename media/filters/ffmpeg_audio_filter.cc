@@ -6,6 +6,7 @@
 
 #include <cstring>
 #include <string>
+#include <utility>
 
 #include "base/logging.h"
 #include "platform/ffmpeg/av_includes.h"

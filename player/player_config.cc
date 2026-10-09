@@ -4,6 +4,8 @@
 
 #include "player/public/player_config.h"
 
+#include <utility>
+
 namespace avbase {
 namespace {
 

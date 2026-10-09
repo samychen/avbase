@@ -4,11 +4,11 @@
 
 #include "media/base/data_source.h"
 
-#include "base/functional/bind.h"
-
 #include <algorithm>
 #include <cstring>
 #include <utility>
+
+#include "base/functional/bind.h"
 
 namespace avbase::media {
 

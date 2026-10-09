@@ -15,6 +15,7 @@
 #include "media/filters/video_renderer_impl.h"
 
 #include <algorithm>
+#include <string>
 #include <utility>
 
 #include "base/check.h"

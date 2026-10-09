@@ -17,6 +17,8 @@
 
 #include "media/base/pipeline.h"
 
+#include <utility>
+
 #include "media/base/native_display.h"
 
 namespace avbase::media {

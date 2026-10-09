@@ -5,6 +5,7 @@
 #include "media/filters/ffmpeg_video_encoder.h"
 
 #include <cstring>
+#include <utility>
 
 #include "base/logging.h"
 #include "platform/ffmpeg/av_includes.h"

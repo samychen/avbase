@@ -4,6 +4,9 @@
 
 #include "platform/ffmpeg/ffmpeg_hw_decoder_factory.h"
 
+#include <memory>
+#include <utility>
+
 namespace avbase::platform::ffmpeg {
 
 FFmpegHwVideoDecoderFactory::FFmpegHwVideoDecoderFactory(

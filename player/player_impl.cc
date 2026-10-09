@@ -10,9 +10,8 @@
 
 #include "player/player_impl.h"
 
-#include "player/video_decoder_defaults.h"
-
 #include <algorithm>
+#include <string>
 #include <utility>
 
 #include "avbase/BuildConfig.h"
@@ -31,6 +30,9 @@
 #include "media/filters/retry_data_source.h"
 #include "platform/ffmpeg/url_data_source.h"
 #endif
+
+#include "player/video_decoder_defaults.h"
+
 namespace avbase {
 namespace {
 

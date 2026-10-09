@@ -4,6 +4,7 @@
 
 #include "media/base/media_log.h"
 
+#include <cstddef>
 #include <cstdio>
 #include <utility>
 
@@ -134,8 +135,9 @@ void MediaLog::AddEvent(MediaLogEvent::Level level, MediaLogEvent::Type type,
   events_.push_back(std::move(event));
   if (events_.size() > kMediaLogEventCapacity) {
     events_.erase(events_.begin(),
-                  events_.begin() + static_cast<long>(events_.size() -
-                                                      kMediaLogEventCapacity));
+                  events_.begin() +
+                      static_cast<std::ptrdiff_t>(events_.size() -
+                                                  kMediaLogEventCapacity));
   }
 }
 

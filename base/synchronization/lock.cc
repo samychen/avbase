@@ -5,6 +5,7 @@
 #include "base/synchronization/lock.h"
 
 #include <algorithm>
+#include <utility>
 
 #if defined(AVBASE_ENABLE_DCHECK)
 #include <vector>

@@ -4,6 +4,7 @@
 
 #include "player/event_hub.h"
 
+#include <cstddef>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -35,7 +36,7 @@ void EventHub::RemoveObserver(int id) {
   base::AutoLock scoped(lock_);
   for (size_t i = 0; i < observers_.size(); ++i) {
     if (observers_[i].id == id) {
-      observers_.erase(observers_.begin() + static_cast<long>(i));
+      observers_.erase(observers_.begin() + static_cast<std::ptrdiff_t>(i));
       return;
     }
   }

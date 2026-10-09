@@ -10,8 +10,6 @@
 
 #include "media/filters/pipeline_impl.h"
 
-#include "media/filters/live_edge_policy.h"
-
 #include <utility>
 
 #include "base/check.h"
@@ -19,6 +17,7 @@
 #include "base/logging.h"
 #include "base/time/default_tick_clock.h"
 #include "media/base/native_display.h"
+#include "media/filters/live_edge_policy.h"
 
 namespace avbase::media {
 

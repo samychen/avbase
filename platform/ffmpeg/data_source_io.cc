@@ -5,6 +5,7 @@
 #include "platform/ffmpeg/data_source_io.h"
 
 #include <string>
+#include <utility>
 
 #include "base/memory/raw_ptr.h"
 #include "platform/ffmpeg/av_includes.h"

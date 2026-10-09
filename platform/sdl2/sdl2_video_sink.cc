@@ -4,17 +4,16 @@
 
 #include "platform/sdl2/sdl2_video_sink.h"
 
-#include "SDL.h"
-
+#include <atomic>
 #include <memory>
+#include <utility>
 
+#include "SDL.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "platform/sdl2/gl_present.h"
 #include "platform/sdl2/surface.h"
-
-#include <atomic>
 
 namespace avbase::media {
 namespace {
