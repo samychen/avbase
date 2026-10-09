@@ -368,7 +368,16 @@ void DecoderStream<Traits>::DecodeNextBuffer() {
       return;
     }
   }
-  // Exhausted the batch: release it and ask for more.
+  // The watermark stopped the loop, so the batch is only PARTLY consumed, and
+  // the tail is not stale: the demuxer has handed those buffers over and will
+  // never hand them again, so clearing here throws media away. Measured on the
+  // VOD-shaped count case -- 89 of 93 batches had SEVEN buffers left, one frame
+  // decoded per eight fetched -- which read as "2x drops frames". Keep the
+  // tail; the next DecodeNextBuffer(), from MaybeDeliver, resumes where this
+  // stopped.
+  if (pending_buffer_index_ < pending_buffers_.size()) {
+    return;
+  }
   pending_buffers_.clear();
   pending_buffer_index_ = 0;
   if (!end_of_stream_) {

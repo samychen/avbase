@@ -632,5 +632,52 @@ TEST_F(DecoderStreamTest, WatermarkStopsPullingFromTheDemuxer) {
       << "the demuxer was read to exhaustion";
 }
 
+TEST_F(DecoderStreamTest, EveryBufferSurvivesAWatermarkTruncatedBatch) {
+  // The demuxer hands over SEVERAL buffers per read (kBuffersPerRead, 8 for a
+  // real one); the watermark stops the pump part-way through a batch. What
+  // happens to the rest of that batch is the whole test: it used to be cleared,
+  // which silently dropped media that the demuxer had already handed over and
+  // would never hand over again.
+  //
+  // Found from the other end, on the VOD-shaped count case: 89 of 93 batches
+  // had seven buffers left, one frame decoded per eight fetched, and a 2x
+  // playback test read that as "2x drops frames" (35 presented of 150 asked
+  // for).
+  //
+  // 40 buffers in, 80 outputs out, and nothing in between is allowed to vanish.
+  DemuxerStream::DecoderBufferVector buffers;
+  for (int i = 0; i < 40; ++i) {
+    buffers.push_back(MakeBuffer(/*serial=*/0));
+  }
+  buffers.push_back(DecoderBuffer::CreateEOSBuffer());
+  ScriptedDemuxerStream stream(std::move(buffers));
+
+  FakeAudioDecoder::Behaviour behaviour;
+  behaviour.outputs_per_buffer = 2;
+  std::vector<base::scoped_refptr<AudioDecoderFactory>> factories;
+  factories.push_back(
+      base::MakeRefCounted<FakeAudioDecoderFactory>("fake", behaviour));
+
+  auto decoder_stream = std::make_unique<AudioDecoderStream>(runner_);
+  bool init_done = false;
+  decoder_stream->Initialize(
+      &stream, AudioDecoderConfig(), std::move(factories),
+      base::BindOnce([](bool* flag, DecoderStatus) { *flag = true; },
+                     &init_done));
+  env_.RunUntilIdle();
+  ASSERT_TRUE(init_done);
+
+  ReadUntilEos(decoder_stream.get());
+  EXPECT_EQ(80, outputs_);
+  EXPECT_EQ(80u, decoder_stream->outputs_decoded())
+      << "media reached the demuxer and never reached the decoder: a batch the "
+         "watermark cut short lost its tail";
+  EXPECT_EQ(0u, decoder_stream->decode_errors());
+  // The stream is read in batches and each batch is now consumed before the
+  // next is fetched, so the read count follows the batches rather than running
+  // away from the consumer.
+  EXPECT_LE(stream.read_count(), 8);
+}
+
 }  // namespace
 }  // namespace avbase::media
