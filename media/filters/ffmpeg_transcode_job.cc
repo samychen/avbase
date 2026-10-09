@@ -18,18 +18,57 @@ namespace {
 
 namespace ff = ::avbase::platform::ffmpeg;
 
+// AVIO interrupt callback: a non-zero return aborts the blocking read in
+// progress. This is what makes Cancel() prompt on a stalled source -- without
+// it the token would only be noticed once av_read_frame returned on its own.
+int InterruptTranscode(void* opaque) {
+  const auto* token = static_cast<const TranscodeCancelToken*>(opaque);
+  return (token && token->IsCancelled()) ? 1 : 0;
+}
+
+Status CancelledStatus(const std::string& input_uri) {
+  return Err(ErrorCode::kCancelled, "transcode cancelled", input_uri,
+             "the caller cancelled the job; any partial output is left in "
+             "place");
+}
+
 }  // namespace
 
 // The main transcode loop: read → decode → encode → write, paced by nothing
 // (there is no clock offline). Per-stream open/encoder setup lives in
 // ffmpeg_transcode_streams.cc; this file owns the pump.
 Status Transcode(const std::string& input_uri, const TranscodeParams& params,
-                 TranscodeProgressCB progress_cb) {
+                 TranscodeProgressCB progress_cb,
+                 const TranscodeCancelToken* cancel) {
+  const auto cancelled = [cancel]() {
+    return cancel && cancel->IsCancelled();
+  };
+
   // --- Open input ---
-  AVFormatContext* raw_in = nullptr;
-  ff::DictPtr open_opts(nullptr);
+  // Allocate the context here rather than letting avformat_open_input do it,
+  // so the interrupt callback is installed BEFORE the open: opening a URL can
+  // block, and that is exactly the moment a cancel has to be able to land.
+  AVFormatContext* raw_in = avformat_alloc_context();
+  if (!raw_in) {
+    return Err(ErrorCode::kOutOfMemory, "cannot allocate an input context",
+               input_uri, "out of memory");
+  }
+  if (cancel) {
+    raw_in->interrupt_callback.callback = &InterruptTranscode;
+    // Read-only on our side; FFmpeg just wants a void* to hand back.
+    raw_in->interrupt_callback.opaque =
+        const_cast<TranscodeCancelToken*>(cancel);
+  }
   if (avformat_open_input(&raw_in, input_uri.c_str(), nullptr, nullptr) < 0 ||
       !raw_in) {
+    // Most failure paths free the context (and null the pointer), but not
+    // every one does -- close it if it survived.
+    if (raw_in) {
+      avformat_close_input(&raw_in);
+    }
+    if (cancelled()) {
+      return CancelledStatus(input_uri);
+    }
     return Err(ErrorCode::kSourceOpenFailed, "cannot open input", input_uri,
                "check the source file exists and is readable");
   }
@@ -52,8 +91,7 @@ Status Transcode(const std::string& input_uri, const TranscodeParams& params,
     if (av_seek_frame(in_ctx.get(), -1, seek_target, AVSEEK_FLAG_BACKWARD) <
         0) {
       LOG(WARNING) << "transcode: seek to " << params.start_time_seconds
-                   << "s failed, "
-                   << "transcoding from start";
+                   << "s failed, " << "transcoding from start";
     }
   }
 
@@ -159,7 +197,7 @@ Status Transcode(const std::string& input_uri, const TranscodeParams& params,
                 AV_TIME_BASE)
           : INT64_MAX;
 
-  while (av_read_frame(in_ctx.get(), pkt.get()) >= 0) {
+  while (!cancelled() && av_read_frame(in_ctx.get(), pkt.get()) >= 0) {
     const int idx = pkt->stream_index;
     AVStream* stream = in_ctx->streams[static_cast<unsigned>(idx)];
 
@@ -283,8 +321,17 @@ Status Transcode(const std::string& input_uri, const TranscodeParams& params,
     }
   }
 
+  // A cancel that interrupted a blocking read lands here as an ordinary
+  // av_read_frame() failure -- do not mistake it for end of input.
+  if (cancelled()) {
+    return CancelledStatus(input_uri);
+  }
+
   // --- Flush decoders and encoders ---
   if (want_audio && !audio.copy) {
+    if (cancelled()) {
+      return CancelledStatus(input_uri);
+    }
     avcodec_send_packet(audio.decoder.get(), nullptr);
     while (avcodec_receive_frame(audio.decoder.get(), frame.get()) >= 0) {
       auto buf = AvFrameToAudioBuffer(frame.get(), audio.in_sample_rate,
@@ -323,6 +370,9 @@ Status Transcode(const std::string& input_uri, const TranscodeParams& params,
   }
 
   if (want_video && !video.copy) {
+    if (cancelled()) {
+      return CancelledStatus(input_uri);
+    }
     avcodec_send_packet(video.decoder.get(), nullptr);
     while (avcodec_receive_frame(video.decoder.get(), frame.get()) >= 0) {
       auto vf =

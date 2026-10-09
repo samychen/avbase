@@ -5,9 +5,11 @@
 #include "media/filters/ffmpeg_transcode_job.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -63,8 +65,7 @@ std::string CreateTestAudioFile(const std::string& suffix,
   }
   EXPECT_TRUE(encoder.Flush(&packets));
 
-  const std::string path =
-      testing::TempDir() + "transcode_in_" + suffix + ext;
+  const std::string path = testing::TempDir() + "transcode_in_" + suffix + ext;
   FFmpegEncodeMuxer muxer;
   EXPECT_TRUE(muxer.Open(path));
   FFmpegEncodeMuxer::AudioStreamParams sp;
@@ -526,9 +527,8 @@ TEST(TranscodeJobTest, SampleRateChangeResamplesRatherThanRelabels) {
          "audio: source was "
       << in_ms << "ms, output is " << got_ms
       << "ms — the frames were relabelled instead of resampled";
-  EXPECT_GT(ratio, 0.85)
-      << "resampling lost audio: source was " << in_ms << "ms, output is "
-      << got_ms << "ms";
+  EXPECT_GT(ratio, 0.85) << "resampling lost audio: source was " << in_ms
+                         << "ms, output is " << got_ms << "ms";
 
   std::remove(input.c_str());
   std::remove(src441.c_str());
@@ -553,6 +553,89 @@ TEST(TranscodeJobTest, ProgressCallbackReaches100) {
   });
   ASSERT_TRUE(st) << st.error().ToString();
   EXPECT_EQ(max_progress, 100);
+
+  std::remove(input.c_str());
+  std::remove(output.c_str());
+}
+
+// E3b: the async handle drives the same pump on its own thread, reports 100%
+// progress and the final status through done_cb, and leaves a real output.
+// The second Start() reuses the same handle, which is the path that has to
+// reap the previous thread before it can install the next one.
+TEST(TranscodeJobTest, AsyncJobRunsAndReportsCompletion) {
+  base::test::TaskEnvironment env(
+      base::test::TaskEnvironment::TimeSource::kRealTime);
+  const std::string input = CreateTestAudioFile("async");
+  const std::string output = testing::TempDir() + "transcode_out_async.mp4";
+
+  TranscodeParams params;
+  params.output_path = output;
+  params.audio_codec.codec = "copy";
+  params.video_codec.codec = "";
+
+  TranscodeJob job;
+  for (int run = 0; run < 2; ++run) {
+    std::atomic<int> last_pct{-1};
+    std::atomic<bool> done{false};
+    Status final_status = Err(ErrorCode::kNotImplemented, "", {}, {});
+    ASSERT_TRUE(job.Start(
+        input, params, [&last_pct](int pct) { last_pct.store(pct); },
+        [&final_status, &done](Status s) {
+          final_status = std::move(s);
+          done.store(true);
+        }))
+        << "run " << run;
+    job.Wait();
+    ASSERT_TRUE(done.load()) << "run " << run;
+    ASSERT_TRUE(final_status)
+        << "run " << run << ": " << final_status.error().ToString();
+    EXPECT_EQ(last_pct.load(), 100) << "run " << run;
+    EXPECT_FALSE(job.IsRunning()) << "run " << run;
+  }
+
+  // The output is a real, readable container — not just a created file.
+  EXPECT_GT(Probe(&env, output).duration.InMillisecondsF(), 100.0);
+
+  std::remove(input.c_str());
+  std::remove(output.c_str());
+}
+
+// E3b: Cancel() from the first progress tick (i.e. from inside the worker's
+// own callback) stops the job and the completion status is kCancelled, not a
+// silently truncated success.
+TEST(TranscodeJobTest, CancelStopsTheJobWithCancelledStatus) {
+  base::test::TaskEnvironment env(
+      base::test::TaskEnvironment::TimeSource::kRealTime);
+  const std::string input = CreateTestAudioFile("cancel");
+  const std::string output = testing::TempDir() + "transcode_out_cancel.mp4";
+
+  TranscodeParams params;
+  params.output_path = output;
+  params.audio_codec.codec = "copy";
+  params.video_codec.codec = "";
+
+  TranscodeJob job;
+  std::atomic<bool> done{false};
+  std::atomic<int> progress_calls{0};
+  Status final_status = Err(ErrorCode::kNotImplemented, "", {}, {});
+  ASSERT_TRUE(job.Start(
+      input, params,
+      [&job, &progress_calls](int /*pct*/) {
+        // 21 input packets guarantee the boundary check gets its chance.
+        if (progress_calls.fetch_add(1) == 0) {
+          job.Cancel();
+        }
+      },
+      [&final_status, &done](Status s) {
+        final_status = std::move(s);
+        done.store(true);
+      }));
+  job.Wait();
+
+  ASSERT_TRUE(done.load());
+  ASSERT_FALSE(final_status);
+  EXPECT_EQ(final_status.error().code(), ErrorCode::kCancelled);
+  EXPECT_FALSE(job.IsRunning());
 
   std::remove(input.c_str());
   std::remove(output.c_str());

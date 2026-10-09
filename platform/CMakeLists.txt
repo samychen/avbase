@@ -60,6 +60,7 @@ if(AVBASE_ENABLE_FFMPEG)
       ../media/filters/ffmpeg_video_encoder.cc
       ../media/filters/ffmpeg_encode_muxer.cc
       ../media/filters/ffmpeg_transcode_job.cc
+      ../media/filters/ffmpeg_transcode_job_async.cc
       ../media/filters/ffmpeg_transcode_streams.cc
       ../media/filters/ffmpeg_transcode_audio.cc
       ../media/filters/ffmpeg_concat_job.cc
