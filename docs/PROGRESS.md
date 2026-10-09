@@ -2,19 +2,30 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）**
+## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）**
 
-最后更新：2026-10-09（第三十三轮）—— **cpplint 修树轮 + `check-cpplint` 阻塞门禁**：
-最后一个关闭的风格门禁打开。以 CI 同版 `cpplint==1.6.1` 扫非测试非 legacy 源（118 文件，
-scope 对齐 `check-clang-tidy`）量出 **59 处违规**，分五类。只有 `build/c++11` 是**约定偏离**
-——它把 `<chrono>/<mutex>/<thread>` 当过时的"未批准 C++11 头"，而项目是 C++20，整类关闭并
-写进新增的 `CPPLINT.cfg`（与 `.clang-format`/`.clang-tidy` 并列的真相源）。其余 48 处当真缺陷
-修：`include_order`（16，`.clang-format` 的 `IncludeCategories` 本就是 Google 次序，只是
-`IncludeBlocks: Preserve` 让"项目头块排在系统头块前"的漂移没被发现）、`include_what_you_use`
-（29，补 `<utility>/<memory>/<string>/<vector>`）、`runtime/int`（2，`long`→`std::ptrdiff_t`）、
-`runtime/references`（1，全树唯一的非 const 引用形参改指针）。本机复核：cpplint 全 scope
-**0 违规**、ffmpeg **540 通过 / 0 失败**、no-ffmpeg **277 + 25 通过**、asan **111 通过 / 1 跳过**、
-`check_invariants` all rules pass（360 文件，C23 基线 37 行不变）、clang-format 全树 0 违规。
+最后更新：2026-10-09（第三十四轮）—— **corpus 加宽到 315 字条，而它当场揪出三个真崩溃**：
+先给矩阵补上一个**组合维度**（tier 2，`full` 独有：12 recipe × 4 scale × 5 fps = 240 条编码，
+覆盖 HEVC/VP9/mpeg4/mjpeg × MP4/MKV/TS/FLV/AVI/WebM），`full` 从 74 条推到 **315 条**
+（本机 15m50s，属周常不属 PR，故 `corpus-full.yml` 另配 `corpus_baseline_full.json`）。
+加宽**立刻**把一类此前从未在 full 档跑过的样本变成红：`codec_mpeg2.mpg` 撞
+`Check failed: params.is_valid()`。顺这条线挖出**三个真崩溃**，都是同一句话的三种进入方式
+——**玩家把"这个流播不了"变成了进程 abort**：① 容器**没声明采样格式**（裸 `.ac3`、
+Ogg/Vorbis、MPEG-PS 里的 mp2）→ libavformat 给 `AV_SAMPLE_FMT_NONE` → `SampleFormat::kUnknown`
+→ `bytes_per_frame()==0`；② **声道数没有具名布局**（3/4/5/7 声道）→ 解复用器只能标
+`ChannelLayout::kDiscrete` → `ChannelLayoutToChannelCount()` 答 **0**；③ **容器压根没量出这条流**
+（libavformat 当场警告 "Could not find codec parameters"）→ 0 声道、0 采样率。①②修在
+`AudioParameters`：改为**显式携带声道数**，且 `is_valid()` **不再要求采样格式已知**
+（`AudioDecoderConfig::IsValidConfig()` 本来就不要求，播放路径也不读它）；③修在解复用器：
+`HasUsableParameters()` 为假的音频流**按"播不了"丢弃**（与既有的 data/attachment 丢弃同一条
+理由），但**不**丢弃"本套 build 没有解码器"的流——那是机器的性质，不是文件的性质，corpus
+把它记为 SKIPPED 而不是失败。**本机复核**：full **315 样本 · 打开 308/308(100%) · 首帧 1.026 s ·
+seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设全绿。修崩溃的产物又撞了
+仓库自己的 C1 门禁（`ffmpeg_demuxer.cc` 1154 行 > 1140），于是**按既有接缝再拆一次**：
+三个"吃 `AVStream`、吐 decoder config、从不碰 `AVFormatContext`"的纯函数搬进新 TU
+`ffmpeg_demuxer_configs.cc`，**1154 → 1022**，白名单上限随之下调到 1030（棘轮只许往下）。
+> 第三十三轮：cpplint 修树轮 + `check-cpplint` 阻塞门禁（59 违规分五类；48 处真修，
+> `build/c++11` 因项目是 C++20 整类关闭并写进新增 `CPPLINT.cfg`）
 > 第二十五轮：macOS 播放器实测与固化（预设 + CI 守护）
 > 第二十四轮：全量崩溃清扫（corpus 14/29 关闭竞态根因修复→0/35;TearDown 未 Stop 的
 > DISABLED 掩盖崩溃;反向断言）· corpus 矩阵分级（smoke/standard/full,74 产出崩溃 0）·
@@ -29,7 +40,128 @@ scope 对齐 `check-clang-tidy`）量出 **59 处违规**，分五类。只有 `
 > 第十八轮：fuzz 目标（libFuzzer + standalone 双驱动 + 语料入库）
 剩余工作以 [12-剩余工作清单](12-剩余工作清单.md) 为准（该项由各轮同步维护,是唯一权威清单）。
 
-## 第三十三轮（本轮）：cpplint 修树轮——把最后一个关闭的风格门禁打开
+## 第三十四轮（本轮）：corpus 加宽到 315 —— 它当场揪出三个真崩溃，修完又撞了 C1
+
+### (1) 加宽：给矩阵补上"组合"维度，full 从 74 条到 315 条
+
+矩阵此前每个块**只动一根轴**：codec、容器、分辨率、帧率场序、多轨、纯音频、损坏。
+这证明每一维单独可用，**证明不了它们能组合**——而"只有 1080p60 才出现的解码问题"、
+"只在 15fps 才错的 seek" 恰恰需要两根轴一起动。新增的 combination 块是 12 recipe ×
+4 scale × 5 rate = **240 条编码**（HEVC/VP9/mpeg4/mjpeg × MP4/MKV/TS/FLV/AVI/WebM，
+qvga/vga/hd/fhd，15/24/30/50/60 fps），只挂在 **tier 2**：`smoke`/`standard` 一条不变，
+PR 门禁仍然是便宜的 standard 档，240 条编码的成本落在**周常** `corpus-full.yml` 上。
+
+recipe 的**选择标准是"本套 shipped FFmpeg 解得开"**（`tools/setup_ffmpeg.sh` 的解码器表是
+**刻意最小**的 `h264,hevc,aac,mp3,vp9,opus,mpeg4,mjpeg`）。写进矩阵的 codec 若本套 build
+解不开，那就是一个**冒充失败的 SKIP**，而它污染的是打开率。`--min-samples` 默认值从 35
+改到 **300**，于是"未到 300"的那句提示从此只在真的没到时报。
+
+### (2) 加宽立刻变红：`codec_mpeg2.mpg` 撞 `params.is_valid()`
+
+加宽后的第一次 full 跑：**315 样本、打开 308/309、seek 302/309、崩溃 1**。顺这条线挖下去，
+发现的是**同一个 CHECK、同一句话的三种进入方式**——玩家把"这个流播不了"变成了**进程 abort**：
+
+```
+[FATAL check.cc:20] Check failed: params.is_valid().
+  #6 avbase::media::AudioRendererAlgorithm::Initialize
+  #7 avbase::media::AudioRendererImpl::Initialize
+```
+
+`AudioRendererImpl::Initialize` 的入参由 `RendererImpl::MakeAudioParameters(audio_decoder_config)`
+算出，而 `AudioRendererAlgorithm::Initialize` 对它 `CHECK`。三条进入方式：
+
+| # | 触发 | 机制 | 证据 |
+|---|---|---|---|
+| ① | 容器**没声明采样格式**（裸 `.ac3`、Ogg/Vorbis、MPEG-PS 的 mp2） | libavformat 给 `AV_SAMPLE_FMT_NONE` → `SampleFormat::kUnknown` → `bytes_per_frame()==0` | 用**本套 pinned FFmpeg** 探针：ac3/vorbis/mp2 的 `codecpar.format = -1`；同一文件用 Homebrew 8.0.1 探针则是 `8 (fltp)` |
+| ② | 声道数**没有具名布局**（3/4/5/7 声道） | 解复用器只能标 `ChannelLayout::kDiscrete`，而 `ChannelLayoutToChannelCount(kDiscrete)` 答 **0** | `ffmpeg -ac 3/4/5/7` 造四个 m4a，**四个全部**撞同一 CHECK |
+| ③ | 容器**压根没量出这条流** | libavformat 警告 "Could not find codec parameters"，交出 0 声道 0 采样率 | `codec_mpeg2.mpg` 里混着一条 `mp3, 0 channels` 的幽灵流 |
+
+①② 的教训是同一句：**`is_valid()` 问错了问题**。采样格式是**源声明的**，而容器**允许不声明**；
+`AudioDecoderConfig::IsValidConfig()` 从来不要求它，播放路径也**不读它**（解码器每个包自带真实
+格式）——把它算进有效性，就是把"容器没说"变成 abort。声道数则是被一个**有损枚举**吃掉的：
+`kDiscrete` 只是个标签，计数只能来自 `AudioDecoderConfig::channels`。
+
+### (3) 修法：两个修点，一个"不修"
+
+* **`AudioParameters` 显式携带声道数**（构造第 5 参，0 = 仍从 layout 推），`channels()`
+  优先用它；`is_valid()` 改为 `sample_rate > 0 && frames_per_buffer > 0 && channels() > 0`
+  ——**不再要求采样格式已知**。`RendererImpl::MakeAudioParameters` 传 `config.channels`。
+  具名布局路径完全不变（既有调用方零改动），`kDiscrete` 不再是 0。
+* **解复用器丢弃"量不出来"的音频流**：新增 `AudioDecoderConfig::HasUsableParameters()`
+  （= `sample_rate > 0 && channels > 0`，**刻意弱于** `IsValidConfig()`），为假的流在
+  `FFmpegDemuxer::AddStream` 里按"播不了"丢弃并记 WARNING——与既有的
+  `Data and attachment streams are not playable` 同一条理由。
+* **不丢的是"本套 build 没有解码器"的流**。那是**机器的性质**，不是文件的性质：
+  `IsValidConfig()` 要求 codec 可解析，用它当丢弃条件会让最小构建**静默隐藏**自己能播的文件。
+  于是 corpus 多了一条分类：带 `decoder factories declined` 标记的样本记 **SKIPPED**，
+  不计入打开率/seek 率——与"本机没有 libmp3lame 编码器"是同一类事实。
+
+### (4) 加宽的产物撞了 C1：按既有接缝再拆一次解复用器
+
+三个崩溃都修在 `ffmpeg_demuxer.cc`（`AddStream` 的丢弃分支）与 `renderer_impl.cc` 里，而
+`ffmpeg_demuxer.cc` 是白名单上**最贴近上限**的那一条：修完 **1154 行**，C1 上限 1140，
+**超 14 行**。两个选择——抬上限，或真拆一次。
+
+抬上限在这里是错的，理由就写在这条白名单注解自己身上：它说这个文件**不能按行数切**，因为
+里面是"**一段连续的 `AVFormatContext` 生命周期，切它是 use-after-free 的来历**"。但
+`MakeVideoConfig` / `MakeAudioConfig` / `MakeTextConfig` 三个函数**不在那条线上**：
+
+| 判据 | 这三个函数 |
+|---|---|
+| 入参 | 一个 `const AVStream*` |
+| 出参 | 一个值类型 config（`Video`/`Audio`/`Text`DecoderConfig） |
+| 碰 `AVFormatContext` 吗 | **不碰**——不读它的字段、不碰它的包队列、不碰它的析构 |
+| 有状态吗 | **无**——同一个 `AVStream` 永远得到同一个结果 |
+
+所以搬走它们**不可能移动任何生命周期**，这是"安全的切"与"危险的切"之间的可判定分界。
+
+新 TU `media/filters/ffmpeg_demuxer_configs.cc` 收下三个实现（改名加 `Decoder` 后缀，
+与头名 `ffmpeg_demuxer_configs.h` 一致，顺手符合 cpplint 的"同名头居首"约定），
+`ffmpeg_demuxer.cc` 只留**声明 + 调用**。文件 **1154 → 1022**，`LINE_LIMIT_ALLOWLIST`
+里的上限从 1140 **降到 1030**，并把注解改写为记录**两次**拆分（`_track_select.cc` 是第一次、
+`_configs.cc` 是第二次）——棘轮只许往下，这条注解现在也得说清"剩下的 1022 行为什么不能再切"。
+顺手从 `ffmpeg_demuxer.cc` 摘掉两处**随函数搬走的**依赖：`extern "C" { <libavutil/display.h> }`
+（旋转矩阵随视频 config 走）与 `<cmath>`（唯一的 `std::isnan` 也在那边）。
+
+### (5) 加宽顺带把"本机解码器面"量清楚了
+
+`full` 的 315 条里，**7 条**因本套 build 无解码器而 SKIPPED（`codec_mpeg2.ts`/`.mpg`、
+`container.ogg`、`audio_vorbis.ogg`/`_44k.ogg`、`audio_ac3.ac3`/`_6ch.ac3`），**6 条**
+非零退出（3 条 flac 无解复用器 + 3 条故意损坏样本）——全部**点名**，不再和"打不开"混为一谈。
+
+### (6) 验证
+
+| 面 | 实测 |
+|---|---|
+| `full`（315 样本，15m50s） | 打开 **308/308 (100%)** · 首帧 **1.026 s** · seek **302/308 (98.1%)** · **崩溃 0** |
+| 新增单测 | 9 个 value-type 用例（`AudioParametersTest` 6 + `AudioDecoderConfigTest` 3） |
+| `check_invariants` | all rules pass（364 文件扫到，含两个新测试 TU；C23 基线 37 行不变） |
+| clang-format | 改动 8 个文件（含拆分后的两个新文件）全部 0 漂移 |
+| cpplint | 全 scope **119 文件 0 违规**（含新 TU；scope 只含非测试非 legacy `.cc`） |
+| `ctest build/ffmpeg` | **549 通过 / 0 失败** |
+| `ctest build/no-ffmpeg` | **437 通过 / 0 失败**（含拆分后仍要编过的两个新测试 TU） |
+| `ctest build/asan` | **549 通过 / 0 失败** |
+
+### (7) 遗留
+
+* **CI 首跑未验证**：本机是 pinned FFmpeg 7.1.1（`tools/build`），CI 的 `corpus` job 不带
+  `tools/build` 会落到发行版 ffmpeg，两者 `codecpar.format` 的填充情况不同——这正是修在玩家
+  而不是修在样本表里的原因。首个完整跑过 `corpus`/`corpus-full` 的 push 才算数。
+* **组合维度的回归最多滞后一周**：它只在 `full` 里，PR 档不含。这是刻意换来的运行时间，
+  但"组合类缺陷靠周常发现"是这套设计的已知代价。
+* flac 三条只有解复用器缺失这一条路径，没有 `decoder factories declined` 标记，
+  仍计在 seek 率里（与三条故意损坏样本同类）。
+
+### (8) 教训
+
+* **加宽自己就是一次测试**：240 条新样本进矩阵后，"此前从未在 full 档跑过的那类文件"
+  立刻变红。corpus 的数字只有**真跑过**才存在——上一轮记的"崩溃已清零"覆盖的是那一轮
+  的 35 条样本，不是这一轮的 315 条。
+* **CHECK 会把"输入不对"升级成"进程死"**：边界校验要放在**能拒绝**的那一层。
+  `AudioParameters` 的采样格式本就不该参与有效性判断；`kDiscrete` 把计数丢掉则是
+  枚举设计替调用方做了它做不到的决定。
+
+## 第三十三轮：cpplint 修树轮——把最后一个关闭的风格门禁打开
 
 ### (1) 先量，再决定什么该"修"、什么该"关"
 
@@ -443,7 +575,7 @@ mjpeg 测试结尾误删 mp4 的 bug 修正为删除正确的 mkv 路径。
 | 2.5 断线重连 GAP 清零 | 新 `platform/ffmpeg/url_data_source.{h,cc}`（avio 承载:open 即装中断回调、ReadBlocking 每 read 寻址、私有 worker 上异步读、回调必投递不内联）；`PlayerImpl::Prepare` 把 http(s) URI 接成 UrlDataSource+RetryDataSource 进入桥（rtmp/rtsp/srt 留协议层）。weaknet 挂断用例 kError 0.2s → **kCompleted 23.7s（5 请求）**。ReconnectNow 如实声明"自动重试已激活",手动强踢需要安全的重开原语(Abort 是永久停止)已记录 |
 | 6.2 直播字幕窗口锚点 | `CuesBeyondTheWindowAreDropped` 转绿(3 连跑):改写为**迟到订阅**形状(播 2s 后选轨,积压逐个判过期),断言锚定选轨时刻的媒体时间。两次中间失败均为测试错(选轨时机/钟偏斜边界),策略本身正确 |
 | 4.7 clang-tidy | 修树轮实测 15 个跨层文件 **0 发现**,`check-clang-tidy` 以阻塞模式接入 CI(非测试非 legacy 源) |
-| corpus CI 分层 | PR 跑 standard,新增 `corpus-full.yml` 每周(周一 03:00 UTC)+手动触发跑 full(300 目标 ~11 分钟属周常不属 PR) |
+| corpus CI 分层 | PR 跑 standard,新增 `corpus-full.yml` 每周(周一 03:00 UTC)+手动触发跑 full(见第三十四轮:full 现为 315 样本 ~16 分钟,属周常不属 PR,并另配 `corpus_baseline_full.json`) |
 | 新单测 | `url_data_source_unittest.cc` 5 例(file:// 同 avio 路径) |
 
 验证：ffmpeg **487/487**、no-ffmpeg **376/376**、asan **487/487**、weaknet 5 例全过且 **0 GAP**、invariant 302 文件全过。
