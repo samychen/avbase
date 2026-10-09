@@ -108,7 +108,9 @@ TEST_F(PipelineThrottleTest, ThrottledSourceProducesAStallRecoverCycle) {
            audio_sinks_->last_sink()->start_count() > 0;
   })) << "sinks never started; "
       << describe();
-  audio_sinks_->last_sink()->set_render_runner(audio_thread_.task_runner());
+  // No set_render_runner() call here: the fixture's pull arms the render
+  // runner before every round (pointing it at the fixture's own device
+  // sequence), so pinning it to the audio thread here would only be undone.
 
   // The link is slow: the queues must run dry.
   ASSERT_TRUE(PumpUntil([this] {

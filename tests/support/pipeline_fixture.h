@@ -82,6 +82,7 @@ class PipelineTestFixture : public ::testing::Test {
     runner_ = env_.GetMainThreadTaskRunnerRef();
     ASSERT_TRUE(video_thread_.Start());
     ASSERT_TRUE(audio_thread_.Start());
+    ASSERT_TRUE(render_thread_.Start());
   }
 
   // Every wait pumps S1 as it polls: PipelineImpl posts its whole graph
@@ -111,6 +112,7 @@ class PipelineTestFixture : public ::testing::Test {
     env_.RunUntilIdle();
     video_thread_.Stop();
     audio_thread_.Stop();
+    render_thread_.Stop();
   }
 
   // ---- configuration hooks (set before StartPipeline) ----------------------
@@ -133,6 +135,14 @@ class PipelineTestFixture : public ::testing::Test {
       base::test::TaskEnvironment::TimeSource::kRealTime};
   base::Thread video_thread_{"avbase-pipe-S3"};
   base::Thread audio_thread_{"avbase-pipe-S4"};
+  // The device sequence (S7). Render() runs here, NOT on S4: S4 is the decode
+  // pump, and a paced source parks a read there for as long as the wall clock
+  // takes to reach the edge. A render marshalled onto S4 would therefore queue
+  // behind that park and wait out the clock -- which is exactly what made the
+  // paced count suites run at a quarter speed, eight audio periods of wall per
+  // period pulled. The real audio device is a sequence of its own
+  // (audio_renderer_ring.cc calls it S7), and this is that sequence.
+  base::Thread render_thread_{"avbase-pipe-S7"};
   base::DefaultTickClock tick_clock_;
   base::scoped_refptr<MediaLog> media_log_ = base::MakeRefCounted<MediaLog>();
   std::shared_ptr<AvSyncController> av_sync_;
@@ -321,21 +331,59 @@ class PipelineTestFixture : public ::testing::Test {
   // computed from the round's own media cost, so the caller does not have to
   // restate the audio parameters.
   int PumpRoundRealtime(int media_ms_per_round = kRealtimeRoundMs) {
+    // The clock starts BEFORE RunUntilIdle(), so the S1 drain is part of the
+    // round's media budget rather than extra time on top of it. Leaving it
+    // outside cost a fraction of a millisecond of wall per round, and across a
+    // ten-second run that is a round the pump never gets back.
+    const auto start = std::chrono::steady_clock::now();
     env_.RunUntilIdle();
     if (!pipeline_ || !pipeline_->IsRunning()) {
       return 0;
     }
-    const auto start = std::chrono::steady_clock::now();
-    const int frames = PullOneInterval();
-    // Pace to the media cost, minus what the pull itself already took, so a
-    // slow round does not push the schedule permanently behind. Never
-    // negative: a round that overran sleeps not at all.
-    const auto spent = std::chrono::steady_clock::now() - start;
-    const auto target = std::chrono::milliseconds(media_ms_per_round) - spent;
-    if (target > std::chrono::milliseconds(0)) {
-      std::this_thread::sleep_for(target);
+    return PullOneRealtimeInterval(start, media_ms_per_round);
+  }
+
+  // One display interval of device work, PACED across the interval rather than
+  // fired all at once. Pulls are spread because the audio ready ring is only
+  // kReadyChunks (4) chunks deep: three device periods pulled back to back
+  // drain it in well under a millisecond, and a 1x source cannot refill 16 ms
+  // of media in that time, so every burst starts on an empty ring and roughly
+  // one period in seven comes back silent. A device consumes at a steady rate.
+  // The display frame is pulled inside the LAST slice so its cost is absorbed
+  // by that slice's slack rather than added after the round's deadline.
+  int PullOneRealtimeInterval(std::chrono::steady_clock::time_point start,
+                              int media_ms_per_round) {
+    test::FakeAudioSink* audio = audio_sinks_->last_sink();
+    test::FakeVideoSink* video = video_sinks_->last_sink();
+    if (!audio) {
+      return 0;
+    }
+    audio->set_render_runner(render_thread_.task_runner());
+    constexpr int kPeriodsPerRound = 3;
+    const auto slice =
+        std::chrono::microseconds(media_ms_per_round * 1000) / kPeriodsPerRound;
+    int frames = 0;
+    for (int i = 0; i < kPeriodsPerRound; ++i) {
+      audio->PullPeriod(bus_.get());
+      if (i == kPeriodsPerRound - 1 && video) {
+        const size_t before = video->frames().size();
+        video->PullFrames(1);
+        frames = static_cast<int>(video->frames().size() - before);
+      }
+      PaceUntil(start + slice * (i + 1));
     }
     return frames;
+  }
+
+  // Busy-waits to the deadline. sleep_until on this platform overshoots by up
+  // to ~3.8 ms (measured: a 15.7 ms request slept as long as 19.4 ms), and
+  // with three sub-deadlines per round that overshoot costs whole rounds --
+  // and the rounds are exactly what these count assertions are made of. The
+  // price is one core for the duration of a paced run; the paced suites accept
+  // that in exchange for a clock the counts can be trusted against.
+  static void PaceUntil(std::chrono::steady_clock::time_point due) {
+    while (std::chrono::steady_clock::now() < due) {
+    }
   }
 
   // One display interval's worth of video plus three audio device periods,
@@ -347,12 +395,16 @@ class PipelineTestFixture : public ::testing::Test {
     if (!audio) {
       return 0;
     }
-    // The audio renderer's pump lives on S4; a render callback running
-    // inline on this thread would touch decoder state from two sequences at
-    // once (TSan caught it). Marshal pulls onto S4, like a real device
-    // thread. Idempotent: setting it every round is free and closes the
-    // window between sink creation and the first explicit arm.
-    audio->set_render_runner(audio_thread_.task_runner());
+    // Marshal the pull onto the DEVICE sequence S7, like a real device thread.
+    // Not S4: S4 owns the decode pump, and a paced demuxer parks a read there
+    // until the wall clock reaches the edge, so a render queued behind that
+    // park waits out the clock -- which ran the paced count suites at a quarter
+    // speed. Not inline on this thread either: the callback touches renderer
+    // state, and running it here would touch that state from two sequences at
+    // once (TSan caught exactly that from the earlier inline version).
+    // Idempotent: setting it every round is free and closes the window between
+    // sink creation and the first explicit arm.
+    audio->set_render_runner(render_thread_.task_runner());
     for (int i = 0; i < 3; ++i) {
       audio->PullPeriod(bus_.get());
     }

@@ -324,6 +324,21 @@ int64_t SyntheticDemuxer::AudioAvailableLocked() const {
 void SyntheticDemuxer::VideoStream::Read(uint32_t count, ReadCB read_cb) {
   DecoderBufferVector out;
   {
+    // Held for the whole read, exactly like the audio leg. S3 and S4 read the
+    // two streams CONCURRENTLY (decoder_stream.cc ReadFromDemuxer invokes
+    // DemuxerStream::Read on the owning renderer's sequence, which is S3 for
+    // video and S4 for audio), and both packet factories advance
+    // |packets_read_|
+    // -- so an unlocked video read races the audio one there.
+    //
+    // It used to unlock a mutex it had never locked. That is undefined
+    // behaviour, and on Darwin's normal mutexes it does not fail cleanly: it
+    // leaves the mutex's state claiming a lock nobody holds, after which the
+    // audio leg -- which parks on and relocks the SAME mutex -- blocks forever
+    // in lock(). The bug is invisible until SyntheticSpec::paced routes this
+    // leg into the branch at all; unpaced the loop below never runs and the
+    // bare unlock is never reached.
+    std::unique_lock<std::mutex> guard(owner_->lock_);
     // Paced: hand out only what the clock says exists, and PARK if that is
     // nothing yet. Parking is what a real demuxer does at a live edge, and it
     // is why a paced read must not be answered with an empty vector: the
@@ -336,9 +351,9 @@ void SyntheticDemuxer::VideoStream::Read(uint32_t count, ReadCB read_cb) {
     if (owner_->spec_.paced && owner_->tick_clock_) {
       while (owner_->VideoAvailableLocked() <= owner_->next_frame_ &&
              owner_->next_frame_ < owner_->spec_.frame_count()) {
-        owner_->lock_.unlock();
+        guard.unlock();
         parked_.TimedWait(base::Milliseconds(2));
-        owner_->lock_.lock();
+        guard.lock();
       }
     }
     while (out.size() < count &&

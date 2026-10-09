@@ -170,8 +170,10 @@ class SyntheticDemuxer final : public Demuxer {
 
  private:
   // Both streams read the owner's cursor, so a seek moves the two of them
-  // together and neither can drift. They are called on the media sequence only
-  // (DemuxerStream's contract), so no lock guards them.
+  // together and neither can drift. They are NOT called on one sequence: the
+  // pipeline's decoder streams invoke Read() from S3 and S4 respectively (see
+  // decoder_stream.cc's ReadFromDemuxer), so each Read() takes |lock_| for the
+  // whole call rather than relying on a single-sequence caller.
   class VideoStream final : public DemuxerStream {
    public:
     VideoStream(SyntheticDemuxer* owner);
