@@ -362,11 +362,12 @@ jobs:
       # actually block. Leaving it non-blocking after the fix would mean the
       # next regression is reported by a person rather than by CI.
       #
-      # PRs run the standard profile: the full matrix is ~11 minutes at the
-      # 300-sample target and that cost belongs on the weekly run, not on
-      # every PR. The standard profile keeps every family represented, so a
-      # per-family regression still blocks; the weekly corpus-full workflow
-      # re-measures the full matrix and refreshes the baseline.
+      # PRs run the standard profile: the full matrix is 315 samples and ~16
+      # minutes, and that cost belongs on the weekly run, not on every PR. The
+      # standard profile keeps every family represented, so a per-family
+      # regression still blocks; the weekly corpus-full workflow re-measures
+      # the full matrix -- the only profile that carries the combination block
+      # -- against its own baseline and refreshes the artifact.
       - name: Dimensional corpus and its four metrics (standard)
         run: |
           python3 tools/check_corpus.py \

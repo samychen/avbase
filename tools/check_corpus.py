@@ -25,11 +25,28 @@ Two decisions, both forced by the first one:
      explicit allowance for the noise that is actually present (see
      FIRST_FRAME_TOLERANCE below).
 
+THE WIDTH. Profiles are cumulative tiers, and the width lives in two places:
+
+  * one axis at a time -- codec, container, resolution, frame rate, track
+    layout, audio-only, damage. This is what `smoke` and `standard` carry, and
+    it is what proves each dimension works on its own;
+  * the combination block (tier 2, `full` only) -- codec x container x scale x
+    frame rate. 240 encodes, which is where the corpus gets past 300 samples.
+    It is the only block that can catch a bug needing two axes to move
+    together, and it is also why `full` is the weekly profile: that cost
+    belongs on a scheduled run, not on every push.
+
 WHAT THIS IS NOT. It is not a claim that 300 samples is enough to find every
 defect. It is a claim that the DIMENSIONS are covered -- that a HEVC-in-MKV
 and a truncated-HDR-MP4 and a two-subtitle-MKV all go through the same front
 door, and that when one of them starts failing we hear about it rather than
 discovering it later.
+
+WHAT IT DOES NOT CHARGE TO THE PLAYER. A sample whose codec this build has no
+decoder for is SKIPPED, not failed (see NO_DECODER_MARKER).
+tools/setup_ffmpeg.sh ships a deliberately minimal decoder set, and a distro
+ffmpeg on CI decodes far more, so counting those as failures would report the
+same repository as broken in one place and healthy in the other.
 
 USAGE
     tools/check_corpus.py --headless build/ffmpeg/bin/headless \\
@@ -54,6 +71,16 @@ import tempfile
 FIRST_FRAME_TOLERANCE = 0.25
 SEEK_TOLERANCE = 0.20
 
+# What the player says, verbatim, when it has no decoder for the stream
+# (media/filters/decoder_stream.cc, TryNextFactory). It is the difference
+# between "this build cannot play that codec" and "the player broke on
+# something it should have played", and only the first is a property of the
+# machine. tools/setup_ffmpeg.sh deliberately ships a minimal decoder set
+# (h264 hevc aac mp3 vp9 opus mpeg4 mjpeg), while a distro ffmpeg decodes
+# far more -- so the same corpus with the same samples would look healthy on
+# CI and broken on a developer box if these were charged to the open rate.
+NO_DECODER_MARKER = "decoder factories declined"
+
 # The dimensional matrix. Each entry is (name, output_ext, ffmpeg args). Kept
 # small and explicit rather than combinatorial: the point is that every
 # DIMENSION is represented, not that every pair is.
@@ -63,6 +90,40 @@ SEEK_TOLERANCE = 0.20
 # grow, and why the smoke profile stays at the historical one-case-per-family size
 # instead of drifting every time someone touches a dimension.
 _PROFILE_LEVELS = {"smoke": 0, "standard": 1, "full": 2}
+
+# The three axes of the combination block (tier 2 only). Kept as module-level
+# tables because the recipes have to be gated on encoder availability one at a
+# time, and because a reader looking for "what does the full profile actually
+# cover" should find it in one place rather than three nested loops.
+#
+# Every codec here is one the SHIPPED FFmpeg can decode as well as the local
+# ffmpeg CLI can encode. tools/setup_ffmpeg.sh is deliberately minimal
+# (--enable-decoder=h264,hevc,aac,mp3,vp9,opus,mpeg4,mjpeg), so a recipe naming
+# anything else would generate a sample the player can never play -- a SKIP
+# dressed up as a failure, charged to the open rate.
+_COMBINATION_RECIPES = (
+    # label, vcodec, ext, acodec_args, extra
+    ("h264_mp4", "libx264", ".mp4", ["aac"], []),
+    ("h264_mkv", "libx264", ".mkv", ["aac"], []),
+    ("h264_ts", "libx264", ".ts", ["aac"], []),
+    ("h264_flv", "libx264", ".flv", ["aac"], []),
+    ("h264_avi", "libx264", ".avi", ["aac"], []),
+    ("mpeg4_mp4", "mpeg4", ".mp4", ["aac"], []),
+    ("mpeg4_mkv", "mpeg4", ".mkv", ["aac"], []),
+    ("mpeg4_avi", "mpeg4", ".avi", ["aac"], []),
+    # x265's default preset is "medium", which turns a 2-second 1080p60 clip
+    # into a twenty-second encode. 240 of those is the difference between a
+    # 4-minute corpus and a 30-minute one, and the decoder sees the same
+    # bitstream shape either way.
+    ("hevc_mp4", "libx265", ".mp4", ["aac"], ["-preset", "ultrafast"]),
+    ("hevc_mkv", "libx265", ".mkv", ["aac"], ["-preset", "ultrafast"]),
+    ("vp9_webm", "libvpx-vp9", ".webm", ["opus", "-strict", "-2"],
+     ["-deadline", "realtime", "-cpu-used", "5"]),
+    ("mjpeg_mkv", "mjpeg", ".mkv", ["aac"], []),
+)
+_COMBINATION_SCALES = (("qvga", "320:240"), ("vga", "640:480"),
+                       ("hd", "1280:720"), ("fhd", "1920:1080"))
+_COMBINATION_RATES = (15, 24, 30, 50, 60)
 
 
 def build_matrix(ffmpeg, src, outdir, video_src, profile="smoke"):
@@ -309,6 +370,40 @@ def build_matrix(ffmpeg, src, outdir, video_src, profile="smoke"):
              ["-i", src, "-t", "2", "-vn", "-c:a", codec, "-ar", str(rate),
               "-ac", str(channels)] + extra)
 
+    # --- dimension: combinations (tier 2 only) -----------------------------
+    # Every block above varies ONE axis and holds the rest still, which proves
+    # each dimension works on its own. It cannot prove they COMPOSE, and a
+    # decoder bug that only appears for HEVC at 1080p60, or a seek that is only
+    # wrong at 15 fps, needs two axes moving together to show up.
+    #
+    # This block is the reason `full` exists as a separate profile. At 12
+    # recipes x 4 scales x 5 rates = 240 encodes it is far too much for a
+    # per-push job, so only the weekly run pays for it; `standard` keeps every
+    # family represented and stays the blocking per-PR gate. That split is the
+    # honest answer to "300 samples": the number is a runtime cost, not a
+    # repository one, and pretending otherwise by keeping the matrix small is
+    # how the previous 29-sample matrix stayed small for months.
+    if level >= 2:
+        for label, vcodec, ext, acodec_args, extra in _COMBINATION_RECIPES:
+            if vcodec not in available_encoders:
+                skipped.append(("combo_%s*" % label,
+                                "no video encoder for %s in this ffmpeg build"
+                                % vcodec))
+                continue
+            if acodec_args[0] not in available_encoders:
+                skipped.append(("combo_%s*" % label,
+                                "no audio encoder for %s in this ffmpeg build"
+                                % acodec_args[0]))
+                continue
+            for scale_label, scale in _COMBINATION_SCALES:
+                for rate in _COMBINATION_RATES:
+                    name = "combo_%s_%s_%dfps%s" % (label, scale_label, rate,
+                                                    ext)
+                    emit(name, ["-i", video_src, "-t", "2",
+                                "-c:v", vcodec] + extra
+                         + ["-vf", "scale=" + scale, "-r", str(rate),
+                            "-c:a"] + acodec_args)
+
     # --- dimension: damage ------------------------------------------------
     emit("damage_truncated.mp4", ["-i", video_src, "-t", "1"])
     with open(video_src, "rb") as handle:
@@ -352,20 +447,24 @@ def first_frame_seconds(output):
 
 
 def measure(headless, path, timeout):
-    """Runs headless once. Returns (opened, first_frame_s, seek_ok, crashed)."""
+    """Runs headless once.
+
+    Returns (opened, first_frame_s, exit_ok, crashed, undecodable).
+    """
     try:
         result = subprocess.run([headless, path, "--timeout", str(timeout)],
                                 capture_output=True, text=True,
                                 timeout=timeout + 20)
     except subprocess.TimeoutExpired:
-        return False, None, False, False
+        return False, None, False, False, False
     output = (result.stdout or "") + (result.stderr or "")
     opened = "Traceback" not in output and "Check failed" not in output
     # A crash shows up as a signal exit (negative) or a sanitizer/FATAL line.
     crashed = (result.returncode < 0 or "AddressSanitizer" in output
                or "Check failed" in output or "FATAL" in output)
     first = first_frame_seconds(output)
-    return opened, first, result.returncode == 0, crashed
+    undecodable = NO_DECODER_MARKER in output
+    return opened, first, result.returncode == 0, crashed, undecodable
 
 
 def main():
@@ -376,7 +475,7 @@ def main():
     parser.add_argument("--testdata", default="tests/testdata")
     parser.add_argument("--baseline", default="corpus_baseline.json")
     parser.add_argument("--timeout", type=int, default=25)
-    parser.add_argument("--min-samples", type=int, default=35)
+    parser.add_argument("--min-samples", type=int, default=300)
     parser.add_argument("--profile", choices=sorted(_PROFILE_LEVELS),
                         default="smoke",
                         help="how wide the corpus is: smoke is the historical "
@@ -407,8 +506,8 @@ def main():
         print("check_corpus: generating the dimensional matrix in %s" % workdir)
         made, failed, skipped = build_matrix(ffmpeg, audio_src, workdir,
                                               video_src, args.profile)
-        print("check_corpus: %d sample(s) generated across "
-              "codec / container / resolution / rate / multitrack / audio / damage"
+        print("check_corpus: %d sample(s) generated across codec / container / "
+              "resolution / rate / multitrack / audio / damage / combinations"
               % len(made))
         if failed:
             # These used to vanish without a word, which made a shrinking
@@ -439,9 +538,22 @@ def main():
         seek_ok = 0
         not_opened = []
         not_seeked = []
+        undecodable = []
         for name, path in made:
-            ok, first, seeked, was_crashed = measure(args.headless, path,
-                                                    args.timeout)
+            ok, first, seeked, was_crashed, no_decoder = measure(
+                args.headless, path, args.timeout)
+            # A crash is checked before anything else: it is a defect whether or
+            # not the build can decode the codec, and it must not be excused by
+            # the skip below.
+            if was_crashed:
+                crashed += 1
+                print("  CRASH  %s" % name)
+            if no_decoder:
+                # Not a failure -- this build has no decoder for the codec.
+                # Excluded from every rate so a minimal FFmpeg build is not
+                # reported as a player that cannot open its own corpus.
+                undecodable.append(name)
+                continue
             if ok:
                 opened_count += 1
             else:
@@ -455,11 +567,8 @@ def main():
                 seek_ok += 1
             else:
                 not_seeked.append(name)
-            if was_crashed:
-                crashed += 1
-                print("  CRASH  %s" % name)
 
-        total = len(made) or 1
+        total = (len(made) - len(undecodable)) or 1
         metrics = {
             "samples": len(made),
             "open_success_rate": opened_count / total,
@@ -470,13 +579,19 @@ def main():
         }
         print("")
         print("  open success      %d/%d (%.1f%%)"
-              % (opened_count, len(made), 100 * metrics["open_success_rate"]))
+              % (opened_count, total, 100 * metrics["open_success_rate"]))
         if metrics["first_frame_mean_s"] is not None:
             print("  first frame       mean %.3f s over %d sample(s)"
                   % (metrics["first_frame_mean_s"], len(first_frames)))
         print("  seek success      %d/%d (%.1f%%)"
-              % (seek_ok, len(made), 100 * metrics["seek_success_rate"]))
+              % (seek_ok, total, 100 * metrics["seek_success_rate"]))
         print("  crashes           %d" % crashed)
+        if undecodable:
+            print("")
+            print("  %d sample(s) SKIPPED (no decoder in this build):"
+                  % len(undecodable))
+            for name in undecodable:
+                print("    - %s" % name)
         if not_opened:
             print("")
             print("  %d sample(s) did NOT open:" % len(not_opened))

@@ -1,8 +1,13 @@
 # The full corpus matrix on a schedule, not on every PR: at the 300-sample
-# target the full profile is ~11 minutes of runner time, while the standard
+# target the full profile is ~16 minutes of runner time, while the standard
 # profile in ci.yml already runs every family per push and blocks on
 # per-family regressions. This workflow re-measures the full matrix weekly
 # (and on demand via workflow_dispatch) and refreshes the baseline artifact.
+#
+# It compares against corpus_baseline_full.json, not the per-PR
+# corpus_baseline.json: the combination block only exists in `full`, so the
+# two profiles measure different corpora and a shared baseline would compare
+# numbers that were never recorded over the same samples.
 name: corpus-full
 on:
   schedule:
@@ -28,7 +33,7 @@ jobs:
             --headless build/ffmpeg/bin/headless \
             --ffmpeg "$(command -v ffmpeg)" \
             --profile full \
-            --baseline corpus_baseline.json
+            --baseline corpus_baseline_full.json
       - name: Keep the corpus metrics as an artifact
         if: always()
         uses: actions/upload-artifact@v4
