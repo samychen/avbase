@@ -67,8 +67,7 @@ media::DataSource::ReadResult UrlDataSource::EnsureOpen() {
   av_dict_free(&opts);
   if (ret < 0) {
     return base::unexpected(media::MediaError(
-        media::ErrorCode::kSourceOpenFailed,
-        "cannot open the network source",
+        media::ErrorCode::kSourceOpenFailed, "cannot open the network source",
         "avio_open2(\"" + uri_ + "\"): " + ff::AvErrorString(ret),
         "check the URL and connectivity; connection failures are retried "
         "by config.net.reconnect when the retry layer is active"));
@@ -94,9 +93,8 @@ void UrlDataSource::SetHost(Host* host) {
   (void)host;
 }
 
-media::DataSource::ReadResult UrlDataSource::ReadBlocking(int64_t offset,
-                                                          size_t size,
-                                                          uint8_t* data) {
+media::DataSource::ReadResult
+UrlDataSource::ReadBlocking(int64_t offset, size_t size, uint8_t* data) {
   if (size == 0) {
     return 0;
   }
@@ -124,10 +122,10 @@ media::DataSource::ReadResult UrlDataSource::ReadBlocking(int64_t offset,
           "offset = " + std::to_string(offset + static_cast<int64_t>(total)),
           "this follows Stop(); no action needed"));
     }
-    const int got = avio_read(avio_, data + total,
-                              static_cast<int>(size - total));
+    const int got =
+        avio_read(avio_, data + total, static_cast<int>(size - total));
     if (got == AVERROR_EOF) {
-      break;   // Short read / clean EOF: return what we have.
+      break;  // Short read / clean EOF: return what we have.
     }
     if (got < 0) {
       return base::unexpected(ReadError(got, uri_));
@@ -144,8 +142,7 @@ void UrlDataSource::Read(int64_t offset, size_t size, uint8_t* data,
   // (blocking avio call included) runs on the worker, and only the RESULT is
   // posted to |task_runner|.
   if (!worker_) {
-    worker_ = std::make_unique<std::thread>(
-        [this] { WorkerMain(); });
+    worker_ = std::make_unique<std::thread>([this] { WorkerMain(); });
   }
   {
     std::scoped_lock scoped(pending_lock_);
@@ -155,9 +152,8 @@ void UrlDataSource::Read(int64_t offset, size_t size, uint8_t* data,
            media::DataSource::ReadCB cb) {
           media::DataSource::ReadResult result =
               self->ReadBlocking(offset, size, data);
-          runner->PostTask(FROM_HERE,
-                           avbase::base::BindOnce(std::move(cb),
-                                                  std::move(result)));
+          runner->PostTask(FROM_HERE, avbase::base::BindOnce(
+                                          std::move(cb), std::move(result)));
         },
         base::Unretained(this), offset, size, data, std::move(task_runner),
         std::move(read_cb)));
@@ -170,9 +166,8 @@ void UrlDataSource::WorkerMain() {
     avbase::base::OnceClosure job;
     {
       std::unique_lock lock(pending_lock_);
-      pending_cv_.wait(lock, [this] {
-        return worker_shutdown_ || !pending_jobs_.empty();
-      });
+      pending_cv_.wait(
+          lock, [this] { return worker_shutdown_ || !pending_jobs_.empty(); });
       if (worker_shutdown_ && pending_jobs_.empty()) {
         return;
       }

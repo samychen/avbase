@@ -17,10 +17,10 @@
 #include "media/base/text_decoder.h"
 #include "media/base/video_decoder_factory.h"
 #include "media/base/video_renderer_sink.h"
+#include "media/filters/audio_filter_stage.h"
 #include "media/filters/decoder_selector.h"
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/legacy/video_frame_compositor.h"
-#include "media/filters/audio_filter_stage.h"
 #include "media/filters/video_filter_stage.h"
 #include "media/media_export.h"
 

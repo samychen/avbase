@@ -78,24 +78,24 @@ struct YuvMatrix {
   GLfloat offset_y;
 };
 
-constexpr YuvMatrix kMatrix601Limited = {
-    {1.164383f, 1.164383f, 1.164383f, 0.0f, -0.391762f, 2.017232f, 1.596027f,
-     -0.812968f, 0.0f},
-    16.0f / 255.0f};
+constexpr YuvMatrix kMatrix601Limited = {{1.164383f, 1.164383f, 1.164383f, 0.0f,
+                                          -0.391762f, 2.017232f, 1.596027f,
+                                          -0.812968f, 0.0f},
+                                         16.0f / 255.0f};
 constexpr YuvMatrix kMatrix601Full = {
     {1.0f, 1.0f, 1.0f, 0.0f, -0.344136f, 1.772f, 1.402f, -0.714136f, 0.0f},
     0.0f};
-constexpr YuvMatrix kMatrix709Limited = {
-    {1.164383f, 1.164383f, 1.164383f, 0.0f, -0.213249f, 2.112402f, 1.792741f,
-     -0.532909f, 0.0f},
-    16.0f / 255.0f};
+constexpr YuvMatrix kMatrix709Limited = {{1.164383f, 1.164383f, 1.164383f, 0.0f,
+                                          -0.213249f, 2.112402f, 1.792741f,
+                                          -0.532909f, 0.0f},
+                                         16.0f / 255.0f};
 constexpr YuvMatrix kMatrix709Full = {
     {1.0f, 1.0f, 1.0f, 0.0f, -0.187326f, 1.8556f, 1.5748f, -0.468124f, 0.0f},
     0.0f};
-constexpr YuvMatrix kMatrix2020Limited = {
-    {1.164383f, 1.164383f, 1.164383f, 0.0f, -0.187326f, 2.141772f, 1.678673f,
-     -0.650424f, 0.0f},
-    16.0f / 255.0f};
+constexpr YuvMatrix kMatrix2020Limited = {{1.164383f, 1.164383f, 1.164383f,
+                                           0.0f, -0.187326f, 2.141772f,
+                                           1.678673f, -0.650424f, 0.0f},
+                                          16.0f / 255.0f};
 constexpr YuvMatrix kMatrix2020Full = {
     {1.0f, 1.0f, 1.0f, 0.0f, -0.164553f, 1.8814f, 1.4746f, -0.571353f, 0.0f},
     0.0f};
@@ -154,19 +154,18 @@ bool GlPresenter::Init() {
   loader_->BindVertexArray(vao_);
   loader_->BindBuffer(kGLArrayBuffer, vbo_);
   // Fullscreen triangle strip; texcoords match the default 2D mapping.
-  static const GLfloat quad[] = {
-      -1.0f, -1.0f, 0.0f, 1.0f,  //
-      1.0f, -1.0f, 1.0f, 1.0f,   //
-      -1.0f, 1.0f, 0.0f, 0.0f,   //
-      1.0f, 1.0f, 1.0f, 0.0f};
+  static const GLfloat quad[] = {-1.0f, -1.0f, 0.0f, 1.0f,  //
+                                 1.0f,  -1.0f, 1.0f, 1.0f,  //
+                                 -1.0f, 1.0f,  0.0f, 0.0f,  //
+                                 1.0f,  1.0f,  1.0f, 0.0f};
   loader_->BufferData(kGLArrayBuffer, sizeof(quad), quad, kGLStaticDraw);
   loader_->EnableVertexAttribArray(0);
   loader_->VertexAttribPointer(0, 2, kGLFloat, false, 4 * sizeof(GLfloat),
                                nullptr);
   loader_->EnableVertexAttribArray(1);
-  loader_->VertexAttribPointer(1, 2, kGLFloat, false, 4 * sizeof(GLfloat),
-                               reinterpret_cast<const void*>(
-                                   2 * sizeof(GLfloat)));
+  loader_->VertexAttribPointer(
+      1, 2, kGLFloat, false, 4 * sizeof(GLfloat),
+      reinterpret_cast<const void*>(2 * sizeof(GLfloat)));
   loader_->GenTextures(3, textures_);
   loader_->UseProgram(program_);
   loader_->Uniform1i(loader_->GetUniformLocation(program_, "uTexY"), 0);
@@ -179,8 +178,7 @@ bool GlPresenter::Init() {
 }
 
 bool GlPresenter::CompileProgram(const char* vertex_src,
-                                 const char* fragment_src,
-                                 unsigned int* out) {
+                                 const char* fragment_src, unsigned int* out) {
   const GLuint vertex = loader_->CreateShader(kGLVertexShader);
   const GLuint fragment = loader_->CreateShader(kGLFragmentShader);
   loader_->ShaderSource(vertex, 1, &vertex_src, nullptr);
@@ -260,9 +258,9 @@ void GlPresenter::DrawOverlay() {
     return;
   }
   const TextOverlay overlay = overlay_slot_->Snapshot();
-  if (!overlay.valid || overlay.rgba.size() !=
-                            static_cast<size_t>(overlay.width) *
-                                static_cast<size_t>(overlay.height) * 4u) {
+  if (!overlay.valid ||
+      overlay.rgba.size() != static_cast<size_t>(overlay.width) *
+                                 static_cast<size_t>(overlay.height) * 4u) {
     return;
   }
   if (!EnsureOverlayTexture(overlay)) {
@@ -304,8 +302,8 @@ bool GlPresenter::EnsureTextures(const VideoFrame& frame) {
   // NV12. Plane 2: V for planar formats; unused for NV12 but allocated
   // anyway, so the texture set never has holes.
   loader_->BindTexture(kGLTexture2D, textures_[0]);
-  loader_->TexImage2D(kGLTexture2D, 0, kGLR8, w, h, 0, kGLRed,
-                      kGLUnsignedByte, nullptr);
+  loader_->TexImage2D(kGLTexture2D, 0, kGLR8, w, h, 0, kGLRed, kGLUnsignedByte,
+                      nullptr);
   loader_->BindTexture(kGLTexture2D, textures_[1]);
   loader_->TexImage2D(kGLTexture2D, 0, nv12 ? kGLRG8 : kGLR8, w / 2, h / 2, 0,
                       nv12 ? kGLRG : kGLRed, kGLUnsignedByte, nullptr);
@@ -365,8 +363,8 @@ void GlPresenter::UploadPlanes(const VideoFrame& frame) {
 
 void GlPresenter::UpdateColorUniforms(const VideoFrame& frame) {
   const YuvMatrix m = SelectMatrix(frame.color_space());
-  loader_->UniformMatrix3fv(loader_->GetUniformLocation(program_, "uMatrix"),
-                            1, false, m.m);
+  loader_->UniformMatrix3fv(loader_->GetUniformLocation(program_, "uMatrix"), 1,
+                            false, m.m);
   loader_->Uniform3f(loader_->GetUniformLocation(program_, "uOffset"),
                      m.offset_y, 0.5f, 0.5f);
 }

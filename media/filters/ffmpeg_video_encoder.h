@@ -14,8 +14,8 @@
 #include "media/base/media_error.h"
 #include "media/base/video_frame.h"
 #include "media/filters/encoded_packet.h"
-#include "platform/ffmpeg/av_includes.h"
 #include "media/media_export.h"
+#include "platform/ffmpeg/av_includes.h"
 
 namespace avbase::media {
 
@@ -29,10 +29,10 @@ class AVBASE_MEDIA_EXPORT FFmpegVideoEncoder {
     std::string codec_name = "libx264";
     int width = 0;
     int height = 0;
-    int bit_rate = 0;      // bps; 0 = default/CRF-driven.
-    int crf = -1;          // libx264 quality; -1 = unused.
-    int gop = 0;           // 0 = encoder default.
-    std::string preset;    // libx264 preset (ultrafast..veryslow).
+    int bit_rate = 0;    // bps; 0 = default/CRF-driven.
+    int crf = -1;        // libx264 quality; -1 = unused.
+    int gop = 0;         // 0 = encoder default.
+    std::string preset;  // libx264 preset (ultrafast..veryslow).
     // Frame rate as a rational; defaults to 30/1. ffmpeg.c sets this from
     // -r / the input stream's avg_frame_rate. The encoder's time_base is
     // derived as 1/denominator so packet pts land in 1/fps units.

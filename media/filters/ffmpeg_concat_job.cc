@@ -369,11 +369,11 @@ Status Concat(const ConcatParams& params) {
       bool ok = true;
       while (av_read_frame(seg_ctx.get(), pkt.get()) >= 0) {
         if (pkt->stream_index == seg_audio && out_audio_idx >= 0) {
-          ok = emit(out_audio_idx, &audio_rb, pkt.get(), seg_a_tb,
-                    audio_dst_tb);
+          ok =
+              emit(out_audio_idx, &audio_rb, pkt.get(), seg_a_tb, audio_dst_tb);
         } else if (pkt->stream_index == seg_video && out_video_idx >= 0) {
-          ok = emit(out_video_idx, &video_rb, pkt.get(), seg_v_tb,
-                    video_dst_tb);
+          ok =
+              emit(out_video_idx, &video_rb, pkt.get(), seg_v_tb, video_dst_tb);
         }
         av_packet_unref(pkt.get());
         if (!ok) {
@@ -458,8 +458,8 @@ Status Concat(const ConcatParams& params) {
             }
           }
         } else {
-          ok = emit(out_video_idx, &video_rb, pkt.get(), seg_v_tb,
-                    video_dst_tb);
+          ok =
+              emit(out_video_idx, &video_rb, pkt.get(), seg_v_tb, video_dst_tb);
         }
       }
       av_packet_unref(pkt.get());

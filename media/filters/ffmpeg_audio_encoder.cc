@@ -81,7 +81,7 @@ bool FFmpegAudioEncoder::Initialize(const Params& params) {
 }
 
 bool FFmpegAudioEncoder::Encode(base::scoped_refptr<AudioBuffer> in,
-                               std::vector<EncodedPacket>* out) {
+                                std::vector<EncodedPacket>* out) {
   if (!ctx_ || !out) {
     return false;
   }

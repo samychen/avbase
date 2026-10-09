@@ -56,8 +56,8 @@ bool WriteTimecodeToFrame(AVFrame* frame, const S12mTimecode& tc) {
   // Remove existing timecode side data if present.
   av_frame_remove_side_data(frame, AV_FRAME_DATA_S12M_TIMECODE);
 
-  AVFrameSideData* sd = av_frame_new_side_data(
-      frame, AV_FRAME_DATA_S12M_TIMECODE, sizeof(words));
+  AVFrameSideData* sd =
+      av_frame_new_side_data(frame, AV_FRAME_DATA_S12M_TIMECODE, sizeof(words));
   if (!sd) {
     return false;
   }

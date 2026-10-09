@@ -57,9 +57,9 @@ class AVBASE_MEDIA_EXPORT FFmpegEncodeMuxer {
   // (mp4/matroska/adts are enabled in the pinned build). |options| is a
   // key-value list passed to avformat_write_header (e.g. "movflags"→
   // "+faststart"); may be empty.
-  bool Open(const std::string& path,
-            const std::vector<std::pair<std::string, std::string>>& options =
-                {});
+  bool
+  Open(const std::string& path,
+       const std::vector<std::pair<std::string, std::string>>& options = {});
 
   // Adds tracks before the first WritePacket. Returns the stream index or
   // -1 with the reason in the log.

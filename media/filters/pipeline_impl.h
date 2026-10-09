@@ -160,7 +160,7 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   void DoStop();
   void DoSetOutputTarget(base::scoped_refptr<NativeDisplay> display);
   void DoTakeSnapshot(base::TimeDelta at,
-      Renderer::SnapshotFrameCallback callback);
+                      Renderer::SnapshotFrameCallback callback);
   void DoBeginAccurateSeek(base::TimeDelta target, base::OnceClosure cb);
   void DoEndAccurateSeek();
 

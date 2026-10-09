@@ -38,11 +38,10 @@ Status PlayerImpl::SelectTrack(media::DemuxerStreamType type,
 
   const MediaInfo info = pipeline_ ? pipeline_->media_info() : MediaInfo();
   const StreamInfo* stream_info = info.FindStream(stream_index);
-  const StreamKind wanted_kind = type == media::DemuxerStreamType::kAudio
-                                     ? StreamKind::kAudio
-                                     : type == media::DemuxerStreamType::kText
-                                     ? StreamKind::kText
-                                     : StreamKind::kUnknown;
+  const StreamKind wanted_kind =
+      type == media::DemuxerStreamType::kAudio  ? StreamKind::kAudio
+      : type == media::DemuxerStreamType::kText ? StreamKind::kText
+                                                : StreamKind::kUnknown;
   if (!stream_info || stream_info->kind != wanted_kind) {
     return base::unexpected(MediaError(
         ErrorCode::kInvalidArgument, "no such track",

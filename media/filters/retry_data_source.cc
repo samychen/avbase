@@ -13,9 +13,7 @@
 #include "base/time/default_tick_clock.h"
 
 namespace avbase::media {
-namespace {
-
-}  // namespace
+namespace {}  // namespace
 
 RetryDataSource::RetryDataSource(base::scoped_refptr<DataSource> inner,
                                  Config config)

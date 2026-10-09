@@ -52,8 +52,8 @@
 #include "tests/support/fake_pipeline_client.h"
 #include "tests/support/fake_renderer_sinks.h"
 #include "tests/support/fake_sink_factories.h"
-#include "tests/support/synthetic_decoders.h"
 #include "tests/support/fake_text_decoder.h"
+#include "tests/support/synthetic_decoders.h"
 #include "tests/support/synthetic_demuxer.h"
 #include "tests/support/synthetic_live_demuxer.h"
 
@@ -256,8 +256,8 @@ class PipelineTestFixture : public ::testing::Test {
         live_spec.enable_video = spec_.enable_video;
         live_spec.enable_audio = spec_.enable_audio;
         live_spec.enable_text = with_text_factory_;
-        auto live = std::make_unique<test::SyntheticLiveDemuxer>(live_spec,
-                                                                  nullptr);
+        auto live =
+            std::make_unique<test::SyntheticLiveDemuxer>(live_spec, nullptr);
         pipeline_->Start(std::move(live), renderer_factory_.get(),
                          RendererType::kRendererImpl, runner_, &client_);
         return;

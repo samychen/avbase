@@ -24,11 +24,11 @@
 
 #include "base/check.h"
 #include "base/functional/bind.h"
+#include "media/base/timed_text.h"
 #include "platform/sdl2/sdl2_audio_sink.h"
 #include "platform/sdl2/sdl2_video_sink.h"
 #include "platform/sdl2/surface.h"
 #include "platform/sdl2/text_raster.h"
-#include "media/base/timed_text.h"
 #include "player/public/player.h"
 
 namespace {
@@ -58,10 +58,9 @@ avbase::Player* g_player{nullptr};  // Set in main; outlives the event loop.
 // A first-cut font resolution: the demo is not the SDK. A real host points
 // at the user's configured font; these cover this machine's defaults.
 std::string FindDemoFont() {
-  for (const char* path :
-       {"/System/Library/Fonts/Helvetica.ttc",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"}) {
+  for (const char* path : {"/System/Library/Fonts/Helvetica.ttc",
+                           "/System/Library/Fonts/Supplemental/Arial.ttf",
+                           "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"}) {
     if (std::FILE* f = std::fopen(path, "rb")) {
       std::fclose(f);
       return path;
@@ -98,12 +97,12 @@ void OnTimedText(const avbase::TimedTextPayload& payload) {
                                    static_cast<float>(g_video_width));
     overlay.y = std::min(1.0f, static_cast<float>(payload.y) /
                                    static_cast<float>(g_video_height));
-    overlay.w = std::min(1.0f - overlay.x,
-                         static_cast<float>(payload.w) /
-                             static_cast<float>(g_video_width));
-    overlay.h = std::min(1.0f - overlay.y,
-                         static_cast<float>(payload.h) /
-                             static_cast<float>(g_video_height));
+    overlay.w =
+        std::min(1.0f - overlay.x, static_cast<float>(payload.w) /
+                                       static_cast<float>(g_video_width));
+    overlay.h =
+        std::min(1.0f - overlay.y, static_cast<float>(payload.h) /
+                                       static_cast<float>(g_video_height));
   } else {
     constexpr int kWindowWidth = 960, kWindowHeight = 540;
     overlay.w =
@@ -259,11 +258,10 @@ bool CreateSdlWindow(bool want_gl, SDL_Window** window, SDL_Renderer** renderer,
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
                         SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    *window = SDL_CreateWindow("avbase", SDL_WINDOWPOS_CENTERED,
-                               SDL_WINDOWPOS_CENTERED, kWindowWidth,
-                               kWindowHeight,
-                               SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
-                                   SDL_WINDOW_OPENGL);
+    *window = SDL_CreateWindow(
+        "avbase", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, kWindowWidth,
+        kWindowHeight,
+        SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_OPENGL);
     if (*window) {
       *gl_context = SDL_GL_CreateContext(*window);
       if (*gl_context && GlRuntimeWorks(*gl_context)) {
@@ -288,8 +286,7 @@ bool CreateSdlWindow(bool want_gl, SDL_Window** window, SDL_Renderer** renderer,
   }
   *window = SDL_CreateWindow(
       "avbase", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, kWindowWidth,
-      kWindowHeight,
-      SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+      kWindowHeight, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
   *renderer = SDL_CreateRenderer(
       *window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
   if (!*window || !*renderer) {

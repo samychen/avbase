@@ -53,8 +53,8 @@ struct AVBASE_MEDIA_EXPORT EncodedPacket {
   bool is_key_frame() const { return (flags & kKeyFrameFlag) != 0; }
 
   // Pack/unpack helpers for the legacy vector<vector<uint8_t>> API.
-  static std::vector<std::vector<uint8_t>> StripToBytes(
-      const std::vector<EncodedPacket>& packets) {
+  static std::vector<std::vector<uint8_t>>
+  StripToBytes(const std::vector<EncodedPacket>& packets) {
     std::vector<std::vector<uint8_t>> out;
     out.reserve(packets.size());
     for (const auto& p : packets) {

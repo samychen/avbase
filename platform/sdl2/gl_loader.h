@@ -63,55 +63,54 @@ constexpr GLenum kGLLinkStatus = 0x8B82;
 
 // One entry point per row: (name, return type, parameter list); resolved
 // once in Init() via SDL_GL_GetProcAddress.
-#define AVBASE_GL_FOREACH(F)                                                   \
-  F(CreateShader, GLuint, (GLenum))                                            \
-  F(ShaderSource, void, (GLuint, GLsizei, const char* const*, const GLint*))   \
-  F(CompileShader, void, (GLuint))                                             \
-  F(GetShaderiv, void, (GLuint, GLenum, GLint*))                               \
-  F(GetShaderInfoLog, void, (GLuint, GLsizei, GLsizei*, char*))                \
-  F(CreateProgram, GLuint, (void))                                             \
-  F(AttachShader, void, (GLuint, GLuint))                                      \
-  F(LinkProgram, void, (GLuint))                                               \
-  F(GetProgramiv, void, (GLuint, GLenum, GLint*))                              \
-  F(GetProgramInfoLog, void, (GLuint, GLsizei, GLsizei*, char*))               \
-  F(UseProgram, void, (GLuint))                                                \
-  F(GetUniformLocation, GLint, (GLuint, const char*))                          \
-  F(Uniform1i, void, (GLint, GLint))                                           \
-  F(Uniform3f, void, (GLint, GLfloat, GLfloat, GLfloat))                       \
-  F(Uniform4f, void, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))              \
-  F(Enable, void, (GLenum))                                                    \
-  F(Disable, void, (GLenum))                                                   \
-  F(BlendFunc, void, (GLenum, GLenum))                                         \
-  F(UniformMatrix3fv, void, (GLint, GLsizei, GLboolean, const GLfloat*))       \
-  F(DeleteShader, void, (GLuint))                                              \
-  F(DeleteProgram, void, (GLuint))                                             \
-  F(GenVertexArrays, void, (GLsizei, GLuint*))                                 \
-  F(BindVertexArray, void, (GLuint))                                           \
-  F(DeleteVertexArrays, void, (GLsizei, const GLuint*))                        \
-  F(GenBuffers, void, (GLsizei, GLuint*))                                      \
-  F(BindBuffer, void, (GLenum, GLuint))                                        \
-  F(BufferData, void, (GLenum, GLsizeiptr, const void*, GLenum))               \
-  F(DeleteBuffers, void, (GLsizei, const GLuint*))                             \
-  F(EnableVertexAttribArray, void, (GLuint))                                   \
-  F(VertexAttribPointer, void,                                                 \
-    (GLuint, GLint, GLenum, GLboolean, GLsizei, const void*))                  \
-  F(GenTextures, void, (GLsizei, GLuint*))                                     \
-  F(BindTexture, void, (GLenum, GLuint))                                       \
-  F(DeleteTextures, void, (GLsizei, const GLuint*))                            \
-  F(TexImage2D, void,                                                          \
-    (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum,            \
-     const void*))                                                             \
-  F(TexSubImage2D, void,                                                       \
-    (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum,            \
-     const void*))                                                             \
-  F(TexParameteri, void, (GLenum, GLenum, GLint))                              \
-  F(PixelStorei, void, (GLenum, GLint))                                        \
-  F(ActiveTexture, void, (GLenum))                                             \
-  F(Viewport, void, (GLint, GLint, GLsizei, GLsizei))                          \
-  F(ClearColor, void, (GLfloat, GLfloat, GLfloat, GLfloat))                    \
-  F(Clear, void, (GLenum))                                                     \
+#define AVBASE_GL_FOREACH(F)                                                 \
+  F(CreateShader, GLuint, (GLenum))                                          \
+  F(ShaderSource, void, (GLuint, GLsizei, const char* const*, const GLint*)) \
+  F(CompileShader, void, (GLuint))                                           \
+  F(GetShaderiv, void, (GLuint, GLenum, GLint*))                             \
+  F(GetShaderInfoLog, void, (GLuint, GLsizei, GLsizei*, char*))              \
+  F(CreateProgram, GLuint, (void))                                           \
+  F(AttachShader, void, (GLuint, GLuint))                                    \
+  F(LinkProgram, void, (GLuint))                                             \
+  F(GetProgramiv, void, (GLuint, GLenum, GLint*))                            \
+  F(GetProgramInfoLog, void, (GLuint, GLsizei, GLsizei*, char*))             \
+  F(UseProgram, void, (GLuint))                                              \
+  F(GetUniformLocation, GLint, (GLuint, const char*))                        \
+  F(Uniform1i, void, (GLint, GLint))                                         \
+  F(Uniform3f, void, (GLint, GLfloat, GLfloat, GLfloat))                     \
+  F(Uniform4f, void, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))            \
+  F(Enable, void, (GLenum))                                                  \
+  F(Disable, void, (GLenum))                                                 \
+  F(BlendFunc, void, (GLenum, GLenum))                                       \
+  F(UniformMatrix3fv, void, (GLint, GLsizei, GLboolean, const GLfloat*))     \
+  F(DeleteShader, void, (GLuint))                                            \
+  F(DeleteProgram, void, (GLuint))                                           \
+  F(GenVertexArrays, void, (GLsizei, GLuint*))                               \
+  F(BindVertexArray, void, (GLuint))                                         \
+  F(DeleteVertexArrays, void, (GLsizei, const GLuint*))                      \
+  F(GenBuffers, void, (GLsizei, GLuint*))                                    \
+  F(BindBuffer, void, (GLenum, GLuint))                                      \
+  F(BufferData, void, (GLenum, GLsizeiptr, const void*, GLenum))             \
+  F(DeleteBuffers, void, (GLsizei, const GLuint*))                           \
+  F(EnableVertexAttribArray, void, (GLuint))                                 \
+  F(VertexAttribPointer, void,                                               \
+    (GLuint, GLint, GLenum, GLboolean, GLsizei, const void*))                \
+  F(GenTextures, void, (GLsizei, GLuint*))                                   \
+  F(BindTexture, void, (GLenum, GLuint))                                     \
+  F(DeleteTextures, void, (GLsizei, const GLuint*))                          \
+  F(TexImage2D, void,                                                        \
+    (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum,          \
+     const void*))                                                           \
+  F(TexSubImage2D, void,                                                     \
+    (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum,          \
+     const void*))                                                           \
+  F(TexParameteri, void, (GLenum, GLenum, GLint))                            \
+  F(PixelStorei, void, (GLenum, GLint))                                      \
+  F(ActiveTexture, void, (GLenum))                                           \
+  F(Viewport, void, (GLint, GLint, GLsizei, GLsizei))                        \
+  F(ClearColor, void, (GLfloat, GLfloat, GLfloat, GLfloat))                  \
+  F(Clear, void, (GLenum))                                                   \
   F(DrawArrays, void, (GLenum, GLint, GLsizei))
-
 
 // Resolves every entry point; returns false and names the first missing one
 // when the runtime is too old (e.g. a GL 2.0-era driver). Must be called with
@@ -125,14 +124,14 @@ struct GlLoader {
 };
 
 inline bool ResolveGl(GlLoader* gl, std::string* missing) {
-#define AVBASE_GL_RESOLVE(name, ret, params)                              \
-  gl->name =                                                              \
+#define AVBASE_GL_RESOLVE(name, ret, params)                                   \
+  gl->name =                                                                   \
       reinterpret_cast<decltype(gl->name)>(SDL_GL_GetProcAddress("gl" #name)); \
-  if (!gl->name) {                                                        \
-    if (missing) {                                                        \
-      *missing = #name;                                                   \
-    }                                                                     \
-    return false;                                                         \
+  if (!gl->name) {                                                             \
+    if (missing) {                                                             \
+      *missing = #name;                                                        \
+    }                                                                          \
+    return false;                                                              \
   }
   AVBASE_GL_FOREACH(AVBASE_GL_RESOLVE)
 #undef AVBASE_GL_RESOLVE

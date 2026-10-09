@@ -100,7 +100,7 @@ PipelineStatistics RendererImpl::GetStatistics() const {
 }
 
 void RendererImpl::TakeSnapshot(base::TimeDelta at,
-                               Renderer::SnapshotFrameCallback callback) {
+                                Renderer::SnapshotFrameCallback callback) {
   if (!video_) {
     std::move(callback).Run(
         MediaError(ErrorCode::kNotImplemented,
@@ -117,35 +117,29 @@ void RendererImpl::TakeSnapshot(base::TimeDelta at,
   auto* video = video_.get();
   auto* media_runner = deps_.media_task_runner.get();
   deps_.video_task_runner->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [video, self, media_runner, at,
-           callback = std::move(callback)]() mutable {
-            if (!self) {
-              return;
-            }
-            video->TakeSnapshot(
-                at,
-                base::BindOnce(
-                    [self, media_runner,
-                     callback = std::move(callback)](
-                        MediaError error,
-                        base::scoped_refptr<VideoFrame>
-                            frame) mutable {
-                      media_runner->PostTask(
-                          FROM_HERE,
-                          base::BindOnce(
-                              [self, callback = std::move(callback)](
-                                  MediaError error,
-                        base::scoped_refptr<VideoFrame> frame) mutable {
-                                if (self) {
-                                  std::move(callback).Run(error,
-                                                          std::move(frame));
-                                }
-                              },
-                              error, std::move(frame)));
-                    }));
-          }));
+      FROM_HERE, base::BindOnce([video, self, media_runner, at,
+                                 callback = std::move(callback)]() mutable {
+        if (!self) {
+          return;
+        }
+        video->TakeSnapshot(
+            at,
+            base::BindOnce([self, media_runner, callback = std::move(callback)](
+                               MediaError error,
+                               base::scoped_refptr<VideoFrame> frame) mutable {
+              media_runner->PostTask(
+                  FROM_HERE,
+                  base::BindOnce(
+                      [self, callback = std::move(callback)](
+                          MediaError error,
+                          base::scoped_refptr<VideoFrame> frame) mutable {
+                        if (self) {
+                          std::move(callback).Run(error, std::move(frame));
+                        }
+                      },
+                      error, std::move(frame)));
+            }));
+      }));
 }
 
 }  // namespace avbase::media

@@ -13,9 +13,9 @@
 
 #include "base/functional/bind.h"
 #include "base/test/task_environment.h"
-#include "media/base/media_log.h"
 #include "media/base/audio_buffer.h"
 #include "media/base/data_source_descriptor.h"
+#include "media/base/media_log.h"
 #include "media/filters/encoded_packet.h"
 #include "platform/ffmpeg/av_includes.h"
 
@@ -32,18 +32,17 @@ base::scoped_refptr<AudioBuffer> MakeSineBuffer(int64_t* cursor) {
   for (int ch = 0; ch < kChannels; ++ch) {
     for (int i = 0; i < kFrames; ++i) {
       const int64_t n = *cursor + i;
-      planes[ch * kFrames + i] = static_cast<float>(
-          0.8 * std::sin(
-              2.0 * 3.14159265358979 * 440.0 * static_cast<double>(n) / kRate));
+      planes[ch * kFrames + i] =
+          static_cast<float>(0.8 * std::sin(2.0 * 3.14159265358979 * 440.0 *
+                                            static_cast<double>(n) / kRate));
     }
   }
   *cursor += kFrames;
   return AudioBuffer::Create(
-      SampleFormat::kF32P, kChannels == 1 ? ChannelLayout::kMono
-                                          : ChannelLayout::kStereo,
-      kChannels, kRate, kFrames, base::TimeDelta(),
-      base::SecondsD(static_cast<double>(kFrames) / kRate), 0,
-      std::move(data));
+      SampleFormat::kF32P,
+      kChannels == 1 ? ChannelLayout::kMono : ChannelLayout::kStereo, kChannels,
+      kRate, kFrames, base::TimeDelta(),
+      base::SecondsD(static_cast<double>(kFrames) / kRate), 0, std::move(data));
 }
 
 // E1 keystone: sine -> AAC packets -> written as ADTS -> decoded back by the
@@ -75,9 +74,8 @@ TEST(AudioEncoderTest, EncodeThenAdtsDecodeRoundTrip) {
 
   // Wrap each packet in ADTS (profile=aac-lc=1, no sampling-frequency index
   // needed beyond the table: 48000 -> index 3) so the file is demuxable.
-  const int sample_rates[] = {96000, 88200, 64000, 48000, 44100, 32000,
-                              24000, 22050, 16000, 12000, 11025, 8000,
-                              7350};
+  const int sample_rates[] = {96000, 88200, 64000, 48000, 44100, 32000, 24000,
+                              22050, 16000, 12000, 11025, 8000,  7350};
   int sfi = 3;
   for (int i = 0; i < 13; ++i) {
     if (sample_rates[i] == kRate) {
@@ -90,10 +88,10 @@ TEST(AudioEncoderTest, EncodeThenAdtsDecodeRoundTrip) {
     const int length = static_cast<int>(pkt.data.size()) + 7;
     adts.push_back(0xFF);
     adts.push_back(0xF1);  // MPEG-4, no CRC.
-    adts.push_back(static_cast<uint8_t>((1 << 6) | (sfi << 2) |
-                                        (kChannels >> 2)));
-    adts.push_back(static_cast<uint8_t>(((kChannels & 3) << 6) |
-                                        (length >> 11)));
+    adts.push_back(
+        static_cast<uint8_t>((1 << 6) | (sfi << 2) | (kChannels >> 2)));
+    adts.push_back(
+        static_cast<uint8_t>(((kChannels & 3) << 6) | (length >> 11)));
     adts.push_back(static_cast<uint8_t>((length >> 3) & 0xFF));
     adts.push_back(static_cast<uint8_t>(((length & 7) << 5) | 0x1F));
     adts.push_back(0xFC);
@@ -205,8 +203,7 @@ TEST(AudioEncoderTest, EveryAvailableEncoderInitializes) {
   int tried = 0;
   int opened = 0;
   while ((codec = av_codec_iterate(&iter)) != nullptr) {
-    if (!av_codec_is_encoder(codec) ||
-        codec->type != AVMEDIA_TYPE_AUDIO) {
+    if (!av_codec_is_encoder(codec) || codec->type != AVMEDIA_TYPE_AUDIO) {
       continue;
     }
     // The AAC default path is already covered above.

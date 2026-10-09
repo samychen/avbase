@@ -65,9 +65,9 @@ struct TextOverlaySlot {
 // handing it over. |overlay|, when non-null, is composited over every
 // presented frame on the GL path.
 struct Sdl2Surface {
-  void* window{nullptr};       // SDL_Window*
-  void* renderer{nullptr};     // SDL_Renderer*
-  void* gl_context{nullptr};   // SDL_GLContext, optional; selects the GL path.
+  void* window{nullptr};      // SDL_Window*
+  void* renderer{nullptr};    // SDL_Renderer*
+  void* gl_context{nullptr};  // SDL_GLContext, optional; selects the GL path.
   TextOverlaySlot* overlay{nullptr};  // Optional; GL path only.
 };
 

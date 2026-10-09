@@ -304,8 +304,7 @@ void RendererImpl::CheckBufferingTransitions() {
   LOG(INFO) << "[hwm] edge " << (starved ? "DRY" : "RECOVER")
             << " video_pending="
             << (video_ ? static_cast<int>(video_->frames_pending()) : -1)
-            << " audio_buffered="
-            << (audio_ ? audio_->buffered_frames() : -1);
+            << " audio_buffered=" << (audio_ ? audio_->buffered_frames() : -1);
   if (client_) {
     client_->OnBufferingStateChange(starved ? BufferingState::kHaveNothing
                                             : BufferingState::kHaveEnough,

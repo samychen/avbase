@@ -200,8 +200,8 @@ bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
   // makes the context current there).
   if (gl_context_ && !presenter_) {
     const auto* surface = static_cast<const Sdl2Surface*>(display_->raw());
-    auto presenter = std::make_unique<GlPresenter>(surface->window,
-                                                   gl_context_);
+    auto presenter =
+        std::make_unique<GlPresenter>(surface->window, gl_context_);
     presenter->SetOverlaySource(overlay_slot_);
     if (!presenter->Init()) {
       // Context exists but the shader path is unusable (e.g. a GL 2.0-era
@@ -285,9 +285,9 @@ void Sdl2VideoSink::PresentOverlay(void* renderer) {
     return;
   }
   const TextOverlay overlay = overlay_slot_->Snapshot();
-  if (!overlay.valid || overlay.rgba.size() !=
-                            static_cast<size_t>(overlay.width) *
-                                static_cast<size_t>(overlay.height) * 4u) {
+  if (!overlay.valid ||
+      overlay.rgba.size() != static_cast<size_t>(overlay.width) *
+                                 static_cast<size_t>(overlay.height) * 4u) {
     if (overlay_texture_) {
       SDL_DestroyTexture(static_cast<SDL_Texture*>(overlay_texture_));
       overlay_texture_ = nullptr;
@@ -300,10 +300,9 @@ void Sdl2VideoSink::PresentOverlay(void* renderer) {
     if (overlay_texture_) {
       SDL_DestroyTexture(static_cast<SDL_Texture*>(overlay_texture_));
     }
-    overlay_texture_ =
-        SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_ABGR8888,
-                          SDL_TEXTUREACCESS_STREAMING, overlay.width,
-                          overlay.height);
+    overlay_texture_ = SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_ABGR8888,
+                                         SDL_TEXTUREACCESS_STREAMING,
+                                         overlay.width, overlay.height);
     if (!overlay_texture_) {
       return;
     }
@@ -321,8 +320,8 @@ void Sdl2VideoSink::PresentOverlay(void* renderer) {
   const SDL_Rect dest{
       static_cast<int>(overlay.x * out_w), static_cast<int>(overlay.y * out_h),
       static_cast<int>(overlay.w * out_w), static_cast<int>(overlay.h * out_h)};
-  SDL_RenderCopy(sdl_renderer,
-                 static_cast<SDL_Texture*>(overlay_texture_), nullptr, &dest);
+  SDL_RenderCopy(sdl_renderer, static_cast<SDL_Texture*>(overlay_texture_),
+                 nullptr, &dest);
 }
 
 std::unique_ptr<VideoRendererSink>

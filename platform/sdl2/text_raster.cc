@@ -50,11 +50,10 @@ void BlitGlyphMax(RgbaBitmap* out, int dst_x, int dst_y, const FT_Bitmap& bmp,
       if (cover == 0) {
         continue;
       }
-      uint8_t* px =
-          out->rgba.data() +
-          (static_cast<size_t>(y) * static_cast<size_t>(out->width) +
-           static_cast<size_t>(x)) *
-              4u;
+      uint8_t* px = out->rgba.data() +
+                    (static_cast<size_t>(y) * static_cast<size_t>(out->width) +
+                     static_cast<size_t>(x)) *
+                        4u;
       if (cover >= px[3]) {
         px[0] = static_cast<uint8_t>(r);
         px[1] = static_cast<uint8_t>(g);
@@ -90,11 +89,10 @@ void BlitGlyphReplace(RgbaBitmap* out, int dst_x, int dst_y,
       if (cover == 0) {
         continue;
       }
-      uint8_t* px =
-          out->rgba.data() +
-          (static_cast<size_t>(y) * static_cast<size_t>(out->width) +
-           static_cast<size_t>(x)) *
-              4u;
+      uint8_t* px = out->rgba.data() +
+                    (static_cast<size_t>(y) * static_cast<size_t>(out->width) +
+                     static_cast<size_t>(x)) *
+                        4u;
       px[0] = static_cast<uint8_t>(r);
       px[1] = static_cast<uint8_t>(g);
       px[2] = static_cast<uint8_t>(b);
@@ -222,11 +220,10 @@ bool TextRaster::Rasterize(const std::string& font_path, int pixel_size,
       const int gx = pen_x + face->glyph->bitmap_left;
       layout.width = std::max(layout.width,
                               gx + static_cast<int>(face->glyph->bitmap.width));
-      layout.ascent = std::max(
-          layout.ascent, face->glyph->bitmap_top);
-      layout.descent = std::max(
-          layout.descent,
-          static_cast<int>(face->glyph->bitmap.rows) - face->glyph->bitmap_top);
+      layout.ascent = std::max(layout.ascent, face->glyph->bitmap_top);
+      layout.descent =
+          std::max(layout.descent, static_cast<int>(face->glyph->bitmap.rows) -
+                                       face->glyph->bitmap_top);
       layout.glyph_indices.push_back(index);
       layout.offsets.push_back(pen_x);
       pen_x += face->glyph->advance.x >> 6;
@@ -289,9 +286,8 @@ bool TextRaster::Rasterize(const std::string& font_path, int pixel_size,
             if (ox * ox + oy * oy > r2 || (ox == 0 && oy == 0)) {
               continue;
             }
-            BlitGlyphMax(&bitmap, base_x + ox, base_y + oy,
-                         face->glyph->bitmap, stroke_r8, stroke_g8, stroke_b8,
-                         style.stroke_rgba[3]);
+            BlitGlyphMax(&bitmap, base_x + ox, base_y + oy, face->glyph->bitmap,
+                         stroke_r8, stroke_g8, stroke_b8, style.stroke_rgba[3]);
           }
         }
       }

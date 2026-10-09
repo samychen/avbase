@@ -291,14 +291,13 @@ VideoFrameCompositor::Stats VideoRendererImpl::compositor_stats() const {
   return compositor_.GetStats();
 }
 
-void VideoRendererImpl::TakeSnapshot(
-    base::TimeDelta at, Renderer::SnapshotFrameCallback callback) {
+void VideoRendererImpl::TakeSnapshot(base::TimeDelta at,
+                                     Renderer::SnapshotFrameCallback callback) {
   (void)at;  // Recorded by the caller; see Renderer::TakeSnapshot.
   auto frame = compositor_.current_frame();
   if (!frame) {
     std::move(callback).Run(
-        MediaError(ErrorCode::kInvalidState,
-                   "no frame has been presented yet",
+        MediaError(ErrorCode::kInvalidState, "no frame has been presented yet",
                    "the compositor holds nothing (paused before the first "
                    "present, or a video-less source)",
                    "request the snapshot after the first frame is on screen"),

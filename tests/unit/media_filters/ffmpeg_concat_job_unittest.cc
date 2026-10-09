@@ -28,8 +28,7 @@ namespace {
 // container, which is what decides the timestamp units the demuxer reports
 // for these same packets — mp4 uses 1/48000, mkv 1/1000.
 std::string CreateSmallAac(const std::string& suffix, double freq_hz,
-                           const std::string& ext = ".mp4",
-                           int rate = 48000) {
+                           const std::string& ext = ".mp4", int rate = 48000) {
   const int kRate = rate;
   constexpr int kChannels = 2;
   constexpr int kFrames = 1024;

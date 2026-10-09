@@ -12,7 +12,6 @@
 namespace avbase::platform::ffmpeg {
 namespace {
 
-
 // Builds a frame carrying an S12M timecode side payload: word 0 = field
 // count, then HH/MM/SS/FF (ST 12-1 layout FFmpeg uses).
 FramePtr FrameWithTimecode(int hh, int mm, int ss, int ff) {

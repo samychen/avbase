@@ -101,10 +101,10 @@
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/pipeline_status.h"
+#include "media/filters/audio_filter_stage.h"
 #include "media/filters/audio_renderer_algorithm.h"
 #include "media/filters/decoder_stream.h"
 #include "media/filters/legacy/av_sync_controller.h"
-#include "media/filters/audio_filter_stage.h"
 #include "media/media_export.h"
 
 namespace avbase::media {

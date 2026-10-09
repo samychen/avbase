@@ -14,8 +14,6 @@
 
 namespace avbase::media {
 
-
-
 struct FFmpegVideoFilter::Context {
   AVFilterGraph* graph = nullptr;
   AVFilterContext* src = nullptr;
@@ -32,8 +30,7 @@ FFmpegVideoFilter::~FFmpegVideoFilter() {
   }
 }
 
-bool FFmpegVideoFilter::Initialize(const std::string& graph,
-                                   VideoFormat format,
+bool FFmpegVideoFilter::Initialize(const std::string& graph, VideoFormat format,
                                    const Size& coded_size) {
   const AVPixelFormat pix =
       platform::ffmpeg::AvPixelFormatFromVideoFormat(format);
@@ -60,15 +57,17 @@ bool FFmpegVideoFilter::Initialize(const std::string& graph,
 
   const AVRational sar = {1, 1};
   const AVRational frame_rate = {30, 1};
-  const std::string args =
-      "video_size=" + std::to_string(coded_size.width) + "x" +
-      std::to_string(coded_size.height) + ":pix_fmt=" +
-      std::to_string(static_cast<int>(pix)) + ":time_base=1/90000"
-      ":pixel_aspect=" + std::to_string(sar.num) + "/" +
-      std::to_string(sar.den) + ":frame_rate=" +
-      std::to_string(frame_rate.num) + "/" + std::to_string(frame_rate.den);
-  if (avfilter_graph_create_filter(&c->src, buffer, "in", args.c_str(),
-                                   nullptr, c->graph) < 0) {
+  const std::string args = "video_size=" + std::to_string(coded_size.width) +
+                           "x" + std::to_string(coded_size.height) +
+                           ":pix_fmt=" + std::to_string(static_cast<int>(pix)) +
+                           ":time_base=1/90000"
+                           ":pixel_aspect=" +
+                           std::to_string(sar.num) + "/" +
+                           std::to_string(sar.den) +
+                           ":frame_rate=" + std::to_string(frame_rate.num) +
+                           "/" + std::to_string(frame_rate.den);
+  if (avfilter_graph_create_filter(&c->src, buffer, "in", args.c_str(), nullptr,
+                                   c->graph) < 0) {
     LOG(ERROR) << "video filter: buffer create failed";
     avfilter_graph_free(&c->graph);
     return false;
@@ -100,8 +99,7 @@ bool FFmpegVideoFilter::Initialize(const std::string& graph,
   bool linked = false;
   if (user_in && user_out) {
     linked = avfilter_link(c->src, 0, user_in->filter_ctx,
-                           static_cast<unsigned>(user_in->pad_idx)) >=
-                 0 &&
+                           static_cast<unsigned>(user_in->pad_idx)) >= 0 &&
              avfilter_link(user_out->filter_ctx,
                            static_cast<unsigned>(user_out->pad_idx), c->sink,
                            0) >= 0;
@@ -115,8 +113,7 @@ bool FFmpegVideoFilter::Initialize(const std::string& graph,
     return false;
   }
   if (avfilter_graph_config(c->graph, nullptr) < 0) {
-    LOG(ERROR) << "video filter: graph \"" << graph
-               << "\" failed to configure";
+    LOG(ERROR) << "video filter: graph \"" << graph << "\" failed to configure";
     avfilter_graph_free(&c->graph);
     return false;
   }
@@ -137,8 +134,7 @@ bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
   if (!in) {
     return true;
   }
-  if (in->format() != ctx_->format ||
-      in->coded_size() != ctx_->coded_size) {
+  if (in->format() != ctx_->format || in->coded_size() != ctx_->coded_size) {
     LOG(ERROR) << "video filter: frame geometry moved under the filter";
     return false;
   }
@@ -177,15 +173,15 @@ bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
     for (int p = 0; p < out_planes; ++p) {
       const auto plane = static_cast<VideoFrame::Plane>(p);
       const auto dst_span = result->mutable_data(plane);
-      const int rows = p == 0 ? ctx_->coded_size.height
-                              : ctx_->coded_size.height / 2;
+      const int rows =
+          p == 0 ? ctx_->coded_size.height : ctx_->coded_size.height / 2;
       for (int y = 0; y < rows; ++y) {
-        std::memcpy(dst_span.data() + y * result->stride(plane),
-                    out_frame->data[p] + y * out_frame->linesize[p],
-                    static_cast<size_t>(out_frame->linesize[p] <
-                                                result->stride(plane)
-                                            ? out_frame->linesize[p]
-                                            : result->stride(plane)));
+        std::memcpy(
+            dst_span.data() + y * result->stride(plane),
+            out_frame->data[p] + y * out_frame->linesize[p],
+            static_cast<size_t>(out_frame->linesize[p] < result->stride(plane)
+                                    ? out_frame->linesize[p]
+                                    : result->stride(plane)));
       }
     }
     result->set_color_space(in->color_space());

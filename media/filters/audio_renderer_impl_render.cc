@@ -42,8 +42,8 @@ void ScaleAndZeroTail(AudioBus* dest, int written, float gain) {
 
 // static
 base::TimeDelta AudioRendererImpl::OutputFramesToMediaTime(int frames,
-                                                          double rate,
-                                                          int sample_rate) {
+                                                           double rate,
+                                                           int sample_rate) {
   if (sample_rate <= 0) {
     return base::TimeDelta();
   }
@@ -51,9 +51,9 @@ base::TimeDelta AudioRendererImpl::OutputFramesToMediaTime(int frames,
 }
 
 int AudioRendererImpl::Render(base::TimeDelta delay,
-                             base::TimeTicks delay_timestamp,
-                             const AudioGlitchInfo& glitch_info,
-                             AudioBus* dest) {
+                              base::TimeTicks delay_timestamp,
+                              const AudioGlitchInfo& glitch_info,
+                              AudioBus* dest) {
   if (!dest || render_error_.load()) {
     return 0;
   }

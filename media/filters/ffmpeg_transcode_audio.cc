@@ -163,16 +163,15 @@ std::vector<base::scoped_refptr<AudioBuffer>> FramesForEncoder(  // NOLINT
   const bool needs_conversion = st->in_sample_rate != st->out_sample_rate ||
                                 st->in_channels != st->out_channels;
   if (!needs_conversion || frame_size <= 0) {
-    auto buf = AvFrameToAudioBuffer(frame, st->out_sample_rate,
-                                    st->out_channels);
+    auto buf =
+        AvFrameToAudioBuffer(frame, st->out_sample_rate, st->out_channels);
     if (buf) {
       out.push_back(std::move(buf));
     }
     return out;
   }
   if (st->in_sample_rate <= 0 || st->out_sample_rate <= 0 ||
-      st->in_channels <= 0 || st->out_channels <= 0 ||
-      frame->nb_samples <= 0) {
+      st->in_channels <= 0 || st->out_channels <= 0 || frame->nb_samples <= 0) {
     return out;
   }
   if (!EnsureResampler(st, frame)) {
@@ -192,9 +191,9 @@ std::vector<base::scoped_refptr<AudioBuffer>> FramesForEncoder(  // NOLINT
   // INPUT-rate units — passing the output rate makes |capacity| too small
   // and swr_convert() writes past the end of the frame.
   const int64_t delay = swr_get_delay(st->swr, st->in_sample_rate);
-  const int capacity = static_cast<int>(av_rescale_rnd(
-      delay + frame->nb_samples, st->out_sample_rate, st->in_sample_rate,
-      AV_ROUND_UP));
+  const int capacity = static_cast<int>(
+      av_rescale_rnd(delay + frame->nb_samples, st->out_sample_rate,
+                     st->in_sample_rate, AV_ROUND_UP));
   if (capacity <= 0) {
     return out;
   }
@@ -220,8 +219,8 @@ std::vector<base::scoped_refptr<AudioBuffer>> FramesForEncoder(  // NOLINT
   return out;
 }
 
-std::vector<base::scoped_refptr<AudioBuffer>> FlushResampler(
-    AudioState* st, int frame_size) {
+std::vector<base::scoped_refptr<AudioBuffer>> FlushResampler(AudioState* st,
+                                                             int frame_size) {
   std::vector<base::scoped_refptr<AudioBuffer>> out;
   if (!st->fifo || frame_size <= 0) {
     return out;
@@ -250,8 +249,8 @@ std::vector<base::scoped_refptr<AudioBuffer>> FlushResampler(
     AVFrame* f = ScratchFrame(st->framed, frame_size, st->out_sample_rate,
                               st->out_channels);
     if (f) {
-      const int got = av_audio_fifo_read(
-          st->fifo, reinterpret_cast<void**>(f->data), left);
+      const int got =
+          av_audio_fifo_read(st->fifo, reinterpret_cast<void**>(f->data), left);
       if (got > 0) {
         f->nb_samples = got;
         auto buf =

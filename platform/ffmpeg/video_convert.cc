@@ -38,19 +38,17 @@ bool StridesTopDown(const AVFrame& src) {
 const libyuv::YuvConstants* SelectYuvMatrix(const AVFrame& src) {
   const bool full_range = src.color_range == AVCOL_RANGE_JPEG;
   switch (src.colorspace) {
-    case AVCOL_SPC_BT709:
-      return full_range ? nullptr : &libyuv::kYuvH709Constants;
-    case AVCOL_SPC_BT2020_NCL:
-    case AVCOL_SPC_BT2020_CL:
-      return full_range ? nullptr : &libyuv::kYuv2020Constants;
-    case AVCOL_SPC_BT470BG:
-    case AVCOL_SPC_SMPTE170M:
-    case AVCOL_SPC_SMPTE240M:
-      return full_range ? &libyuv::kYuvJPEGConstants
-                        : &libyuv::kYuvI601Constants;
-    default:
-      return full_range ? &libyuv::kYuvJPEGConstants
-                        : &libyuv::kYuvI601Constants;
+  case AVCOL_SPC_BT709:
+    return full_range ? nullptr : &libyuv::kYuvH709Constants;
+  case AVCOL_SPC_BT2020_NCL:
+  case AVCOL_SPC_BT2020_CL:
+    return full_range ? nullptr : &libyuv::kYuv2020Constants;
+  case AVCOL_SPC_BT470BG:
+  case AVCOL_SPC_SMPTE170M:
+  case AVCOL_SPC_SMPTE240M:
+    return full_range ? &libyuv::kYuvJPEGConstants : &libyuv::kYuvI601Constants;
+  default:
+    return full_range ? &libyuv::kYuvJPEGConstants : &libyuv::kYuvI601Constants;
   }
 }
 
@@ -97,9 +95,9 @@ bool VideoConverter::Configure(int src_w, int src_h, AVPixelFormat src_format,
   sws_.reset();
   // The fallback context is created eagerly: if the pair is broken we want
   // Configure() to fail up front rather than every Convert() frame.
-  sws_ = SwsPtr(sws_getContext(src_w, src_h, src_format, dst_w, dst_h,
-                               dst_format, SWS_BILINEAR, nullptr, nullptr,
-                               nullptr));
+  sws_ =
+      SwsPtr(sws_getContext(src_w, src_h, src_format, dst_w, dst_h, dst_format,
+                            SWS_BILINEAR, nullptr, nullptr, nullptr));
   if (!sws_) {
     configured_ = false;
     return false;
@@ -172,8 +170,7 @@ bool VideoConverter::TryLibyuv(const AVFrame& src, uint8_t* const dst_data[4],
   }
   // YUVJ420P is BT.601 full range: libyuv's J-prefixed kernels fold the range
   // compression in, so the output is standard limited-range I420.
-  if (src_format_ == AV_PIX_FMT_YUVJ420P &&
-      dst_format_ == AV_PIX_FMT_YUV420P) {
+  if (src_format_ == AV_PIX_FMT_YUVJ420P && dst_format_ == AV_PIX_FMT_YUV420P) {
     return libyuv::J420ToI420(src.data[0], src.linesize[0], src.data[1],
                               src.linesize[1], src.data[2], src.linesize[2],
                               dst_data[0], dst_linesize[0], dst_data[1],
@@ -184,21 +181,25 @@ bool VideoConverter::TryLibyuv(const AVFrame& src, uint8_t* const dst_data[4],
   // hence the linesize / 2.
   if (src_format_ == AV_PIX_FMT_YUV420P10LE &&
       dst_format_ == AV_PIX_FMT_YUV420P) {
-    return libyuv::I010ToI420(
-        reinterpret_cast<const uint16_t*>(src.data[0]), src.linesize[0] / 2,
-        reinterpret_cast<const uint16_t*>(src.data[1]), src.linesize[1] / 2,
-        reinterpret_cast<const uint16_t*>(src.data[2]), src.linesize[2] / 2,
-        dst_data[0], dst_linesize[0], dst_data[1], dst_linesize[1], dst_data[2],
-        dst_linesize[2], dst_w_, dst_h_) == 0;
+    return libyuv::I010ToI420(reinterpret_cast<const uint16_t*>(src.data[0]),
+                              src.linesize[0] / 2,
+                              reinterpret_cast<const uint16_t*>(src.data[1]),
+                              src.linesize[1] / 2,
+                              reinterpret_cast<const uint16_t*>(src.data[2]),
+                              src.linesize[2] / 2, dst_data[0], dst_linesize[0],
+                              dst_data[1], dst_linesize[1], dst_data[2],
+                              dst_linesize[2], dst_w_, dst_h_) == 0;
   }
   if (src_format_ == AV_PIX_FMT_YUV422P10LE &&
       dst_format_ == AV_PIX_FMT_YUV420P) {
-    return libyuv::I210ToI420(
-        reinterpret_cast<const uint16_t*>(src.data[0]), src.linesize[0] / 2,
-        reinterpret_cast<const uint16_t*>(src.data[1]), src.linesize[1] / 2,
-        reinterpret_cast<const uint16_t*>(src.data[2]), src.linesize[2] / 2,
-        dst_data[0], dst_linesize[0], dst_data[1], dst_linesize[1], dst_data[2],
-        dst_linesize[2], dst_w_, dst_h_) == 0;
+    return libyuv::I210ToI420(reinterpret_cast<const uint16_t*>(src.data[0]),
+                              src.linesize[0] / 2,
+                              reinterpret_cast<const uint16_t*>(src.data[1]),
+                              src.linesize[1] / 2,
+                              reinterpret_cast<const uint16_t*>(src.data[2]),
+                              src.linesize[2] / 2, dst_data[0], dst_linesize[0],
+                              dst_data[1], dst_linesize[1], dst_data[2],
+                              dst_linesize[2], dst_w_, dst_h_) == 0;
   }
 
   // ---- I420 → packed RGB: byte-order note, verified against libyuv's row
@@ -226,22 +227,20 @@ bool VideoConverter::TryLibyuv(const AVFrame& src, uint8_t* const dst_data[4],
     if (!matrix) {
       return false;
     }
-    return libyuv::I420ToARGBMatrix(src.data[0], src.linesize[0], src.data[1],
-                                    src.linesize[1], src.data[2],
-                                    src.linesize[2], dst_data[0],
-                                    dst_linesize[0], matrix, dst_w_,
-                                    dst_h_) == 0;
+    return libyuv::I420ToARGBMatrix(
+               src.data[0], src.linesize[0], src.data[1], src.linesize[1],
+               src.data[2], src.linesize[2], dst_data[0], dst_linesize[0],
+               matrix, dst_w_, dst_h_) == 0;
   }
   if (src_format_ == AV_PIX_FMT_YUV420P && dst_format_ == AV_PIX_FMT_ABGR) {
     const libyuv::YuvConstants* matrix = SelectYuvMatrix(src);
     if (!matrix) {
       return false;
     }
-    return libyuv::I420ToRGBAMatrix(src.data[0], src.linesize[0], src.data[1],
-                                    src.linesize[1], src.data[2],
-                                    src.linesize[2], dst_data[0],
-                                    dst_linesize[0], matrix, dst_w_,
-                                    dst_h_) == 0;
+    return libyuv::I420ToRGBAMatrix(
+               src.data[0], src.linesize[0], src.data[1], src.linesize[1],
+               src.data[2], src.linesize[2], dst_data[0], dst_linesize[0],
+               matrix, dst_w_, dst_h_) == 0;
   }
   if (src_format_ == AV_PIX_FMT_YUV420P && dst_format_ == AV_PIX_FMT_RGBA &&
       SelectYuvMatrix(src) == &libyuv::kYuvI601Constants) {
@@ -269,26 +268,25 @@ bool VideoConverter::ConvertSws(const AVFrame& src, uint8_t* const dst_data[4],
     const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(f);
     return desc && !(desc->flags & AV_PIX_FMT_FLAG_RGB);
   };
-  const bool color_change =
-      !is_yuv(src_format_) || !is_yuv(dst_format_) ||
-      src.color_range == AVCOL_RANGE_JPEG;
+  const bool color_change = !is_yuv(src_format_) || !is_yuv(dst_format_) ||
+                            src.color_range == AVCOL_RANGE_JPEG;
   if (color_change) {
     // Per-frame colorspace: the context is geometry-cached, but two frames
     // from the same stream can disagree about matrix/range, and sws defaults
     // to BT.601 regardless of what the frame declares.
     int coefficients = SWS_CS_ITU709;
     switch (src.colorspace) {
-      case AVCOL_SPC_BT470BG:
-      case AVCOL_SPC_SMPTE170M:
-      case AVCOL_SPC_SMPTE240M:
-        coefficients = SWS_CS_ITU601;
-        break;
-      case AVCOL_SPC_BT2020_NCL:
-      case AVCOL_SPC_BT2020_CL:
-        coefficients = SWS_CS_BT2020;
-        break;
-      default:
-        break;
+    case AVCOL_SPC_BT470BG:
+    case AVCOL_SPC_SMPTE170M:
+    case AVCOL_SPC_SMPTE240M:
+      coefficients = SWS_CS_ITU601;
+      break;
+    case AVCOL_SPC_BT2020_NCL:
+    case AVCOL_SPC_BT2020_CL:
+      coefficients = SWS_CS_BT2020;
+      break;
+    default:
+      break;
     }
     const int src_range = (src.color_range == AVCOL_RANGE_JPEG) ? 1 : 0;
     sws_setColorspaceDetails(sws_.get(), sws_getCoefficients(coefficients),

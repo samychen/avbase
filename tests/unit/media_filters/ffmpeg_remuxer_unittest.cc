@@ -78,9 +78,8 @@ TEST_F(RemuxerTest, Mp4ToMkvKeepsStreamsAndDuration) {
 }
 
 TEST_F(RemuxerTest, UnwritableDestinationIsAnActionableError) {
-  const Status status =
-      RemuxContainer(TestFile("small_h264_aac_3s.mp4"),
-                     "/nonexistent_dir_for_tests/remux.mkv");
+  const Status status = RemuxContainer(TestFile("small_h264_aac_3s.mp4"),
+                                       "/nonexistent_dir_for_tests/remux.mkv");
   ASSERT_FALSE(status);
   EXPECT_EQ(status.error().code(), ErrorCode::kSourceReadFailed);
 }

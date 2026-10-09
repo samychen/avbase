@@ -24,12 +24,12 @@
 #include "media/base/media_log.h"
 #if AVBASE_ENABLE_FFMPEG
 #include "media/filters/ffmpeg_audio_filter.h"
-#include "media/filters/ffmpeg_video_filter.h"
 #include "media/filters/ffmpeg_decoder_factories.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/ffmpeg_text_decoder.h"
+#include "media/filters/ffmpeg_video_filter.h"
 #include "media/filters/retry_data_source.h"
-#include "platform/ffmpeg/url_data_source.h""
+#include "platform/ffmpeg/url_data_source.h"
 #endif
 namespace avbase {
 namespace {

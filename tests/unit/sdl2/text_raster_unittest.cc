@@ -14,10 +14,9 @@ namespace {
 // skips otherwise. FreeType itself is optional at build time: without it
 // Rasterize() always returns false and the suite asserts exactly that.
 bool FindFont(std::string* out) {
-  for (const char* path :
-       {"/System/Library/Fonts/Helvetica.ttc",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"}) {
+  for (const char* path : {"/System/Library/Fonts/Helvetica.ttc",
+                           "/System/Library/Fonts/Supplemental/Arial.ttf",
+                           "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"}) {
     if (std::FILE* f = std::fopen(path, "rb")) {
       std::fclose(f);
       *out = path;
@@ -70,8 +69,8 @@ TEST(TextRasterTest, MultilineGrowsHeight) {
   RgbaBitmap one_line;
   ASSERT_TRUE(raster.Rasterize(font, 28, white, "line one", &one_line));
   RgbaBitmap two_lines;
-  ASSERT_TRUE(raster.Rasterize(font, 28, white, "line one\nline two",
-                               &two_lines));
+  ASSERT_TRUE(
+      raster.Rasterize(font, 28, white, "line one\nline two", &two_lines));
   EXPECT_GT(two_lines.height, one_line.height);
 #else
   GTEST_SKIP() << "built without FreeType";
@@ -83,10 +82,10 @@ TEST(TextRasterTest, InvalidFontFails) {
   TextRaster raster;
   RgbaBitmap bitmap;
   const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-  EXPECT_FALSE(raster.Rasterize("/nonexistent/font.ttf", 28, white, "x",
-                                &bitmap));
-  EXPECT_FALSE(raster.Rasterize("/nonexistent/font.ttf", 28, white, "",
-                                &bitmap));
+  EXPECT_FALSE(
+      raster.Rasterize("/nonexistent/font.ttf", 28, white, "x", &bitmap));
+  EXPECT_FALSE(
+      raster.Rasterize("/nonexistent/font.ttf", 28, white, "", &bitmap));
 #else
   GTEST_SKIP() << "built without FreeType";
 #endif

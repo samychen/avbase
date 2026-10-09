@@ -218,17 +218,16 @@ void PipelineImpl::TakeSnapshot(base::TimeDelta at,
                                 Renderer::SnapshotFrameCallback callback) {
   if (!media_runner_) {
     std::move(callback).Run(
-        MediaError(ErrorCode::kInvalidState,
-                   "the pipeline is not initialized",
+        MediaError(ErrorCode::kInvalidState, "the pipeline is not initialized",
                    "TakeSnapshot arrived before a successful prepare",
                    "wait for the kPrepared state"),
         nullptr);
     return;
   }
-  media_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&PipelineImpl::DoTakeSnapshot,
-                     weak_factory_.GetWeakPtr(), at, std::move(callback)));
+  media_runner_->PostTask(FROM_HERE,
+                          base::BindOnce(&PipelineImpl::DoTakeSnapshot,
+                                         weak_factory_.GetWeakPtr(), at,
+                                         std::move(callback)));
 }
 
 void PipelineImpl::DoTakeSnapshot(base::TimeDelta at,

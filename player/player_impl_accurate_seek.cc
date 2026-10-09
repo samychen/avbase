@@ -19,7 +19,7 @@
 namespace avbase {
 
 void PlayerImpl::BeginAccurateWaitOnMedia(int64_t request_id,
-                                         base::TimeDelta target) {
+                                          base::TimeDelta target) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(buffer_controller_sequence_);
   // A new wait supersedes a running one: complete the old request as aborted
   // (its caller must never wait forever) and reopen the window for the new

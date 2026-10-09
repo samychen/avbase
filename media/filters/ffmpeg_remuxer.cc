@@ -18,8 +18,8 @@ namespace ff = ::avbase::platform::ffmpeg;
 
 Status Fail(const std::string& summary, const std::string& detail,
             const std::string& suggestion) {
-  return base::unexpected(MediaError(ErrorCode::kSourceReadFailed, summary,
-                                     detail, suggestion));
+  return base::unexpected(
+      MediaError(ErrorCode::kSourceReadFailed, summary, detail, suggestion));
 }
 
 }  // namespace

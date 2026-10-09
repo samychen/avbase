@@ -13,10 +13,10 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/threading/thread.h"
 #include "media/base/native_display.h"
-#include "platform/sdl2/surface.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
 #include "media/media_export.h"
+#include "platform/sdl2/surface.h"
 
 namespace avbase::media {
 

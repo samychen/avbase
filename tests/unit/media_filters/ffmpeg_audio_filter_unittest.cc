@@ -25,19 +25,16 @@ base::scoped_refptr<AudioBuffer> MakeSineBuffer(base::TimeDelta ts,
   for (int ch = 0; ch < kChannels; ++ch) {
     for (int i = 0; i < kFrames; ++i) {
       const int64_t n = *sample_cursor + i;
-      planes[ch * kFrames + i] =
-          static_cast<float>(
-              std::sin(2.0 * 3.14159265358979 * 440.0 *
-                       static_cast<double>(n) / kRate));
+      planes[ch * kFrames + i] = static_cast<float>(std::sin(
+          2.0 * 3.14159265358979 * 440.0 * static_cast<double>(n) / kRate));
     }
   }
   *sample_cursor += kFrames;
   return AudioBuffer::Create(
-      SampleFormat::kF32P, kChannels == 1 ? ChannelLayout::kMono
-                                          : ChannelLayout::kStereo,
-      kChannels, kRate, kFrames, ts,
-      base::SecondsD(static_cast<double>(kFrames) / kRate), 0,
-      std::move(data));
+      SampleFormat::kF32P,
+      kChannels == 1 ? ChannelLayout::kMono : ChannelLayout::kStereo, kChannels,
+      kRate, kFrames, ts, base::SecondsD(static_cast<double>(kFrames) / kRate),
+      0, std::move(data));
 }
 
 double PeakAmplitude(const AudioBuffer& buffer) {
@@ -89,8 +86,7 @@ TEST(AudioFilterTest, EosFlushesAndPropagates) {
   const size_t after_input = out.size();
 
   // EOS: the graph must flush and hand an EOS buffer back.
-  ASSERT_TRUE(
-      filter.Process(AudioBuffer::CreateEOSBuffer(), &out));
+  ASSERT_TRUE(filter.Process(AudioBuffer::CreateEOSBuffer(), &out));
   ASSERT_GT(out.size(), after_input);
   EXPECT_TRUE(out.back()->end_of_stream());
 }

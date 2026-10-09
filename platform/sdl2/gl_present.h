@@ -78,13 +78,13 @@ class GlPresenter {
   // A no-op without a slot or with nothing published.
   void DrawOverlay();
 
-  void* window_;     // SDL_Window*
-  void* context_;    // SDL_GLContext
+  void* window_;   // SDL_Window*
+  void* context_;  // SDL_GLContext
   bool gl_current_{false};
   std::unique_ptr<Loader> loader_;
   TextOverlaySlot* overlay_slot_{nullptr};  // Borrowed; may be null.
 
-  unsigned int program_{0};         // Video pass.
+  unsigned int program_{0};          // Video pass.
   unsigned int overlay_program_{0};  // Overlay pass.
   unsigned int vao_{0};
   unsigned int vbo_{0};

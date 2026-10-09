@@ -148,14 +148,14 @@ void RescaleTimestamps(EncodedPacket* ep, int in_num, int in_den, int out_num,
 // 938ms long instead of 488ms, because the encoder counts the samples it was
 // handed at the rate it was told rather than the rate they were taken at.
 AVBASE_MEDIA_EXPORT
-std::vector<base::scoped_refptr<AudioBuffer>> FramesForEncoder(
-    AudioState* st, AVFrame* frame, int frame_size);
+std::vector<base::scoped_refptr<AudioBuffer>>
+FramesForEncoder(AudioState* st, AVFrame* frame, int frame_size);
 
 // Drains what the resampler is still holding: the remaining whole frames,
 // then the tail as a final short frame. Empty when nothing was resampled.
 AVBASE_MEDIA_EXPORT
-std::vector<base::scoped_refptr<AudioBuffer>> FlushResampler(
-    AudioState* st, int frame_size);
+std::vector<base::scoped_refptr<AudioBuffer>> FlushResampler(AudioState* st,
+                                                             int frame_size);
 
 // Stream preparation: opens the decoder (unless the stream is copied),
 // initializes the encoder — resolving its concrete name through the E5

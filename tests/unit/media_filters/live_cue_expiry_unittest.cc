@@ -251,8 +251,8 @@ TEST_F(LiveCueExpiryTest, CuesBeyondTheWindowAreDropped) {
   for (const TimedTextCue& cue : cues) {
     EXPECT_GE(cue.pts, floor)
         << "a cue older than media-at-selection minus the window survived "
-           "(media_at_selection=" << media_at_selection
-           << "): expiry is not being applied";
+           "(media_at_selection="
+        << media_at_selection << "): expiry is not being applied";
   }
 }
 

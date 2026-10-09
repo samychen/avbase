@@ -5,7 +5,6 @@
 #include "platform/ffmpeg/url_data_source.h"
 
 #include <chrono>
-#include <thread>
 #include <cstdio>
 #include <cstring>
 #include <thread>
@@ -107,10 +106,9 @@ TEST_F(UrlDataSourceTest, AsyncReadPostsResultNeverRunsInline) {
   // on THIS thread.
   EXPECT_FALSE(done.IsSignaled());
   const std::thread::id caller = std::this_thread::get_id();
-  ASSERT_TRUE(done.TimedWait(
-      base::Seconds(static_cast<int64_t>(
-          std::chrono::duration_cast<std::chrono::seconds>(kWaitTimeout)
-              .count())))) << "async read never completed";
+  ASSERT_TRUE(done.TimedWait(base::Seconds(static_cast<int64_t>(
+      std::chrono::duration_cast<std::chrono::seconds>(kWaitTimeout).count()))))
+      << "async read never completed";
   EXPECT_NE(callback_tid, caller);
   EXPECT_EQ(bytes_read, static_cast<int64_t>(buf.size()));
 }
