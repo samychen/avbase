@@ -2,12 +2,16 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅**
+## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）**
 
-最后更新：2026-10-03（第二十五轮，另一开发机接续推进）—— **macOS 播放器取证与固化**：
-`macos-sdl2` 预设 + `macos-player` CI job,"Mac 上还能编"从此每次 push 都有回答。
-本机（MacBook）复核：ffmpeg **481/481**、no-ffmpeg **376/376**、invariant **302 文件**全过、
-C23 基线 37（第二十三轮全量 clang-format 后 286→37）。
+最后更新：2026-10-09（第三十轮）—— **音频编码器通用化（AAC → 任意 libavcodec 音频编码器）**：
+`FFmpegAacEncoder` 改名 `FFmpegAudioEncoder`（`ffmpeg_aac_encoder.{h,cc}` →
+`ffmpeg_audio_encoder.{h,cc}`），与视频侧 `FFmpegVideoEncoder` 对称；`Params.codec_name`
+（默认 `"aac"`）经 `avcodec_find_encoder_by_name` 解析，`AudioCodecSpec.codec` 从此被真正
+端到端兑现；转码音频轨与封装写端的 `codec_name` 一律取**解析后的名字**（请求 `libopus`
+却在容器头写 `aac` 会描述一条根本不存在的流）。本机复核：ffmpeg **109 通过/1 跳过**、
+asan 受影响套件 **19 通过/1 跳过（零 sanitizer 报错）**、no-ffmpeg **126 通过**（音频编码器
+属 ffmpeg 目标，不受触及）。
 > 第二十五轮：macOS 播放器实测与固化（预设 + CI 守护）
 > 第二十四轮：全量崩溃清扫（corpus 14/29 关闭竞态根因修复→0/35;TearDown 未 Stop 的
 > DISABLED 掩盖崩溃;反向断言）· corpus 矩阵分级（smoke/standard/full,74 产出崩溃 0）·
@@ -22,7 +26,273 @@ C23 基线 37（第二十三轮全量 clang-format 后 286→37）。
 > 第十八轮：fuzz 目标（libFuzzer + standalone 双驱动 + 语料入库）
 剩余工作以 [12-剩余工作清单](12-剩余工作清单.md) 为准（该项由各轮同步维护,是唯一权威清单）。
 
-## 第二十六轮（本轮）：三个收口项——重连接线 · 直播字幕窗口锚点 · clang-tidy 门禁
+## 第三十轮（本轮）：音频编码器通用化——从 AAC 专用到任意 libavcodec 编码器
+
+### (1) 缺陷的形态：编码器被写死，而调用方早就以为它不写死
+
+第二十七轮铺 L1 编码器层时，音频侧落成了 `FFmpegAacEncoder`：类名写着 AAC，`Initialize`
+里 `avcodec_find_encoder(AV_CODEC_ID_AAC)` 也写死 AAC。视频侧同时落地的是对称的
+`FFmpegVideoEncoder`——**天生 codec-name 驱动**，`Params.codec_name`（默认 `"libx264"`），
+由工厂或调用方选。两侧一对比，音频侧的硬编码就是历史遗留，不是设计。
+
+更能说明问题的是**调用方那一侧早就假定它是通用的**：`TranscodeJob::AudioCodecSpec` 的
+`codec` 字段注释一直写着 `"copy" or encoder name`，默认值 `"aac"`；`PrepareAudioStream`
+也确实读了 `params.audio_codec.codec`——**读完却没用**，直接写死 `ms.codec_name = "aac"`。
+于是「请求 `libopus`」这种调用会在容器头里被写成 `aac`，描述一条根本不存在的流：这是一个
+**说得出、做不出、还不报错**的接口谎言。
+
+### (2) 改法：改名 + codec_name + 解析后名字回填
+
+四项改动，全部对齐视频侧既有约定：
+
+1. **改名**：`ffmpeg_aac_encoder.{h,cc}` → `ffmpeg_audio_encoder.{h,cc}`；类
+   `FFmpegAacEncoder` → `FFmpegAudioEncoder`。与 `FFmpegVideoEncoder` 成对称命名，
+   名字真实反映能力。
+2. **`Params.codec_name`**（默认 `"aac"`，保持向后兼容）：`Initialize` 走
+   `avcodec_find_encoder_by_name(name.c_str())`；空串回落 `"aac"`；查不到就
+   `return false` 并打印「本套 FFmpeg 无此编码器」。于是 `libmp3lame` / `libopus` /
+   `flac` / `ac3` 等**凡构建里有就能直接选**。
+3. **解析后名字回填封装写端**（真缺陷修复）：`PrepareAudioStream` 里
+   `enc_params.codec_name = params.audio_codec.codec`，`ms.codec_name = enc_params.codec_name`
+   ——**写进容器的是解析后的名字**，不再无条件写 `"aac"`。错误路径的 `codec=` 诊断也带上
+   真正请求的名字。
+4. **采样格式策略**：第一次实现按 `codec->sample_fmts` 协商（FLTP 优先、否则取首个），
+   但该字段已被 FFmpeg 弃用并触发编译告警。视频编码器是**硬编码 `YUV420P`** 的，为了与
+   对称类一致、且不触碰弃用字段，最终**硬编码 `AV_SAMPLE_FMT_FLTP`**（planar float，正是
+   解码路径的输出，也是 aac/libmp3lame/libopus/ac3/flac 全都接受的形式）。格式协商明确
+   不在本轮范围——这行注释写进了代码，免得下一轮又有人来"修"它。
+
+### (3) 为什么通用 codec 不会踩坏重采样/FIFO 路径
+
+`ffmpeg_transcode_audio.cc` 里音频成帧（`FramesForEncoder` / `FlushResampler`）本就把
+`frame_size <= 0` 当合法输入——**变量帧编码器（如 FLAC）上报 `frame_size == 0` 时直接绕过
+FIFO 成帧**，不报错。所以"把 AAC 换成任意编码器"在成帧这一环是天然安全的，这是第二十九轮
+拆出 `ffmpeg_transcode_audio.cc` 时顺手留下的正确性红利。
+
+### (4) 测试：两个用例专为"证明它真的按名字走"而写
+
+`ffmpeg_audio_encoder_unittest.cc`（由 `ffmpeg_aac_encoder_unittest.cc` 改名）保留
+正弦→AAC 的 round-trip，并新增：
+
+- `UnknownCodecNameFails`：`codec_name = "definitely-not-a-codec"` 必须 `Initialize`
+  失败——**这条是判别性的**，写死 AAC 的实现也会"成功"，只有真的按名字查找才会失败；
+- `DefaultCodecNameIsAac`：空 `codec_name` 仍初始化成功——**向后兼容的守门**；
+- `EveryAvailableEncoderInitializes`：枚举构建里的音频编码器逐个 `Initialize`，本套
+  pinned FFmpeg 只有 `aac`，故该用例**干净跳过**（这正是 1 skip 的来源，非失败）。
+
+`ffmpeg_encode_muxer_unittest.cc` / `ffmpeg_concat_job_unittest.cc` /
+`ffmpeg_transcode_job_unittest.cc` 三处引用同步改名；`platform/CMakeLists.txt` 与
+`tests/CMakeLists.txt` 的源文件名同步。
+
+### (5) 验证结果（macOS 26 arm64 / AppleClang 17 / pinned FFmpeg 61.x）
+
+- `ffmpeg` 配置：**109 通过 / 1 跳过**（跳过项 `EveryAvailableEncoderInitializes`，
+  本套构建只有 AAC，设计如此）——零回归；
+- `asan` 配置：完整构建通过；受影响套件（AudioEncoder/EncodeMuxer/Transcode/Concat）
+  **20 跑 19 过 / 1 跳过，零 sanitizer 报错**；
+- `no-ffmpeg` 配置：`ninja: no work to do`（音频编码器属 ffmpeg 目标，本次改动不触及），
+  套件 **126 通过**；
+- 编译无告警（撤掉弃用的 `sample_fmts` 协商后）。
+
+### (6) 本轮未做 / 边界
+
+| 项 | 状态与原因 |
+|---|---|
+| 硬件音频编码器 | 未做，也无需做：本套 pinned FFmpeg 无音频硬件编码器，且无业务需求 |
+| 采样格式协商 | 明确不做：与视频编码器一致硬编码 FLTP，negotiation 是独立命题 |
+| `AudioEncoderFactory` | 未加：无音频硬件编码器候选时，工厂只是过度设计；按名字直连已满足"通用" |
+
+## 第二十八轮（本轮）：转码 E3/E4/E5 落地——两个“测得的样子像对的”时间戳缺陷
+
+本轮接手的是第二十七轮留下的 E3/E4/E5 半成品：源码与单测都已写好并注册进 CMake，但
+**从未编译验证过**（E3 单测缺 `#include "base/functional/bind.h"`，编译不过）。编译修好后
+9 个用例全绿——而这一轮真正的收获是：**那 9 个绿里有两个是假的**，它们的“通过”恰恰掩盖了
+两个正在丢数据的缺陷。两处的共同形状是同一句老话的反面：**不是没有测试，是断言量错了东西。**
+
+| slab | 文件 | 状态 |
+|---|---|---|
+| E3 离线转码 | `media/filters/ffmpeg_transcode_job.{h,cc}` + `ffmpeg_transcode_streams.{h,cc}` | ✅ trim(-ss/-t)、进度回调、**-ss 起点重基到 0**、写入失败一律返回 Status |
+| E4 多输入拼接 | `media/filters/ffmpeg_concat_job.{h,cc}` | ✅ 快路径包拷贝+bsf、时间戳**接续不断裂** |
+| E5 硬编工厂 | `platform/ffmpeg/video_encoder_factory.{h,cc}` | ✅ `EncoderNameFor` + NVENC + 平台工厂表，**并已接入 Transcode 生产路径** |
+
+### (1) E4 拼接缝：每一道缝静默丢一帧，而测试是绿的
+
+写完的 Concat 用“上一个片段的 max_pts + 1”当下一个片段的偏移。用一个一次性探针（现跑现弃）
+读回我们自己 muxer 写出的 AAC MP4，得到：**16 个包，首包 `pts=dts=-1024`，`max_pts=14336`**
+（AAC 编码器的 priming 样本，经 edit list 呈现为负时间戳）。于是第二个片段的首包
+`-1024 + 14337 = 13313`，**落后于上一个片段的最后一个 dts 14336**。
+
+这正好报错里的那一行——`non monotonically increasing dts to muxer in stream 0: 14336 >= 13313`，
+而这一行原本一直躺在日志里没人看。丢包静默的原因更值得记：**所有 `WritePacket()` 的返回值都被丢掉了。**
+于是输出 619ms（两片段该 ~683ms），少一帧 21ms，而原断言只要求“比一个片段长”——**619 > 320，绿。**
+
+修法不是把偏移算准一点，而是改了模型：**把一个片段整体归一化到正在延伸的输出时间轴上**
+（首片段落到 0，后续片段落到前一段的末尾），片段内部的相对间隔照旧。顺带也修掉了另一个同源缺陷：
+输出时间轴原本从 -1024 起步。
+
+修复后的数字能逐位对上（`n` 个包 × 1024 采样 / 48k）：
+
+| 输入 | 修复前 | 修复后 | 应有值 |
+|---|---|---|---|
+| 2 × 320ms | 619ms（丢 1 帧） | **682ms** | 32 × 21.3 = 682.7 ✓ |
+| 3 × 320ms | — | **1024ms** | 48 × 21.3 = 1024 ✓ |
+
+测试同步从“比一个片段长”改成**“不得短于两个输入时长之和”**，并补了一个三片段用例——原缺陷是
+**每道缝丢一帧**，一道缝的写法可能被容忍糊弄过去。同时 concat / transcode 两处的写入结果现在
+**一律检查并作为 Status 返回**：一个静默失败比一个响亮的失败糟得多。
+
+### (2) E3 `-ss`：`duration` 是对的，文件是错的
+
+这是本轮最该留下的那条教训。第一版 `-ss` 测试只断言“输出时长 ≤ 输入时长 - 150ms”，**它过了**：
+输入 426ms，输出 234ms，看着完美。**但如果当时就收工，我们交付的文件前 192ms 是空的。**
+
+因为 seek 之后直接把包的原时间戳写进输出容器，输出的时间轴**从 192ms 开始**。任何以 duration
+为准的检查都看不见这个偏移——包括我自己的第一版断言。真断言是 `MediaInfo::start_time`：
+`start_time` = 192000us ≤ 1ms 直接暴露它。修法与 E4 同源地标了同一个 helper：每个流以
+**第一个真正写出的包**为原点做平移（不用 seek 目标值——容器未必落在请求的点上）。
+
+### (3) E5：给工厂找一个生产调用方
+
+工厂能编能测，但全仓除了单测没有任何调用者——和第二十三轮 `SelectVideoDecoder` 踩的是同一个坑，
+只是这次我们在踩之前就发现了。更直接的漏洞是：`CreateEncoder()` 收的是一个**编码器名字**，
+而工厂从不暴露它要为某个 codec 用哪个名字；选出一个 VideoToolbox 工厂之后，调用方依旧无从得知
+该去要 `h264_videotoolbox`。**选择了却没法执行**。
+
+补 `EncoderNameFor()`、NVENC 工厂、以及把平台分支收进 `CreateVideoEncoderFactories()`
+（`media/` 不该知道这台机器是哪一种），再接进 Transcode 的视频编码器初始化：默认走工厂
+（`prefer_hardware` 关 → 只有软件工厂留下 → 行为与从前一致）。本套构建里缺某个编码器不会
+拖垮整轮作业：候选按优先级逐个尝试，全失败才报错。
+
+端到端佐证用一个注入的工厂：请求 `"libx264"`，工厂回答 `"mjpeg"`，则输出容器记录的 codec 就是
+`mjpeg`——**证明解析出的名字真的到达了编码器**，而不是算完就被丢掉（否则 Output 会是 h264）。
+
+**必须如实登记的边界**：本轮**没有**在任何机器上验证过硬件编码本身。探针显示这套 pinned FFmpeg
+里只有 `aac` 与 `mjpeg` 两个编码器可用，`h264_videotoolbox` 甚至在这台 Mac 上也**不存在**。
+所以 E5 目前是“已接线 + 已单测”，不是“硬编已实测”。同理 `VideoCodecSpec::codec` 的默认值
+`libx264` 在这套构建里**编不出来**——好在它的失败是清晰的报错，而不是悄悄降级。
+
+### (4) 顺手修掉的两个前置缺陷（不修则上面的候选回退不成立）
+
+候选回退要求在**同一个对象上多次 `Initialize()`**，而两个编码器的 `Context` 都没有析构函数：
+失败的那次会泄漏半成品 context，重挑的那次还会覆盖掉旧的。加上析构并让 `Initialize()` 先
+`ctx_.reset()`。ASan 整线通过（含本轮新增的转码/拼接用例）。
+
+另外记一个**本轮范围内的相邻修复**（不在 E3/E4/E5 内，但它是 ASan 车道红着的原因）：
+`video_convert_unittest.cc` 的 `MakePlanarFrame()` 对每个平面都走**整帧高度**，而 420/NV12 的
+色度平面只分配了半高——越界写。之前的非 ASan 配置全绿、ASan 下 3 红，**且唯一通过的那一个正好
+是 YUV422P（平面全高）**，这条相关性就是定位依据。按 `log2_chroma_h` 取行数后 ASan 3 红 → 0。
+
+### (5) 本轮未做 / 遗留
+
+| 项 | 状态与原因 |
+|---|---|
+| 硬编（VT/VAAPI/NVENC）实测 | ⬜ 本套 FFmpeg 无这些编码器（探针实测），需另一套构建 + 真机；目前只到“已接线 + 已单测” |
+| E4 慢路径（参数不一致 → 重编码再拼） | ⬜→✅ **第二十九轮已收尾**：检测不一致即走重编码路径，320ms+348ms → 710ms 逐位吻合 |
+| E3 异步入口 | ⬜ 第二十七轮登记的范围里有“异步”，实际只落了 trim 与进度回调；没有调用方之前不加调度器（调用方 `std::thread` 即可） |
+| 拷贝模式的时间基假设 | ⬜→✅ **第二十九轮已修**：`RescaleTimestamps` 按 `src_tb → dst_tb` 重基，MKV/ADTS 时间戳差数量级的缺陷关闭 |
+| 非浮点解码输出 | ⬜ `AudioState::swr` 字段预留但未接线：本 job 打交道的 codec 都解成 float；遇到 s16 解码器会出垃圾音，需真样本再补 |
+| check_invariants C1 | 🔴→✅ **第二十九轮已清**：4 处历史违规 + 本轮引入的 `ffmpeg_transcode_streams.cc`，按真 seam 拆出 5 个 TU，`check_invariants` 现 all rules pass |
+
+### (6) 验证结果（macOS 24.5 arm64 / AppleClang 21 / Homebrew FFmpeg 7.1.1）
+
+- `ffmpeg` 配置：**531/531**（3 个历史 DISABLED 未计）
+- `no-ffmpeg` 配置：**428/428**
+- `asan`：**531/531**（修复前 3 红，见 (4)）
+- `check_invariants`：本轮文件 0 违规；C23 回到基线 37
+- `clang-format --dry-run --Werror`：本轮改动文件 0 偏离
+
+## 第二十九轮：清五项 C1 门禁 + 收尾 E3c/E4b
+
+接手第二十八轮留下的两件事：其遗留表里登记的“拷贝模式时间基假设”（⬜）、“E4 慢路径”（⬜）与
+“C1 已有 4 项违规”（🔴），以及第二十八轮自己新引入的 `ffmpeg_transcode_streams.cc`（620 行，超 C1）。
+本轮把四项全清，且**全部按真 seam 拆分 / 真缺陷修复**，不压行、不糊弄。
+
+### (1) C1 门禁：五项违规按真 seam 拆分
+
+C1 是 500 行（或 allowlist 上限）的“强制命名 seam”门禁——它要的是把一类职责独立成 TU，而不是把
+文件压到 500 行以内。`renderer_impl.cc` 在 allowlist 上限 600，但当时 650 仍超限，所以本轮目标只是
+把它压到上限以下；其余四项按 500 计。
+
+| 原文件（行数） | 拆出 | 余下 |
+|---|---|---|
+| `audio_renderer_impl.cc` 503 | `audio_renderer_impl_render.cc`——S4 设备回调 `Render` + `ScaleAndZeroTail` + `OutputFramesToMediaTime` + `OnRenderError` | 410 |
+| `pipeline_impl.cc` 528 | `pipeline_impl_properties.cc`——四个运行时 setter（音量/速率/延迟/保音高）+ 读回访问器 | 415 |
+| `renderer_impl.cc` 650（上限 600） | `renderer_impl_reporting.cc`——`PushMasterClock` / `PushStatistics` / `GetStatistics` / `TakeSnapshot` | 525（< 600） |
+| `player_impl_events.cc` 508 | `player_impl_accurate_seek.cc`——精确 seek 状态机（`player_impl.h` 已注明其归属） | 351 |
+| `ffmpeg_transcode_streams.cc` 620（本人第二十八轮引入） | `ffmpeg_transcode_audio.cc`——`AudioState` 析构 + `AvFrameToAudioBuffer` + `ScratchFrame`/`EnsureResampler`/`DrainWholeFrames` + `FramesForEncoder`/`FlushResampler` | 384 |
+
+注册：core 三个新文件进 `media/CMakeLists.txt` 手写的 `filters/` 列表；`ffmpeg_transcode_audio.cc`
+进 `platform/CMakeLists.txt` 的 ffmpeg 目标（`player/*.cc` 是 glob，自动纳入）。**所有移出的都是成员函数
+定义或头文件已声明的自由函数，声明不动、链接跨 TU 解析，行为零变化。**
+
+### (2) E3c：拷贝路径的时间基假设（真缺陷）
+
+症状：拷贝分支把输入包的 `pts/dts/duration` 直接写进输出流，默认输入轨道时间基 == 输出流时间基。
+但容器时间基并不统一——MKV 常为 `1/1000`、ADTS 为 `1/28224000`、MP4 即便同族也可能不同——于是
+同一条流在不同容器里被写出差好几个数量级的时间戳。
+
+修复：引入 `RescaleTimestamps(ep, in_num, in_den, out_num, out_den)`，在 transcode / concat 每个
+`emit` 处按 `src_tb → dst_tb` 用 `av_rescale_q` 重基；时间基相同则 early-return，不引入舍入。
+
+佐证：`ffmpeg_transcode_job_unittest.cc::CopyModeRescalesAcrossContainerTimebases`（MP4/MKV/ADTS
+三类容器）——修复前 mkv 实测 9.3ms、应为 447ms，adts 实测 263s、应为 447ms；修复后逐位吻合。
+
+### (3) E4b：Concat 慢路径（参数不一致 → 重编码再拼）
+
+症状：各段 codec 参数不一致时，旧实现仍走包拷贝（丢掉重编码），输出时长严重偏短、音画错位。
+
+修复：检测不一致即改走重编码路径（复用 transcode 的 decoder→encoder），临时封装文件中转；
+时间轴归一化沿用快路径“把每段归一化到延伸的输出时间轴”的算法，避免拼接缝丢帧。
+
+佐证：`ffmpeg_concat_job_unittest.cc::IncompatibleParametersTakeTheSlowPath` 与
+`SegmentsFromOtherContainersKeepTheirDuration`——实测 320ms + 348ms → 710ms，逐位吻合。
+
+### (4) 验证结果（macOS 26.2 / AppleClang 17 / pinned FFmpeg 61.x）
+
+- `ffmpeg` 配置：**535/535**（3 个历史 DISABLED 未计）——含 transcode / concat / renderer /
+  audio-renderer / pipeline / player 全绿，五项拆分零回归
+- `no-ffmpeg` 配置：**428/428**
+- `asan`：编译 + 链接全绿；`ctest` 因本沙箱**拒绝 `/bin/ps`**（gtest 测试发现步骤要跑该二进制）
+  无法在本环境执行，属环境限制而非代码缺陷（与历史一致）
+- `check_invariants`：**all rules pass（359 files）**，C23 与基线 37 持平
+- `clang-format --dry-run --Werror`：本轮改动文件 0 偏离
+
+## 第二十七轮：转码基石——编码器层 E1/E2 落地与修复
+
+平替设计分析：对照 ffmpeg.c 七功能域、MediaComponent transcode.cc/combine.cc 能力面与
+avbase 现有框架，确认 L1 编码器层和 L2 封装写端是唯一净新增（解封装/解码/滤镜图全部
+已有可直接复用）。
+
+| 层 | 文件 | 状态 |
+|---|---|---|
+| L1 音频编码器 | `media/filters/ffmpeg_aac_encoder.{h,cc}` | ✅ AAC-LC，planar float 输入，extradata 输出 |
+| L1 视频编码器 | `media/filters/ffmpeg_video_encoder.{h,cc}` | ✅ mjpeg(base)/libx264(依赖层)，I420 输入，颜色空间透传 |
+| L2 封装写端 | `media/filters/ffmpeg_encode_muxer.{h,cc}` | ✅ mp4/matroska/adts，音频 1/rate、视频 1/90000 时间基 |
+
+**关键修复**：`FFmpegEncodeMuxer::Open()` 缺少 `avio_open`——对于 MP4/matroska 等需要文件
+IO 的容器，`avformat_write_header` 通过 `fmt->pb` 写数据，`pb` 为 null 时段错误。ADTS 是
+裸流（`AVFMT_NOFILE`）不受影响，所以 ADTS round-trip 测试此前能通过而 MP4 测试崩溃。
+修复：在 `Open()` 中对非 `AVFMT_NOFILE` 格式调用 `avio_open(&fmt->pb, path, AVIO_FLAG_WRITE)`。
+
+**测试（3 个 round-trip，全部通过）**：
+| 测试 | 路径 | 验证 |
+|---|---|---|
+| `AacEncoderTest.EncodeThenAdtsDecodeRoundTrip` | 正弦→AAC→ADTS→demuxer 解回 | extradata 非空、duration 350-600ms、buffer 数>0、EOS |
+| `EncodeMuxerTest.AacIntoMp4RoundTripsThroughTheDemuxer` | 正弦→AAC→MP4→demuxer 解回 | 流数=1、sample_rate=48000、duration 350-600ms |
+| `EncodeMuxerTest.MjpegIntoMatroskaRoundTrips` | 渐变帧→mjpeg→mkv→demuxer 解回 | codec=kMjpeg、coded_size 匹配 |
+
+同时清理：`ffmpeg_aac_encoder.cc` 中遗留的 `fprintf(stderr, "DBG ...")` 调试语句；
+`ffmpeg_encode_muxer_unittest.cc` 中硬编码的 `/tmp` 路径改为 `testing::TempDir()`，
+mjpeg 测试结尾误删 mp4 的 bug 修正为删除正确的 mkv 路径。
+
+验证：ffmpeg **513/513**、asan **513/513**、invariant 302 文件全过。
+
+**后续里程碑（不在本轮范围）**：
+- E3：`TranscodeJob`（离线调度：Demuxer→Decoder→FilterStage→Encoder→EncodeMuxer，trim/进度/异步）
+- E4：`ConcatJob`（多输入拼接：快路径包拷贝+bsf / 慢路径重编码，时间戳重排）
+- E5：硬编工厂（VideoToolbox/VAAPI/NVENC，与解码对称的 `HwCodecFlag` 掩码+工厂优先级）
+
+
 
 | 项 | 内容 |
 |---|---|
