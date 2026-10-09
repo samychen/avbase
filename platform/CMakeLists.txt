@@ -56,6 +56,13 @@ if(AVBASE_ENABLE_FFMPEG)
       ../media/filters/ffmpeg_audio_filter.cc
       ../media/filters/ffmpeg_remuxer.cc
       ../media/filters/ffmpeg_video_filter.cc
+      ../media/filters/ffmpeg_audio_encoder.cc
+      ../media/filters/ffmpeg_video_encoder.cc
+      ../media/filters/ffmpeg_encode_muxer.cc
+      ../media/filters/ffmpeg_transcode_job.cc
+      ../media/filters/ffmpeg_transcode_streams.cc
+      ../media/filters/ffmpeg_transcode_audio.cc
+      ../media/filters/ffmpeg_concat_job.cc
       ../media/filters/ffmpeg_decoder_factories.cc
       ../media/filters/ffmpeg_text_decoder.cc
       ffmpeg/data_source_io.cc)

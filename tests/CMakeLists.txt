@@ -102,6 +102,11 @@ if(AVBASE_ENABLE_FFMPEG)
               unit/media_filters/ffmpeg_remuxer_unittest.cc
               unit/media_filters/ffmpeg_video_filter_unittest.cc
               unit/media_filters/pipeline_snapshot_unittest.cc
+              unit/media_filters/ffmpeg_audio_encoder_unittest.cc
+              unit/media_filters/ffmpeg_encode_muxer_unittest.cc
+              unit/media_filters/ffmpeg_transcode_job_unittest.cc
+              unit/media_filters/ffmpeg_concat_job_unittest.cc
+              unit/media_filters/video_encoder_factory_unittest.cc
               unit/media_filters/ffmpeg_video_decoder_unittest.cc
               unit/media_filters/pipeline_throttle_unittest.cc
               unit/media_filters/pipeline_track_unittest.cc
