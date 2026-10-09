@@ -52,5 +52,27 @@ TEST(SeiTimecodeTest, RejectsMalformedPayloads) {
   EXPECT_FALSE(TimecodeFromFrame(*bad).has_value());
 }
 
+// E5: WriteTimecodeToFrame round-trips through TimecodeFromFrame.
+TEST(SeiTimecodeTest, WriteAndReadBack) {
+  FramePtr frame(av_frame_alloc());
+  S12mTimecode tc{10, 20, 30, 15};
+  EXPECT_TRUE(WriteTimecodeToFrame(frame.get(), tc));
+  const auto read = TimecodeFromFrame(*frame);
+  ASSERT_TRUE(read.has_value());
+  EXPECT_EQ(read->ToString(), "10:20:30:15");
+}
+
+// E5: Writing a new timecode replaces the existing one.
+TEST(SeiTimecodeTest, WriteReplacesExisting) {
+  FramePtr frame(av_frame_alloc());
+  S12mTimecode tc1{1, 2, 3, 4};
+  EXPECT_TRUE(WriteTimecodeToFrame(frame.get(), tc1));
+  S12mTimecode tc2{5, 6, 7, 8};
+  EXPECT_TRUE(WriteTimecodeToFrame(frame.get(), tc2));
+  const auto read = TimecodeFromFrame(*frame);
+  ASSERT_TRUE(read.has_value());
+  EXPECT_EQ(read->ToString(), "05:06:07:08");
+}
+
 }  // namespace
 }  // namespace avbase::platform::ffmpeg

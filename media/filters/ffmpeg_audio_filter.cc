@@ -123,8 +123,8 @@ bool FFmpegAudioFilter::Initialize(const std::string& graph, int sample_rate,
 
   const std::string args =
       "time_base=1/" + std::to_string(sample_rate) +
-      ":sample_rate=" + std::to_string(sample_rate) + ":sample_fmt=" +
-      av_get_sample_fmt_name(ToAvSampleFormat(kFormat)) +
+      ":sample_rate=" + std::to_string(sample_rate) +
+      ":sample_fmt=" + av_get_sample_fmt_name(ToAvSampleFormat(kFormat)) +
       ":channel_layout=" + layout_name;
   if (avfilter_graph_create_filter(&c->src, buffersrc, "in", args.c_str(),
                                    nullptr, c->graph) < 0) {
@@ -142,8 +142,8 @@ bool FFmpegAudioFilter::Initialize(const std::string& graph, int sample_rate,
   const AVSampleFormat out_fmts[] = {ToAvSampleFormat(kFormat),
                                      AV_SAMPLE_FMT_NONE};
   const int64_t out_rates[] = {sample_rate, -1};
-  if (av_opt_set_int_list(c->sink, "sample_fmts", out_fmts,
-                          AV_SAMPLE_FMT_NONE, AV_OPT_SEARCH_CHILDREN) < 0 ||
+  if (av_opt_set_int_list(c->sink, "sample_fmts", out_fmts, AV_SAMPLE_FMT_NONE,
+                          AV_OPT_SEARCH_CHILDREN) < 0 ||
       av_opt_set_int_list(c->sink, "sample_rates", out_rates, -1,
                           AV_OPT_SEARCH_CHILDREN) < 0) {
     LOG(ERROR) << "audio filter: sink format constraints failed";
@@ -164,8 +164,9 @@ bool FFmpegAudioFilter::Initialize(const std::string& graph, int sample_rate,
   bool linked = false;
   if (user_in && user_out) {
     linked = avfilter_link(c->src, 0, user_in->filter_ctx,
-                           user_in->pad_idx) >= 0 &&
-             avfilter_link(user_out->filter_ctx, user_out->pad_idx, c->sink,
+                           static_cast<unsigned>(user_in->pad_idx)) >= 0 &&
+             avfilter_link(user_out->filter_ctx,
+                           static_cast<unsigned>(user_out->pad_idx), c->sink,
                            0) >= 0;
   }
   avfilter_inout_free(&user_in);
@@ -177,8 +178,7 @@ bool FFmpegAudioFilter::Initialize(const std::string& graph, int sample_rate,
     return false;
   }
   if (avfilter_graph_config(c->graph, nullptr) < 0) {
-    LOG(ERROR) << "audio filter: graph \"" << graph
-               << "\" failed to configure";
+    LOG(ERROR) << "audio filter: graph \"" << graph << "\" failed to configure";
     avfilter_graph_free(&c->graph);
     return false;
   }
@@ -198,7 +198,7 @@ bool FFmpegAudioFilter::Process(
   if (in && in->end_of_stream()) {
     // Drain: send EOF once, pull everything the graph still holds.
     if (!ctx_->drained) {
-      av_buffersrc_add_frame_flags(ctx_->src, nullptr, 0);
+      (void)av_buffersrc_add_frame_flags(ctx_->src, nullptr, 0);
       ctx_->drained = true;
     }
     while (true) {
@@ -250,24 +250,26 @@ bool FFmpegAudioFilter::Process(
       break;  // EAGAIN: come back with the next input.
     }
     const int samples = out_frame->nb_samples;
-    const size_t plane = static_cast<size_t>(samples) * bytes;
+    const size_t plane =
+        static_cast<size_t>(samples) * static_cast<size_t>(bytes);
     std::vector<uint8_t> data(
         planar ? plane * static_cast<size_t>(ctx_->channels)
                : plane * static_cast<size_t>(ctx_->channels));
     if (planar) {
-      for (int ch = 0; ch < ctx_->channels; ++ch) {
+      for (size_t ch = 0; ch < static_cast<size_t>(ctx_->channels); ++ch) {
         std::memcpy(data.data() + ch * plane, out_frame->data[ch], plane);
       }
     } else {
-      std::memcpy(data.data(), out_frame->data[0], plane * ctx_->channels);
+      std::memcpy(data.data(), out_frame->data[0],
+                  plane * static_cast<size_t>(ctx_->channels));
     }
     const base::TimeDelta ts = base::SecondsD(
         static_cast<double>(ctx_->next_pts_samples) / ctx_->sample_rate);
     ctx_->next_pts_samples += samples;
     auto buffer = AudioBuffer::Create(
         ctx_->format, ctx_->layout, ctx_->channels, ctx_->sample_rate, samples,
-        ts, base::SecondsD(static_cast<double>(samples) / ctx_->sample_rate),
-        0, std::move(data));
+        ts, base::SecondsD(static_cast<double>(samples) / ctx_->sample_rate), 0,
+        std::move(data));
     av_frame_free(&out_frame);
     if (!buffer) {
       av_frame_free(&out_frame);

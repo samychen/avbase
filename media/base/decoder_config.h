@@ -39,6 +39,7 @@ enum class VideoCodec {
   kMpeg4,
   kMpeg2Video,
   kTheora,
+  kMjpeg,
 };
 enum class AudioCodec {
   kUnknown = 0,

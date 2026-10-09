@@ -47,8 +47,8 @@ void LiveDataSource::Append(const uint8_t* data, size_t size) {
   {
     base::AutoLock scoped(lock_);
     buffer_.insert(buffer_.end(), data, data + size);
+    data_cv_.Broadcast();
   }
-  data_cv_.Broadcast();
 }
 
 size_t LiveDataSource::appended_size() const {
@@ -60,11 +60,11 @@ void LiveDataSource::Close() {
   {
     base::AutoLock scoped(lock_);
     closed_ = true;
+    data_cv_.Broadcast();
   }
-  data_cv_.Broadcast();
 }
 
-void LiveDataSource::SetHost(Host* host) {
+void LiveDataSource::SetHost(Host* /*host*/) {
   // A live byte source has no demuxer-facing host needs; the bridge owns
   // the demuxer side. Kept for the contract.
 }
@@ -111,7 +111,10 @@ DataSource::ReadResult LiveDataSource::ReadBlocking(int64_t offset, size_t size,
 
 void LiveDataSource::Abort() {
   aborted_.Set();
-  data_cv_.Broadcast();
+  {
+    base::AutoLock scoped(lock_);
+    data_cv_.Broadcast();
+  }
 }
 
 bool LiveDataSource::GetSize(int64_t* size_out) {
@@ -126,7 +129,7 @@ bool LiveDataSource::IsStreaming() const {
   return true;
 }
 
-void LiveDataSource::SetBitrate(int bitrate) {}
+void LiveDataSource::SetBitrate(int /*bitrate*/) {}
 
 bool LiveDataSource::IsSeekable() const {
   return false;  // The defining property of the live case.

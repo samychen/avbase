@@ -55,10 +55,10 @@ TimedTextCue MakeCue(const AVSubtitle& sub, base::TimeDelta packet_pts,
       }
       int commas = 0;
       size_t text_start = 0;
-      for (size_t i = 0; i < plain.size() && commas < 8; ++i) {
-        if (plain[i] == ',') {
+      for (size_t j = 0; j < plain.size() && commas < 8; ++j) {
+        if (plain[j] == ',') {
           ++commas;
-          text_start = i + 1;
+          text_start = j + 1;
         }
       }
       if (commas == 8) {

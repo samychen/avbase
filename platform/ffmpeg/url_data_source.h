@@ -84,9 +84,8 @@ class AVBASE_MEDIA_EXPORT UrlDataSource final : public media::DataSource {
   void WorkerMain();
   std::mutex pending_lock_;
   std::condition_variable pending_cv_;
-  std::deque<avbase::base::OnceClosure> pending_jobs_
-      GUARDED_BY(pending_lock_);
-  bool worker_shutdown_ = false;   // GUARDED_BY(pending_lock_)
+  std::deque<avbase::base::OnceClosure> pending_jobs_;
+  bool worker_shutdown_ = false;
   std::unique_ptr<std::thread> worker_;
 };
 

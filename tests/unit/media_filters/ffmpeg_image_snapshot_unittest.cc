@@ -17,19 +17,22 @@ namespace {
 // gradient guarantees the entropy encoder produces real bytes.
 base::scoped_refptr<VideoFrame> MakeGradientFrame() {
   auto frame = VideoFrame::CreateBlackFrame(
-      VideoFormat::kI420, {64, 48}, {64, 48}, Rational{1, 1},
-      base::TimeDelta(), base::TimeDelta(), 0);
+      VideoFormat::kI420, {64, 48}, {64, 48}, Rational{1, 1}, base::TimeDelta(),
+      base::TimeDelta(), 0);
   for (int y = 0; y < 48; ++y) {
     for (int x = 0; x < 64; ++x) {
-      frame->mutable_data(VideoFrame::kYPlane)[y * 64 + x] =
+      frame->mutable_data(VideoFrame::kYPlane)[static_cast<size_t>(y) * 64 +
+                                               static_cast<size_t>(x)] =
           static_cast<uint8_t>((x * 4 + y * 5) & 0xff);
     }
   }
   for (int y = 0; y < 24; ++y) {
     for (int x = 0; x < 32; ++x) {
-      frame->mutable_data(VideoFrame::kUPlane)[y * 32 + x] =
+      frame->mutable_data(VideoFrame::kUPlane)[static_cast<size_t>(y) * 32 +
+                                               static_cast<size_t>(x)] =
           static_cast<uint8_t>(128 + x);
-      frame->mutable_data(VideoFrame::kVPlane)[y * 32 + x] =
+      frame->mutable_data(VideoFrame::kVPlane)[static_cast<size_t>(y) * 32 +
+                                               static_cast<size_t>(x)] =
           static_cast<uint8_t>(128 - x);
     }
   }

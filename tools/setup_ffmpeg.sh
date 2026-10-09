@@ -445,6 +445,7 @@ configure_flags() {
 --enable-decoder=srt,ass,webvtt,mov_text,subrip
 --enable-decoder=mjpeg
 --enable-encoder=mjpeg
+--enable-encoder=aac
 --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
 --enable-muxer=null,mp4,matroska,adts,image2
 --enable-filter=null,volume,aformat,anull,abuffer,abuffersink,buffer,buffersink,hflip,format

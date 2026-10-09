@@ -106,7 +106,7 @@ class AVBASE_MEDIA_EXPORT Pipeline {
     virtual void OnWaiting(WaitingReason reason) = 0;
     virtual void OnStatisticsUpdate(const PipelineStatistics& stats) = 0;
     virtual void OnVideoConfigChange(const VideoDecoderConfig& config) = 0;
-    virtual void OnTimedText(const media::TimedTextCue& cue) {}
+    virtual void OnTimedText(const media::TimedTextCue& /*cue*/) {}
 
    protected:
     Client() = default;
@@ -204,13 +204,15 @@ class AVBASE_MEDIA_EXPORT Pipeline {
     std::move(cb).Run(PipelineStatus::kTrackSwitchError);
   }
 
-  virtual void SelectAudioTrack(int stream_index, PipelineStatusCallback cb) {
+  virtual void SelectAudioTrack(int /*stream_index*/,
+                                PipelineStatusCallback cb) {
     std::move(cb).Run(PipelineStatus::kTrackSwitchError);
   }
 
   // Subtitle-track switch, same contract as SelectAudioTrack. Cues surface
   // through Client::OnTimedText as they display.
-  virtual void SelectTextTrack(int stream_index, PipelineStatusCallback cb) {
+  virtual void SelectTextTrack(int /*stream_index*/,
+                               PipelineStatusCallback cb) {
     std::move(cb).Run(PipelineStatus::kTrackSwitchError);
   }
 

@@ -121,7 +121,7 @@ media::DataSource::ReadResult UrlDataSource::ReadBlocking(int64_t offset,
     if (aborted_.load(std::memory_order_relaxed)) {
       return base::unexpected(media::MediaError(
           media::ErrorCode::kAborted, "the network source was aborted",
-          "offset = " + std::to_string(offset + total),
+          "offset = " + std::to_string(offset + static_cast<int64_t>(total)),
           "this follows Stop(); no action needed"));
     }
     const int got = avio_read(avio_, data + total,

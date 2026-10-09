@@ -27,9 +27,9 @@
 namespace avbase::media {
 namespace {
 
-constexpr auto kWaitTimeout = std::chrono::seconds(45);
-constexpr int kFramesPerBuffer = 256;
-constexpr int kAudioChannels = 2;
+[[maybe_unused]] constexpr auto kWaitTimeout = std::chrono::seconds(45);
+[[maybe_unused]] constexpr int kFramesPerBuffer = 256;
+[[maybe_unused]] constexpr int kAudioChannels = 2;
 
 // Phase 4: runtime audio-track switching. The fixture mirrors
 // pipeline_throttle_unittest.cc; the media is a 3 s file with one video and

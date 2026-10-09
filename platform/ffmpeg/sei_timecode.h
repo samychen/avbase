@@ -31,6 +31,11 @@ struct S12mTimecode {
 // fields -- a malformed message must not surface as garbage timecode).
 std::optional<S12mTimecode> TimecodeFromFrame(const AVFrame& frame);
 
+// E5: Writes the S12M timecode side data onto |frame|. The encoder will pick
+// it up and emit the corresponding SEI NAL unit. Returns false on allocation
+// failure. If the frame already carries a timecode, it is replaced.
+bool WriteTimecodeToFrame(AVFrame* frame, const S12mTimecode& tc);
+
 }  // namespace avbase::platform::ffmpeg
 
 #endif  // AVBASE_PLATFORM_FFMPEG_SEI_TIMECODE_H_

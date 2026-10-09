@@ -15,8 +15,6 @@
 namespace avbase::media {
 namespace {
 
-constexpr base::TimeDelta kAbortSleepSlice = base::Milliseconds(10);
-
 }  // namespace
 
 RetryDataSource::RetryDataSource(base::scoped_refptr<DataSource> inner,

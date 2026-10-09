@@ -173,7 +173,7 @@ class AVBASE_MEDIA_EXPORT RendererClient {
 
   // Text leg (Phase 4.2): one decoded subtitle cue, base renders nothing.
   // Default no-op so clients that do not care never see it.
-  virtual void OnTimedText(const TimedTextCue& cue) {}
+  virtual void OnTimedText(const TimedTextCue& /*cue*/) {}
 
   // Audio output device switched, or the attempt failed. No caller until
   // media/audio/ exists (M7); see gap 2 in the file header.

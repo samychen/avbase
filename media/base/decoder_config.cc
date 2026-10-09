@@ -26,6 +26,8 @@ const char* GetVideoCodecName(VideoCodec codec) {
     return "mpeg2video";
   case VideoCodec::kTheora:
     return "theora";
+  case VideoCodec::kMjpeg:
+    return "mjpeg";
   }
   return "invalid";
 }
@@ -71,6 +73,8 @@ VideoCodec VideoCodecFromName(std::string_view name) {
     return VideoCodec::kMpeg2Video;
   if (name == "theora")
     return VideoCodec::kTheora;
+  if (name == "mjpeg")
+    return VideoCodec::kMjpeg;
   return VideoCodec::kUnknown;
 }
 

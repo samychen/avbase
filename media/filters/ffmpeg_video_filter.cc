@@ -99,9 +99,11 @@ bool FFmpegVideoFilter::Initialize(const std::string& graph,
   }
   bool linked = false;
   if (user_in && user_out) {
-    linked = avfilter_link(c->src, 0, user_in->filter_ctx, user_in->pad_idx) >=
+    linked = avfilter_link(c->src, 0, user_in->filter_ctx,
+                           static_cast<unsigned>(user_in->pad_idx)) >=
                  0 &&
-             avfilter_link(user_out->filter_ctx, user_out->pad_idx, c->sink,
+             avfilter_link(user_out->filter_ctx,
+                           static_cast<unsigned>(user_out->pad_idx), c->sink,
                            0) >= 0;
   }
   avfilter_inout_free(&user_in);

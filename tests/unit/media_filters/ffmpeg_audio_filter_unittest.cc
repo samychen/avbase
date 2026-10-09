@@ -26,8 +26,9 @@ base::scoped_refptr<AudioBuffer> MakeSineBuffer(base::TimeDelta ts,
     for (int i = 0; i < kFrames; ++i) {
       const int64_t n = *sample_cursor + i;
       planes[ch * kFrames + i] =
-          std::sin(2.0 * 3.14159265358979 * 440.0 *
-                   static_cast<double>(n) / kRate);
+          static_cast<float>(
+              std::sin(2.0 * 3.14159265358979 * 440.0 *
+                       static_cast<double>(n) / kRate));
     }
   }
   *sample_cursor += kFrames;

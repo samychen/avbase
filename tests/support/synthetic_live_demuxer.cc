@@ -435,7 +435,6 @@ class SyntheticLiveDemuxer::LiveStream final : public DemuxerStream {
       return;
     }
     SyntheticLiveDemuxer* const owner = owner_;
-    const DemuxerStreamType type = type_;
     runner->PostTask(
         FROM_HERE,
         base::BindOnce([](SyntheticLiveDemuxer* o, DemuxerStreamType t,

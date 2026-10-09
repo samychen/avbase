@@ -109,7 +109,8 @@ class AVBASE_MEDIA_EXPORT Demuxer : public MediaResource {
   // dropped, because nobody will ever drain them -- leaving them queued would
   // wedge the demux loop on its own watermark the moment a track switch
   // orphans the old consumer. Default: no alternates, nothing to do.
-  virtual void SetActiveStream(DemuxerStreamType type, int stream_index) {}
+  virtual void SetActiveStream(DemuxerStreamType /*type*/,
+                               int /*stream_index*/) {}
 
   virtual const MediaInfo& media_info() const = 0;
   virtual base::TimeDelta GetStartTime() const = 0;

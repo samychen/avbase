@@ -28,9 +28,9 @@
 namespace avbase::media {
 namespace {
 
-constexpr auto kWaitTimeout = std::chrono::seconds(45);
-constexpr int kFramesPerBuffer = 256;
-constexpr int kAudioChannels = 2;
+[[maybe_unused]] constexpr auto kWaitTimeout = std::chrono::seconds(45);
+[[maybe_unused]] constexpr int kFramesPerBuffer = 256;
+[[maybe_unused]] constexpr int kAudioChannels = 2;
 
 // Phase 4.2 text leg: the base renders nothing -- subtitle packets are
 // decoded on S1 and delivered as TimedTextCues through Client::OnTimedText.

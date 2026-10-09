@@ -14,12 +14,13 @@ namespace {
 constexpr Size kSize{64, 48};
 
 base::scoped_refptr<VideoFrame> MakeGradientFrame() {
-  auto frame = VideoFrame::CreateBlackFrame(
-      VideoFormat::kI420, kSize, kSize, Rational{1, 1}, base::TimeDelta(),
-      base::Milliseconds(33), 0);
+  auto frame = VideoFrame::CreateBlackFrame(VideoFormat::kI420, kSize, kSize,
+                                            Rational{1, 1}, base::TimeDelta(),
+                                            base::Milliseconds(33), 0);
   for (int y = 0; y < 48; ++y) {
     for (int x = 0; x < 64; ++x) {
-      frame->mutable_data(VideoFrame::kYPlane)[y * 64 + x] =
+      frame->mutable_data(VideoFrame::kYPlane)[static_cast<size_t>(y) * 64 +
+                                               static_cast<size_t>(x)] =
           static_cast<uint8_t>((x * 4) & 0xff);
     }
   }
@@ -33,9 +34,9 @@ TEST(VideoFilterTest, NullGraphPassesPixelsThrough) {
   base::scoped_refptr<VideoFrame> out;
   ASSERT_TRUE(filter.Process(in, &out));
   ASSERT_TRUE(out);
-  EXPECT_EQ(0, std::memcmp(out->visible_data(VideoFrame::kYPlane).data(),
-                           in->visible_data(VideoFrame::kYPlane).data(),
-                           64 * 48));
+  EXPECT_EQ(0,
+            std::memcmp(out->visible_data(VideoFrame::kYPlane).data(),
+                        in->visible_data(VideoFrame::kYPlane).data(), 64 * 48));
 }
 
 TEST(VideoFilterTest, HflipMirrorsRows) {
@@ -56,8 +57,8 @@ TEST(VideoFilterTest, HflipMirrorsRows) {
 
 TEST(VideoFilterTest, UnknownFilterFailsToInitialize) {
   FFmpegVideoFilter filter;
-  EXPECT_FALSE(filter.Initialize("definitely_not_a_filter", VideoFormat::kI420,
-                                 kSize));
+  EXPECT_FALSE(
+      filter.Initialize("definitely_not_a_filter", VideoFormat::kI420, kSize));
 }
 
 }  // namespace

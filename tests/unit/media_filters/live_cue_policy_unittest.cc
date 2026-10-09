@@ -53,8 +53,8 @@
 namespace avbase::media {
 namespace {
 
-constexpr int kFramesPerBuffer = 256;
-constexpr int kAudioChannels = 2;
+[[maybe_unused]] constexpr int kFramesPerBuffer = 256;
+[[maybe_unused]] constexpr int kAudioChannels = 2;
 
 // The media carries two subrip tracks, streams 1=eng and 2=chi (stream 0 is
 // audio), so selection has a real alternate and the delivery order is
@@ -67,7 +67,7 @@ class LiveCuePolicyTest : public PipelineTestFixture {
   }
 
   static constexpr int kTrackEng = 1;
-  static constexpr int kTrackChi = 2;
+  [[maybe_unused]] static constexpr int kTrackChi = 2;
 
   // Selects through the PIPELINE, which is the point of the rewrite: this is
   // the path that also tells the demuxer the track is wanted.

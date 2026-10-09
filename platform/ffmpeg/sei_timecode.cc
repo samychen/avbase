@@ -5,6 +5,7 @@
 #include "platform/ffmpeg/sei_timecode.h"
 
 #include <cstdio>
+#include <cstring>
 
 namespace avbase::platform::ffmpeg {
 
@@ -38,6 +39,30 @@ std::optional<S12mTimecode> TimecodeFromFrame(const AVFrame& frame) {
     return std::nullopt;
   }
   return tc;
+}
+
+bool WriteTimecodeToFrame(AVFrame* frame, const S12mTimecode& tc) {
+  if (!frame) {
+    return false;
+  }
+  // ST 12-1 payload: word 0 = count (4 = HH/MM/SS/FF), then 4 words.
+  uint32_t words[5] = {0};
+  words[0] = 4;
+  words[1] = static_cast<uint32_t>(tc.hours);
+  words[2] = static_cast<uint32_t>(tc.minutes);
+  words[3] = static_cast<uint32_t>(tc.seconds);
+  words[4] = static_cast<uint32_t>(tc.frames);
+
+  // Remove existing timecode side data if present.
+  av_frame_remove_side_data(frame, AV_FRAME_DATA_S12M_TIMECODE);
+
+  AVFrameSideData* sd = av_frame_new_side_data(
+      frame, AV_FRAME_DATA_S12M_TIMECODE, sizeof(words));
+  if (!sd) {
+    return false;
+  }
+  std::memcpy(sd->data, words, sizeof(words));
+  return true;
 }
 
 }  // namespace avbase::platform::ffmpeg

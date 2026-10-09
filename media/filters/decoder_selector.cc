@@ -40,6 +40,7 @@ bool DecoderSelector::CodecAllowedByMask(VideoCodec codec, HwCodecMask mask) {
   case VideoCodec::kUnknown:
   case VideoCodec::kVp8:
   case VideoCodec::kTheora:
+  case VideoCodec::kMjpeg:
     return false;
   }
   if (bit == 0) {

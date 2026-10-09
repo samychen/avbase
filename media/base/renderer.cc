@@ -47,7 +47,7 @@ void Renderer::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
   (void)display;
 }
 
-void Renderer::TakeSnapshot(base::TimeDelta at,
+void Renderer::TakeSnapshot(base::TimeDelta /*at*/,
                             SnapshotFrameCallback callback) {
   std::move(callback).Run(
       MediaError(ErrorCode::kNotImplemented,

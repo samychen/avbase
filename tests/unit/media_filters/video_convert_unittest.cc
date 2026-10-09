@@ -28,12 +28,21 @@ FramePtr MakePlanarFrame(AVPixelFormat format, int colorspace,
   frame->colorspace = static_cast<AVColorSpace>(colorspace);
   frame->color_range = static_cast<AVColorRange>(color_range);
   EXPECT_EQ(av_frame_get_buffer(frame.get(), 32), 0);
+  // Chroma planes are vertically subsampled: NV12's UV plane and I420's U/V
+  // planes are allocated half the frame's height. Walking every plane for
+  // kHeight rows used to write past the end of their buffer, which nothing
+  // noticed until ASan aborted the three tests that build a subsampled
+  // source (the one test built on YUV422P, whose planes are all full height,
+  // always passed — that correlation is what identified this).
+  const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(format);
+  const int chroma_shift = desc ? desc->log2_chroma_h : 0;
   int seed = 0;
   for (int p = 0; p < 4; ++p) {
     if (!frame->data[p]) {
       continue;
     }
-    for (int y = 0; y < kHeight; ++y) {
+    const int rows = p == 0 ? kHeight : AV_CEIL_RSHIFT(kHeight, chroma_shift);
+    for (int y = 0; y < rows; ++y) {
       for (int x = 0; x < frame->linesize[p]; ++x) {
         frame->data[p][y * frame->linesize[p] + x] =
             static_cast<uint8_t>((seed++ * 37 + 11) & 0xff);
@@ -49,10 +58,9 @@ FramePtr MakePlanarFrame(AVPixelFormat format, int colorspace,
 // intermediate and requantize Y (see VideoConverter::ConvertSws).
 FramePtr ConvertWithSws(AVFrame& src, AVPixelFormat dst_format,
                         int coefficients, int src_range, bool set_details) {
-  SwsPtr sws(sws_getContext(src.width, src.height,
-                            static_cast<AVPixelFormat>(src.format), kWidth,
-                            kHeight, dst_format, SWS_BILINEAR, nullptr, nullptr,
-                            nullptr));
+  SwsPtr sws(sws_getContext(
+      src.width, src.height, static_cast<AVPixelFormat>(src.format), kWidth,
+      kHeight, dst_format, SWS_BILINEAR, nullptr, nullptr, nullptr));
   EXPECT_TRUE(sws);
   if (set_details) {
     sws_setColorspaceDetails(sws.get(), sws_getCoefficients(coefficients),
@@ -115,8 +123,7 @@ TEST(VideoConverterTest, Nv12ToI420MatchesPlaneSplit) {
   // Pure layout conversion: Y identical; U/V de-interleave NV12's chroma
   // (U lives at even offsets of the interleaved plane, V at odd ones).
   EXPECT_EQ(PlaneDiff(src->data[0], dst->data[0],
-                      kHeight *
-                          std::min(src->linesize[0], dst->linesize[0])),
+                      kHeight * std::min(src->linesize[0], dst->linesize[0])),
             0);
   for (int p = 1; p <= 2; ++p) {
     const int offset = p - 1;
@@ -146,10 +153,10 @@ TEST(VideoConverterTest, Yuv422ToI420MatchesSws) {
 
   // Both subsample the same chroma; kernels may round differently, so allow
   // a small per-plane deviation rather than exact equality.
-  EXPECT_LE(PlaneDiff(reference->data[0], dst->data[0],
-                      kHeight * std::min(reference->linesize[0],
-                                         dst->linesize[0])),
-            static_cast<int64_t>(kWidth) * kHeight);
+  EXPECT_LE(
+      PlaneDiff(reference->data[0], dst->data[0],
+                kHeight * std::min(reference->linesize[0], dst->linesize[0])),
+      static_cast<int64_t>(kWidth) * kHeight);
 }
 
 TEST(VideoConverterTest, I420ToBgraHonorsColorspace) {
