@@ -26,6 +26,7 @@ add_library(avbase_media
     filters/audio_frame_queue.cc
     filters/audio_renderer_algorithm.cc
     filters/audio_renderer_impl.cc
+    filters/audio_renderer_impl_render.cc
     filters/audio_renderer_ring.cc
     filters/decoder_selector.cc
     filters/live_data_source.cc
@@ -34,10 +35,12 @@ add_library(avbase_media
     filters/null_audio_sink.cc
     filters/null_video_sink.cc
     filters/pipeline_impl.cc
+    filters/pipeline_impl_properties.cc
     filters/pipeline_track_select.cc
     filters/pipeline_impl_host.cc
     filters/retry_data_source.cc
     filters/renderer_impl.cc
+    filters/renderer_impl_reporting.cc
     filters/renderer_impl_controls.cc
     filters/video_renderer_impl.cc
     filters/wsola_internals.cc
