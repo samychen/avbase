@@ -2,16 +2,19 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）**
+## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）**
 
-最后更新：2026-10-09（第三十一轮）—— **E3b：Transcode 的异步入口（线程 + 协作式取消）**：
-补上第二十七轮登记、第二十八轮跳过的「异步」——真正缺的不是线程而是**取消**。新增
-`TranscodeCancelToken`（`Transcode()` 加可默认的 `cancel` 参数，为 null 即永不取消）+
-**AVIO interrupt callback**（在 `avformat_open_input` 之前装上，阻塞的 open/read 也能被
-立即打断，中断被识别为取消而非 EOF）+ `TranscodeJob` 句柄（工作线程 + `Start/Cancel/Wait/
-IsRunning` + `TranscodeDoneCB`，析构 = Cancel + Wait）。取消后状态 `kCancelled`。本机复核：
-ffmpeg **540 通过 / 0 失败**、tsan **21 通过 / 1 跳过（零数据竞争）**、no-ffmpeg **126 通过**、
-`check_invariants` all rules pass（360 文件）。
+最后更新：2026-10-09（第三十二轮）—— **全树 clang-format 扫尾 + 揪出一个自第 26 轮潜伏的引号 typo**：
+`check-format`（第 23 轮开启，**全树**扫描 + `--Werror`）当初的前提是"树 clean"，但这批提交
+**从未 push**，门禁的"绿"只是没跑过。用 CI 同版 clang-format 18.1.3（Ubuntu 24.04 apt 装的
+那个）量出 **46 文件漂移**（video_convert.cc 63、gl_loader.h 55、gl_present.cc 34，也含第 30 轮
+新提交的转码 TU）。逐文件格式化到全树 **0 违规**（354 文件），改动全是格式化产物（switch/case
+缩进、宏反斜杠对齐、实参与 include 折行），无 token 变化。扫尾中 `player_impl.cc:32` 的
+`#include "platform/ffmpeg/url_data_source.h""`（**多一个引号**，自 `a3137d2` 第 26 轮）被
+clang-format 拆行放大成真语法错误——编译器此前按 "extra tokens at end of #include directive"
+的 warning 放行，是格式化把被宽容的旧 typo 逼成了硬错误（先删引号再格式化）。本机复核：
+ffmpeg **540 通过 / 0 失败**、no-ffmpeg **277 通过**、asan **111 通过 / 1 跳过**、
+`check_invariants` all rules pass（360 文件，C23 基线 37 行不变）。
 > 第二十五轮：macOS 播放器实测与固化（预设 + CI 守护）
 > 第二十四轮：全量崩溃清扫（corpus 14/29 关闭竞态根因修复→0/35;TearDown 未 Stop 的
 > DISABLED 掩盖崩溃;反向断言）· corpus 矩阵分级（smoke/standard/full,74 产出崩溃 0）·
@@ -26,7 +29,39 @@ ffmpeg **540 通过 / 0 失败**、tsan **21 通过 / 1 跳过（零数据竞争
 > 第十八轮：fuzz 目标（libFuzzer + standalone 双驱动 + 语料入库）
 剩余工作以 [12-剩余工作清单](12-剩余工作清单.md) 为准（该项由各轮同步维护,是唯一权威清单）。
 
-## 第三十一轮（本轮）：E3b —— Transcode 的异步入口
+## 第三十二轮（本轮）：全树 clang-format 扫尾——「树是干净的」这句承诺已经过期
+
+### (1) 门禁开着，树却漂了
+
+`check-format`（第二十三轮开启）是**全树**扫描 + `--Werror`：`git ls-files '*.cc' '*.h'`
+去掉 `media/filters/legacy/` 与生成的 `player/option_registry.inc`，再 `clang-format
+--dry-run --Werror --style=file`。它开启时立在一个前提上——"树是 clean 的"。用 CI 装的那一个
+（Ubuntu 24.04 `apt install clang-format` = **18.1.3**，与本地更晚的 18.1.8 行为一致）量了一遍：
+**46 文件漂移**。关键在最后一句：这些文件**从未 push 过**（origin 落后 6+ 提交），
+所以 CI 根本没机会报红——门禁的"绿"只是**没跑过**，不是"跑过了且干净"。
+
+### (2) 扫尾 = 纯格式化，且暴露了一个判断错误
+
+逐文件 `clang-format -i` 直到全树 0 违规（354 文件）。改动全是格式化产物：`switch/case`
+缩进、宏反斜杠对齐、实参与 include 折行——无 token 变化。大头的旧漂移是
+`video_convert.cc`(63) / `gl_loader.h`(55) / `gl_present.cc`(34)；漂移清单里**也包含第三十轮
+新提交的转码 TU**（`ffmpeg_audio_encoder_unittest.cc` 18 处等）。这纠正了上一轮的一个说法：
+"我新写的文件手工即 canonical"只对我当时手改的那 4 个文件成立，**同批提交的其它文件并非 0 违规**。
+
+### (3) 顺带揪出一个自第二十六轮潜伏的 typo
+
+`player_impl.cc:32` 是 `#include "platform/ffmpeg/url_data_source.h""`——**多了一个引号**，
+自 `a3137d2`（第二十六轮 url_data_source 接入生产路径）起就在。编译器把它当作
+"extra tokens at end of #include directive" 的 **warning** 放行，所以**从没编译失败**；
+但 clang-format 把 `..."h""` **拆成两行**，孤立的 `"` 落到文件作用域，就成了真正的
+`error: expected unqualified-id`。**格式化把被编译器宽容的旧错误放大成了硬错误**——
+这也是为什么这次是一个 commit 而不是两个：扫尾必须先修掉这个 typo 才成立。
+
+验收：CI 同版 clang-format 18.1.3 全树 **0 违规**（354 文件）；`ctest build/ffmpeg`
+**540 通过 / 0 失败**；no-ffmpeg **277 通过**；asan **111 通过 / 1 跳过**；
+`check_invariants` all rules pass（360 文件，C23 基线 37 行不变）。
+
+## 第三十一轮：E3b —— Transcode 的异步入口
 
 ### (1) 缺口其实不是「线程」，是「取消」
 
