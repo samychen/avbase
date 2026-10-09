@@ -40,9 +40,10 @@
 //     still paces itself to the wall clock (PumpRoundRealtime) so the source
 //     and the display stay in step; only the STOP condition moved.
 //
-// The 2x case is a fifth obstacle and is NOT solved here -- a 1x source cannot
-// feed a 2x consumer, and this suite's source is paced to 1x on purpose. See
-// its own note.
+// The 2x case was a fifth obstacle, and clearing it turned up a defect in the
+// PIPELINE rather than in the source: a source with the whole file available
+// hands the decoder eight packets per read, and the decoder stream was throwing
+// seven of them away. It is enabled now; see its own note below.
 //
 // The tolerance is the interesting part. It is not slack for sloppiness: the
 // audio total is short by up to one device period because the ring drains into
@@ -195,26 +196,40 @@ TEST_F(PipelineCountsTest,
 // decoded would show up here as a count mismatch, which is the failure mode
 // that matters (speed changes must not drop or invent media).
 //
-// DISABLED, and the reason is on the SOURCE side rather than the pump. This
-// suite's source is paced to a 1x wall clock -- that is what makes the two
-// counts above mean anything -- but a 1x source cannot feed a 2x consumer.
-// Playing 5 s of media at 2x needs those 5 s worth of packets inside 2.5 s of
-// wall, and a source that deliberately refuses to outrun the wall clock (that
-// refusal IS the live edge) will not supply them. Measured: driving the run to
-// 5 s of media at 2x sits at the source's rate, so it takes 5 s of wall rather
-// than 2.5 and lands on 75 presented frames -- the source's half of the clip --
-// exactly where the assertion wants 150.
+// This case runs on a VOD-SHAPED source, and that is the honest model rather
+// than a workaround for the 1x one the other two use. A source paced to the
+// wall clock cannot feed a 2x consumer -- "I will not hand over time I have not
+// reached" IS the live edge -- while a file on disk has every packet available
+// from the start. In this double that shape is |paced = false|: availability is
+// the whole file, and the CONSUMER's clock is what decides when a frame is due.
 //
-// So this case needs a VOD source shape (packets handed over as fast as the
-// consumer asks, with the CLOCK rather than the source deciding what is due)
-// instead of a live-edge one. That is a change to SyntheticDemuxer's rate
-// model, not to the pump, and it is the same gap the throttle suite's
-// fixed-rate fake ran into from the other end. Kept disabled rather than
-// re-tuned: loosening a tolerance until a starved source passes would make the
-// assertion measure the source's starvation instead of the pipeline's frame
-// handling.
-TEST_F(PipelineCountsTest,
-       DISABLED_DoubleSpeedPresentsTheSameFramesInHalfTheTime) {
+// It was expected to need a new rate model in SyntheticDemuxer. It did not. It
+// exposed a defect in the pipeline instead, which is why this case is worth
+// having: with the whole file available the demuxer hands over kBuffersPerRead
+// (8) packets per read rather than the one-at-a-time the paced leg offers, and
+// DecoderStream discarded the un-decoded TAIL of every batch that the decode
+// watermark cut short -- seven frames in eight, thrown away between demux and
+// compositor. The run then presented 35 frames of the 150 it was asked for and
+// looked exactly like "2x drops frames". Fixed in DecodeNextBuffer(); the bug
+// was unreachable for as long as every suite fed the decoder one buffer at a
+// time, which is what a paced source does by construction.
+//
+// The wall figure is measured but deliberately NOT asserted, and the reason is
+// worth stating: this harness pumps a synthetic display from the test thread,
+// so the wall time of a round is set by the PUMP's own cost, not by the
+// pipeline's rate. Under ASan the instrumentation stretched the same run to
+// 4.6 s of wall for the same 2.5 s of media -- the counts below were unchanged,
+// only the machine moved. Asserting a wall figure here would make this a test
+// of the build type.
+//
+// The rate is asserted where it can be measured exactly: the DEVICE COUNT. At
+// 2x one device period covers twice the source frames, so five seconds of media
+// leaves the device as 2.5 s of audio. At 1x the same run emits 240000 frames;
+// 120000 is the 2x answer. That is the same kind of reference-free count the
+// other two cases use.
+TEST_F(PipelineCountsTest, DoubleSpeedPresentsTheSameFramesInHalfTheTime) {
+  // The VOD shape. Set before BuildPipeline(), which builds the demuxer.
+  spec_.paced = false;
   BuildPipeline();
   Play();
   ASSERT_TRUE(client_.HaveMetadata());
@@ -227,16 +242,28 @@ TEST_F(PipelineCountsTest,
   const auto wall_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(wall).count();
   const int frames = PresentedFrames();
+  const int64_t samples = RenderedSamples();
 
-  // Five seconds of media at 2x: about half the wall time, every frame of it.
-  EXPECT_NEAR(wall_ms, 2500, 1200)
-      << "at 2x, 5 s of media should take about 2.5 s of wall, got " << wall_ms
-      << " ms";
   EXPECT_NEAR(played.InMilliseconds(), 5000, 200)
       << "the run should have covered the 5 s it was asked for, got "
       << played.ToString();
+  // kExpectedSamples is the 1x figure (10 s of audio); a quarter of it is the
+  // 2.5 s the device is handed while covering 5 s of media at 2x. The tolerance
+  // is not slack for sloppiness and it is not zero either, and the reason is
+  // measurable: the loop stops when the audio CLOCK reports 5 s, and that clock
+  // is EXTRAPOLATED between device reports, so it can be tens of milliseconds
+  // ahead of what the device has actually been handed. Under ASan with the rest
+  // of the suite running in parallel the shortfall was 1184 frames (1%). What
+  // this distinguishes from is 240000 -- a factor of two away -- so 5% decides
+  // nothing that matters while it absorbs the clock.
+  EXPECT_NEAR(samples, kExpectedSamples / 4, kExpectedSamples / 20)
+      << "at 2x the device should be handed half as many output frames per"
+      << " second of media; got " << samples << " for " << played.ToString()
+      << " of media (wall " << wall_ms << " ms, pump rounds " << play_rounds_
+      << ")";
   EXPECT_NEAR(frames, kExpectedFrames / 2, 6)
-      << "at 2x the decoder must still see every frame, not half of them";
+      << "at 2x the decoder must still see every frame, not half of them"
+      << " (wall " << wall_ms << " ms, pump rounds " << play_rounds_ << ")";
 }
 
 }  // namespace
