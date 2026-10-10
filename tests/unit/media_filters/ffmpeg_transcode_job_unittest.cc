@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/filters/ffmpeg_transcode_job.h"
+#include "media/ffmpeg/ffmpeg_transcode_job.h"
 
 #include <algorithm>
 #include <atomic>
@@ -18,10 +18,10 @@
 #include "base/test/task_environment.h"
 #include "media/base/data_source_descriptor.h"
 #include "media/base/media_log.h"
-#include "media/filters/ffmpeg_audio_encoder.h"
-#include "media/filters/ffmpeg_demuxer.h"
-#include "media/filters/ffmpeg_encode_muxer.h"
-#include "media/filters/ffmpeg_video_encoder.h"
+#include "media/ffmpeg/ffmpeg_audio_encoder.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
+#include "media/ffmpeg/ffmpeg_encode_muxer.h"
+#include "media/ffmpeg/ffmpeg_video_encoder.h"
 
 namespace avbase::media {
 namespace {
@@ -364,8 +364,7 @@ std::string CreateTestVideoFile(const std::string& suffix) {
 // A factory that answers kH264 with "mjpeg" — deliberately NOT the encoder
 // that was asked for, so whatever the job resolves is visible in the output
 // container and cannot be mistaken for the requested name.
-class RenamingEncoderFactory final
-    : public platform::ffmpeg::VideoEncoderFactory {
+class RenamingEncoderFactory final : public media::ffmpeg::VideoEncoderFactory {
  public:
   RenamingEncoderFactory() = default;
 
@@ -388,8 +387,7 @@ class RenamingEncoderFactory final
   const char* name() const override { return "test-renaming"; }
 
  private:
-  friend class base::RefCountedThreadSafe<
-      platform::ffmpeg::VideoEncoderFactory>;
+  friend class base::RefCountedThreadSafe<media::ffmpeg::VideoEncoderFactory>;
   ~RenamingEncoderFactory() override = default;
 };
 

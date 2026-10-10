@@ -7,7 +7,7 @@
 # Imported target: libyuv::libyuv
 #
 # libyuv is an OPTIONAL dependency: it accelerates pixel-format conversion
-# (platform/ffmpeg/video_convert.cc) and is built by tools/setup_ffmpeg.sh
+# (media/ffmpeg/video_convert.cc) and is built by tools/setup_ffmpeg.sh
 # into the SAME prefix as FFmpeg. So the hint chain mirrors FindFFmpeg's:
 #   1. AVBASE_FFMPEG_ROOT (cache var or env) — the deps prefix by definition
 #   2. the repo-local tools/build prefix (same convention as FindFFmpeg)

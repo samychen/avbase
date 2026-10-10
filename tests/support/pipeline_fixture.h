@@ -45,9 +45,9 @@
 #include "media/filters/pipeline_impl.h"
 #include "media/renderers/default_renderer_factory.h"
 #if AVBASE_ENABLE_FFMPEG
-#include "media/filters/ffmpeg_decoder_factories.h"
-#include "media/filters/ffmpeg_demuxer.h"
-#include "media/filters/ffmpeg_text_decoder.h"
+#include "media/ffmpeg/ffmpeg_decoder_factories.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
+#include "media/ffmpeg/ffmpeg_text_decoder.h"
 #endif
 #include "tests/support/fake_pipeline_client.h"
 #include "tests/support/fake_renderer_sinks.h"

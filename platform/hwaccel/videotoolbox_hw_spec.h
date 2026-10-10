@@ -6,15 +6,15 @@
 #define AVBASE_PLATFORM_HWACCEL_VIDEOTOOLBOX_HW_SPEC_H_
 
 #include "media/base/media_types.h"
-#include "platform/ffmpeg/ffmpeg_hw_video_decoder.h"
+#include "media/ffmpeg/ffmpeg_hw_video_decoder.h"
 
 namespace avbase::platform::hwaccel {
 
 // Apple VideoToolbox behind libavcodec's videotoolbox hwaccel. Frames leave
 // the decoder as CVPixelBuffer-backed VideoFrames; pixels only on an explicit
 // ToI420().
-inline ffmpeg::FFmpegHwDecoderSpec VideotoolboxHwSpec() {
-  ffmpeg::FFmpegHwDecoderSpec spec;
+inline media::ffmpeg::FFmpegHwDecoderSpec VideotoolboxHwSpec() {
+  media::ffmpeg::FFmpegHwDecoderSpec spec;
   spec.device_type = "videotoolbox";
   spec.handle_kind = media::NativeHandleKind::kCVPixelBuffer;
   // FFmpeg's videotoolbox hwaccel covers H.264, HEVC, VP9 and ProRes; ProRes

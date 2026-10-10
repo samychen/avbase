@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/filters/ffmpeg_remuxer.h"
+#include "media/ffmpeg/ffmpeg_remuxer.h"
 
 #include <cstdio>
 #include <string>
@@ -12,7 +12,7 @@
 
 #include "base/functional/bind.h"
 #include "base/test/task_environment.h"
-#include "media/filters/ffmpeg_demuxer.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
 
 namespace avbase::media {
 namespace {

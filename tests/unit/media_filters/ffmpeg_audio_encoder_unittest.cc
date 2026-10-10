@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/filters/ffmpeg_audio_encoder.h"
-#include "media/filters/ffmpeg_demuxer.h"
+#include "media/ffmpeg/ffmpeg_audio_encoder.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
 
 #include <cmath>
 #include <cstdio>
@@ -16,8 +16,8 @@
 #include "media/base/audio_buffer.h"
 #include "media/base/data_source_descriptor.h"
 #include "media/base/media_log.h"
+#include "media/ffmpeg/av_includes.h"
 #include "media/filters/encoded_packet.h"
-#include "platform/ffmpeg/av_includes.h"
 
 namespace avbase::media {
 namespace {

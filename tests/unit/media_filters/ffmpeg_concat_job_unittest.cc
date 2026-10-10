@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/filters/ffmpeg_concat_job.h"
+#include "media/ffmpeg/ffmpeg_concat_job.h"
 
 #include <chrono>
 #include <cmath>
@@ -16,10 +16,10 @@
 #include "media/base/audio_buffer.h"
 #include "media/base/data_source_descriptor.h"
 #include "media/base/media_log.h"
+#include "media/ffmpeg/ffmpeg_audio_encoder.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
+#include "media/ffmpeg/ffmpeg_encode_muxer.h"
 #include "media/filters/encoded_packet.h"
-#include "media/filters/ffmpeg_audio_encoder.h"
-#include "media/filters/ffmpeg_demuxer.h"
-#include "media/filters/ffmpeg_encode_muxer.h"
 
 namespace avbase::media {
 namespace {

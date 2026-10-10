@@ -23,7 +23,7 @@
 #include "base/time/time.h"
 #include "media/base/media_error.h"
 #include "media/base/media_info.h"
-#include "media/filters/ffmpeg_demuxer.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
 
 namespace avbase {
 

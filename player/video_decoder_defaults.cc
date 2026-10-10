@@ -6,7 +6,7 @@
 
 #include "avbase/BuildConfig.h"
 #include "base/memory/scoped_refptr.h"
-#include "platform/ffmpeg/ffmpeg_hw_decoder_factory.h"
+#include "media/ffmpeg/ffmpeg_hw_decoder_factory.h"
 #if AVBASE_ENABLE_D3D11
 #include "platform/hwaccel/d3d11_hw_spec.h"
 #endif
@@ -27,17 +27,17 @@ DefaultHardwareVideoDecoderFactories(
   // One factory class, three specs. The #if order is irrelevant: at most one
   // spec compiles on any given host platform.
 #if AVBASE_ENABLE_VIDEOTOOLBOX
-  using platform::ffmpeg::FFmpegHwVideoDecoderFactory;
+  using media::ffmpeg::FFmpegHwVideoDecoderFactory;
   out.push_back(base::MakeRefCounted<FFmpegHwVideoDecoderFactory>(
       platform::hwaccel::VideotoolboxHwSpec(), video_runner, allowed_codecs));
 #endif
 #if AVBASE_ENABLE_VAAPI
-  using platform::ffmpeg::FFmpegHwVideoDecoderFactory;
+  using media::ffmpeg::FFmpegHwVideoDecoderFactory;
   out.push_back(base::MakeRefCounted<FFmpegHwVideoDecoderFactory>(
       platform::hwaccel::VaapiHwSpec(), video_runner, allowed_codecs));
 #endif
 #if AVBASE_ENABLE_D3D11
-  using platform::ffmpeg::FFmpegHwVideoDecoderFactory;
+  using media::ffmpeg::FFmpegHwVideoDecoderFactory;
   out.push_back(base::MakeRefCounted<FFmpegHwVideoDecoderFactory>(
       platform::hwaccel::D3D11HwSpec(), video_runner, allowed_codecs));
 #endif

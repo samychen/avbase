@@ -8,7 +8,7 @@
 // proof, using a two-segment VOD playlist over the file protocol (segments
 // resolve relative to the playlist, no network involved).
 
-#include "media/filters/ffmpeg_demuxer.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
 
 #include <chrono>
 #include <string>

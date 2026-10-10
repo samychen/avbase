@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "platform/ffmpeg/sei_timecode.h"
+#include "media/ffmpeg/sei_timecode.h"
 
 #include <gtest/gtest.h>
 
-#include "platform/ffmpeg/av_includes.h"
-#include "platform/ffmpeg/compat.h"
+#include "media/ffmpeg/av_includes.h"
+#include "media/ffmpeg/compat.h"
 
-namespace avbase::platform::ffmpeg {
+namespace avbase::media::ffmpeg {
 namespace {
 
 // Builds a frame carrying an S12M timecode side payload: word 0 = field
@@ -74,4 +74,4 @@ TEST(SeiTimecodeTest, WriteReplacesExisting) {
 }
 
 }  // namespace
-}  // namespace avbase::platform::ffmpeg
+}  // namespace avbase::media::ffmpeg

@@ -18,7 +18,7 @@
 
 #include <string>
 
-#include "platform/ffmpeg/log_bridge.h"
+#include "media/ffmpeg/log_bridge.h"
 #include "tools/inspect/inspect_common.h"
 
 int main(int argc, char** argv) {
@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
   // Route FFmpeg's own logging through avbase's so a single --verbose controls
   // both. Without this, libavformat's warnings go to stderr unformatted and
   // interleave with the report.
-  avbase::platform::ffmpeg::InstallLogBridge();
+  avbase::media::ffmpeg::InstallLogBridge();
 
   if (opts.subcommand == "probe") {
     return avbase::RunProbe(opts);

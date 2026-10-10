@@ -53,7 +53,7 @@ import sys
 import tempfile
 import time
 
-# "        -:    0:Source:/repo/platform/ffmpeg/log_bridge.cc"
+# "        -:    0:Source:/repo/media/ffmpeg/log_bridge.cc"
 SOURCE_RE = re.compile(r"^\s*-\s*:\s*0:Source:(.*)$")
 
 # "    21188:   15:  code"  |  "    #####:   12:  code"  |  "        -:   14:"

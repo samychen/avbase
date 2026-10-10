@@ -10,7 +10,7 @@
 
 #include "base/test/task_environment.h"
 #include "media/base/video_frame.h"
-#include "media/filters/ffmpeg_image_snapshot.h"
+#include "media/ffmpeg/ffmpeg_image_snapshot.h"
 #include "media/filters/pipeline_impl.h"
 #include "tests/support/fake_pipeline_client.h"
 #include "tests/support/pipeline_fixture.h"

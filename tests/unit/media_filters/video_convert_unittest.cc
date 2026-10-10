@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "platform/ffmpeg/video_convert.h"
+#include "media/ffmpeg/video_convert.h"
 
 #include <cstdlib>
 
 #include <gtest/gtest.h>
 
-#include "platform/ffmpeg/av_includes.h"
-#include "platform/ffmpeg/compat.h"
+#include "media/ffmpeg/av_includes.h"
+#include "media/ffmpeg/compat.h"
 
-namespace avbase::platform::ffmpeg {
+namespace avbase::media::ffmpeg {
 namespace {
 
 constexpr int kWidth = 64;
@@ -201,4 +201,4 @@ TEST(VideoConverterTest, ConfigureChangeRebuildsFallback) {
 }
 
 }  // namespace
-}  // namespace avbase::platform::ffmpeg
+}  // namespace avbase::media::ffmpeg

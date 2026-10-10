@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "platform/ffmpeg/video_encoder_factory.h"
+#include "media/ffmpeg/video_encoder_factory.h"
 
 #include <algorithm>
 #include <memory>
@@ -13,7 +13,7 @@
 
 #include "media/filters/decoder_selector.h"  // HwCodecFlag, HwCodecMask
 
-namespace avbase::platform::ffmpeg {
+namespace avbase::media::ffmpeg {
 namespace {
 
 // E5: The software factory supports H.264 and returns a non-hardware
@@ -129,4 +129,4 @@ TEST(VideoEncoderFactoryTest, VideoToolboxNamesHardwareEncoders) {
 #endif
 
 }  // namespace
-}  // namespace avbase::platform::ffmpeg
+}  // namespace avbase::media::ffmpeg

@@ -114,11 +114,11 @@ if(AVBASE_ENABLE_FFMPEG)
               unit/media_filters/url_data_source_unittest.cc
               unit/media_filters/live_cue_policy_unittest.cc
               unit/media_filters/video_convert_unittest.cc
-      DEPS avbase::platform_ffmpeg avbase::media_test_support
+      DEPS avbase::ffmpeg avbase::media_test_support
            avbase::base_test_support)
   target_compile_definitions(media_ffmpeg_unittests PRIVATE
       AVBASE_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata")
-  # The vendor headers are PRIVATE to avbase_platform_ffmpeg; tests that touch
+  # The vendor headers are PRIVATE to avbase_ffmpeg; tests that touch
   # AVFrame fields need them explicitly, and pinned-prefix headers beat
   # whatever /usr/local/include happens to hold.
   target_include_directories(media_ffmpeg_unittests SYSTEM PRIVATE
@@ -143,7 +143,7 @@ if(AVBASE_BUILD_FUZZ AND AVBASE_ENABLE_FFMPEG)
   add_executable(avbase_fuzz_demuxer fuzz/fuzz_demuxer.cc)
   target_include_directories(avbase_fuzz_demuxer PRIVATE
       $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
-  target_link_libraries(avbase_fuzz_demuxer PRIVATE avbase::platform_ffmpeg)
+  target_link_libraries(avbase_fuzz_demuxer PRIVATE avbase::ffmpeg)
   target_compile_definitions(avbase_fuzz_demuxer PRIVATE
       AVBASE_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata")
   avbase_configure_target(avbase_fuzz_demuxer)
@@ -156,7 +156,7 @@ if(AVBASE_BUILD_FUZZ AND AVBASE_ENABLE_FFMPEG)
   target_include_directories(avbase_fuzz_demuxer_standalone PRIVATE
       $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
   target_link_libraries(avbase_fuzz_demuxer_standalone PRIVATE
-      avbase::platform_ffmpeg)
+      avbase::ffmpeg)
   target_compile_definitions(avbase_fuzz_demuxer_standalone PRIVATE
       AVBASE_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata"
       AVBASE_SEEDS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fuzz/seeds")

@@ -6,7 +6,7 @@
 // PCM. Mirrors ffmpeg_video_decoder_unittest.cc so the two decoder paths stay
 // comparable.
 
-#include "media/filters/ffmpeg_audio_decoder.h"
+#include "media/ffmpeg/ffmpeg_audio_decoder.h"
 
 #include <algorithm>
 #include <chrono>
@@ -20,7 +20,7 @@
 #include "base/test/task_environment.h"
 #include "gtest/gtest.h"
 #include "media/base/audio_bus.h"
-#include "media/filters/ffmpeg_demuxer.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
 
 namespace avbase::media {
 namespace {

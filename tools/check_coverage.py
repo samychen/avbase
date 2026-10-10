@@ -71,7 +71,7 @@ THRESHOLDS = {
     "media/filters/legacy/av_sync_controller.cc": (100, 95),
     "media/filters/": (90, 85),
     "player/": (90, 85),
-    "media/filters/ffmpeg_": (70, None),
+    "media/ffmpeg/ffmpeg_": (70, None),
     "platform/null": (95, None),
 }
 

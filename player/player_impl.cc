@@ -22,13 +22,13 @@
 #include "media/base/media_error.h"
 #include "media/base/media_log.h"
 #if AVBASE_ENABLE_FFMPEG
-#include "media/filters/ffmpeg_audio_filter.h"
-#include "media/filters/ffmpeg_decoder_factories.h"
-#include "media/filters/ffmpeg_demuxer.h"
-#include "media/filters/ffmpeg_text_decoder.h"
-#include "media/filters/ffmpeg_video_filter.h"
+#include "media/ffmpeg/ffmpeg_audio_filter.h"
+#include "media/ffmpeg/ffmpeg_decoder_factories.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
+#include "media/ffmpeg/ffmpeg_text_decoder.h"
+#include "media/ffmpeg/ffmpeg_video_filter.h"
+#include "media/ffmpeg/url_data_source.h"
 #include "media/filters/retry_data_source.h"
-#include "platform/ffmpeg/url_data_source.h"
 #endif
 
 #include "player/video_decoder_defaults.h"
@@ -231,7 +231,7 @@ Status PlayerImpl::PrepareAsync() {
        source.uri.rfind("https://", 0) == 0) &&
       config_.net.reconnect) {
     auto url_source =
-        base::MakeRefCounted<platform::ffmpeg::UrlDataSource>(source.uri);
+        base::MakeRefCounted<media::ffmpeg::UrlDataSource>(source.uri);
     auto retry = base::MakeRefCounted<media::RetryDataSource>(
         std::move(url_source),
         media::RetryDataSource::Config{config_.net.reconnect_max_retries,

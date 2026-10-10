@@ -5,7 +5,7 @@
 // End-to-end tests against real containers. Labelled needs-ffmpeg so the
 // no-ffmpeg CI gate (design goal G2) skips them.
 
-#include "media/filters/ffmpeg_demuxer.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
 
 #include <chrono>
 #include <cstdint>

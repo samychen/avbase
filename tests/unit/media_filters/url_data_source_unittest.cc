@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "platform/ffmpeg/url_data_source.h"
+#include "media/ffmpeg/url_data_source.h"
 
 #include <chrono>
 #include <cstdio>
@@ -18,7 +18,7 @@
 
 namespace avbase::media {
 namespace {
-using platform::ffmpeg::UrlDataSource;
+using media::ffmpeg::UrlDataSource;
 
 constexpr auto kWaitTimeout = std::chrono::seconds(20);
 

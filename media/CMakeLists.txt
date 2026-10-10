@@ -1,18 +1,23 @@
 # media/ — media framework. media/base holds interfaces and value types,
-# media/filters holds implementations. Neither links FFmpeg (that is
-# avbase_platform_ffmpeg); see docs/02 §8 and decision D11.
+# media/filters holds the portable implementations, and media/ffmpeg holds
+# everything that touches libav*. See docs/02 §8 and decision D11.
 #
-# Source listing (docs/06 §7.6): base/, renderers/ and filters/legacy/ are
-# globbed because in each of them directory membership equals target membership
-# -- every .cc there belongs to avbase_media, and none is selected per platform
-# or per build option, so a new file needs no edit here. filters/ stays a
-# hand-written list for the opposite reason: it holds the core filters next to
-# the ffmpeg_*.cc files that only avbase_platform_ffmpeg may compile (G2), and
-# a glob there would sweep libav* into the core target. Invariant C25 fails
-# the gate when a .cc lands in no target at all, so "forgot to list it" cannot
-# stay silent.
+# Source listing (docs/06 §7.6): base/, filters/, renderers/ and
+# filters/legacy/ are all globbed, because in each of them directory
+# membership equals target membership -- every .cc there belongs to
+# avbase_media, and none is selected per platform or per build option, so a
+# new file needs no edit here.
+#
+# filters/ used to be the exception: it held the ffmpeg_*.cc files next to the
+# core filters, and because those belong to avbase_ffmpeg a glob would have
+# swept libav* into the core target (G2), so it stayed a hand-written list.
+# Both directories are single-target now that all the FFmpeg code has one home.
+# Invariant C25 fails the gate when a .cc lands in no target at all, so
+# "forgot to list it" cannot stay silent.
 file(GLOB AVBASE_MEDIA_BASE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/base/*.cc")
+file(GLOB AVBASE_MEDIA_FILTER_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/filters/*.cc")
 file(GLOB AVBASE_MEDIA_LEGACY_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/filters/legacy/*.cc")
 file(GLOB AVBASE_MEDIA_RENDERER_SOURCES CONFIGURE_DEPENDS
@@ -23,34 +28,11 @@ add_library(avbase_media
     # round. Each is the key function for its class's vtable, which is why their
     # constructors and destructors are out-of-line (see media/base/demuxer.cc).
     ${AVBASE_MEDIA_BASE_SOURCES}
-    filters/audio_frame_queue.cc
-    filters/audio_renderer_algorithm.cc
-    filters/audio_renderer_impl.cc
-    filters/audio_renderer_impl_render.cc
-    filters/audio_renderer_ring.cc
-    filters/decoder_selector.cc
-    filters/live_data_source.cc
-    filters/live_edge_policy.cc
-    filters/decoder_stream.cc
-    filters/null_audio_sink.cc
-    filters/null_video_sink.cc
-    filters/pipeline_impl.cc
-    filters/pipeline_impl_properties.cc
-    filters/pipeline_track_select.cc
-    filters/pipeline_impl_host.cc
-    filters/retry_data_source.cc
-    filters/renderer_impl.cc
-    filters/renderer_impl_reporting.cc
-    filters/renderer_impl_controls.cc
-    filters/video_renderer_impl.cc
-    filters/wsola_internals.cc
+    ${AVBASE_MEDIA_FILTER_SOURCES}
     ${AVBASE_MEDIA_RENDERER_SOURCES}
     # LGPL-2.1 quarantine: line-by-line ports of ff_ffplay.c algorithms.
     # See media/filters/legacy/README.md and root LICENSE section 1.
     ${AVBASE_MEDIA_LEGACY_SOURCES})
-
-# FFmpeg-backed demuxer. Compiled into avbase_platform_ffmpeg, never into
-# avbase_media, so that the core target carries no FFmpeg dependency (G2).
 add_library(avbase::media ALIAS avbase_media)
 
 target_include_directories(avbase_media PUBLIC
@@ -59,3 +41,42 @@ target_include_directories(avbase_media PUBLIC
 target_link_libraries(avbase_media PUBLIC avbase::base)
 target_compile_definitions(avbase_media PRIVATE AVBASE_MEDIA_IMPLEMENTATION=1)
 avbase_configure_target(avbase_media)
+
+# FFmpeg adapter layer. This is the ONLY target in the project that links
+# FFmpeg; avbase_media and avbase_base never see a libav* header (design goal
+# G2, invariants C4/C8, docs/02 §8).
+#
+# It sits under media/ and not platform/ because FFmpeg is not a platform. It
+# is a portable framework that behaves identically on every host, whereas the
+# platform layer (sdl2, hwaccel) holds code that is CHOSEN by the host. What
+# earns this a separate target is the dependency; what earns it a separate
+# directory is that a directory must equal a target for the globs above to be
+# safe (docs/06 §7.6).
+if(AVBASE_ENABLE_FFMPEG)
+  # ffmpeg/ qualifies for a glob: every .cc in it belongs to this one target and
+  # none is selected per platform (av_includes.h absorbs version differences).
+  file(GLOB AVBASE_FFMPEG_SOURCES CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg/*.cc")
+  add_library(avbase_ffmpeg ${AVBASE_FFMPEG_SOURCES})
+  add_library(avbase::ffmpeg ALIAS avbase_ffmpeg)
+
+  target_include_directories(avbase_ffmpeg PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+  target_link_libraries(avbase_ffmpeg
+      PUBLIC  avbase::media
+      PRIVATE FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil
+              FFmpeg::swscale FFmpeg::swresample FFmpeg::avfilter)
+  target_compile_definitions(avbase_ffmpeg PRIVATE AVBASE_ENABLE_FFMPEG=1)
+  # Optional SIMD fast paths for video_convert.cc; when absent the module
+  # compiles to a sws_scale-only fallback and nothing else changes.
+  find_package(Libyuv QUIET)
+  if(Libyuv_FOUND)
+    target_link_libraries(avbase_ffmpeg PRIVATE libyuv::libyuv)
+    target_compile_definitions(avbase_ffmpeg PUBLIC AVBASE_HAVE_LIBYUV=1)
+  endif()
+  avbase_configure_target(avbase_ffmpeg)
+  # One precompiled header for the whole vendor layer: av_includes.h is the
+  # single extern "C" wrap point, so every TU here needs it anyway.
+  target_precompile_headers(avbase_ffmpeg PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg/av_includes.h")
+endif()

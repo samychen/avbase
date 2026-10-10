@@ -27,8 +27,8 @@
 #include "media/base/media_constants.h"
 #include "media/base/media_log.h"
 #include "media/base/video_frame.h"
-#include "media/filters/ffmpeg_audio_decoder.h"
-#include "media/filters/ffmpeg_video_decoder.h"
+#include "media/ffmpeg/ffmpeg_audio_decoder.h"
+#include "media/ffmpeg/ffmpeg_video_decoder.h"
 #include "tools/inspect/inspect_common.h"
 
 namespace avbase {

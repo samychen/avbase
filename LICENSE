@@ -78,7 +78,7 @@ Third-party and derivative components
    header comment. The implementation is original to avbase; no Chromium source
    is vendored. The BSD-3-Clause license above is chosen for compatibility.
 
-3. platform/ffmpeg/ and media/filters/ffmpeg_*.{h,cc} — FFmpeg adaptation
+3. media/ffmpeg/ — FFmpeg adaptation
    ----------------------------------------------------------------------
    These files are original avbase code (BSD-3-Clause) but they are the only
    place in the project that includes libav*/libsw* headers and the only CMake

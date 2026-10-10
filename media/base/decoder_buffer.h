@@ -122,7 +122,7 @@ class AVBASE_MEDIA_EXPORT DecoderBuffer
 
   // Adapter escape hatch. Returns nullptr when the payload is not of type |T|,
   // so a wrong cast is a handled branch rather than undefined behaviour. Only
-  // platform/ffmpeg and media/filters/ffmpeg_* may call this.
+  // platform/ffmpeg and media/ffmpeg/ffmpeg_* may call this.
   template <typename T>
   T* storage_as() {
     return storage_ && storage_->TypeId() == T::TypeIdStatic()

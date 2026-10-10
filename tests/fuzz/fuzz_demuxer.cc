@@ -39,8 +39,8 @@
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_error.h"
 #include "media/base/media_log.h"
-#include "media/filters/ffmpeg_demuxer.h"
-#include "media/filters/ffmpeg_glue.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
+#include "media/ffmpeg/ffmpeg_glue.h"
 
 #if !AVBASE_ENABLE_FFMPEG
 #error "fuzz_demuxer requires AVBASE_ENABLE_FFMPEG"

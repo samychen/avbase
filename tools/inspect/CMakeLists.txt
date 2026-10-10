@@ -13,10 +13,10 @@ file(GLOB AVBASE_INSPECT_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cc")
 add_executable(avbase-inspect ${AVBASE_INSPECT_SOURCES})
 target_link_libraries(avbase-inspect PRIVATE
-    avbase::platform_ffmpeg
+    avbase::ffmpeg
     avbase::base_test_support)
 # The CLI includes platform/ffmpeg headers (av_includes.h), and
-# avbase_platform_ffmpeg links FFmpeg PRIVATE on purpose (it is the only
+# avbase_ffmpeg links FFmpeg PRIVATE on purpose (it is the only
 # FFmpeg-linked target), so the includes must be requested here as well.
 find_package(FFmpeg REQUIRED COMPONENTS avformat avcodec avutil)
 target_link_libraries(avbase-inspect PRIVATE

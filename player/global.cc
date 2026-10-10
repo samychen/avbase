@@ -9,7 +9,7 @@
 #include "avbase/Version.h"
 
 // FFmpeg initialisation is wired in at milestone M4, when
-// media/filters/ffmpeg_glue.cc lands. Until then GlobalInit() only guards the
+// media/ffmpeg/ffmpeg_glue.cc lands. Until then GlobalInit() only guards the
 // once_flag, which keeps this translation unit independent of FFmpeg.
 
 namespace avbase {

@@ -6,7 +6,7 @@
 // pixel data. This is the first test in the project that proves the whole
 // demux/decode chain works, not just its parts.
 
-#include "media/filters/ffmpeg_video_decoder.h"
+#include "media/ffmpeg/ffmpeg_video_decoder.h"
 
 #include <chrono>
 #include <functional>
@@ -18,8 +18,8 @@
 #include "base/test/task_environment.h"
 #include "gtest/gtest.h"
 #include "media/base/video_decoder_factory.h"
+#include "media/ffmpeg/ffmpeg_demuxer.h"
 #include "media/filters/decoder_selector.h"
-#include "media/filters/ffmpeg_demuxer.h"
 
 namespace avbase::media {
 namespace {

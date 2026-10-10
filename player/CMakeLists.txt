@@ -15,9 +15,9 @@ target_link_libraries(avbase_player PUBLIC avbase::media)
 # The facade assembles the default decoder-factory list (player_impl.cc),
 # including the FFmpeg-hwaccel hardware factory whose specs live in
 # platform/{videotoolbox,vaapi,d3d11} (header-only; the factory class itself
-# is in avbase_platform_ffmpeg).
+# is in avbase_ffmpeg).
 if(AVBASE_ENABLE_FFMPEG)
-  target_link_libraries(avbase_player PUBLIC avbase::platform_ffmpeg)
+  target_link_libraries(avbase_player PUBLIC avbase::ffmpeg)
 endif()
 target_compile_definitions(avbase_player PRIVATE AVBASE_PLAYER_IMPLEMENTATION=1)
 avbase_configure_target(avbase_player)
@@ -26,7 +26,7 @@ add_library(avbase INTERFACE)
 add_library(avbase::avbase ALIAS avbase)
 target_link_libraries(avbase INTERFACE avbase::player)
 if(AVBASE_ENABLE_FFMPEG)
-  target_link_libraries(avbase INTERFACE avbase::platform_ffmpeg)
+  target_link_libraries(avbase INTERFACE avbase::ffmpeg)
 endif()
 if(AVBASE_ENABLE_SDL2)
   target_link_libraries(avbase INTERFACE avbase::platform_sdl2)

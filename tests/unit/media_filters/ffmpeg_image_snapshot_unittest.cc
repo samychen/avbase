@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/filters/ffmpeg_image_snapshot.h"
+#include "media/ffmpeg/ffmpeg_image_snapshot.h"
 
 #include <cstdio>
 
