@@ -4,12 +4,16 @@
 //
 // The audio half of ffmpeg_transcode_streams: turning decoded AVFrames into
 // encoder-sized AudioBuffers. This holds AudioState's destructor, the frame
-// conversion (AvFrameToAudioBuffer), and the resampler + AvAudioFifo framing
-// (ScratchFrame / EnsureResampler / DrainWholeFrames / FramesForEncoder /
-// FlushResampler). Split from ffmpeg_transcode_streams.cc as a line-count
-// seam (C1): the audio resampling is a self-contained concern, and pulling it
-// out keeps the stream-preparation helpers (PrepareAudioStream /
-// PrepareVideoStream) and the timestamp rebase in the parent TU.
+// conversion (AvFrameToAudioBuffer), and the Swr resampler + AvAudioFifo
+// framing (ScratchFrame / DrainWholeFrames / FramesForEncoder /
+// FlushResampler). The Swr resampling itself now lives in
+// media/ffmpeg/audio_convert.h (AudioConverter), mirroring the video side's
+// VideoConverter: this TU only configures the resampler lazily and chops its
+// variable-length output into encoder-sized whole frames. Split from
+// ffmpeg_transcode_streams.cc as a line-count seam (C1): the audio resampling
+// is a self-contained concern, and pulling it out keeps the stream-preparation
+// helpers (PrepareAudioStream / PrepareVideoStream) and the timestamp rebase
+// in the parent TU.
 
 #include "media/transcode/ffmpeg_transcode_streams.h"
 
@@ -18,6 +22,7 @@
 
 #include "base/check.h"
 #include "base/logging.h"
+#include "media/ffmpeg/audio_convert.h"
 #include "media/ffmpeg/av_includes.h"
 #include "media/ffmpeg/compat.h"
 
@@ -48,32 +53,6 @@ AVFrame* ScratchFrame(AvFramePtr* slot, int nb_samples, int rate,
   return f;
 }
 
-bool EnsureResampler(AudioState* st, AVFrame* frame) {
-  if (st->swr) {
-    return true;
-  }
-  AVChannelLayout in_layout{};
-  AVChannelLayout out_layout{};
-  av_channel_layout_default(&in_layout, st->in_channels);
-  av_channel_layout_default(&out_layout, st->out_channels);
-  SwrContext* s = nullptr;
-  if (swr_alloc_set_opts2(&s, &out_layout, AV_SAMPLE_FMT_FLTP,
-                          st->out_sample_rate, &in_layout,
-                          static_cast<AVSampleFormat>(frame->format),
-                          st->in_sample_rate, 0, nullptr) < 0 ||
-      !s || swr_init(s) < 0) {
-    if (s) {
-      swr_free(&s);
-    }
-    LOG(ERROR) << "transcode: cannot create resampler " << st->in_sample_rate
-               << "Hz/" << st->in_channels << "ch -> " << st->out_sample_rate
-               << "Hz/" << st->out_channels << "ch";
-    return false;
-  }
-  st->swr = s;
-  return true;
-}
-
 void DrainWholeFrames(AudioState* st, int frame_size,
                       std::vector<base::scoped_refptr<AudioBuffer>>* out) {
   while (av_audio_fifo_size(st->fifo) >= frame_size) {
@@ -96,14 +75,10 @@ void DrainWholeFrames(AudioState* st, int frame_size,
 }  // namespace
 
 AudioState::~AudioState() {
-  if (swr) {
-    swr_free(&swr);
-  }
   if (fifo) {
     av_audio_fifo_free(fifo);
     fifo = nullptr;
   }
-  resampled.reset();
   framed.reset();
 }
 
@@ -180,7 +155,17 @@ std::vector<base::scoped_refptr<AudioBuffer>> FramesForEncoder(  // NOLINT
       st->in_channels <= 0 || st->out_channels <= 0 || frame->nb_samples <= 0) {
     return out;
   }
-  if (!EnsureResampler(st, frame)) {
+  // Lazily create and configure the resampler (media/ffmpeg/audio_convert.h),
+  // replacing the old inline SwrContext setup. It is only built when decoder
+  // and encoder disagree on rate/channels -- matching the prior EnsureResampler
+  // guard, but now reusing the ff::MakeSwrContext factory (Round46 convention).
+  if (!st->resampler) {
+    st->resampler = std::make_unique<ffmpeg::AudioConverter>();
+  }
+  if (!st->resampler->Configure(st->in_sample_rate, st->in_channels,
+                                static_cast<AVSampleFormat>(frame->format),
+                                st->out_sample_rate, st->out_channels,
+                                AV_SAMPLE_FMT_FLTP)) {
     return out;
   }
   if (!st->fifo) {
@@ -191,35 +176,16 @@ std::vector<base::scoped_refptr<AudioBuffer>> FramesForEncoder(  // NOLINT
       return out;
     }
   }
-
-  // How many output samples this input can turn into: the frame plus
-  // whatever the resampler is still holding. The delay must be asked for in
-  // INPUT-rate units — passing the output rate makes |capacity| too small
-  // and swr_convert() writes past the end of the frame.
-  const int64_t delay = swr_get_delay(st->swr, st->in_sample_rate);
-  const int capacity = static_cast<int>(
-      av_rescale_rnd(delay + frame->nb_samples, st->out_sample_rate,
-                     st->in_sample_rate, AV_ROUND_UP));
-  if (capacity <= 0) {
-    return out;
-  }
-  AVFrame* scratch = ScratchFrame(&st->resampled, capacity, st->out_sample_rate,
-                                  st->out_channels);
-  if (!scratch) {
-    return out;
-  }
-  const int produced =
-      swr_convert(st->swr, scratch->data, capacity,
-                  const_cast<const uint8_t**>(frame->data), frame->nb_samples);
-  if (produced < 0) {
-    LOG(ERROR) << "transcode: resampling failed";
-    return out;
-  }
-  if (produced > 0 &&
-      av_audio_fifo_write(st->fifo, reinterpret_cast<void**>(scratch->data),
-                          produced) < produced) {
-    LOG(ERROR) << "transcode: resampler FIFO overflow";
-    return out;
+  // Push() may return zero, one, or several output frames; each is already in
+  // the output geometry (FLTP / out_rate / out_channels), so it goes straight
+  // into the FIFO.
+  auto converted = st->resampler->Push(*frame);
+  for (auto& f : converted) {
+    if (av_audio_fifo_write(st->fifo, reinterpret_cast<void**>(f->data),
+                            f->nb_samples) < f->nb_samples) {
+      LOG(ERROR) << "transcode: resampler FIFO overflow";
+      return out;
+    }
   }
   DrainWholeFrames(st, frame_size, &out);
   return out;
@@ -231,21 +197,13 @@ std::vector<base::scoped_refptr<AudioBuffer>> FlushResampler(AudioState* st,
   if (!st->fifo || frame_size <= 0) {
     return out;
   }
-  if (st->swr) {
-    // Push a null input to make the resampler give up what it is holding.
-    for (;;) {
-      AVFrame* scratch = ScratchFrame(&st->resampled, frame_size,
-                                      st->out_sample_rate, st->out_channels);
-      if (!scratch) {
-        break;
-      }
-      const int produced =
-          swr_convert(st->swr, scratch->data, frame_size, nullptr, 0);
-      if (produced <= 0) {
-        break;
-      }
-      av_audio_fifo_write(st->fifo, reinterpret_cast<void**>(scratch->data),
-                          produced);
+  if (st->resampler) {
+    // Flush() feeds the resampler a null input and returns the trailing
+    // frames; they join the FIFO so DrainWholeFrames can emit whole frames.
+    auto tail = st->resampler->Flush();
+    for (auto& f : tail) {
+      av_audio_fifo_write(st->fifo, reinterpret_cast<void**>(f->data),
+                          f->nb_samples);
     }
   }
   DrainWholeFrames(st, frame_size, &out);

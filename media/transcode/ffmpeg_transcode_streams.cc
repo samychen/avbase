@@ -129,8 +129,9 @@ int64_t ShiftTs(int64_t ts, int64_t origin) {
   return ts == AV_NOPTS_VALUE ? ts : ts - origin;
 }
 
-// ScratchFrame / EnsureResampler / DrainWholeFrames (and FramesForEncoder /
-// FlushResampler) live in ffmpeg_transcode_audio.cc.
+// ScratchFrame / DrainWholeFrames (and FramesForEncoder / FlushResampler)
+// live in ffmpeg_transcode_audio.cc. The Swr reseampling itself is in
+// media/ffmpeg/audio_convert.h (AudioConverter), lazily configured there.
 
 // (FramesForEncoder / FlushResampler are defined in ffmpeg_transcode_audio.cc.)
 

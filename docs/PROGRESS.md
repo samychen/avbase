@@ -2,9 +2,9 @@
 
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
-## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）· 4.6 覆盖率链路本机闭环复现（见第三十五轮）· docs/07 §5 计数三例两例转绿、顺线修掉一个真死锁（见第三十六轮）· docs/07 §5 计数三例**全部转绿**、顺线修掉解码器丢包（见第三十七轮）**
+## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）· 4.6 覆盖率链路本机闭环复现（见第三十五轮）· docs/07 §5 计数三例两例转绿、顺线修掉一个真死锁（见第三十六轮）· docs/07 §5 计数三例**全部转绿**、顺线修掉解码器丢包（见第三十七轮）** · 抽出 AudioConverter 与 VideoConverter 对称（见第四十九轮）**
 
-最后更新：**2026-10-10（第四十六轮）** —— 摘要见下方「第四十五 / 四十六轮」两节。
+最后更新：**2026-10-10（第四十九轮）** —— 摘要见下方「第四十九 / 四十八 / 四十六轮」几节。
 
 > 第四十八轮：**`EncodedPacket` 归位到值类型层**（`media/filters/encoded_packet.h` →
 > `media/base/`）。它是 `DecoderBuffer` 在**编码侧**的同形状镜像（一个压缩包 + 时间戳 +
@@ -13,6 +13,17 @@
 > 和「碰 libav\* 的东西」变成同一条界线，正是 docs/02 §4.1 要防的那种混淆。移动本身是
 > 一次的：9 处 `#include` 回填（transcode 5 + 单测 4），include guard 与注释跟随改名，
 > docs/02 目录树 64/38 改为 65/37 并在 §4.1 表补一行。
+> 第四十九轮：**抽出 `AudioConverter`，让音频与视频对称**。新建 `media/ffmpeg/
+> audio_convert.{h,cc}`（纯 Swr 封装，镜像 `VideoConverter`）：`Configure`(复用
+> `ff::MakeSwrContext`)/`Push`(一进零/一/多帧)/`Flush`(尾部)/`Reset`；把 `transcode`
+> 里 inline 的裸 `swr_alloc_set_opts2` + `EnsureResampler` 整段替换为 `st->resampler`
+> （`std::unique_ptr<ffmpeg::AudioConverter>`），FIFO 按 encoder `frame_size` 成帧的
+> 逻辑留在 `ffmpeg_transcode_audio.cc`（frame_size 属编码器，不属重采样器）。补
+> `audio_convert_unittest.cc`（48k→44.1k 样本数 ≈ 预期、mono→stereo+rate、重配置/重置）。
+> docs/02 第 200 行 `ffmpeg_audio_converter` 标为已建（实际命名为 `ffmpeg_audio_convert`）。
+> 动机：docs/02 与 docs/05 早已规划该组件对齐视频侧，实现却一直 inline 在 transcode 里且绕过
+> `MakeSwrContext` 工厂；当前唯一消费者是 transcode（播放路径刻意不重采样），故只抽纯 swr
+> wrapper，不把成帧塞进去。
 > 第四十六轮：**落地 simplify-code 上报未动的四项深修**。`PipelineImpl::DoStop` 清 seek
 > 簿记（完成回调不再命名着即将销毁的内部件）；`ff::MakeFrame/MakePacket` **检查式工厂**
 > （M10 深修）——compat 内一处 `CHECK` 收编全部 27 个 `av_frame_alloc`/`av_packet_alloc`

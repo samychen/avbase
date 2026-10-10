@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "media/ffmpeg/audio_convert.h"
 #include "media/ffmpeg/av_includes.h"
 #include "media/ffmpeg/compat.h"
 #include "media/transcode/ffmpeg_transcode_streams.h"

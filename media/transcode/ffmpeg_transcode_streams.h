@@ -28,10 +28,16 @@ struct AVCodecContext;
 struct AVFormatContext;
 struct AVAudioFifo;
 struct AVFrame;
-struct SwrContext;
 struct SwsContext;
 
 namespace avbase::media {
+
+// Forward-declared so this header need not include the Swr wrapper; the full
+// definition arrives via media/ffmpeg/audio_convert.h in the .cc files that
+// own AudioState.
+namespace ffmpeg {
+class AudioConverter;
+}  // namespace ffmpeg
 
 // unique_ptr deleter for AVCodecContext. Defined in the .cc precisely so
 // that this header does not need avcodec.h.
@@ -71,14 +77,13 @@ struct AudioState {
   int out_tb_num = 1;
   int out_tb_den = 48000;
   // Resampler, created on first use and only when the decoder and the
-  // encoder disagree on sample rate or channel count. Resampling changes
-  // the sample COUNT, so the output cannot be handed to the encoder frame
-  // for frame: it accumulates in |fifo| and is drained in whole codec
-  // frames, because libavcodec rejects an arbitrary count with EINVAL.
-  // |resampled| and |framed| are scratch frames. All released below.
-  SwrContext* swr = nullptr;
+  // encoder disagree on sample rate or channel count. It is a thin wrapper
+  // over libswresample (media/ffmpeg/audio_convert.h); the FIFO framing
+  // below is what turns its variable-length output into encoder-sized whole
+  // frames, because libavcodec rejects an arbitrary sample count with
+  // EINVAL. |framed| is the scratch the FIFO is drained into.
+  std::unique_ptr<ffmpeg::AudioConverter> resampler;
   AVAudioFifo* fifo = nullptr;
-  AvFramePtr resampled;
   AvFramePtr framed;
   // Not defined inline: releasing SwrContext needs libav, and this header
   // deliberately does not include it.
