@@ -8,13 +8,13 @@
 #include "base/memory/scoped_refptr.h"
 #include "platform/ffmpeg/ffmpeg_hw_decoder_factory.h"
 #if AVBASE_ENABLE_D3D11
-#include "platform/d3d11/d3d11_hw_spec.h"
+#include "platform/hwaccel/d3d11_hw_spec.h"
 #endif
 #if AVBASE_ENABLE_VAAPI
-#include "platform/vaapi/vaapi_hw_spec.h"
+#include "platform/hwaccel/vaapi_hw_spec.h"
 #endif
 #if AVBASE_ENABLE_VIDEOTOOLBOX
-#include "platform/videotoolbox/videotoolbox_hw_spec.h"
+#include "platform/hwaccel/videotoolbox_hw_spec.h"
 #endif
 
 namespace avbase {
@@ -29,18 +29,17 @@ DefaultHardwareVideoDecoderFactories(
 #if AVBASE_ENABLE_VIDEOTOOLBOX
   using platform::ffmpeg::FFmpegHwVideoDecoderFactory;
   out.push_back(base::MakeRefCounted<FFmpegHwVideoDecoderFactory>(
-      platform::videotoolbox::VideotoolboxHwSpec(), video_runner,
-      allowed_codecs));
+      platform::hwaccel::VideotoolboxHwSpec(), video_runner, allowed_codecs));
 #endif
 #if AVBASE_ENABLE_VAAPI
   using platform::ffmpeg::FFmpegHwVideoDecoderFactory;
   out.push_back(base::MakeRefCounted<FFmpegHwVideoDecoderFactory>(
-      platform::vaapi::VaapiHwSpec(), video_runner, allowed_codecs));
+      platform::hwaccel::VaapiHwSpec(), video_runner, allowed_codecs));
 #endif
 #if AVBASE_ENABLE_D3D11
   using platform::ffmpeg::FFmpegHwVideoDecoderFactory;
   out.push_back(base::MakeRefCounted<FFmpegHwVideoDecoderFactory>(
-      platform::d3d11::D3D11HwSpec(), video_runner, allowed_codecs));
+      platform::hwaccel::D3D11HwSpec(), video_runner, allowed_codecs));
 #endif
   return out;
 }

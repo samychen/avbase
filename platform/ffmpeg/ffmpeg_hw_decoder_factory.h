@@ -15,9 +15,14 @@ namespace avbase::platform::ffmpeg {
 
 // ONE hardware factory, parameterized by FFmpegHwDecoderSpec. The three
 // platform backends (videotoolbox / vaapi / d3d11) differ only in the spec --
-// device name, NativeHandle kind, codec list -- which each platform header
-// (platform/<name>/<name>_hw_spec.h) provides. This replaced three
+// device name, NativeHandle kind, codec list -- which each backend header
+// (platform/hwaccel/<name>_hw_spec.h) provides. This replaced three
 // copy-pasted factory classes whose diff was pure renaming.
+//
+// The three specs share ONE directory rather than getting one each: a spec is
+// a single inline function, and three directories holding one 30-line header
+// apiece read as three backend modules that do not exist. A backend that grows
+// real code -- not just a spec -- gets promoted back to platform/<name>/.
 //
 // Still FFmpeg-hwaccel mediated: the decode work is the platform's video
 // device behind libavcodec, and invariant C8 keeps the libav includes inside

@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_PLATFORM_D3D11_D3D11_HW_SPEC_H_
-#define AVBASE_PLATFORM_D3D11_D3D11_HW_SPEC_H_
+#ifndef AVBASE_PLATFORM_HWACCEL_D3D11_HW_SPEC_H_
+#define AVBASE_PLATFORM_HWACCEL_D3D11_HW_SPEC_H_
 
 #include "media/base/media_types.h"
 #include "platform/ffmpeg/ffmpeg_hw_video_decoder.h"
 
-namespace avbase::platform::d3d11 {
+namespace avbase::platform::hwaccel {
 
 // Windows D3D11VA behind libavcodec's d3d11va hwaccel (NVDEC and QuickSync
 // both surface through it). Frames leave as ID3D11Texture2D-backed
@@ -24,6 +24,6 @@ inline ffmpeg::FFmpegHwDecoderSpec D3D11HwSpec() {
   return spec;
 }
 
-}  // namespace avbase::platform::d3d11
+}  // namespace avbase::platform::hwaccel
 
-#endif  // AVBASE_PLATFORM_D3D11_D3D11_HW_SPEC_H_
+#endif  // AVBASE_PLATFORM_HWACCEL_D3D11_HW_SPEC_H_

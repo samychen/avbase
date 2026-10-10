@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_PLATFORM_VIDEOTOOLBOX_VIDEOTOOLBOX_HW_SPEC_H_
-#define AVBASE_PLATFORM_VIDEOTOOLBOX_VIDEOTOOLBOX_HW_SPEC_H_
+#ifndef AVBASE_PLATFORM_HWACCEL_VIDEOTOOLBOX_HW_SPEC_H_
+#define AVBASE_PLATFORM_HWACCEL_VIDEOTOOLBOX_HW_SPEC_H_
 
 #include "media/base/media_types.h"
 #include "platform/ffmpeg/ffmpeg_hw_video_decoder.h"
 
-namespace avbase::platform::videotoolbox {
+namespace avbase::platform::hwaccel {
 
 // Apple VideoToolbox behind libavcodec's videotoolbox hwaccel. Frames leave
 // the decoder as CVPixelBuffer-backed VideoFrames; pixels only on an explicit
@@ -27,6 +27,6 @@ inline ffmpeg::FFmpegHwDecoderSpec VideotoolboxHwSpec() {
   return spec;
 }
 
-}  // namespace avbase::platform::videotoolbox
+}  // namespace avbase::platform::hwaccel
 
-#endif  // AVBASE_PLATFORM_VIDEOTOOLBOX_VIDEOTOOLBOX_HW_SPEC_H_
+#endif  // AVBASE_PLATFORM_HWACCEL_VIDEOTOOLBOX_HW_SPEC_H_
