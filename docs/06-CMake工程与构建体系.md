@@ -1011,15 +1011,21 @@ avbase_add_example(avbase_inspect SOURCES examples/avbase_inspect/main.cc
 
 | 目录 | 处理 | 原因 |
 |---|---|---|
-| `media/base/` · `media/renderers/` · `media/filters/legacy/` | glob | 全部属于 `avbase_media`，无平台/开关选择 |
+| `media/base/` · `media/filters/` · `media/renderers/` · `media/filters/legacy/` | glob | 全部属于 `avbase_media`，无平台/开关选择 |
+| `media/ffmpeg/` | glob | 全部属于 `avbase_ffmpeg`；目录本身就是隔离区，由 C4/C27 守着 |
+| `platform/sdl2/` | glob | 目录自身单目标，`AVBASE_ENABLE_SDL2` 门控的是 target 而非目录里的某个文件 |
 | `player/` | glob | 单目录单目标 |
-| `platform/ffmpeg/` · `platform/sdl2/` | glob | 目录自身单目标；`platform_ffmpeg` 跨目录取的那五个 `ffmpeg_*.cc` 仍逐个列出 |
 | `tools/inspect/` | glob | 单目录单目标：新增子命令不必再改 CMake |
 | `tests/unit/{base,media_base,player}/` | glob | 测试目录与目标一一对应，也正是新增文件最频繁的地方 |
-| `media/filters/` | 显式 | 同目录下有 5 个 `ffmpeg_*.cc` 属于 `avbase_platform_ffmpeg`，glob 会把 `libav*` 扫进核心库，破坏 G2 |
-| `tests/unit/media_filters/` | 显式 | 同上：4 个进 `media_unittests`，3 个进 `media_ffmpeg_unittests` |
+| `tests/unit/media_filters/` | 显式 | 4 个进 `media_unittests`，3 个进 `media_ffmpeg_unittests` |
 | `base/` | 显式 | 这一层的抽象就是"每平台一个文件"（今天是 `threading/platform_thread_posix.cc`，§7.1 计划里的 `synchronization/` posix/win 成对文件同理），glob 会编进错误平台的那一个 |
 | `examples/` | 显式 | 两个可执行文件同在一个目录、却在两个不同的开关下 |
+
+`media/filters/` 过去是表里唯一的例外：它同时装着核心 filter 和属于 `avbase_ffmpeg` 的
+`ffmpeg_*.cc`，一 glob 就会把 `libav*` 扫进核心库（破坏 G2），所以只能逐个手写——手写清单
+也从最初的 5 行长到了 21 行，每加一个核心 filter 都要记得改它。FFmpeg 代码整体归入
+`media/ffmpeg/` 之后，这个例外消失了：**两个目录各自单目标，两个都能 glob**。这也是为什么
+目录划分值得较真——它决定的是"能不能用 glob"，而不是好看不好看。
 
 `CONFIGURE_DEPENDS` 不是可选项：没有它，新增文件不会触发 CMake 重跑，"我加了文件、
 但没被编译"会静默发生。**不要用 `aux_source_directory`**：它既不递归，也没有重跑语义

@@ -199,7 +199,7 @@ int main() {
 | # | 决策点 | 建议 | 详见 |
 |---|---|---|---|
 | D1 | `base/` 是自研最小子集还是 vendor Chromium base | **自研 ~28 个文件 / ~4000 行**，API 与 Chromium 同名同语义，文件头注明 mirror 来源 | 02 §3 |
-| D2 | FFmpeg 类型是否出现在 `media/base/` 接口 | **不出现**。只在 `platform/ffmpeg/` 与 `media/filters/ffmpeg_*` | 03 §3 |
+| D2 | FFmpeg 类型是否出现在 `media/base/` 接口 | **不出现**。只出现在 `media/ffmpeg/`（唯一目录，见 D11） | 03 §3 |
 | D3 | 解复用线程模型（FFmpeg `av_read_frame` 是阻塞的，与 task runner 模型冲突） | **专用 demux 线程 + `interrupt_callback`**（首期）；本地文件二期改 `base::File` 异步 IO | 04 §2.1 ⚠️这是与 Chromium 的**有意偏离**，需你确认 |
 | D4 | 变速音频处理 | **自研 `AudioRendererAlgorithm`（WSOLA）**，对齐 Chromium，去掉 SoundTouch 依赖 | 03 §7 |
 | D5 | Linux 视频后端 | **两套都做**：SDL2（1.5 周，快速可用）+ 原生 OpenGL（3 周，展示抽象正确性 + 零依赖） | 09 |
@@ -208,7 +208,7 @@ int main() {
 | D8 | DRM / CDM | **不实现**，`CdmContext` 位置留空接口 | 08 §4 |
 | D9 | 是否首期提供 C ABI 兼容层 | **不提供**（已选现代 C++ API），预留 `player/public/c/` 目录与符号清单 | 08 §4 |
 | D10 | 许可证 | avbase 用 **BSD-3-Clause**（与 Chromium base 兼容），移植自 ijkplayer 的算法文件保留 **LGPL-2.1** 声明并单独归入 `media/filters/legacy/` | 08 §5 R8 ⚠️需法务确认 |
-| D11 | FFmpeg 的 include 隔离强度 | **链接隔离 + 目录隔离，放弃 include 隔离**：`media/filters/ffmpeg_*.cc` 可 include `platform/ffmpeg/av_includes.h`，但只有 `avbase_platform_ffmpeg` 这个 target 链接 FFmpeg。更严格（include 也隔离）成本约 +15% | 02 §8 |
+| D11 | FFmpeg 的 include 隔离强度 | **链接隔离 + 目录隔离，放弃 include 隔离**：所有需要 `libav*` 的代码（胶水层与 `ffmpeg_*` 实现）同在 **`media/ffmpeg/`** 一个目录、同属 `avbase_ffmpeg` 一个 target，目录内可互相 include。更严格（include 也隔离）成本约 +15% | 02 §8 |
 
 ---
 

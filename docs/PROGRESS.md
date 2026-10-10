@@ -24,6 +24,19 @@ seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设�
 仓库自己的 C1 门禁（`ffmpeg_demuxer.cc` 1154 行 > 1140），于是**按既有接缝再拆一次**：
 三个"吃 `AVStream`、吐 decoder config、从不碰 `AVFormatContext`"的纯函数搬进新 TU
 `ffmpeg_demuxer_configs.cc`，**1154 → 1022**，白名单上限随之下调到 1030（棘轮只许往下）。
+> 第三十八轮：**FFmpeg 从 `platform/` 迁出，全部归入 `media/ffmpeg/`**（用户的判断：FFmpeg 是
+> 通用全局框架、不是平台后端）——64 个文件搬家 + 目标改名 `avbase_ffmpeg` + 命名空间统一为
+> `avbase::media::ffmpeg`；**`media/filters/` 由此恢复可 glob**（不再是全树唯一要手写清单的
+> 目录），`platform/CMakeLists.txt` 里 20 行 `../media/filters/` 跨树路径消失。**搬家当场炸出
+> 一个隐藏的重复符号**：`ffmpeg_glue.cc` 的 `GetFFmpegVersionString()` 只是转发给 `log_bridge.cc`
+> 的实现，两者原先分处 `avbase::media::ffmpeg` 与 `avbase::platform::ffmpeg` **两个命名空间**
+> 所以不冲突，合并后立刻变成重复定义 + 自递归。另补三条门禁 **C16/C26/C27**（并做了负向测试
+> 确认它们会响），把新边界用机器锁住；**C4 从"文件名含 ffmpeg 就豁免"改成纯目录规则**，堵掉
+> 旧漏洞。**C26 此前不可能加**：`media/filters/` 曾有 19 个文件直接 include `platform/...`
+> 而 C5 查的是第三方平台头、不查自家 `platform/` 目录。**撤回原提议的一步**：原想把
+> `null_{audio,video}_sink` 移到 `platform/null/`，读了 `null_video_sink.h` 头部注释后撤销——
+> 那里有成文理由（headless 属框架非平台 + docs/10 规则 E1），stale 的是文档不是代码。
+> 三预设 **553 / 441 / 553** 全绿
 > 第三十三轮：cpplint 修树轮 + `check-cpplint` 阻塞门禁（59 违规分五类；48 处真修，
 > `build/c++11` 因项目是 C++20 整类关闭并写进新增 `CPPLINT.cfg`）
 > 第三十七轮：docs/07 §5 计数三例**全部转绿** —— 第三例（双速）改用 VOD 形态后暴露
@@ -48,7 +61,86 @@ seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设�
 > 第十八轮：fuzz 目标（libFuzzer + standalone 双驱动 + 语料入库）
 剩余工作以 [12-剩余工作清单](12-剩余工作清单.md) 为准（该项由各轮同步维护,是唯一权威清单）。
 
-## 第三十七轮（本轮）：4.3b 收尾 —— 计数三例全部转绿，代价是揪出解码器丢包
+## 第三十八轮（本轮）：FFmpeg 不是平台 —— 64 个文件搬家，三条门禁落地
+
+### (1) 起因：一句反对推翻了我给的方向
+
+上一轮评审 `media/` 与 `platform/` 的目录结构，我给出的第 3 步是"把 20 个
+`media/filters/ffmpeg_*.cc` 搬进 `platform/ffmpeg/`"，理由是**目录边界应当等于目标边界**
+（`media/filters/` 是全树唯一"目录成员 ≠ 目标成员"的目录，因此不能 glob，21 个核心 filter
+得手写进 `media/CMakeLists.txt`；而 `platform/CMakeLists.txt` 里挂着 20 行
+`../media/filters/ffmpeg_demuxer.cc` 这种跨树路径）。
+
+用户的反对是对的，而且推翻的是方向不是细节：**「ffmpeg 应该是通用全局框架，没必要放在
+platform 目录」**。FFmpeg 在 macOS / Windows / Linux 上行为一致，把它和 SDL2、D3D11/VAAPI/
+VideoToolbox 并列在 `platform/` 下，是把它错归成"平台"。`docs/02 §1` 自己写着要一一对应
+Chromium，而 Chromium 正是把胶水层放 `media/ffmpeg/`。
+
+于是方向反过来：**不是把实现搬进 platform，而是把 `platform/ffmpeg/` 搬出 platform**。
+经确认落点为「全部合并进 `media/ffmpeg/`」、目标改名 `avbase_ffmpeg`。
+
+### (2) 做了什么
+
+- `platform/ffmpeg/*`（27，胶水层）+ `media/filters/ffmpeg_*`（37，实现层）→ **`media/ffmpeg/`**
+  共 64 个文件。`platform/` 只剩 `sdl2/` 与 `hwaccel/`。
+- 命名空间统一为 `avbase::media::ffmpeg`（原先胶水层是 `avbase::platform::ffmpeg`）。有意思的
+  旁证：`media/filters/ffmpeg_glue.h` 早在搬家前用的就是 `avbase::media::ffmpeg`——**同一个
+  胶水层本来就被拆成了两个命名空间**。
+- `media/CMakeLists.txt`：`filters/` 改回 glob；新增 `avbase_ffmpeg` target（glob `ffmpeg/*.cc`）。
+- `platform/CMakeLists.txt`：整块删除，注释写明搬去了哪里。
+- 三个单文件目录 `platform/{d3d11,vaapi,videotoolbox}/` 合并为 **`platform/hwaccel/`**
+  （每个只是一个 30 行的 inline spec 函数，三个目录读起来像三个不存在的后端模块）。
+
+### (3) 搬家炸出来的隐藏重复符号
+
+链接期报 `duplicate symbol avbase::media::ffmpeg::GetFFmpegVersionString()`，来自
+`ffmpeg_glue.cc` 与 `log_bridge.cc` 两个目标文件。查下去发现：`ffmpeg_glue.cc` 里那份是个
+**纯转发包装器**（`return media::ffmpeg::GetFFmpegVersionString();`，原为
+`platform::ffmpeg::...`），真身在 `log_bridge.cc`。两者原先分处两个命名空间，**所以一直不冲突**——
+是命名空间分裂掩盖了重复。合并后它同时变成重复定义和**自递归**。且全树**没有任何调用方**
+（只有两处声明两处定义），合并成一份放在被导出的 `ffmpeg_glue.h` 那侧即可。
+
+这类东西正是"目录搬家值得做"的理由：**搬家把一套隐式约定变成了编译器能看见的事实**。
+
+### (4) 三条门禁，都做了负向测试
+
+| 门禁 | 守什么 | 为什么现在才能加 |
+|---|---|---|
+| **C16** | `media/base/` 不得 include `media/filters/` | 接口层不许依赖实现层。原本在"只留能抓 bug 的"那轮被砍，如今边界真了就复辟。当前零违反 |
+| **C26** | `media/` 不得 include `platform/` | **此前不可能加**：`media/filters/` 曾有 19 个文件直接 include `platform/...` 而无门禁拦得住——C5 查的是 `SDL2/` `X11/` `GL/` 这类**第三方平台头**，不查自家 `platform/` 目录；C4 又按"文件名含 ffmpeg"豁免。FFmpeg 迁出后 `media/` 对 `platform/` 的依赖归零 |
+| **C27** | 核心 media 不得 include `media/ffmpeg/` | 隔离区是**目录**边界。C4 只挡 libav 头，挡不住"核心文件 include `media/ffmpeg/helper.h` 从而间接拖进整个 vendor 层" |
+
+**C4 同时收紧**：从"文件名含 ffmpeg 就放行"改成纯目录规则 `media/ffmpeg/`。旧规则意味着
+任何叫 `ffmpeg_*` 的文件都能带 libav 头——是个洞。收紧后零违反。
+
+关键教训：**一条不会失败的门禁等于没有门禁**。三条写好第一次跑负向测试**全部没响**——
+因为我把它们放在了字符串字面量剥离之后（`#include "..."` 的路径已被替换成 `""`），而
+`C22` 之所以一直是好的，是因为它在剥离**之前**用 `raw_line` 单独处理。改用 `raw_line`
+后三条都能正确触发。
+
+### (5) 撤回了一步：null sink 不动
+
+原提议把 `null_{audio,video}_sink` 从 `media/filters/` 移到 `platform/null/`（对齐 docs/02 §6）。
+读了 `media/filters/null_video_sink.h:24-31` 后撤销——那里有**成文的、有理由的决定**：
+headless 路径属框架而非平台（引 Chromium `media/video/null_video_sink.h` 先例），且"零配置
+可播"（docs/10 规则 E1）要求无窗口系统的机器也能端到端跑。**stale 的是文档，不是代码**，
+所以改的是 docs/02 §6。
+
+### (6) 同步的文档
+
+`docs/02 §2.1`（门禁表，写清 C5 与 C26 的分工）、`§4.2/4.3/4.4`（新增 `media/ffmpeg/` 一节；
+标出 `media/audio/` 尚未建立及其职责实际落在哪）、`§6`（平台目录表按实际重写，加
+`platform/hwaccel/`，写明 `platform/null/` 为何不建、规则 1 为何只查 media 不查 player）、
+`docs/06 §7.6`（`media/filters/` 由"显式"改回 glob，删掉"跨目录取的那**五个** `ffmpeg_*.cc`"
+——实际早已是 20 个，这个数字漂移本身就是转码产品线被塞进 filters 的证据）、
+`README.md` D2/D11、`LICENSE` 第 3 节。历史台账（PROGRESS/archive）按惯例保留原路径未改。
+
+### (7) 验证
+
+`ctest build/ffmpeg` **553/553** · `build/no-ffmpeg` **441/441** · `build/asan` **553/553** ·
+`check_invariants` all rules pass（364 文件，C23 基线 37 不变）· clang-format 95 个文件 clean。
+
+## 第三十七轮：4.3b 收尾 —— 计数三例全部转绿，代价是揪出解码器丢包
 
 ### (1) 上一轮的结论对了一半
 
