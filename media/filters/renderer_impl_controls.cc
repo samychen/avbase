@@ -370,11 +370,7 @@ void RendererImpl::SwitchAudioRenderer(DemuxerStream* new_stream,
                                       deps_.audio_frames_per_buffer);
   audio_ = std::make_unique<AudioRendererImpl>(
       deps_.audio_task_runner, deps_.audio_factories, av_sync_.get());
-  audio_->set_ended_cb(base::BindRepeating(&RendererImpl::PostAudioEnded,
-                                           base::Unretained(this)));
-  // Same contract as the initial wiring in renderer_impl.cc: H2.
-  audio_->set_error_cb(base::BindRepeating(&RendererImpl::ReportError,
-                                           weak_factory_.GetWeakPtr()));
+  WireAudioCallbacks();
   audio_initialized_ = false;
   deps_.audio_task_runner->PostTask(
       FROM_HERE,
@@ -434,10 +430,7 @@ void RendererImpl::SwitchVideoRenderer(DemuxerStream* new_stream,
   video_ = std::make_unique<VideoRendererImpl>(
       deps_.video_task_runner, deps_.video_factories, deps_.tick_clock,
       deps_.compositor_thresholds);
-  video_->set_ended_cb(base::BindRepeating(&RendererImpl::PostVideoEnded,
-                                           base::Unretained(this)));
-  video_->set_frame_presented_cb(base::BindRepeating(
-      &RendererImpl::OnVideoFramePresented, base::Unretained(this)));
+  WireVideoCallbacks();
   video_initialized_ = false;
   pending_video_switch_.stream = new_stream;
   pending_video_switch_.was_rendering = was_rendering;
@@ -660,8 +653,13 @@ void RendererImpl::OnTextRead(int generation, DemuxerStream::Status status,
     return;  // A flush invalidates the leg; the next PumpText re-arms.
   }
   if (status != DemuxerStream::Status::kOk) {
-    LOG(ERROR) << "avbase.text: read failed ("
-               << DemuxerStream::GetStatusName(status) << ")";
+    // H2: a non-aborted read failure is terminal for the text leg (PumpText
+    // stops re-arming), so report it instead of letting subtitles die
+    // silently. kAborted returned above is a flush, not an error.
+    const std::string name = DemuxerStream::GetStatusName(status);
+    LOG(ERROR) << "avbase.text: read failed (" << name << ")";
+    ReportError(MediaError(ErrorCode::kDecodeFailed, "text read failed", name,
+                           "check the text track, or disable subtitles"));
     return;
   }
   for (auto& buffer : buffers) {

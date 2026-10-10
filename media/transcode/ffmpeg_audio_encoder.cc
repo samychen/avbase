@@ -7,6 +7,7 @@
 #include <cstring>
 #include <utility>
 
+#include "base/check.h"
 #include "base/logging.h"
 #include "media/ffmpeg/av_includes.h"
 #include "media/ffmpeg/compat.h"
@@ -86,12 +87,10 @@ bool FFmpegAudioEncoder::Encode(base::scoped_refptr<AudioBuffer> in,
   if (!ctx_ || !out) {
     return false;
   }
+  // M10's deeper fix: ff::MakeFrame CHECKs internally (this site keeps a raw
+  // pointer for the unref below); there is no failure mode to report.
   AVFrame* frame = av_frame_alloc();
-  if (!frame) {
-    // M10: OOM used to null-deref on the field writes right below.
-    LOG(ERROR) << "transcode: av_frame_alloc failed in the audio encoder";
-    return false;
-  }
+  CHECK(frame) << "avbase.transcode: av_frame_alloc failed (OOM)";
   frame->format = ctx_->codec->sample_fmt;
   frame->sample_rate = ctx_->codec->sample_rate;
   frame->nb_samples = in->frame_count();
@@ -119,7 +118,7 @@ bool FFmpegAudioEncoder::Encode(base::scoped_refptr<AudioBuffer> in,
   ctx_next_pts_samples_ += in->frame_count();
 
   while (true) {
-    ff::PacketPtr packet(av_packet_alloc());
+    ff::PacketPtr packet = ff::MakePacket();
     if (!packet) {
       // M10: OOM inside the drain loop used to null-deref in
       // avcodec_receive_packet.
@@ -148,7 +147,7 @@ bool FFmpegAudioEncoder::Flush(std::vector<EncodedPacket>* out) {
     return false;
   }
   while (true) {
-    ff::PacketPtr packet(av_packet_alloc());
+    ff::PacketPtr packet = ff::MakePacket();
     if (!packet) {
       // M10: OOM inside the drain loop used to null-deref in
       // avcodec_receive_packet.

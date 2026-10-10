@@ -347,9 +347,18 @@ void VideoRendererImpl::OnDecoderOutput(base::OnceClosure pump_again,
     }
     LOG(ERROR) << "avbase.vdec: decode failed (" << status.AsDebugString()
                << ")";
-    ended_ = true;
-    compositor_.SetEndOfStream();
-    ReportEndedOnce();
+    // H2: this used to fake a natural end of stream (ended_ + SetEndOfStream
+    // + ReportEndedOnce), so a dead video leg showed the UI "played to
+    // completion" instead of an error. DecoderStream has already run its
+    // fallback chain by the time it reports a non-aborted failure here, so
+    // this is terminal -- report it through the contract the audio leg uses
+    // and let the pipeline client drive the error state.
+    if (error_cb_) {
+      error_cb_.Run(MediaError(
+          ErrorCode::kDecodeFailed, "video decode failed",
+          status.AsDebugString(),
+          "check the source file's integrity, or try another video codec"));
+    }
     return;
   }
   if (frame) {

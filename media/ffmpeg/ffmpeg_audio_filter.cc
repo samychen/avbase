@@ -15,6 +15,8 @@
 namespace avbase::media {
 namespace {
 
+namespace ff = ::avbase::media::ffmpeg;
+
 AVSampleFormat ToAvSampleFormat(SampleFormat format) {
   switch (format) {
   case SampleFormat::kU8:
@@ -201,10 +203,10 @@ bool FFmpegAudioFilter::Process(
   // latency (e.g. a resampler) lost its tail audio at EOS.
   auto pull_and_emit = [&]() -> bool {
     while (true) {
-      AVFrame* out_frame = av_frame_alloc();
-      const int got = av_buffersink_get_frame(ctx_->sink, out_frame);
+      // ff::MakeFrame CHECKs internally; no failure mode.
+      ff::FramePtr out_frame = ff::MakeFrame();
+      const int got = av_buffersink_get_frame(ctx_->sink, out_frame.get());
       if (got < 0) {
-        av_frame_free(&out_frame);
         break;  // EAGAIN: come back with the next input (or drained).
       }
       const int samples = out_frame->nb_samples;
@@ -229,7 +231,6 @@ bool FFmpegAudioFilter::Process(
           samples, ts,
           base::SecondsD(static_cast<double>(samples) / ctx_->sample_rate), 0,
           std::move(data));
-      av_frame_free(&out_frame);
       if (!buffer) {
         return false;
       }
@@ -259,7 +260,9 @@ bool FFmpegAudioFilter::Process(
   // flags=0 moved the borrowed pointers in. KEEP_REF deep-copies the
   // unrefcounted input so the graph owns its bytes.
   {
-    AVFrame* frame = av_frame_alloc();
+    // ff::MakeFrame CHECKs internally; no failure mode. The FramePtr frees
+    // the view on every exit path below.
+    ff::FramePtr frame = ff::MakeFrame();
     frame->format = ToAvSampleFormat(ctx_->format);
     frame->sample_rate = ctx_->sample_rate;
     frame->nb_samples = in->frame_count();
@@ -271,13 +274,11 @@ bool FFmpegAudioFilter::Process(
         break;  // Packed formats live in channel 0 only.
       }
     }
-    if (av_buffersrc_add_frame_flags(ctx_->src, frame,
+    if (av_buffersrc_add_frame_flags(ctx_->src, frame.get(),
                                      AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
-      av_frame_free(&frame);
       LOG(ERROR) << "audio filter: buffersrc rejected a frame";
       return false;
     }
-    av_frame_free(&frame);  // The graph owns its own copy now.
   }
 
   // Pull everything the graph makes available this round.

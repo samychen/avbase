@@ -4,6 +4,8 @@
 
 #include "media/ffmpeg/av_packet_storage.h"
 
+#include "media/ffmpeg/compat.h"
+
 namespace avbase::media::ffmpeg {
 
 AvPacketStorage::~AvPacketStorage() = default;
@@ -16,17 +18,14 @@ bool AvPacketStorage::AddRef(const AVPacket* packet) {
   if (!packet) {
     return false;
   }
-  AVPacket* copy = av_packet_alloc();
-  if (!copy) {
+  // MakePacket CHECKs internally; the only failure mode left is the ref
+  // itself. av_packet_ref increments the buffer refcount rather than copying
+  // payload bytes, so this stays O(1) on the demux hot path.
+  PacketPtr copy = MakePacket();
+  if (av_packet_ref(copy.get(), packet) < 0) {
     return false;
   }
-  // av_packet_ref increments the buffer refcount rather than copying payload
-  // bytes, so this stays O(1) on the demux hot path.
-  if (av_packet_ref(copy, packet) < 0) {
-    av_packet_free(&copy);
-    return false;
-  }
-  packet_.reset(copy);
+  packet_.reset(copy.release());
   return true;
 }
 

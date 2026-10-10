@@ -77,7 +77,7 @@ Status RemuxContainer(const std::string& src_path,
                 "codecs");
   }
 
-  ff::PacketPtr packet(av_packet_alloc());
+  ff::PacketPtr packet = ff::MakePacket();
   while (av_read_frame(in.get(), packet.get()) >= 0) {
     AVStream* in_stream = in->streams[packet->stream_index];
     AVStream* out_stream = out->streams[packet->stream_index];

@@ -754,18 +754,8 @@ void FFmpegDemuxer::DemuxLoop() {
   if (!ctx) {
     return;
   }
-  ff::PacketPtr packet(av_packet_alloc());
-  if (!packet) {
-    if (host_ && media_runner_) {
-      media_runner_->PostTask(
-          FROM_HERE,
-          base::BindOnce(
-              &Demuxer::Host::OnDemuxerError, base::Unretained(host_.get()),
-              MediaError(ErrorCode::kOutOfMemory, "av_packet_alloc failed", {},
-                         "reduce config.buffer.max_bytes")));
-    }
-    return;
-  }
+  // ff::MakePacket CHECKs internally; there is no failure mode to report.
+  ff::PacketPtr packet = ff::MakePacket();
   while (!stop_flag_.IsSet()) {
     // Seek requests take priority over reading.
     if (SeekRequest* request = pending_seek_.exchange(nullptr)) {

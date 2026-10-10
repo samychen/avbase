@@ -308,8 +308,8 @@ Status Concat(const ConcatParams& params) {
                              : nullptr;
 
   // --- Concatenation loop ---
-  ff::PacketPtr pkt(av_packet_alloc());
-  ff::PacketPtr bsf_out(av_packet_alloc());
+  ff::PacketPtr pkt = ff::MakePacket();
+  ff::PacketPtr bsf_out = ff::MakePacket();
 
   for (size_t seg = 0; seg < params.inputs.size(); ++seg) {
     const auto& uri = params.inputs[seg];

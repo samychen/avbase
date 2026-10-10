@@ -209,7 +209,7 @@ bool FFmpegHwVideoDecoder::OpenCodec(const media::VideoDecoderConfig& config) {
     return false;
   }
   ctx_->codec_ctx = std::move(codec_ctx);
-  ctx_->frame = ff::FramePtr(av_frame_alloc());
+  ctx_->frame = ff::MakeFrame();
   return ctx_->frame != nullptr;
 }
 

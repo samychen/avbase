@@ -145,11 +145,9 @@ bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
   // call -- M15: the old flags=0 MOVED the borrowed pointers in, so a graph
   // with internal latency read freed memory. KEEP_REF makes av_frame_ref
   // deep-copy the unrefcounted input, so the graph owns its bytes.
-  AVFrame* frame = av_frame_alloc();
-  if (!frame) {  // M10 parity: the transcode line checks every allocation.
-    LOG(ERROR) << "video filter: av_frame_alloc failed";
-    return false;
-  }
+  // ff::MakeFrame CHECKs internally; no failure mode. The FramePtr frees the
+  // view on every exit path below.
+  media::ffmpeg::FramePtr frame = media::ffmpeg::MakeFrame();
   frame->format = media::ffmpeg::AvPixelFormatFromVideoFormat(ctx_->format);
   frame->width = ctx_->coded_size.width;
   frame->height = ctx_->coded_size.height;
@@ -165,22 +163,15 @@ bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
     frame->data[p] = const_cast<uint8_t*>(in->visible_data(plane).data());
     frame->linesize[p] = in->stride(plane);
   }
-  if (av_buffersrc_add_frame_flags(ctx_->src, frame,
+  if (av_buffersrc_add_frame_flags(ctx_->src, frame.get(),
                                    AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
-    av_frame_free(&frame);
     LOG(ERROR) << "video filter: buffersrc rejected a frame";
     return false;
   }
-  av_frame_free(&frame);
 
-  AVFrame* out_frame = av_frame_alloc();
-  if (!out_frame) {
-    LOG(ERROR) << "video filter: av_frame_alloc failed";
-    return false;
-  }
-  const int got = av_buffersink_get_frame(ctx_->sink, out_frame);
+  media::ffmpeg::FramePtr out_frame = media::ffmpeg::MakeFrame();
+  const int got = av_buffersink_get_frame(ctx_->sink, out_frame.get());
   if (got < 0) {
-    av_frame_free(&out_frame);
     return true;  // EAGAIN: no output this round.
   }
 
@@ -206,7 +197,6 @@ bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
     result->set_color_space(in->color_space());
     *out = std::move(result);
   }
-  av_frame_free(&out_frame);
   return true;
 }
 

@@ -248,22 +248,36 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
   // getters (the compositor's lock and the audio handoff lock) instead of the
   // sub-renderers' plain bools, which would be a data race from S1.
   if (video_) {
-    video_->set_ended_cb(base::BindRepeating(&RendererImpl::PostVideoEnded,
-                                             base::Unretained(this)));
-    video_->set_frame_presented_cb(base::BindRepeating(
-        &RendererImpl::OnVideoFramePresented, base::Unretained(this)));
+    WireVideoCallbacks();
   }
   if (audio_) {
-    audio_->set_ended_cb(base::BindRepeating(&RendererImpl::PostAudioEnded,
-                                             base::Unretained(this)));
-    // H2: terminal audio decode errors must reach the pipeline client, or a
-    // dead audio leg leaves the UI buffering forever. Bound weak (NOT the
-    // same as the ended callbacks above, which are Unretained): ReportError
-    // is invoked directly on S4 with no intermediate weak-bound hop to cancel
-    // a call racing teardown, so the binding itself has to be the weak link.
-    audio_->set_error_cb(base::BindRepeating(&RendererImpl::ReportError,
-                                             weak_factory_.GetWeakPtr()));
+    WireAudioCallbacks();
   }
+}
+
+// The callback wiring shared by both construction sites of each sub-renderer
+// (initial start above and the mid-flight track switch in
+// renderer_impl_controls.cc) -- duplicated wiring is how a new callback gets
+// forgotten on one of the two paths. The ended callbacks stay Unretained
+// because they only re-post weak-bound tasks (the class-level "task outlives
+// its target" closure, see PostVideoEnded below); the H2 error callbacks are
+// weak themselves -- ReportError runs directly on the sub-renderer's decode
+// sequence with no intermediate hop to cancel a call racing teardown, so the
+// binding itself has to be the weak link.
+void RendererImpl::WireVideoCallbacks() {
+  video_->set_ended_cb(base::BindRepeating(&RendererImpl::PostVideoEnded,
+                                           base::Unretained(this)));
+  video_->set_frame_presented_cb(base::BindRepeating(
+      &RendererImpl::OnVideoFramePresented, base::Unretained(this)));
+  video_->SetErrorCB(base::BindRepeating(&RendererImpl::ReportError,
+                                         weak_factory_.GetWeakPtr()));
+}
+
+void RendererImpl::WireAudioCallbacks() {
+  audio_->set_ended_cb(base::BindRepeating(&RendererImpl::PostAudioEnded,
+                                           base::Unretained(this)));
+  audio_->SetErrorCB(base::BindRepeating(&RendererImpl::ReportError,
+                                         weak_factory_.GetWeakPtr()));
 }
 
 // The two ended hops, and the two init hops below, are the class-level

@@ -16,6 +16,7 @@
 #include <cstring>
 #include <vector>
 
+#include "base/check.h"
 #include "base/logging.h"
 #include "media/ffmpeg/av_includes.h"
 #include "media/ffmpeg/compat.h"
@@ -27,7 +28,12 @@ namespace {
 AVFrame* ScratchFrame(AvFramePtr* slot, int nb_samples, int rate,
                       int channels) {
   if (!*slot) {
-    *slot = AvFramePtr(av_frame_alloc());
+    // This TU keeps its own AvFramePtr (transcode_streams.h stays free of
+    // libav types), so ff::MakeFrame's type doesn't fit here -- the checked
+    // allocation does: CHECK, never null (M10's deeper-fix convention).
+    AVFrame* raw = av_frame_alloc();
+    CHECK(raw) << "avbase.transcode: av_frame_alloc failed (OOM)";
+    *slot = AvFramePtr(raw);
   }
   AVFrame* f = slot->get();
   av_frame_unref(f);

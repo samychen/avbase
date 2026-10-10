@@ -188,14 +188,9 @@ Status Transcode(const std::string& input_uri, const TranscodeParams& params,
   };
 
   // --- Transcode loop ---
-  ff::PacketPtr pkt(av_packet_alloc());
-  ff::FramePtr frame(av_frame_alloc());
-  if (!pkt || !frame) {
-    // M10: allocation failures were dereferenced unchecked (OOM -> null
-    // pointer write); every av_alloc site in the transcode line now checks.
-    return Err(ErrorCode::kOutOfMemory, "cannot allocate transcode scratch",
-               input_uri, "av_packet_alloc/av_frame_alloc returned null");
-  }
+  // ff::MakePacket/MakeFrame CHECK internally; no allocation failure mode.
+  ff::PacketPtr pkt = ff::MakePacket();
+  ff::FramePtr frame = ff::MakeFrame();
   int64_t processed_us = 0;
   const int64_t trim_end_us =
       params.duration_seconds > 0.0

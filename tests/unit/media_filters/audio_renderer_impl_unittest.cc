@@ -316,7 +316,7 @@ TEST_F(AudioRendererImplTest, FatalDecodeErrorReachesThePipeline) {
   ASSERT_EQ(init_status_, PipelineStatus::kOk);
 
   MediaError reported;
-  renderer_->set_error_cb(base::BindRepeating(
+  renderer_->SetErrorCB(base::BindRepeating(
       [](MediaError* sink, MediaError e) { *sink = std::move(e); }, &reported));
   StartPlaying();
   DrainQueue();

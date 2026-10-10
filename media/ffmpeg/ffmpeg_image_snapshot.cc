@@ -34,7 +34,7 @@ Status EncodeToJpeg(AVCodecContext* ctx, const AVFrame& frame,
         "avcodec_send_frame: " + ff::AvErrorString(send),
         "this is an avbase bug; report the event log"));
   }
-  ff::PacketPtr packet(av_packet_alloc());
+  ff::PacketPtr packet = ff::MakePacket();
   const int receive = avcodec_receive_packet(ctx, packet.get());
   if (receive != 0) {
     return base::unexpected(MediaError(
@@ -93,7 +93,7 @@ Status WriteJpegSnapshot(const VideoFrame& frame, const std::string& path) {
                    "format " + std::to_string(static_cast<int>(frame.format())),
                    "this is an avbase bug; report the event log"));
   }
-  ff::FramePtr src(av_frame_alloc());
+  ff::FramePtr src = ff::MakeFrame();
   src->width = width;
   src->height = height;
   src->format = ff::AvPixelFormatFromVideoFormat(frame.format());
@@ -122,7 +122,7 @@ Status WriteJpegSnapshot(const VideoFrame& frame, const std::string& path) {
     src->data[p] = const_cast<uint8_t*>(frame.visible_data(plane).data());
     src->linesize[p] = frame.stride(plane);
   }
-  ff::FramePtr dst(av_frame_alloc());
+  ff::FramePtr dst = ff::MakeFrame();
   dst->width = width;
   dst->height = height;
   dst->format = AV_PIX_FMT_YUV420P;

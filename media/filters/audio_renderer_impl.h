@@ -190,10 +190,12 @@ class AVBASE_MEDIA_EXPORT AudioRendererImpl final
   // reports end of stream (RendererImpl fires OnEnded from it).
   void SetPaused(bool paused);
   void set_ended_cb(base::RepeatingClosure cb) { ended_cb_ = std::move(cb); }
-  // Terminal decode errors leave the pump dead and the pipeline buffering
-  // forever unless they reach the pipeline's client. RendererImpl injects this
-  // (bound to its own ReportError); runs on S4, never inline.
-  void set_error_cb(base::RepeatingCallback<void(MediaError)> cb) {
+  // H2: a terminal decode error must reach the pipeline's client or the pump
+  // dies and the UI buffers forever. Same name and signature as
+  // VideoRendererImpl's -- the sub-renderer seam RendererImpl wires on init
+  // and on every re-init. RendererImpl injects this (bound to its own
+  // ReportError); runs on S4, never inline.
+  void SetErrorCB(base::RepeatingCallback<void(MediaError)> cb) {
     error_cb_ = std::move(cb);
   }
 

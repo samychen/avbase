@@ -150,11 +150,8 @@ DecoderStatus FFmpegVideoDecoder::OpenCodec(const VideoDecoderConfig& config,
                          "avcodec_open2: " + ff::AvErrorString(ret));
   }
   ctx_->codec_ctx = std::move(codec_ctx);
-  ctx_->frame = ff::FramePtr(av_frame_alloc());
-  if (!ctx_->frame) {
-    return DecoderStatus(DecoderStatus::Codes::kUnknownError,
-                         "av_frame_alloc failed");
-  }
+  // ff::MakeFrame CHECKs internally; there is no failure mode to report.
+  ctx_->frame = ff::MakeFrame();
   return DecoderStatus();
 }
 

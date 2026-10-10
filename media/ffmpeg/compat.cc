@@ -12,6 +12,18 @@
 
 namespace avbase::media::ffmpeg {
 
+FramePtr MakeFrame() {
+  AVFrame* frame = av_frame_alloc();
+  CHECK(frame) << "avbase.ffmpeg: av_frame_alloc failed (OOM)";
+  return FramePtr(frame);
+}
+
+PacketPtr MakePacket() {
+  AVPacket* packet = av_packet_alloc();
+  CHECK(packet) << "avbase.ffmpeg: av_packet_alloc failed (OOM)";
+  return PacketPtr(packet);
+}
+
 int ChannelCount(const AVCodecContext* ctx) {
 #if AVBASE_FFMPEG_HAS_CHANNEL_LAYOUT
   return ctx->ch_layout.nb_channels;

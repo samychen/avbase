@@ -175,6 +175,14 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   // AvSyncController::OnVideoFramePresented -- the video clock had no writer
   // before this, so a video-only stream never had a valid master clock.
   void set_frame_presented_cb(FramePresentedCB cb);
+  // H2: a terminal decode failure must reach the pipeline's client instead
+  // of masquerading as end of stream. Same name and signature as
+  // AudioRendererImpl's -- the sub-renderer seam RendererImpl wires on init
+  // and on every re-init. RendererImpl injects this (bound to its own
+  // ReportError); runs on the decode sequence, never inline.
+  void SetErrorCB(base::RepeatingCallback<void(MediaError)> cb) {
+    error_cb_ = std::move(cb);
+  }
 
   void StartPlayingFrom(base::TimeDelta time);
   void Flush(int32_t serial, base::OnceClosure closure);
@@ -292,6 +300,9 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   bool ended_{false};
   bool stopping_{false};
   bool read_outstanding_{false};
+  // H2: injected via SetErrorCB; invoked on the decode sequence when the
+  // decoder stream reports a terminal (non-aborted) failure.
+  base::RepeatingCallback<void(MediaError)> error_cb_;
   int32_t serial_{0};
   // Written on the sink's render sequence (S6), read only for logging, so
   // relaxed is enough: it rate-limits a message and nothing depends on its

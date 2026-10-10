@@ -389,6 +389,16 @@ void PipelineImpl::DoStop() {
   }
   state_ = State::kStopping;
   playing_ = false;
+  // A seek completion can never arrive past this point: the flush below
+  // closes the demuxer->S1 reply chain, and FinishSeekIfBothDone runs on that
+  // chain. Drop the bookkeeping -- including the queued completion closures,
+  // which name internals that are about to be torn down -- instead of
+  // stranding it. The facade (PlayerImpl) owns the user-facing semantics and
+  // answers its parked SeekCBs with kAborted (AbortPendingSeeks).
+  seek_in_flight_ = false;
+  pending_seek_valid_ = false;
+  seek_cb_.Reset();
+  pending_seek_cb_.Reset();
   // Order (docs/03 §10.1): renderer first -- destroying it stops both sinks,
   // which guarantees no further Render() calls -- then the demuxer, whose
   // Stop() interrupts the demux thread's blocking av_read_frame and joins it.

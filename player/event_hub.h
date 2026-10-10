@@ -7,8 +7,7 @@
 
 #include <stdint.h>
 
-#include <atomic>
-#include <memory>
+#include <utility>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
@@ -71,47 +70,39 @@ class AVBASE_PLAYER_EXPORT EventHub {
   // True when the caller is this hub's dispatch thread -- the one thread that
   // runs Dispatch, and therefore every handler and observer callback.
   bool OnDispatchThread() const;
+  // observers_ helpers; the caller holds |lock_|.
+  void EraseObserverLocked(int id);
+  bool ObserverPresentLocked(int id) const;
 
-  // One observer registration. Held by shared_ptr so that a Dispatch which has
-  // already snapshotted the list keeps the ENTRY alive even when RemoveObserver
-  // erases it meanwhile; |alive| is what tells such a snapshot to skip it, and
-  // |observer| is only ever dereferenced while it is still true. |alive| is
-  // written under the lock (RemoveObserver) but read without it (Dispatch's
-  // snapshot loop), hence the atomic -- relaxed is enough: the lock still
-  // orders the list mutation, and the flag only needs to become visible.
+  // One observer registration. Mutation discipline (this replaces the old
+  // shared_ptr/alive-flag/dispatch-count protocol): observers_ is only ever
+  // MUTATED on the hub's dispatch thread -- AddObserver under the lock from
+  // any thread, RemoveObserver inline when already on the dispatch thread,
+  // else via a task queued on the same FIFO thread. Dispatch therefore
+  // snapshots raw (id, pointer) pairs and RE-CHECKS membership before every
+  // call: a callback earlier in the list may have removed -- and destroyed --
+  // a later observer (the reaper case), and the re-check is what makes a
+  // raw-pointer snapshot safe. A cross-thread RemoveObserver queues its erase
+  // BEHIND any dispatch already in flight (FIFO) and waits for it, so the
+  // caller may destroy the observer the moment it returns.
   struct ObserverEntry {
     int id{0};
     base::raw_ptr<PlayerObserver> observer{nullptr};
-    std::atomic<bool> alive{true};
   };
 
   base::Thread thread_;
-  // Guards handler_, observers_, next_observer_id_, next_sequence_ and
-  // dispatching_. The dispatch task takes it to snapshot the handler and
-  // observers, then runs them without the lock -- a user callback must never
-  // execute while this thread holds a lock the SetEventHandler path needs.
+  // Guards handler_, observers_, next_observer_id_ and next_sequence_. The
+  // dispatch task takes it to snapshot the handler and observers, then runs
+  // them without the lock -- a user callback must never execute while this
+  // thread holds a lock the SetEventHandler path needs.
   base::Lock lock_;
   Player::EventHandler handler_;
-  std::vector<std::shared_ptr<ObserverEntry>> observers_ GUARDED_BY(lock_);
+  std::vector<ObserverEntry> observers_ GUARDED_BY(lock_);
   // Monotonic, never reused: an id belonging to a dead subscription must not
   // be able to name a later observer, or RemoveObserver would remove the wrong
   // one (or silently fail to remove its own).
   int next_observer_id_{1};
   int64_t next_sequence_{0};
-
-  // ---- the in-flight-dispatch protocol ------------------------------------
-  // Dispatch runs user code with no lock held, so an observer can be removed
-  // -- and destroyed -- while a snapshot still holds its address.
-  // RemoveObserver marks the entry dead at once (a snapshot checks the flag
-  // before every call) and, unless it is itself on the dispatch thread, waits
-  // here until the dispatch in flight has finished. From the dispatch thread
-  // the wait is skipped: the callback being run IS that dispatch, and waiting
-  // would deadlock. That case is still safe, because the entry is already dead
-  // and the loop re-checks the flag.
-  int dispatching_ GUARDED_BY(lock_) = 0;
-  // Manual reset, and re-armed by Dispatch before it drops the lock: a waiter
-  // that wakes between Signal and the next Reset still observes dispatching_.
-  base::WaitableEvent drain_idle_;
 
   // Signalled by a sentinel task at the end of the queue; Shutdown waits on
   // it so that joining cannot discard queued events.

@@ -261,6 +261,11 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   void PushMasterClock();
   void PushStatistics();
   void ReportError(MediaError error);
+  // The callback wiring shared by both construction sites of each
+  // sub-renderer (initial start and mid-flight track switch). Requires
+  // |video_| / |audio_| to be non-null.
+  void WireVideoCallbacks();
+  void WireAudioCallbacks();
   // Runs (on the media sequence, via a hop) the pipeline's init callback with
   // |status|. Every arrival path funnels here: the sub-renderers complete on
   // S3/S4, and the pipeline's sequence checker is what caught the first draft

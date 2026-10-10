@@ -14,11 +14,8 @@ base::scoped_refptr<media::VideoFrame>
 MapHwFrameToI420(const AVFrame* hw_frame, media::Rational sar,
                  base::TimeDelta timestamp, base::TimeDelta duration,
                  int32_t serial, media::VideoColorSpace cs) {
-  AVFrame* sw_raw = av_frame_alloc();
-  if (!sw_raw) {
-    return nullptr;
-  }
-  FramePtr sw_frame(sw_raw);
+  // ff::MakeFrame CHECKs internally; no failure mode.
+  FramePtr sw_frame = MakeFrame();
   // The hw→sw transfer. The frames context decides the CPU layout; we do not
   // pick one, because pretending to know the device's layout is how a driver
   // update turns into corrupted chroma.

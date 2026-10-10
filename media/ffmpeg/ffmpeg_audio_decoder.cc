@@ -32,29 +32,29 @@ namespace {
 // content even though the enum has k5_1/k7_1.
 media::ChannelLayout ChannelLayoutFromMask(uint64_t mask, int channels) {
   switch (mask) {
-    case AV_CH_LAYOUT_MONO:
-      return ChannelLayout::kMono;
-    case AV_CH_LAYOUT_STEREO:
-      return ChannelLayout::kStereo;
-    case AV_CH_LAYOUT_2_1:
-      return ChannelLayout::k2_1;
-    case AV_CH_LAYOUT_SURROUND:
-      return ChannelLayout::kSurround;
-    case AV_CH_LAYOUT_QUAD:
-      return ChannelLayout::kQuad;
-    case AV_CH_LAYOUT_4POINT0:
-      return ChannelLayout::k4_0;
-    case AV_CH_LAYOUT_5POINT0:
-      return ChannelLayout::k5_0;
-    case AV_CH_LAYOUT_5POINT1:
-      return ChannelLayout::k5_1;
-    case AV_CH_LAYOUT_7POINT1:
-      return ChannelLayout::k7_1;
-    default:
-      // Unknown mask: keep the coarse count-based guess rather than kDiscrete
-      // (whose ChannelLayoutToChannelCount mapping is 0, which would poison
-      // downstream buffer math).
-      return channels == 1 ? ChannelLayout::kMono : ChannelLayout::kStereo;
+  case AV_CH_LAYOUT_MONO:
+    return ChannelLayout::kMono;
+  case AV_CH_LAYOUT_STEREO:
+    return ChannelLayout::kStereo;
+  case AV_CH_LAYOUT_2_1:
+    return ChannelLayout::k2_1;
+  case AV_CH_LAYOUT_SURROUND:
+    return ChannelLayout::kSurround;
+  case AV_CH_LAYOUT_QUAD:
+    return ChannelLayout::kQuad;
+  case AV_CH_LAYOUT_4POINT0:
+    return ChannelLayout::k4_0;
+  case AV_CH_LAYOUT_5POINT0:
+    return ChannelLayout::k5_0;
+  case AV_CH_LAYOUT_5POINT1:
+    return ChannelLayout::k5_1;
+  case AV_CH_LAYOUT_7POINT1:
+    return ChannelLayout::k7_1;
+  default:
+    // Unknown mask: keep the coarse count-based guess rather than kDiscrete
+    // (whose ChannelLayoutToChannelCount mapping is 0, which would poison
+    // downstream buffer math).
+    return channels == 1 ? ChannelLayout::kMono : ChannelLayout::kStereo;
   }
 }
 
@@ -215,13 +215,8 @@ void FFmpegAudioDecoder::Initialize(const AudioDecoderConfig& config,
     std::move(init_cb).Run(std::move(status));
     return;
   }
-  ctx_->frame.reset(av_frame_alloc());
-  if (!ctx_->frame) {
-    ctx_.reset();
-    std::move(init_cb).Run(DecoderStatus(DecoderStatus::Codes::kUnknownError,
-                                         "av_frame_alloc failed"));
-    return;
-  }
+  // ff::MakeFrame CHECKs internally; there is no failure mode to report.
+  ctx_->frame = ff::MakeFrame();
   initialized_ = true;
   LOG(INFO) << "[audio-dec] initialized codec=" << config.codec_name
             << " rate=" << sample_rate_ << " ch=" << channels_
@@ -294,7 +289,7 @@ void FFmpegAudioDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
   if (buffer->IsEndOfStream()) {
     // Drain: an empty packet makes libavcodec emit the frames it was holding
     // back (see bug #16).
-    ff::PacketPtr drain(av_packet_alloc());
+    ff::PacketPtr drain = ff::MakePacket();
     if (drain) {
       avcodec_send_packet(ctx_->codec_ctx.get(), drain.get());
     }

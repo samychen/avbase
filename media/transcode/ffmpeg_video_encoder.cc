@@ -49,7 +49,7 @@ struct FFmpegVideoEncoder::Context {
   // would get from a raw AVPacket.
   void DrainPackets(std::vector<EncodedPacket>* out) {
     while (true) {
-      ff::PacketPtr packet(av_packet_alloc());
+      ff::PacketPtr packet = ff::MakePacket();
       const int got = avcodec_receive_packet(codec, packet.get());
       if (got < 0) {
         break;
@@ -143,7 +143,7 @@ bool FFmpegVideoEncoder::Initialize(const Params& params) {
     avcodec_free_context(&c->codec);
     return false;
   }
-  c->converted = ff::FramePtr(av_frame_alloc());
+  c->converted = ff::MakeFrame();
   c->converted->width = params.width;
   c->converted->height = params.height;
   c->converted->format = c->dst_fmt;
@@ -184,12 +184,8 @@ bool FFmpegVideoEncoder::Encode(base::scoped_refptr<VideoFrame> in,
     return false;
   }
   // View over the source planes, then convert into the reused target frame.
-  ff::FramePtr src(av_frame_alloc());
-  if (!src) {
-    // M10: OOM used to null-deref on the field writes right below.
-    LOG(ERROR) << "transcode: av_frame_alloc failed in the video encoder";
-    return false;
-  }
+  // ff::MakeFrame CHECKs internally; there is no failure mode to report.
+  ff::FramePtr src = ff::MakeFrame();
   src->width = ctx_->codec->width;
   src->height = ctx_->codec->height;
   src->format = ctx_->in_fmt;

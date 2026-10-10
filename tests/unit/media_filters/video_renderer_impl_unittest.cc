@@ -33,6 +33,7 @@
 #include "gtest/gtest.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/media_error.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/video_decoder_factory.h"
 #include "media/base/video_frame.h"
@@ -475,6 +476,32 @@ TEST_F(VideoRendererImplTest, StopAndDrainCompletesTheInFlightReadInline) {
   EXPECT_EQ(factory_->last_decoder()->deferred_count(), 0u)
       << "the teardown returned with a decode still in flight -- deleting the "
          "renderer now would leave that callback pointing at freed memory";
+}
+
+// H2: a terminal decode error must reach the pipeline through SetErrorCB.
+// The old code faked a natural end of stream here (ended_ + SetEndOfStream +
+// ReportEndedOnce), so a dead video leg showed the UI "played to completion"
+// instead of an error.
+TEST_F(VideoRendererImplTest, FatalDecodeErrorReachesThePipeline) {
+  behaviour_.decode_fails = true;
+  // DecoderStream only gives up after kMaxConsecutiveDecodeErrors (20)
+  // consecutive failures, so script enough buffers for the fallback chain to
+  // exhaust itself and surface the status.
+  ScriptBuffers(/*buffers=*/64);
+  CreateRenderer();
+  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+
+  MediaError reported;
+  renderer_->SetErrorCB(base::BindRepeating(
+      [](MediaError* sink, MediaError e) { *sink = std::move(e); }, &reported));
+  StartPlaying(/*serial=*/0);
+  env_.RunUntilIdle();
+
+  EXPECT_EQ(reported.code(), ErrorCode::kDecodeFailed)
+      << "a terminal decode error was logged but never reported";
+  // The old behaviour's tell: the leg pretended it had drained naturally.
+  EXPECT_EQ(ended_calls_, 0)
+      << "a terminal decode error must not be reported as end of stream";
 }
 
 }  // namespace

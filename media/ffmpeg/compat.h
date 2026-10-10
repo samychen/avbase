@@ -89,6 +89,16 @@ using SwrPtr = std::unique_ptr<SwrContext, SwrDeleter>;
 using SwsPtr = std::unique_ptr<SwsContext, SwsDeleter>;
 using IoCtxPtr = std::unique_ptr<AVIOContext, IoCtxDeleter>;
 
+// ---- Checked allocation factories -------------------------------------------
+// M10's deeper fix: av_frame_alloc/av_packet_alloc are null-checked HERE,
+// once, so no call site can forget and dereference null on OOM. An OOM at
+// frame/packet scale is unrecoverable for the process (the pre-factory call
+// sites threaded per-site error paths, and 8 of the 27 forgot to check), so
+// the interface is simply "this returns a usable frame/packet": CHECK, never
+// null.
+[[nodiscard]] FramePtr MakeFrame();
+[[nodiscard]] PacketPtr MakePacket();
+
 // ---- Channel layout (the AVChannelLayout boundary) --------------------------
 int ChannelCount(const AVCodecContext* ctx);
 uint64_t ChannelLayoutMask(const AVCodecContext* ctx);
