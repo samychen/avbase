@@ -16,10 +16,10 @@
 
 #include "base/time/time.h"
 #include "gtest/gtest.h"
+#include "media/base/encoded_packet.h"
 #include "media/base/video_frame.h"
 #include "media/ffmpeg/av_includes.h"
 #include "media/ffmpeg/compat.h"
-#include "media/filters/encoded_packet.h"
 
 namespace avbase::media {
 namespace ff = ffmpeg;

@@ -15,9 +15,9 @@
 #include "base/test/task_environment.h"
 #include "media/base/audio_buffer.h"
 #include "media/base/data_source_descriptor.h"
+#include "media/base/encoded_packet.h"
 #include "media/base/media_log.h"
 #include "media/ffmpeg/av_includes.h"
-#include "media/filters/encoded_packet.h"
 
 namespace avbase::media {
 namespace {

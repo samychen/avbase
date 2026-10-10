@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_MEDIA_FILTERS_ENCODED_PACKET_H_
-#define AVBASE_MEDIA_FILTERS_ENCODED_PACKET_H_
+#ifndef AVBASE_MEDIA_BASE_ENCODED_PACKET_H_
+#define AVBASE_MEDIA_BASE_ENCODED_PACKET_H_
 
 #include <cstdint>
 #include <vector>
@@ -29,8 +29,18 @@ namespace avbase::media {
 //               the AVPacket it builds for av_interleaved_write_frame.
 
 // AV_NOPTS_VALUE is INT64_MIN in FFmpeg; aliased here so this header stays
-// free of FFmpeg includes (the media/filters layer's EncodedPacket is a
-// plain value type consumed by both the encoder and the muxer).
+// free of FFmpeg includes (design goal G2: nothing in this layer may name a
+// vendor symbol).
+//
+// WHY THIS FILE IS IN media/base AND NOT NEXT TO ITS CONSUMERS. It is the
+// encode-side mirror of media/base/decoder_buffer.h -- the same "one
+// compressed payload plus its timestamps" shape on the way out rather than
+// on the way in -- and it has zero dependencies of its own: <cstdint>,
+// <vector>, and nothing else. Its consumers are all in media/transcode,
+// which is a separate target built on FFmpeg; leaving the value type there
+// would have made the boundary between "what crosses the encoder/muxer seam"
+// and "who touches libav*" the same line, which is exactly the confusion
+// docs/02 §4.1 exists to prevent.
 constexpr int64_t kNoPtsValue = INT64_MIN;
 struct AVBASE_MEDIA_EXPORT EncodedPacket {
   std::vector<uint8_t> data;
@@ -66,4 +76,4 @@ struct AVBASE_MEDIA_EXPORT EncodedPacket {
 
 }  // namespace avbase::media
 
-#endif  // AVBASE_MEDIA_FILTERS_ENCODED_PACKET_H_
+#endif  // AVBASE_MEDIA_BASE_ENCODED_PACKET_H_

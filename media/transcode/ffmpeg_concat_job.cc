@@ -11,9 +11,9 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "media/base/encoded_packet.h"
 #include "media/ffmpeg/av_includes.h"
 #include "media/ffmpeg/compat.h"
-#include "media/filters/encoded_packet.h"
 #include "media/transcode/ffmpeg_encode_muxer.h"
 #include "media/transcode/ffmpeg_transcode_job.h"
 #include "media/transcode/ffmpeg_transcode_streams.h"  // RescaleTimestamps

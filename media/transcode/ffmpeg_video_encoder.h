@@ -11,10 +11,10 @@
 #include <vector>
 
 #include "base/memory/scoped_refptr.h"
+#include "media/base/encoded_packet.h"
 #include "media/base/media_error.h"
 #include "media/base/video_frame.h"
 #include "media/ffmpeg/av_includes.h"
-#include "media/filters/encoded_packet.h"
 #include "media/media_export.h"
 
 namespace avbase::media {

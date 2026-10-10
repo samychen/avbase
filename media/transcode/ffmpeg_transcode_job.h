@@ -14,9 +14,9 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "media/base/decoder_config.h"  // VideoCodec
+#include "media/base/encoded_packet.h"
 #include "media/base/media_error.h"
 #include "media/filters/decoder_selector.h"  // HwCodecFlag, HwCodecMask
-#include "media/filters/encoded_packet.h"
 #include "media/media_export.h"
 #include "media/transcode/video_encoder_factory.h"
 

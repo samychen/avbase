@@ -6,6 +6,13 @@
 
 最后更新：**2026-10-10（第四十六轮）** —— 摘要见下方「第四十五 / 四十六轮」两节。
 
+> 第四十八轮：**`EncodedPacket` 归位到值类型层**（`media/filters/encoded_packet.h` →
+> `media/base/`）。它是 `DecoderBuffer` 在**编码侧**的同形状镜像（一个压缩包 + 时间戳 +
+> flags + side_data），自身零依赖；而它的 5 个生产消费者全在 `media/transcode`——一个
+> 单独成 target、构建在 FFmpeg 之上的产品线。留在那里会让「跨越编码器/复用器接缝的东西」
+> 和「碰 libav\* 的东西」变成同一条界线，正是 docs/02 §4.1 要防的那种混淆。移动本身是
+> 一次的：9 处 `#include` 回填（transcode 5 + 单测 4），include guard 与注释跟随改名，
+> docs/02 目录树 64/38 改为 65/37 并在 §4.1 表补一行。
 > 第四十六轮：**落地 simplify-code 上报未动的四项深修**。`PipelineImpl::DoStop` 清 seek
 > 簿记（完成回调不再命名着即将销毁的内部件）；`ff::MakeFrame/MakePacket` **检查式工厂**
 > （M10 深修）——compat 内一处 `CHECK` 收编全部 27 个 `av_frame_alloc`/`av_packet_alloc`
@@ -189,6 +196,26 @@ seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设�
 > 第十九至二十一轮：LiveDataSource · 追帧判定核 · 追帧端到端验收
 > 第十八轮：fuzz 目标（libFuzzer + standalone 双驱动 + 语料入库）
 剩余工作以 [12-剩余工作清单](12-剩余工作清单.md) 为准（该项由各轮同步维护,是唯一权威清单）。
+
+## 第四十八轮：`EncodedPacket` 归位 —— 值类型不该住在它的消费者那里
+
+起因是给 `media/filters/` 做目录语义说明时发现的一处错位：`encoded_packet.h` 躺在
+filters 里，而它的全部消费者——`ffmpeg_video_encoder`、`ffmpeg_audio_encoder`、
+`ffmpeg_encode_muxer`、`ffmpeg_transcode_job`、`ffmpeg_concat_job`，以及四个对应单测
+——都在 `media/transcode/`。它不是任何一个 filter（既不是流水线上的一个处理节点，也不是
+avfilter 图的一环），只是一个**跨接缝传递的值**。
+
+判据用的是 districts/02 §4.1 自己的定义：**值类型进 `media/base/`，实现进过滤器**。
+三条都成立——① 自身零依赖（`<cstdint>` + `<vector>` + `media_export.h`，连 `media/base`
+的其它头都不 include，放进去不会让 base 多长一条边）；② 多消费者且跨 target（转码产品线
+是独立 target）；③ 它就是 `DecoderBuffer` 的镜像，而后者已经在 base。反向的顾虑是
+`media/base` 是冻结接口层、头会被当 API 面审查——但 `EncodedPacket` 本来就已经
+`AVBASE_MEDIA_EXPORT`，属于既成事实，搬过去是把事实写进地图而不是扩大承诺。
+
+改动：11 文件（1 + 9 include 回填 + 1 文档计数），**零行为变更**；include guard 由
+`AVBASE_MEDIA_FILTERS_*` 改名 `AVBASE_MEDIA_BASE_*`，注释里补了「为什么在这里」。
+C16/C27/C4 三条门禁天然不冲突——它没有一个新 include 指向 `media/filters` 或
+`media/ffmpeg`。
 
 ## 第四十六轮：落地 simplify-code 上报未动的四项深修
 
