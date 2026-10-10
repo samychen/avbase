@@ -10,16 +10,20 @@ build system or the compiler cannot catch on its own:
   C1   file length (the 500-line ratchet that forces real seams to be named)
   C4   FFmpeg headers stay in their quarantine (no-ffmpeg build survives)
   C5   platform headers/macros stay out of the core layers
+  C16  media/base never depends on media/filters (interfaces vs implementations)
   C22  media/ and base/ never depend on player/
   C23  80-column ratchet
   C24  every source a target lists exists
   C25  every .cc in the tree is compiled by some target
+  C26  media/ never includes platform/ (the media layer stays portable)
+  C27  core media never includes media/ffmpeg/ (the quarantine is a directory)
 
-The ten style rules this gate used to carry (C2, C7-C9, C11, C14, C17, C18,
+The nine style rules this gate used to carry (C2, C7-C9, C11, C14, C17, C18,
 C20, C21) were cut in the "keep only what finds bugs" pass: C18 (throw) is
 already a compile error under -fno-exceptions and C20 (namespace balance)
-under any compiler, and the rest encode taste, not structure. IDs are not
-reassigned so history stays greppable.
+under any compiler, and the rest encode taste, not structure. C16 came back
+when the FFmpeg move made the interface/implementation split a real, checkable
+boundary. IDs are not reassigned so history stays greppable.
 
 Exit code 0 = all rules pass. Non-zero = violations printed, one per line.
 """
@@ -61,10 +65,10 @@ LINE_LIMIT_ALLOWLIST = {
              "while Stop/StopSync/Reset lived here; the stopping half moved "
              "to player_impl_stop.cc (C1 split) and the ceiling moved down "
              "with it."),
-    "media/filters/ffmpeg_demuxer.cc": (
+    "media/ffmpeg/ffmpeg_demuxer.cc": (
         1030, "FFmpeg container/codec adaptation: the AVStream-to-config "
               "builders, the MediaInfo walk, the demux loop and the seek path. "
-              "Chromium's media/filters/ffmpeg_demuxer.cc is ~2500 lines for "
+              "Chromium's media/ffmpeg/ffmpeg_demuxer.cc is ~2500 lines for "
               "the same job; splitting ours by line count would scatter one "
               "contiguous AVFormatContext lifecycle across files, which is how "
               "use-after-free bugs get introduced. Two splits so far, both "
@@ -211,18 +215,29 @@ def check_file(path: pathlib.Path, rel: str, report: Report) -> None:
         if not line.strip():
             continue
 
-        # C4: no FFmpeg headers outside platform/ffmpeg and media/filters/ffmpeg_*.
+        # C4: no FFmpeg headers outside media/ffmpeg/. Now a pure DIRECTORY
+        # rule: every file that needs libav* lives in that one directory, which
+        # is also the one directory of its target. It used to exempt any file
+        # whose NAME contained "ffmpeg", which let an FFmpeg include sit in a
+        # core file for as long as the file was named ffmpeg_*.
         if VENDOR_INCLUDE_RE.search(line):
-            if not (rel.startswith("platform/ffmpeg/") or
-                    "ffmpeg" in pathlib.Path(rel).name):
-                report.add("C4", path, i, "FFmpeg header in a core file")
+            if not rel.startswith("media/ffmpeg/"):
+                report.add("C4", path, i, "FFmpeg header outside media/ffmpeg/")
 
         # C5: no platform headers or macros in base/ media/ player/.
-        # Exempt: base/'s per-platform translation units (see PLATFORM_SUFFIX_RE).
+        # Exempt: base/'s per-platform translation units (see PLATFORM_SUFFIX_RE),
+        # and media/ffmpeg/ -- the vendor adapter, which is where platform/ffmpeg
+        # went when FFmpeg stopped being filed as a platform. Its files name
+        # platform-specific encoders and hwaccels by nature; C5 never covered
+        # them while they sat under platform/, and a directory move is not the
+        # moment to change what this rule enforces. The rule's job is to keep
+        # the PORTABLE layers portable, and media/ffmpeg/ is opt-in
+        # (AVBASE_ENABLE_FFMPEG) rather than portable.
         is_platform_tu = rel.startswith("base/") and bool(
             PLATFORM_SUFFIX_RE.search(rel))
+        is_vendor_adapter = rel.startswith("media/ffmpeg/")
         if (rel.startswith(("base/", "media/", "player/")) and not is_test
-                and not is_platform_tu):
+                and not is_platform_tu and not is_vendor_adapter):
             if PLATFORM_INCLUDE_RE.search(line):
                 report.add("C5", path, i, "platform header in a core file")
             if PLATFORM_MACRO_RE.search(line) and not stripped.startswith("*"):
@@ -240,6 +255,51 @@ def check_file(path: pathlib.Path, rel: str, report: Report) -> None:
                            "media/ or base/ includes player/ — invert the "
                            "dependency: move the type to media/base and "
                            "re-export it from player/public")
+
+        # The three directory rules below match on |raw_line|, not |line|:
+        # |line| has had every string literal replaced by "" (a few lines up,
+        # so keyword rules cannot fire on error text), which erases the path in
+        # '#include "..."' and would make all three of these unable to fail.
+
+        # C16: media/base must not depend on media/filters. The split is
+        # interfaces-and-value-types versus implementations (docs/02 §4.1/§4.2);
+        # an interface that reaches into an implementation is no longer one.
+        # Revived: it was cut as "taste, not structure", but it is what keeps
+        # media/base buildable as a leaf -- and it is free, nothing violates it.
+        if rel.startswith("media/base/") and not is_test:
+            if re.search(r'#\s*include\s*"media/filters/', raw_line):
+                report.add("C16", path, i,
+                           "media/base includes media/filters — the interface "
+                           "layer must not depend on implementations")
+
+        # C26: media/ must not include platform/. The media layer is portable;
+        # anything it needs from a host arrives through player::Deps (docs/02
+        # §6 rule 1). This only became true once the FFmpeg code moved out of
+        # platform/ffmpeg and into media/ffmpeg -- before that, nineteen files
+        # in media/filters reached straight into platform/ffmpeg and the rule
+        # was aspirational. The player half of rule 1 is still unchecked on
+        # purpose: player is the injection point, so it is the one layer
+        # entitled to name a backend.
+        if rel.startswith("media/") and not is_test:
+            if re.search(r'#\s*include\s*"platform/', raw_line):
+                report.add("C26", path, i,
+                           "media/ includes platform/ — the media layer must "
+                           "stay portable; take the dependency through "
+                           "player::Deps instead")
+
+        # C27: the FFmpeg quarantine is a DIRECTORY, not just a set of headers.
+        # C4 catches a libav* include, but a core file can pull the whole
+        # vendor layer in through media/ffmpeg/<helper>.h without ever naming
+        # libav* itself, and C4 cannot see that. This is what makes G2 hold:
+        # avbase_media carries no FFmpeg symbols because nothing outside
+        # media/ffmpeg/ may even name a file inside it.
+        if (rel.startswith(("media/base/", "media/filters/", "media/renderers/"))
+                and not is_test):
+            if re.search(r'#\s*include\s*"media/ffmpeg/', raw_line):
+                report.add("C27", path, i,
+                           "core media includes media/ffmpeg/ — the FFmpeg "
+                           "quarantine is a directory boundary; only "
+                           "avbase_ffmpeg may cross it")
 
 def load_column_baseline(root: pathlib.Path) -> dict:
     path = root / COLUMN_BASELINE
