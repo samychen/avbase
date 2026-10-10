@@ -372,6 +372,9 @@ void RendererImpl::SwitchAudioRenderer(DemuxerStream* new_stream,
       deps_.audio_task_runner, deps_.audio_factories, av_sync_.get());
   audio_->set_ended_cb(base::BindRepeating(&RendererImpl::PostAudioEnded,
                                            base::Unretained(this)));
+  // Same contract as the initial wiring in renderer_impl.cc: H2.
+  audio_->set_error_cb(base::BindRepeating(&RendererImpl::ReportError,
+                                           weak_factory_.GetWeakPtr()));
   audio_initialized_ = false;
   deps_.audio_task_runner->PostTask(
       FROM_HERE,

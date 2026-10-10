@@ -21,6 +21,7 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "media/base/media_constants.h"
+#include "media/base/media_error.h"
 
 namespace avbase::media {
 
@@ -336,7 +337,18 @@ void AudioRendererImpl::OnDecoderOutput(
     LOG(ERROR) << "avbase.adec: decode failed (" << status.AsDebugString()
                << "), reporting to the pipeline";
     // DecoderStream has already run its fallback chain by the time it reports a
-    // non-ok status here, so this is terminal rather than recoverable.
+    // non-ok status here, so this is terminal rather than recoverable. The
+    // pump deliberately does not repost: reporting the error but continuing to
+    // feed a half-dead stream would just trade "UI buffers forever" for
+    // "UI buffers forever, noisily". H2: the error USED to stop at this LOG --
+    // the message said "reporting to the pipeline" and nothing was reported,
+    // so a dead audio leg left the UI spinning on an endless buffer spinner.
+    if (error_cb_) {
+      error_cb_.Run(MediaError(
+          ErrorCode::kDecodeFailed, "audio decode failed",
+          status.AsDebugString(),
+          "check the source file's integrity, or try another audio codec"));
+    }
     return;
   } else if (buffer) {
     if (filter_graph_.empty()) {

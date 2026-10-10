@@ -210,7 +210,13 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   bool renderer_ready_ = false;
   bool playing_ = false;
   bool seek_in_flight_ = false;
-  bool pending_seek_superseded_ = false;
+  // A Seek() that arrived while another was in flight is QUEUED here (the
+  // newest target wins) and started the moment the in-flight one finishes.
+  // The old `pending_seek_superseded_` bool was written and never read: the
+  // new target was silently dropped (H3).
+  bool pending_seek_valid_ = false;
+  base::TimeDelta pending_seek_time_;
+  base::OnceClosure pending_seek_cb_;
   // Seek completion is two-phase (renderer flush + demuxer seek) and these
   // three carry the request between the phases; all S1-exclusive.
   base::TimeDelta seek_time_;

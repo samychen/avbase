@@ -359,5 +359,66 @@ TEST_F(PipelineSeekTest, VideoOnlySourcePlaysThrough) {
                                    << client_.EventLog();
 }
 
+// H3: a seek issued while another is in flight must not be dropped. The old
+// code recorded the collision in a flag it never read, so the second target
+// vanished and playback landed on the FIRST target instead. Both completions
+// must also fire, since the facade matches completions to requests.
+TEST_F(PipelineSeekTest, MidFlightSeekIsNotDropped) {
+  StartPipeline();
+  ASSERT_TRUE(PumpUntil([this] { return client_.Started(); }))
+      << "pipeline never started; events:\n"
+      << client_.EventLog();
+  PlayAndWaitForSinks();
+  for (int round = 0; round < 60; ++round) {
+    PumpRound();
+  }
+
+  const size_t first_batch = video_sinks_->last_sink()->frames().size();
+  // 8 s of a 30 fps source is frame 240 -- strictly beyond the first seek's
+  // target (5 s, frame 150), so landing on frame 240 proves the second seek
+  // ran, not merely that a seek ran.
+  constexpr uint32_t kSecondTarget = 240;
+  bool first_seeked = false;
+  bool second_seeked = false;
+  pipeline_->Seek(base::Seconds(5), base::BindOnce([](bool* f) { *f = true; },
+                                                    &first_seeked));
+  pipeline_->Seek(base::Seconds(8), base::BindOnce([](bool* f) { *f = true; },
+                                                    &second_seeked));
+  // The two Seek() calls post onto the same runner back to back, so the
+  // second DoSeek() deterministically observes seek_in_flight_.
+  ASSERT_TRUE(PumpUntil([&] {
+    PumpRound();
+    return first_seeked && second_seeked;
+  })) << "a seek completion never ran; events:\n"
+      << client_.EventLog();
+
+  // The landing frame is the first one presented after the seek batch. It
+  // must sit at the SECOND target: under the old drop behaviour the second
+  // seek vanished, playback landed on the FIRST target (frame ~150) and the
+  // free-running source then simply played its way up to 240 -- which is why
+  // the floor assertion below is what actually catches the regression.
+  const test::FakeVideoSink* video = video_sinks_->last_sink();
+  ASSERT_TRUE(PumpUntil([&] {
+    PumpRound();
+    return LandingFrame(*video, kSeekFrame, first_batch) != nullptr;
+  })) << "no frame >= "
+      << kSeekFrame
+      << " presented after the seek batch; events:\n"
+      << client_.EventLog();
+
+  const base::scoped_refptr<VideoFrame>* landed =
+      LandingFrame(*video, kSeekFrame, first_batch);
+  uint32_t index = 0;
+  ASSERT_TRUE(test::ReadFrameIndex(**landed, &index));
+  EXPECT_GE(index, kSecondTarget - kLandingSlack)
+      << "landed on frame " << index
+      << ": the mid-flight seek was dropped and playback landed on the first "
+         "target";
+  EXPECT_LE(index, kSecondTarget + kLandingSlack)
+      << "landed on frame " << index << ", too far past the second target";
+  EXPECT_FALSE(client_.HasError()) << client_.error().ToString() << "\n"
+                                   << client_.EventLog();
+}
+
 }  // namespace
 }  // namespace avbase::media

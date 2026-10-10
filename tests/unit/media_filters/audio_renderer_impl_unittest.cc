@@ -303,5 +303,27 @@ TEST_F(AudioRendererImplTest, EndedPublishesTheTailTheRingCouldNotTake) {
   EXPECT_EQ(frames_consumed_, 2 * kDecoderFramesPerBuffer);
 }
 
+// H2: a terminal decode error must reach the pipeline through error_cb_. The
+// old code logged "reporting to the pipeline" and returned without reporting,
+// so the pump sat dead while the UI buffered forever.
+TEST_F(AudioRendererImplTest, FatalDecodeErrorReachesThePipeline) {
+  behaviour_.decode_fails = true;
+  // DecoderStream only gives up after kMaxConsecutiveDecodeErrors (20)
+  // consecutive failures, so script enough buffers for the fallback chain to
+  // exhaust itself and surface the status.
+  ScriptBuffers(/*buffers=*/64);
+  CreateRenderer();
+  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+
+  MediaError reported;
+  renderer_->set_error_cb(base::BindRepeating(
+      [](MediaError* sink, MediaError e) { *sink = std::move(e); }, &reported));
+  StartPlaying();
+  DrainQueue();
+
+  EXPECT_EQ(reported.code(), ErrorCode::kDecodeFailed)
+      << "a terminal decode error was logged but never reported";
+}
+
 }  // namespace
 }  // namespace avbase::media

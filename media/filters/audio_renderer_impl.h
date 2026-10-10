@@ -100,6 +100,7 @@
 #include "media/base/audio_parameters.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/media_error.h"
 #include "media/base/pipeline_status.h"
 #include "media/filters/audio_filter_stage.h"
 #include "media/filters/audio_renderer_algorithm.h"
@@ -189,6 +190,12 @@ class AVBASE_MEDIA_EXPORT AudioRendererImpl final
   // reports end of stream (RendererImpl fires OnEnded from it).
   void SetPaused(bool paused);
   void set_ended_cb(base::RepeatingClosure cb) { ended_cb_ = std::move(cb); }
+  // Terminal decode errors leave the pump dead and the pipeline buffering
+  // forever unless they reach the pipeline's client. RendererImpl injects this
+  // (bound to its own ReportError); runs on S4, never inline.
+  void set_error_cb(base::RepeatingCallback<void(MediaError)> cb) {
+    error_cb_ = std::move(cb);
+  }
 
   // Callable from any thread; all four are atomics because the device thread
   // reads them inside Render() and must not take a lock to do it.
@@ -287,6 +294,8 @@ class AVBASE_MEDIA_EXPORT AudioRendererImpl final
   // Atomic because Render() (S7) checks it; set from S4 via SetPaused().
   std::atomic<bool> paused_{false};
   base::RepeatingClosure ended_cb_;
+  // Terminal decode errors hop through this to RendererImpl::ReportError.
+  base::RepeatingCallback<void(MediaError)> error_cb_;
 
   // ---- shared with S7; handoff_lock_ guards all four ----
   mutable base::Lock handoff_lock_;

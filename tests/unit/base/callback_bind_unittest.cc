@@ -165,6 +165,68 @@ TEST(RepeatingCallbackTest, ReturnsValues) {
   EXPECT_EQ(cb.Run(10), 11);
 }
 
+// A Repeating callback must survive every invocation: a by-value callee may
+// move from its parameter, so stored value-type bound arguments reach it as
+// lvalues and the BindState keeps a complete copy for the next run. Before the
+// kIsOnce policy existed, the second Run() received an emptied string.
+void TakeString(std::string sink, std::string* observed) {
+  *observed = std::move(sink);
+}
+
+TEST(RepeatingCallbackTest, BoundByValueSurvivesRepeatedRuns) {
+  RepeatingCallback<void(std::string*)> cb =
+      BindRepeating(&TakeString, std::string("hello"));
+  std::string first;
+  cb.Run(&first);
+  EXPECT_EQ(first, "hello");
+  std::string second;
+  cb.Run(&second);
+  EXPECT_EQ(second, "hello") << "the bound value was moved out by the "
+                                "first invocation (H4)";
+}
+
+// Move-counting proof that the stored value is never handed out as an rvalue:
+// the callee takes its parameter by value, so a right-value hand-out would
+// move-construct the parameter each run, while a left-value hand-out
+// copy-constructs it (leaving the BindState intact).
+struct MoveCounted {
+  explicit MoveCounted(std::string v) : value(std::move(v)) {}
+  MoveCounted(MoveCounted&& o) : value(std::move(o.value)) { ++moves; }
+  MoveCounted(const MoveCounted& o) : value(o.value) { ++copies; }
+  MoveCounted& operator=(MoveCounted&&) = delete;
+  MoveCounted& operator=(const MoveCounted&) = delete;
+  std::string value;
+  static inline int moves = 0;
+  static inline int copies = 0;
+};
+
+TEST(RepeatingCallbackTest, BoundByValueIsNotMovedBetweenRuns) {
+  RepeatingCallback<void(std::string*)> cb = BindRepeating(
+      [](MoveCounted bound, std::string* out) { *out = bound.value; },
+      MoveCounted("payload"));
+  // Reset after construction: binding itself moves the value into the
+  // BindState, which is fine; the runs must not.
+  MoveCounted::moves = 0;
+  MoveCounted::copies = 0;
+  for (int i = 0; i < 3; ++i) {
+    std::string out;
+    cb.Run(&out);
+    EXPECT_EQ(out, "payload");
+  }
+  EXPECT_EQ(MoveCounted::moves, 0)
+      << "a Repeating invocation moved from the stored bound argument";
+}
+
+// Once semantics keep the right to move: the single invocation still receives
+// the complete bound value (moving it in is fine, losing it is not).
+TEST(OnceCallbackTest, BoundByValueArrivesComplete) {
+  OnceCallback<void(std::string*)> cb =
+      BindOnce(&TakeString, std::string("hello"));
+  std::string observed;
+  std::move(cb).Run(&observed);
+  EXPECT_EQ(observed, "hello");
+}
+
 // ---- helpers ----
 
 TEST(CallbackHelpersTest, DoNothingIsRunnableAndHarmless) {

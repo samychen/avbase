@@ -43,6 +43,19 @@
 > 过程中被新测试逼出一个**既有潜伏链接缺陷**（no-ffmpeg 下 `WriteJpegSnapshot` 未定义），
 > 一并以 `AVBASE_ENABLE_FFMPEG` 条件编译修复。High 各项待后续轮次消化。
 
+> **修复状态（2026-10-10，第四十三轮）**：H1–H7 已全部修复，每条均配承重测试并经
+> 负向测试（回滚修复必红）验证——H1 `Clock` 暂停冻结 + `SetSpeed` 按旧速率外推重锚
+> （新增 `clock_unittest.cc` 6 用例，旧代码下 4 个必红）；H2 音频致命解码错误经新增
+> `set_error_cb` 上报 `RendererImpl::ReportError`（初始与轨切换两处接线，+1 用例）；
+> H3 在飞 seek 期间的新目标改为**排队**（最新意图胜出）并在完成后启动，两个完成回调
+> 均触发（`MidFlightSeekIsNotDropped`：旧代码下落在第一目标、负向红）；H4 `BindState`
+> 增 `kIsOnce` 策略——Repeating 回调的存储值按左值传递（+2 用例：二次 Run 完整性 +
+> move 计数为零，旧代码下均红）；H5 union 空构造（`expected<NonDefaultConstructible,E>`
+> 可编译、构造析构平衡，旧代码下编译失败 + 计数失衡双承重）；H6 `value()`/`error()`
+> 三个 ref 限定重载各加 `CHECK`；H7 编码器 `time_base = {fps_den, fps_num}` + pts
+> `av_rescale_q` 微秒→刻度，`AvFrameToVideoFrame` 按调用方传入的 `pkt_timebase` 换算
+> （不再硬编码 /90000；+4 用例，旧代码下 3 个必红）。
+
 ---
 
 ## High（应修）

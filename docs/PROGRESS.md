@@ -24,6 +24,32 @@ seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设�
 仓库自己的 C1 门禁（`ffmpeg_demuxer.cc` 1154 行 > 1140），于是**按既有接缝再拆一次**：
 三个"吃 `AVStream`、吐 decoder config、从不碰 `AVFormatContext`"的纯函数搬进新 TU
 `ffmpeg_demuxer_configs.cc`，**1154 → 1022**，白名单上限随之下调到 1030（棘轮只许往下）。
+> 第四十三轮：**审查 High H1–H7 全部落地修复**，每条配承重测试并经负向测试验证。
+> H1——`legacy/clock.cc` 的 `Get()` 把 `speed==0` 当 1.0（暂停时钟照跑，与
+> `renderer_impl_controls.cc`"speed 0 保持锚点"的契约相反），改直接用存储速度；
+> `SetSpeed()` 重锚改用**旧速率外推的当前读数**（旧代码固定按 1 重放已流逝区间：
+> 从 2x 降速时间回跳、从 0.5x 升速时间前跳、暂停后一动就拖到"现在"）。新增
+> `clock_unittest.cc` 6 用例（冻结/恢复/变速连续两个方向/1x 基线/invalid）。
+> H2——音频致命解码错误只 `LOG(ERROR)` 说"reporting to the pipeline"却不上报，
+> 泵停摆、UI 无限缓冲：`AudioRendererImpl` 增 `set_error_cb`，
+> `RendererImpl` 初始与轨切换两处接线到 `ReportError`，+1 用例。H3——在飞 seek 期间
+> 的新目标被静默丢弃（`pending_seek_superseded_` 只写不读）：改为**排队**，最新意图
+> 胜出、被顶替者的完成回调照常触发，在飞 seek 完成后启动排队者（其落点前不再空启
+> 一轮渲染）；`MidFlightSeekIsNotDropped` 断言落点锁定第二目标 ±2 帧——第一版断言
+> 被负向测试揭穿为假绿（旧代码下自由播放也会爬到第二目标），改为以"seek 批次后第一
+> 帧"锚定。H4——`bind.h` 把按值绑定的实参当右值转发，Repeating 回调第二次调用拿到
+> 被移空的值（实测复现 exit=1）：`BindState` 增 `kIsOnce` 策略参数，Repeating 的存储
+> 值按左值传递（Once 保持可移）；+2 用例（二次 Run 完整性、move 计数为零）。
+> H5——`expected` 的 union 构造函数隐式构造 `T` 又被外层 placement-new 覆盖，每个
+> 默认构造漏一个 `T` 且强制 T 可默认构造：union 空构造，active member 由外层独管；
+> `expected<NonDefaultConstructible, E>` 可编译 + 构造析构平衡计数（旧代码下编译失败
+> 与计数失衡双重承重）。H6——`value()`/`error()` 三对 ref 限定重载各加 `CHECK`，
+> 文档化的"Terminates on error"成为事实。H7——转码编码器 `time_base = {1, fps_den}`
+> （30fps → {1,1}，一刻度一秒）而 pts 送微秒，重编码时间轴被放大 ~10⁶ 倍；改
+> `{fps_den, fps_num}` + `av_rescale_q`；`AvFrameToVideoFrame` 硬编码 /90000 改按
+> 调用方 `pkt_timebase` 换算（签名 +1 参数）。+4 用例（time_base 值、30fps 连续
+> pts、29.97 fps 网格、pkt_timebase 换算），旧代码下 3 个必红。
+> 三预设 452 / 565 / 565 全绿，`check_invariants` all rules pass，clang-format 无 diff。
 > 第四十二轮：**审查 Critical C1–C4 全部落地修复**。C1——`pipeline_track_select.cc` 那处
 > 跨序列 hop 的 `base::Unretained(this)` 换成 `weak_factory_.GetWeakPtr()`（`pipeline_impl.h`
 > 成文要求早已写明，兄弟 hop 全是弱引用，就漏了这一处）。C2——`Subscription` 补上析构/

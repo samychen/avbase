@@ -110,12 +110,17 @@ struct VideoState {
 };
 
 // Conversions from a decoded libav frame into avbase's own buffer types.
+// |pts_time_base| is the time_base the frame's pts is expressed in -- the
+// decoder context's pkt_timebase (= the input stream's time_base). It must
+// NOT be assumed to be 1/90000: containers use 1/1000, 1/48000, 1/25 ...
+// and a hardcoded denominator silently rewrites every timestamp.
 AVBASE_MEDIA_EXPORT
 base::scoped_refptr<AudioBuffer>
 AvFrameToAudioBuffer(AVFrame* frame, int sample_rate, int channels);
 AVBASE_MEDIA_EXPORT
 base::scoped_refptr<VideoFrame> AvFrameToVideoFrame(AVFrame* frame, int width,
-                                                    int height);
+                                                    int height,
+                                                    AVRational pts_time_base);
 
 // Timeline helpers shared by the transcode loop and the concat job's seam:
 // every stream's first written timestamp becomes its origin so that output

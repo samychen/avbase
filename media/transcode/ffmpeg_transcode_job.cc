@@ -296,7 +296,8 @@ Status Transcode(const std::string& input_uri, const TranscodeParams& params,
           }
           // Convert to VideoFrame (I420).
           auto vf =
-              AvFrameToVideoFrame(frame.get(), video.in_width, video.in_height);
+              AvFrameToVideoFrame(frame.get(), video.in_width, video.in_height,
+                                  video.decoder->pkt_timebase);
           if (vf) {
             std::vector<EncodedPacket> out_packets;
             if (video.encoder.Encode(std::move(vf), &out_packets)) {
@@ -377,7 +378,8 @@ Status Transcode(const std::string& input_uri, const TranscodeParams& params,
     avcodec_send_packet(video.decoder.get(), nullptr);
     while (avcodec_receive_frame(video.decoder.get(), frame.get()) >= 0) {
       auto vf =
-          AvFrameToVideoFrame(frame.get(), video.in_width, video.in_height);
+          AvFrameToVideoFrame(frame.get(), video.in_width, video.in_height,
+                                  video.decoder->pkt_timebase);
       if (vf) {
         std::vector<EncodedPacket> out_packets;
         if (video.encoder.Encode(std::move(vf), &out_packets)) {

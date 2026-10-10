@@ -15,6 +15,7 @@
 #ifndef AVBASE_BASE_TYPES_EXPECTED_H_
 #define AVBASE_BASE_TYPES_EXPECTED_H_
 
+#include "base/check.h"
 #include <type_traits>
 #include <utility>
 
@@ -147,14 +148,36 @@ class expected {
   constexpr T* operator->() noexcept { return &storage_.value; }
   constexpr const T* operator->() const noexcept { return &storage_.value; }
 
-  // Terminates on error, because exceptions are disabled.
-  constexpr T& value() & noexcept { return storage_.value; }
-  constexpr const T& value() const& noexcept { return storage_.value; }
-  constexpr T&& value() && noexcept { return std::move(storage_.value); }
+  // Terminates on error, because exceptions are disabled. The CHECK is what
+  // turns that documented precondition into an actual termination: without it
+  // these would silently read an inactive union member (UB) instead.
+  constexpr T& value() & noexcept {
+    CHECK(has_value_);
+    return storage_.value;
+  }
+  constexpr const T& value() const& noexcept {
+    CHECK(has_value_);
+    return storage_.value;
+  }
+  constexpr T&& value() && noexcept {
+    CHECK(has_value_);
+    return std::move(storage_.value);
+  }
 
-  constexpr E& error() & noexcept { return storage_.error; }
-  constexpr const E& error() const& noexcept { return storage_.error; }
-  constexpr E&& error() && noexcept { return std::move(storage_.error); }
+  // Symmetric precondition for the error side: reading an error out of a
+  // value-holding expected reads an inactive union member.
+  constexpr E& error() & noexcept {
+    CHECK(!has_value_);
+    return storage_.error;
+  }
+  constexpr const E& error() const& noexcept {
+    CHECK(!has_value_);
+    return storage_.error;
+  }
+  constexpr E&& error() && noexcept {
+    CHECK(!has_value_);
+    return std::move(storage_.error);
+  }
 
   template <class U>
   constexpr T value_or(U&& default_value) const& {
@@ -171,7 +194,13 @@ class expected {
     }
   }
   union Storage {
-    constexpr Storage() : value() {}
+    // Deliberately initialises nothing. A member initialiser here (`value()`)
+    // would (a) double-construct T in every default-constructed expected —
+    // the outer constructor placement-news over the implicitly built one, and
+    // that first object is never destroyed — and (b) force T to be default-
+    // constructible for *any* expected<T, E> to compile. The active union
+    // member is managed exclusively by the outer class's placement-news.
+    constexpr Storage() {}
     ~Storage() {}
     T value;
     E error;

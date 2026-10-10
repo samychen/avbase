@@ -97,9 +97,12 @@ bool FFmpegVideoEncoder::Initialize(const Params& params) {
   c->codec->width = params.width;
   c->codec->height = params.height;
   // G6: time_base and framerate come from the caller's fps rational instead
-  // of the hardcoded 30. ffmpeg.c sets time_base = 1/avg_frame_rate_den and
-  // framerate = avg_frame_rate; packet pts then arrive in 1/fps units.
-  c->codec->time_base = AVRational{1, params.fps_den};
+  // of the hardcoded 30. ffmpeg.c sets time_base = av_inv_q(frame_rate),
+  // i.e. {fps_den, fps_num}: one tick = one frame interval (30 fps -> 1/30 s
+  // per tick). The old {1, fps_den} treated the fps DENOMINATOR as the rate,
+  // giving {1,1} -- one tick per SECOND -- for every integer-rate source, so
+  // microseconds fed as pts became seconds.
+  c->codec->time_base = AVRational{params.fps_den, params.fps_num};
   c->codec->framerate = AVRational{params.fps_num, params.fps_den};
   if (params.bit_rate > 0) {
     c->codec->bit_rate = params.bit_rate;
@@ -213,7 +216,13 @@ bool FFmpegVideoEncoder::Encode(base::scoped_refptr<VideoFrame> in,
   ctx_->converted->color_range = in->color_space().range == ColorRange::kFull
                                      ? AVCOL_RANGE_JPEG
                                      : AVCOL_RANGE_MPEG;
-  ctx_->converted->pts = in->timestamp().InMicroseconds();
+  // The frame's timestamp is microseconds (avbase VideoFrame); the encoder's
+  // time_base ticks are frame intervals. Rescale instead of feeding raw
+  // microseconds: under the old {1, fps_den} time_base a 33333 us frame
+  // interval became 33333 SECONDS of timeline.
+  ctx_->converted->pts =
+      av_rescale_q(in->timestamp().InMicroseconds(),
+                   AVRational{1, 1000000}, ctx_->codec->time_base);
 
   const int send = avcodec_send_frame(ctx_->codec, ctx_->converted.get());
   if (send < 0) {

@@ -95,5 +95,61 @@ TEST(ExpectedTest, MoveSemantics) {
   EXPECT_EQ(*moved, 42);
 }
 
+// H5: a non-default-constructible T must work at all. The old union member
+// initialiser (`Storage() : value()`) made *every* expected<T, E> require
+// T() to compile, even ones that never default-construct.
+struct NoDefault {
+  explicit NoDefault(int v) : value(v) {}
+  int value;
+};
+
+TEST(ExpectedTest, NonDefaultConstructibleValueWorks) {
+  expected<NoDefault, Error> e(NoDefault(7));
+  ASSERT_TRUE(e.has_value());
+  EXPECT_EQ(e->value, 7);
+
+  expected<NoDefault, Error> copy = e;
+  EXPECT_EQ(copy->value, 7);
+
+  expected<NoDefault, Error> moved = std::move(copy);
+  EXPECT_EQ(moved->value, 7);
+
+  e = expected<NoDefault, Error>(NoDefault(9));
+  EXPECT_EQ(e->value, 9);
+
+  e = expected<NoDefault, Error>(unexpected(Error{3, "switch to error"}));
+  ASSERT_FALSE(e.has_value());
+  EXPECT_EQ(e.error().code, 3);
+}
+
+// H5: exactly one T is built per value-holding expected and exactly one is
+// destroyed per dying one. The old double construction leaked one T per
+// default-constructed expected, unbalancing this count.
+struct Counted {
+  static inline int constructed = 0;
+  static inline int destroyed = 0;
+  Counted() { ++constructed; }
+  Counted(const Counted&) { ++constructed; }
+  Counted(Counted&&) { ++constructed; }
+  Counted& operator=(const Counted&) = default;
+  Counted& operator=(Counted&&) = default;
+  ~Counted() { ++destroyed; }
+};
+
+TEST(ExpectedTest, ConstructionAndDestructionAreBalanced) {
+  Counted::constructed = 0;
+  Counted::destroyed = 0;
+  {
+    expected<Counted, Error> a;                               // default
+    expected<Counted, Error> b(a);                            // copy
+    expected<Counted, Error> c(std::move(b));                 // move
+    expected<Counted, Error> d(unexpected(Error{}));          // error only
+    d = a;                                                    // error -> value
+    c = expected<Counted, Error>(unexpected(Error{}));        // value -> error
+  }
+  EXPECT_EQ(Counted::constructed, Counted::destroyed)
+      << "every construction must be matched by exactly one destruction";
+}
+
 }  // namespace
 }  // namespace avbase::base

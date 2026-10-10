@@ -84,16 +84,19 @@ void Clock::Invalidate() {
 }
 
 void Clock::SetSpeed(float speed) {
-  // Re-anchor before changing the rate, otherwise the elapsed-time extrapolation
-  // retroactively rescales the interval that was already played at the old rate.
+  // Re-anchor before changing the rate, so the instant of the change is
+  // continuous with what every reader has already observed: Get() applies the
+  // OLD speed to the interval since the last capture, and that extrapolated
+  // reading becomes the new anchor. Re-anchoring at raw pts replayed the
+  // elapsed interval at rate 1 instead -- jumping the clock backwards when
+  // slowing down from >1x and forwards when speeding up from <1x -- and,
+  // because speed 0 used to read as rate 1 (the same Get() bug), dragging a
+  // paused clock all the way to "now" the moment anything called SetSpeed.
   const Snapshot before = Read();
-  speed_.store(speed, std::memory_order_release);
   if (before.valid) {
-    const base::TimeDelta elapsed = wall_->NowTicks() - before.updated_at;
-    Set(before.pts + elapsed * static_cast<int64_t>(1), before.serial,
-        wall_->NowTicks());
-    speed_.store(speed, std::memory_order_release);
+    Set(Get(), before.serial, wall_->NowTicks());
   }
+  speed_.store(speed, std::memory_order_release);
 }
 
 Clock::Snapshot Clock::Read() const {
@@ -124,14 +127,18 @@ base::TimeDelta Clock::Get() const {
     return media::kNoTimestamp;
   }
   const base::TimeDelta elapsed = wall_->NowTicks() - s.updated_at;
-  const double rate = s.speed > 0.0f ? static_cast<double>(s.speed) : 1.0;
+  // The rate IS the stored speed, including 0: a paused clock (speed 0) must
+  // freeze at its anchor, which is exactly what renderer_impl_controls.cc's
+  // "speed 0 keeps the anchor" comment promises. The old `speed > 0 ? speed
+  // : 1.0` turned every pause into rate 1 and let Get() run on while the
+  // pipeline thought it was frozen.
+  const double rate = static_cast<double>(s.speed);
   // ffplay's get_clock() is
   //     pts_drift + time - (time - last_updated) * (1.0 - speed)
   // with pts_drift == pts - last_updated. Expanding it algebraically gives
   //     pts + (time - last_updated) * speed
   // which is what is computed here, so the two are provably identical at every
   // speed rather than only at 1.0.
-  //
   // Bug #32: this used to read `s.drift + elapsed * rate`. Because drift
   // already has last_updated subtracted from it, that form removes the capture
   // instant twice and returns a master clock offset by -last_updated -- on a

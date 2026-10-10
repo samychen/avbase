@@ -256,6 +256,11 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
   if (audio_) {
     audio_->set_ended_cb(base::BindRepeating(&RendererImpl::PostAudioEnded,
                                              base::Unretained(this)));
+    // H2: terminal audio decode errors must reach the pipeline client, or a
+    // dead audio leg leaves the UI buffering forever. Weak receiver: the hop
+    // outlives teardown decisions the same way the ended hop does.
+    audio_->set_error_cb(base::BindRepeating(&RendererImpl::ReportError,
+                                             weak_factory_.GetWeakPtr()));
   }
 }
 

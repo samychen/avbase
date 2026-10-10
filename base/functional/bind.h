@@ -150,6 +150,25 @@ T&& UnwrapArg(T&& v) {
   return std::forward<T>(v);
 }
 
+// How a stored bound argument reaches the callee on each invocation. A Once
+// callback runs at most once, so its stored values are free to move into the
+// call. A Repeating callback must survive every invocation: handing out an
+// rvalue would let a by-value callee move from the BindState, and the second
+// invocation would then observe an emptied argument (caught by a probe that
+// ran `BindRepeating(&Take, std::string("hello"))` twice — the second `Take`
+// received ""). Stored values are therefore passed as lvalues when kIsOnce is
+// false; the UnwrapArg smart-pointer overloads already take both value
+// categories, and the UnretainedWrapper overload copies a trivially-copyable
+// handle, so nothing else needs to change.
+template <bool kIsOnce, typename B>
+decltype(auto) ForwardBoundArg(B& bound) {
+  if constexpr (kIsOnce) {
+    return static_cast<B&&>(bound);
+  } else {
+    return static_cast<B&>(bound);
+  }
+}
+
 // Per-element check, gated by `if constexpr` so that .MaybeValid() is only
 // ever instantiated for actual WeakPtr arguments.
 template <typename T>
@@ -169,11 +188,13 @@ bool AnyWeakPtrInvalid(const std::tuple<B...>& bound,
   return (IsInvalidWeakPtr(std::get<I>(bound)) || ...);
 }
 
-template <typename CallbackSig, typename Functor, typename BoundTuple>
+template <typename CallbackSig, typename Functor, typename BoundTuple,
+          bool kIsOnce>
 class BindState;
 
-template <typename R, typename... Args, typename Functor, typename... B>
-class BindState<R(Args...), Functor, std::tuple<B...>> {
+template <typename R, typename... Args, typename Functor, typename... B,
+          bool kIsOnce>
+class BindState<R(Args...), Functor, std::tuple<B...>, kIsOnce> {
  public:
   BindState(Functor f, std::tuple<B...> bound)
       : functor_(std::move(f)), bound_(std::move(bound)) {}
@@ -203,7 +224,8 @@ class BindState<R(Args...), Functor, std::tuple<B...>> {
     }
     return std::apply(
         [&](B&... bound_args) -> R {
-          return InvokeWith(functor_, UnwrapArg(std::forward<B>(bound_args))...,
+          return InvokeWith(functor_,
+                            UnwrapArg(ForwardBoundArg<kIsOnce>(bound_args))...,
                             std::forward<Args>(args)...);
         },
         bound_);
@@ -244,7 +266,8 @@ auto BindOnce(Functor&& functor, BoundArgs&&... bound) {
           std::forward<BoundArgs>(bound))...);
   using BoundTuple = decltype(bound_tuple);
 
-  internal::BindState<CallbackSig, std::remove_cvref_t<Functor>, BoundTuple>
+  internal::BindState<CallbackSig, std::remove_cvref_t<Functor>, BoundTuple,
+                      /*kIsOnce=*/true>
       state(std::forward<Functor>(functor), std::move(bound_tuple));
 
   return OnceCallback<CallbackSig>(std::move(state));
@@ -266,8 +289,9 @@ auto BindRepeating(Functor&& functor, BoundArgs&&... bound) {
   using BoundTuple = decltype(bound_tuple);
 
   auto shared = std::make_shared<internal::BindState<
-      CallbackSig, std::remove_cvref_t<Functor>, BoundTuple>>(
-      std::forward<Functor>(functor), std::move(bound_tuple));
+      CallbackSig, std::remove_cvref_t<Functor>, BoundTuple,
+      /*kIsOnce=*/false>>(std::forward<Functor>(functor),
+                          std::move(bound_tuple));
 
   return RepeatingCallback<CallbackSig>(
       [shared](auto&&... rest) ->

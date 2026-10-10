@@ -304,12 +304,17 @@ void PipelineImpl::DoSeek(base::TimeDelta time, base::OnceClosure seeked_cb) {
     return;
   }
   if (seek_in_flight_) {
-    // Collapse: the in-flight seek keeps going and this one starts the moment
-    // it finishes. The superseded completion still runs, so a caller matching
-    // completions to requests is never left waiting (the facade owns the
-    // request ids and its own supersede policy).
-    pending_seek_superseded_ = true;
-    std::move(seeked_cb).Run();
+    // Collapse: the in-flight seek keeps going, and THIS target starts the
+    // moment it finishes. The newest user intent wins: a target queued by an
+    // even earlier collapse is superseded here (its completion still runs, so
+    // a caller matching completions to requests is never left waiting -- the
+    // facade owns the request ids and its own supersede policy).
+    if (pending_seek_cb_) {
+      std::move(pending_seek_cb_).Run();
+    }
+    pending_seek_valid_ = true;
+    pending_seek_time_ = time;
+    pending_seek_cb_ = std::move(seeked_cb);
     return;
   }
   seek_in_flight_ = true;
@@ -350,12 +355,21 @@ void PipelineImpl::FinishSeekIfBothDone() {
     return;
   }
   seek_in_flight_ = false;
-  pending_seek_superseded_ = false;
-  if (state_ == State::kReady && playing_ && renderer_) {
+  if (state_ == State::kReady && playing_ && renderer_ &&
+      !pending_seek_valid_) {
+    // Skipped when a queued seek will restart rendering in a moment anyway:
+    // starting here too would schedule one doomed post-seek frame batch.
     renderer_->StartPlayingFrom(seek_time_);
   }
   if (seek_cb_) {
     std::move(seek_cb_).Run();
+  }
+  // H3: the seek that arrived mid-flight used to be dropped on the floor (a
+  // flag was set and never read). Start it now; DoSeek re-enters this whole
+  // state machine with the queued target.
+  if (pending_seek_valid_) {
+    pending_seek_valid_ = false;
+    DoSeek(pending_seek_time_, std::move(pending_seek_cb_));
   }
 }
 

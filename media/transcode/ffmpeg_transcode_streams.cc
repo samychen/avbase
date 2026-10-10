@@ -76,15 +76,19 @@ void AvFrameDeleter::operator()(AVFrame* p) const {
 // ffmpeg_transcode_audio.cc.
 
 base::scoped_refptr<VideoFrame> AvFrameToVideoFrame(AVFrame* frame, int width,
-                                                    int height) {
+                                                    int height,
+                                                    AVRational pts_time_base) {
   const Size size{width, height};
   const base::TimeDelta timestamp =
       frame->pts != AV_NOPTS_VALUE
-          ? base::Milliseconds(frame->pts * 1000 / 90000)
+          ? base::Microseconds(av_rescale_q(
+                frame->pts, pts_time_base, AVRational{1, 1000000}))
           : base::TimeDelta();
   const base::TimeDelta dur =
-      frame->duration > 0 ? base::Milliseconds(frame->duration * 1000 / 90000)
-                          : base::Milliseconds(33);
+      frame->duration > 0
+          ? base::Microseconds(av_rescale_q(frame->duration, pts_time_base,
+                                            AVRational{1, 1000000}))
+          : base::Milliseconds(33);
   auto vf = VideoFrame::CreateBlackFrame(VideoFormat::kI420, size, size,
                                          Rational{1, 1}, timestamp, dur, 0);
   if (!vf) {
