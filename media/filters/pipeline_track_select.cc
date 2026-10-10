@@ -36,9 +36,15 @@ void PipelineImpl::SelectTrack(DemuxerStreamType type, int stream_index,
     std::move(cb).Run(PipelineStatus::kTrackSwitchError);
     return;
   }
+  // Bound through the factory, not base::Unretained(this): this is a
+  // cross-sequence hop posted through media_runner_, so the caller may destroy
+  // the Player (and this object) the instant SelectTrack returns while the
+  // post is already in flight. Every sibling hop in pipeline_impl.cc binds
+  // weak_factory_.GetWeakPtr() for exactly this reason (pipeline_impl.h:237-243
+  // gives the full account); this one was the last Unretained left.
   media_runner_->PostTask(FROM_HERE,
                           base::BindOnce(&PipelineImpl::DoSelectTrack,
-                                         base::Unretained(this), type,
+                                         weak_factory_.GetWeakPtr(), type,
                                          stream_index, std::move(cb)));
 }
 

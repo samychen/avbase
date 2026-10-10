@@ -16,9 +16,12 @@
 #include <string>
 #include <utility>
 
+#include "avbase/BuildConfig.h"
 #include "base/functional/bind.h"
 #include "media/base/media_constants.h"
+#if AVBASE_ENABLE_FFMPEG
 #include "media/ffmpeg/ffmpeg_image_snapshot.h"
+#endif
 
 namespace avbase {
 
@@ -71,8 +74,9 @@ void PlayerImpl::OnMediaSeekDone(int64_t request_id,
 void PlayerImpl::SetPlaybackRate(double rate) {
   rate = std::clamp(rate, media::kMinPlaybackRate, media::kMaxPlaybackRate);
   playback_rate_.store(rate);
-  if (pipeline_) {
-    pipeline_->SetPlaybackRate(rate);
+  const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
+  if (pipeline) {
+    pipeline->SetPlaybackRate(rate);
   }
 }
 
@@ -87,13 +91,13 @@ void PlayerImpl::SetMuted(bool muted) {
 }
 
 void PlayerImpl::ApplyGain() {
-  if (!pipeline_) {
+  const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
+  if (!pipeline) {
     return;
   }
   // Mute scales the samples at the device path (Δ13), it does not stop the
   // clock: the audio master stays authoritative while muted.
-  pipeline_->SetVolume(
-      static_cast<float>(muted_.load() ? 0.0 : volume_.load()));
+  pipeline->SetVolume(static_cast<float>(muted_.load() ? 0.0 : volume_.load()));
 }
 
 void PlayerImpl::SetLoopCount(int count) {
@@ -125,14 +129,18 @@ void PlayerImpl::OnEnded() {
     if (count > 0) {
       loop_count_.store(count - 1);
     }
-    if (pipeline_) {
-      pipeline_->Seek(base::TimeDelta(), base::BindOnce(
-                                             [](PlayerImpl* self) {
-                                               if (self->pipeline_) {
-                                                 self->pipeline_->Play();
-                                               }
-                                             },
-                                             base::Unretained(this)));
+    const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
+    if (pipeline) {
+      pipeline->Seek(base::TimeDelta(),
+                     base::BindOnce(
+                         [](PlayerImpl* self) {
+                           const std::shared_ptr<media::PipelineImpl> p =
+                               self->GetPipeline();
+                           if (p) {
+                             p->Play();
+                           }
+                         },
+                         base::Unretained(this)));
     }
     return;
   }
@@ -244,15 +252,18 @@ std::optional<MediaInfo> PlayerImpl::media_info() const {
 }
 
 base::TimeDelta PlayerImpl::GetMediaTime() const {
-  return pipeline_ ? pipeline_->GetMediaTime() : base::TimeDelta();
+  const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
+  return pipeline ? pipeline->GetMediaTime() : base::TimeDelta();
 }
 
 base::TimeDelta PlayerImpl::GetBufferedTime() const {
-  return pipeline_ ? pipeline_->GetBufferedTime() : base::TimeDelta();
+  const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
+  return pipeline ? pipeline->GetBufferedTime() : base::TimeDelta();
 }
 
 base::TimeDelta PlayerImpl::GetDuration() const {
-  return pipeline_ ? pipeline_->GetDuration() : base::TimeDelta();
+  const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
+  return pipeline ? pipeline->GetDuration() : base::TimeDelta();
 }
 
 bool PlayerImpl::is_live() const {
@@ -310,6 +321,15 @@ std::string PlayerImpl::DumpDiagnostics() const {
 
 Status PlayerImpl::TakeSnapshot(base::TimeDelta at,
                                 const std::string& file_path) {
+#if !AVBASE_ENABLE_FFMPEG
+  (void)at;
+  (void)file_path;
+  return base::unexpected(MediaError(
+      ErrorCode::kNotImplemented,
+      "JPEG snapshots are not available in this build",
+      "the JPEG writer (media::WriteJpegSnapshot) lives in the FFmpeg layer",
+      "build with -DAVBASE_ENABLE_FFMPEG=ON"));
+#else
   PlayerState current;
   {
     base::AutoLock scoped(state_lock_);
@@ -324,7 +344,14 @@ Status PlayerImpl::TakeSnapshot(base::TimeDelta at,
                    "snapshots need a pipeline that is holding frames",
                    "wait for kPrepared (or later) before requesting"));
   }
-  pipeline_->TakeSnapshot(
+  const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
+  if (!pipeline) {
+    return base::unexpected(MediaError(
+        ErrorCode::kInvalidState, "no pipeline to snapshot",
+        "the pipeline was reset between the state check and this call",
+        "PrepareAsync() again before requesting a snapshot"));
+  }
+  pipeline->TakeSnapshot(
       at,
       base::BindOnce(
           [](EventHub* hub, base::TimeDelta at, std::string path,
@@ -345,6 +372,7 @@ Status PlayerImpl::TakeSnapshot(base::TimeDelta at,
           },
           &event_hub_, at, file_path));
   return Status();
+#endif  // !AVBASE_ENABLE_FFMPEG
 }
 
 }  // namespace avbase

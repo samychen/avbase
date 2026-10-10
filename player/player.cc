@@ -207,9 +207,26 @@ const PlayerConfig& Player::config() const {
 
 Player::Subscription::Subscription() = default;
 Player::Subscription::Subscription(Subscription&&) noexcept = default;
+
+// RAII means the handle unsubscribes when it goes away -- that is what
+// player.h:130 ("unsubscribes on destruction") promises, and the defaulted
+// versions did NOT do it: only an explicit Reset() called RemoveObserver, so a
+// Subscription that was simply dropped left the observer registered in the hub
+// and the next event reached a destroyed object. Move-assignment had the same
+// hole in the other direction: taking over from another handle must release
+// the one being replaced, which unique_ptr's own move-assignment does not do
+// (it destroys the old Impl without going through Subscription::Reset).
 Player::Subscription&
-Player::Subscription::operator=(Subscription&&) noexcept = default;
-Player::Subscription::~Subscription() = default;
+Player::Subscription::operator=(Subscription&& other) noexcept {
+  if (this != &other) {
+    Reset();
+    impl_ = std::move(other.impl_);
+  }
+  return *this;
+}
+Player::Subscription::~Subscription() {
+  Reset();
+}
 void Player::Subscription::Reset() {
   if (impl_ && impl_->player && impl_->id > 0) {
     impl_->player->RemoveObserver(impl_->id);

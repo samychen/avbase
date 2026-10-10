@@ -30,8 +30,9 @@ void PlayerImpl::BeginAccurateWaitOnMedia(int64_t request_id,
   }
   accurate_seek_.Begin(request_id, target, config_.seek.accurate_timeout,
                        base::TimeTicks::Now());
-  if (pipeline_) {
-    pipeline_->BeginAccurateSeek(
+  const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
+  if (pipeline) {
+    pipeline->BeginAccurateSeek(
         target, base::BindOnce(&PlayerImpl::OnAccurateSeekTargetReached,
                                base::Unretained(this)));
   }
@@ -53,7 +54,9 @@ void PlayerImpl::EndAccurateWaitOnMedia() {
   // Superseded by a keyframe seek: close the window first (frames flow
   // again), then answer the caller with kAborted -- "the seek you asked for
   // was replaced", not "the seek failed and you are stuck".
-  pipeline_ ? pipeline_->EndAccurateSeek() : (void)0;
+  if (const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline()) {
+    pipeline->EndAccurateSeek();
+  }
   const int64_t id = accurate_seek_.End();
   Player::SeekCB cb;
   base::TimeDelta requested;
@@ -129,7 +132,9 @@ void PlayerImpl::CompleteAccurateSeek(bool reached) {
   // Capture before End(): End resets the wait state it reads from.
   const base::TimeDelta target = accurate_seek_.target();
   const int64_t id = accurate_seek_.End();
-  pipeline_ ? pipeline_->EndAccurateSeek() : (void)0;
+  if (const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline()) {
+    pipeline->EndAccurateSeek();
+  }
   Player::SeekCB cb;
   {
     base::AutoLock scoped(seek_lock_);

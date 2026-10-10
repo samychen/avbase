@@ -5,6 +5,8 @@
 #include "player/event_hub.h"
 
 #include <cstddef>
+#include <memory>
+#include <thread>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -27,19 +29,45 @@ void EventHub::SetEventHandler(Player::EventHandler handler) {
 
 int EventHub::AddObserver(PlayerObserver* observer) {
   base::AutoLock scoped(lock_);
-  const int id = static_cast<int>(observers_.size()) + 1;
-  observers_.push_back(ObserverEntry{id, observer});
+  auto entry = std::make_shared<ObserverEntry>();
+  entry->id = next_observer_id_++;
+  entry->observer = observer;
+  const int id = entry->id;
+  observers_.push_back(std::move(entry));
   return id;
 }
 
 void EventHub::RemoveObserver(int id) {
-  base::AutoLock scoped(lock_);
-  for (size_t i = 0; i < observers_.size(); ++i) {
-    if (observers_[i].id == id) {
-      observers_.erase(observers_.begin() + static_cast<std::ptrdiff_t>(i));
-      return;
+  bool wait_for_dispatch = false;
+  {
+    base::AutoLock scoped(lock_);
+    for (size_t i = 0; i < observers_.size(); ++i) {
+      if (observers_[i]->id == id) {
+        // Marked dead before being erased: a Dispatch that already snapshotted
+        // this entry is about to check exactly this flag.
+        observers_[i]->alive = false;
+        observers_.erase(observers_.begin() + static_cast<std::ptrdiff_t>(i));
+        break;
+      }
     }
+    // On the dispatch thread the in-flight dispatch is the caller's own
+    // callback, so waiting would deadlock; the dead flag is enough there.
+    wait_for_dispatch = dispatching_ > 0 && !OnDispatchThread();
   }
+  // Off the dispatch thread, the observer may be destroyed the moment this
+  // returns, so the dispatch that still names it must be allowed to finish
+  // first. Re-checked after each wake: Dispatch re-arms drain_idle_ under the
+  // lock, so a wake landing between Signal and the next Reset cannot lose the
+  // update.
+  while (wait_for_dispatch) {
+    drain_idle_.TimedWait(base::Seconds(5));
+    base::AutoLock scoped(lock_);
+    wait_for_dispatch = dispatching_ > 0;
+  }
+}
+
+bool EventHub::OnDispatchThread() const {
+  return std::this_thread::get_id() == thread_.GetThreadId();
 }
 
 void EventHub::Post(EventType type, EventPayload payload,
@@ -81,21 +109,35 @@ void EventHub::PostError(MediaError error, base::TimeDelta media_time) {
 
 void EventHub::Dispatch(PlayerEvent event) {
   Player::EventHandler handler;
-  std::vector<PlayerObserver*> observers;
+  std::vector<std::shared_ptr<ObserverEntry>> observers;
   {
     base::AutoLock scoped(lock_);
+    ++dispatching_;
+    // Re-armed before the lock is dropped, so a RemoveObserver that is about
+    // to wait cannot observe a stale signal from a previous dispatch.
+    drain_idle_.Reset();
     handler = handler_;
-    for (const ObserverEntry& entry : observers_) {
-      observers.push_back(entry.observer);
-    }
+    observers = observers_;
   }
   // The handler runs with no lock held: it may call any Player method, which
   // may itself post more events or try to take this same lock.
   if (handler) {
     handler.Run(event);
   }
-  for (PlayerObserver* observer : observers) {
-    observer->OnEvent(event);
+  for (const std::shared_ptr<ObserverEntry>& entry : observers) {
+    // The entry -- and the observer behind it -- may have been removed by the
+    // handler above, by an earlier observer in this same loop, or by another
+    // thread. The shared_ptr keeps the ENTRY readable; the flag says whether
+    // the observer it names is still alive.
+    if (entry->alive) {
+      entry->observer->OnEvent(event);
+    }
+  }
+  {
+    base::AutoLock scoped(lock_);
+    if (--dispatching_ == 0) {
+      drain_idle_.Signal();
+    }
   }
 }
 

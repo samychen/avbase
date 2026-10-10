@@ -204,15 +204,18 @@ Status PlayerImpl::PrepareAsync() {
       ToMediaMaster(config_.sync_master), deps_->tick_clock.get(),
       media::AvSyncController::Thresholds());
 
-  pipeline_ = std::make_unique<media::PipelineImpl>();
-  pipeline_->SetTickClock(deps_->tick_clock.get());
-  pipeline_->SetClock(av_sync);
+  // Installed at once, so a concurrent Reset() can find and stop it; the rest
+  // of PrepareAsync uses this local handle instead of the member.
+  auto pipeline = std::make_shared<media::PipelineImpl>();
+  SetPipeline(pipeline);
+  pipeline->SetTickClock(deps_->tick_clock.get());
+  pipeline->SetClock(av_sync);
   // The pipeline is the only layer that learns the source is live (from the
   // demuxer), so the cue-age window travels here and the policy is decided
   // where the fact is.
-  pipeline_->SetLiveCueMaxAge(config_.subtitle.enabled
-                                  ? config_.subtitle.live_cue_max_age
-                                  : base::TimeDelta());
+  pipeline->SetLiveCueMaxAge(config_.subtitle.enabled
+                                 ? config_.subtitle.live_cue_max_age
+                                 : base::TimeDelta());
   media::DataSourceDescriptor source;
   {
     base::AutoLock scoped(state_lock_);
@@ -241,12 +244,15 @@ Status PlayerImpl::PrepareAsync() {
       retry_source_ = retry;
     }
     source = media::DataSourceDescriptor::FromSource(std::move(retry));
-    // Keep the URI for logs and MediaInfo: the bridge ignores the filename,
-    // but the error messages should still say which URL broke.
-    source.uri = source_.uri;
+    // Keep the URI for logs and MediaInfo; read it under state_lock_, which
+    // guards source_ -- the hop above replaced |source| with a URI-less bridge.
+    {
+      base::AutoLock scoped(state_lock_);
+      source.uri = source_.uri;
+    }
   }
 #endif
-  pipeline_->SetSource(std::move(source), std::move(options));
+  pipeline->SetSource(std::move(source), std::move(options));
 
   media::DefaultRendererFactory::Deps factory_deps;
   factory_deps.audio_filter_graph = config_.audio.filter_graph;
@@ -279,16 +285,17 @@ Status PlayerImpl::PrepareAsync() {
   factory_deps.video_decoder_preference = config_.video.decoder_preference;
   factory_deps.video_hw_codecs = config_.video.hw_codecs;
   factory_deps.video_decoder_preference_set = true;
-  renderer_factory_ =
-      std::make_unique<media::DefaultRendererFactory>(std::move(factory_deps));
+  auto renderer_factory =
+      std::make_shared<media::DefaultRendererFactory>(std::move(factory_deps));
   {
     base::AutoLock scoped(state_lock_);
-    renderer_factory_->set_display(display_);
+    renderer_factory->set_display(display_);
   }
+  SetRendererFactory(renderer_factory);
 
-  pipeline_->Start(std::move(demuxer), renderer_factory_.get(),
-                   media::RendererType::kRendererImpl,
-                   media_thread_.task_runner(), this);
+  pipeline->Start(std::move(demuxer), renderer_factory.get(),
+                  media::RendererType::kRendererImpl,
+                  media_thread_.task_runner(), this);
   return OkStatus();
 }
 
@@ -341,8 +348,9 @@ void PlayerImpl::OnPipelineReady() {
     prepared_handled_ = true;
     machine_.TransitionTo(PlayerState::kPrepared);
   }
+  const auto pipeline = GetPipeline();
   const media::MediaInfo info =
-      pipeline_ ? pipeline_->media_info() : media::MediaInfo();
+      pipeline ? pipeline->media_info() : media::MediaInfo();
   {
     base::AutoLock scoped(snapshot_lock_);
     media_info_ = info;
@@ -379,19 +387,24 @@ void PlayerImpl::Start() {
     }
     machine_.TransitionTo(PlayerState::kStarted);
   }
-  if (previous == PlayerState::kCompleted && pipeline_) {
+  const auto pipeline = GetPipeline();
+  if (previous == PlayerState::kCompleted && pipeline) {
     // Replay: restart from the beginning rather than unpausing at EOS.
-    pipeline_->Seek(base::TimeDelta(), base::BindOnce(
-                                           [](PlayerImpl* self) {
-                                             if (self->pipeline_) {
-                                               self->pipeline_->Play();
-                                             }
-                                           },
-                                           base::Unretained(this)));
+    pipeline->Seek(base::TimeDelta(),
+                   base::BindOnce(
+                       [](PlayerImpl* self) {
+                         // Re-read through the accessor: the completion may
+                         // arrive after Reset() replaced or cleared the
+                         // pipeline this seek ran on.
+                         if (const auto p = self->GetPipeline()) {
+                           p->Play();
+                         }
+                       },
+                       base::Unretained(this)));
     return;
   }
-  if (pipeline_) {
-    pipeline_->Play();
+  if (pipeline) {
+    pipeline->Play();
   }
   event_hub_.PostStateChanged(previous, PlayerState::kStarted, GetMediaTime());
 }
@@ -406,8 +419,8 @@ void PlayerImpl::Pause() {
     }
     machine_.TransitionTo(PlayerState::kPaused);
   }
-  if (pipeline_) {
-    pipeline_->Pause();
+  if (const auto pipeline = GetPipeline()) {
+    pipeline->Pause();
   }
   event_hub_.PostStateChanged(PlayerState::kStarted, PlayerState::kPaused,
                               GetMediaTime());
@@ -418,11 +431,11 @@ void PlayerImpl::SetVideoSurface(base::scoped_refptr<NativeDisplay> display) {
     base::AutoLock scoped(state_lock_);
     display_ = display;
   }
-  if (renderer_factory_) {
-    renderer_factory_->set_display(display);
+  if (const auto factory = GetRendererFactory()) {
+    factory->set_display(display);
   }
-  if (pipeline_) {
-    pipeline_->SetOutputTarget(std::move(display));
+  if (const auto pipeline = GetPipeline()) {
+    pipeline->SetOutputTarget(std::move(display));
   }
 }
 
@@ -441,7 +454,8 @@ Result<int64_t> PlayerImpl::SeekTo(base::TimeDelta position, SeekMode mode,
         "seeking needs a prepared or playing pipeline",
         "wait for kPrepared before seeking"));
   }
-  if (!pipeline_) {
+  const auto pipeline = GetPipeline();
+  if (!pipeline) {
     return base::unexpected(MediaError(
         ErrorCode::kInvalidState, "no pipeline to seek",
         "SeekTo was called before PrepareAsync", "call PrepareAsync first"));
@@ -475,9 +489,9 @@ Result<int64_t> PlayerImpl::SeekTo(base::TimeDelta position, SeekMode mode,
           },
           base::Unretained(this), id, position, mode == SeekMode::kAccurate));
   const base::TimeDelta requested = position;
-  pipeline_->Seek(requested,
-                  base::BindOnce(&PlayerImpl::OnMediaSeekDone,
-                                 base::Unretained(this), id, requested));
+  pipeline->Seek(requested,
+                 base::BindOnce(&PlayerImpl::OnMediaSeekDone,
+                                base::Unretained(this), id, requested));
   return id;
 }
 

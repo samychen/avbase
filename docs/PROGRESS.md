@@ -24,6 +24,24 @@ seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设�
 仓库自己的 C1 门禁（`ffmpeg_demuxer.cc` 1154 行 > 1140），于是**按既有接缝再拆一次**：
 三个"吃 `AVStream`、吐 decoder config、从不碰 `AVFormatContext`"的纯函数搬进新 TU
 `ffmpeg_demuxer_configs.cc`，**1154 → 1022**，白名单上限随之下调到 1030（棘轮只许往下）。
+> 第四十二轮：**审查 Critical C1–C4 全部落地修复**。C1——`pipeline_track_select.cc` 那处
+> 跨序列 hop 的 `base::Unretained(this)` 换成 `weak_factory_.GetWeakPtr()`（`pipeline_impl.h`
+> 成文要求早已写明，兄弟 hop 全是弱引用，就漏了这一处）。C2——`Subscription` 补上析构/
+> 移动赋值里的 `Reset()`，退订契约从"靠记得"变成"靠类型"。C3——`EventHub` 观察者表改
+> `shared_ptr<ObserverEntry>` + `alive` 标志 + 单调 id，`RemoveObserver` 在另一线程**等待
+> 在途 Dispatch 排空**（Dispatch 线程自身跳过等待防死锁）；配 4 个新用例，负向测试还揪出
+> 自己用例的假绿——两个观察者共享一个静态计数器，断言恒真，改成每实例计数。C4——
+> `pipeline_`/`renderer_factory_` 改 `std::shared_ptr` + `pipeline_lock_` +
+> `GetPipeline()/GetRendererFactory()` 快照访问器，任意线程 `Reset()` 与查询并发不再 UAF
+> （~25 处使用点）。顺带修掉一个**被新测试逼出的既有潜伏链接缺陷**：`player_impl_events.cc`
+> 无条件引用 FFmpeg 专属的 `WriteJpegSnapshot`，此前没有任何测试链接 `PlayerImpl` 才一直
+> 没暴露；条件编译后 no-ffmpeg 下 `TakeSnapshot` 按项目惯例返回 `kNotImplemented` 并指路
+> 构建开关。**三预设 445 / 558 / 558 全绿**（asan 含全部新用例），`check_invariants` all
+> rules pass（365 文件，C23 基线 37 不变），clang-format 无 diff。
+> 第四十一轮：**全仓只读代码审查**（报告：[docs/reviews/2026-10-10-code-review.md](reviews/2026-10-10-code-review.md)）。
+> 四条 Critical（C1 弱化漏一处、C2/C3/C4 契约写了没实现）与七条 High（bind.h 移空实测复现、
+> 暂停时钟不冻结、expected union 双重构造、转码 time_base 单位不一致等）全部记录在案；
+> Critical 于第四十二轮修复，High 待后续轮次消化。
 > 第四十轮：**同一把尺子量到测试侧——`tests/unit/media_filters/` 按目标拆成三个目录，全仓再
 > 没有一行显式源文件列举**。判据不是"测试目录该与源目录同名"，而是**跟目标**：那 37 个 `.cc`
 > 里 16 个进 `media_unittests`、21 个进 `media_ffmpeg_unittests`，一个目录混两个二进制，所以它

@@ -35,7 +35,8 @@ Status PlayerImpl::SelectTrack(media::DemuxerStreamType type,
                    "wait for kPrepared before switching tracks"));
   }
 
-  const MediaInfo info = pipeline_ ? pipeline_->media_info() : MediaInfo();
+  const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
+  const MediaInfo info = pipeline ? pipeline->media_info() : MediaInfo();
   const StreamInfo* stream_info = info.FindStream(stream_index);
   const StreamKind wanted_kind =
       type == media::DemuxerStreamType::kAudio  ? StreamKind::kAudio
@@ -79,10 +80,18 @@ Status PlayerImpl::SelectTrack(media::DemuxerStreamType type,
                   media::kNoTimestamp);
       },
       &event_hub_, type, old_index, stream_index);
+  if (!pipeline) {
+    // The state gate above cannot rule this out: Reset() may have cleared the
+    // pipeline between the check and here.
+    return base::unexpected(
+        MediaError(ErrorCode::kInvalidState, "no pipeline to switch tracks on",
+                   "the pipeline was reset after the state check",
+                   "PrepareAsync() again before switching tracks"));
+  }
   if (is_audio) {
-    pipeline_->SelectAudioTrack(stream_index, std::move(select_cb));
+    pipeline->SelectAudioTrack(stream_index, std::move(select_cb));
   } else {
-    pipeline_->SelectTextTrack(stream_index, std::move(select_cb));
+    pipeline->SelectTextTrack(stream_index, std::move(select_cb));
   }
   return Status();
 }

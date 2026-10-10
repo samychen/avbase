@@ -36,8 +36,9 @@ void PlayerImpl::Stop() {
       machine_.TransitionTo(PlayerState::kStopping);
     }
   }
-  if (pipeline_) {
-    pipeline_->Stop();
+  const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
+  if (pipeline) {
+    pipeline->Stop();
   }
   {
     base::AutoLock scoped(state_lock_);
@@ -71,17 +72,24 @@ void PlayerImpl::StopSync(base::TimeDelta timeout) {
   // IsRunning() is the predicate that means "safe to destroy" -- pipeline_impl
   // .cc says so on IsRunning() itself, including that kStopping does NOT count
   // as safe. So poll that, bounded, exactly as the test teardowns do.
+  //
+  // Each round re-snapshots through GetPipeline(): Reset() (from another
+  // thread) may clear or replace the member while this loop runs, and that must
+  // end the wait rather than be read through a stale pointer.
   const base::TimeTicks deadline = deps_->tick_clock->NowTicks() + timeout;
-  while (pipeline_ && pipeline_->IsRunning()) {
+  for (;;) {
+    const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
+    if (!pipeline || !pipeline->IsRunning()) {
+      return;
+    }
     if (deps_->tick_clock->NowTicks() >= deadline) {
-      LOG(ERROR) << "avbase: StopSync timed out after "
-                 << timeout.InMillisecondsF()
-                 << "ms with the pipeline still running (state "
-                 << (pipeline_->IsRunning() ? "running" : "stopped")
-                 << "); detaching (delta 15: leak a thread, never hang). "
-                    "The renderer or demuxer did not finish tearing down, so "
-                    "~PipelineImpl will run against live state -- expect its "
-                    "shutdown DCHECK to fire in a debug build.";
+      LOG(ERROR)
+          << "avbase: StopSync timed out after " << timeout.InMillisecondsF()
+          << "ms with the pipeline still running; detaching (delta 15: "
+             "leak a thread, never hang). The renderer or demuxer did "
+             "not finish tearing down, so ~PipelineImpl will run against "
+             "live state -- expect its shutdown DCHECK to fire in a "
+             "debug build.";
       return;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -90,8 +98,15 @@ void PlayerImpl::StopSync(base::TimeDelta timeout) {
 
 void PlayerImpl::Reset() {
   StopSync(config_.shutdown_timeout);
-  pipeline_.reset();
-  renderer_factory_.reset();
+  {
+    base::AutoLock scoped(pipeline_lock_);
+    // pipeline_ first: it holds a raw RendererFactory* (Start's argument), so
+    // the factory must outlive it. A reader that snapshotted the pipeline just
+    // before this point keeps that object alive past the reset, but StopSync
+    // above has already stopped it, so it no longer reaches into the factory.
+    pipeline_.reset();
+    renderer_factory_.reset();
+  }
   {
     base::AutoLock scoped(state_lock_);
     machine_.ForceReset();

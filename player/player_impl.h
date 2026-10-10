@@ -153,9 +153,54 @@ class PlayerImpl final : public media::Pipeline::Client {
   // ReconnectNow()/diagnostics can name the live object.
   base::scoped_refptr<media::RetryDataSource> retry_source_;
 
-  std::unique_ptr<media::DefaultRendererFactory> renderer_factory_;
-  std::unique_ptr<media::PipelineImpl> pipeline_;
+  // ---- the pipeline pair, and why it is a locked shared_ptr ---------------
+  // Reset() is documented as callable from any thread (player.h:42) and it
+  // REPLACES both of these, while other threads read them: the runtime
+  // controls (SetPlaybackRate, ApplyGain, SetVideoSurface) and the queries
+  // (GetMediaTime/GetBufferedTime/GetDuration) run on the caller's thread, and
+  // the Pipeline::Client callbacks run on the media sequence. With a bare
+  // unique_ptr those reads raced the reset and could dereference an object
+  // mid-destruction -- a real UAF, not a theoretical one, because the contract
+  // allows exactly that interleaving.
+  //
+  // Every use now goes through a local snapshot (GetPipeline /
+  // GetRendererFactory). The snapshot holds a reference, so the object stays
+  // alive for the whole call even if Reset() swaps the member meanwhile. The
+  // lock is taken only to copy the pointer, never across a call, so the
+  // "non-blocking queries" promise at player.h:107 still holds.
+  mutable base::Lock pipeline_lock_;
+  // Declared before pipeline_ on purpose: members are destroyed in reverse, so
+  // this keeps the factory alive until after the pipeline.
+  // PipelineImpl::Start() stores a raw RendererFactory* (the pipeline does not
+  // ref-count the factory), so the factory must outlive it.
+  std::shared_ptr<media::DefaultRendererFactory>
+      renderer_factory_ GUARDED_BY(pipeline_lock_);
+  std::shared_ptr<media::PipelineImpl> pipeline_ GUARDED_BY(pipeline_lock_);
   base::scoped_refptr<media::MediaLog> media_log_;
+
+  // Snapshots of the live pipeline and its factory; null when none is
+  // installed (before PrepareAsync, or after Reset). Safe from any thread.
+  std::shared_ptr<media::PipelineImpl> GetPipeline() const {
+    base::AutoLock scoped(pipeline_lock_);
+    return pipeline_;
+  }
+  std::shared_ptr<media::DefaultRendererFactory> GetRendererFactory() const {
+    base::AutoLock scoped(pipeline_lock_);
+    return renderer_factory_;
+  }
+
+  // Installs are locked writes; the declaration order above is what keeps the
+  // factory alive past the pipeline on teardown, so nothing but _Reset_ may
+  // touch the pair directly.
+  void SetPipeline(std::shared_ptr<media::PipelineImpl> pipeline) {
+    base::AutoLock scoped(pipeline_lock_);
+    pipeline_ = std::move(pipeline);
+  }
+  void
+  SetRendererFactory(std::shared_ptr<media::DefaultRendererFactory> factory) {
+    base::AutoLock scoped(pipeline_lock_);
+    renderer_factory_ = std::move(factory);
+  }
 
   // ---- state ---------------------------------------------------------------
   mutable base::Lock state_lock_;
