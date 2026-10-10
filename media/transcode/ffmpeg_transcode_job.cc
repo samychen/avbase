@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/ffmpeg/ffmpeg_transcode_job.h"
+#include "media/transcode/ffmpeg_transcode_job.h"
 
 #include <algorithm>
 #include <string>
@@ -12,7 +12,7 @@
 #include "base/logging.h"
 #include "media/ffmpeg/av_includes.h"
 #include "media/ffmpeg/compat.h"
-#include "media/ffmpeg/ffmpeg_transcode_streams.h"
+#include "media/transcode/ffmpeg_transcode_streams.h"
 
 namespace avbase::media {
 namespace {

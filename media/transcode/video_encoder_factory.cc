@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/ffmpeg/video_encoder_factory.h"
+#include "media/transcode/video_encoder_factory.h"
 
 #include <algorithm>
 #include <utility>
 #include <vector>
 
 #include "base/logging.h"
-#include "media/ffmpeg/ffmpeg_video_encoder.h"
+#include "media/transcode/ffmpeg_video_encoder.h"
 
 namespace avbase::media::ffmpeg {
 namespace {

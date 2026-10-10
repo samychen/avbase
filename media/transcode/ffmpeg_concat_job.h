@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_MEDIA_FFMPEG_CONCAT_JOB_H_
-#define AVBASE_MEDIA_FFMPEG_CONCAT_JOB_H_
+#ifndef AVBASE_MEDIA_TRANSCODE_CONCAT_JOB_H_
+#define AVBASE_MEDIA_TRANSCODE_CONCAT_JOB_H_
 
 #include <cstdint>
 #include <functional>
@@ -51,4 +51,4 @@ AVBASE_MEDIA_EXPORT Status Concat(const ConcatParams& params);
 
 }  // namespace avbase::media
 
-#endif  // AVBASE_MEDIA_FFMPEG_CONCAT_JOB_H_
+#endif  // AVBASE_MEDIA_TRANSCODE_CONCAT_JOB_H_

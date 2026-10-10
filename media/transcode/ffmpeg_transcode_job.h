@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_MEDIA_FFMPEG_TRANSCODE_JOB_H_
-#define AVBASE_MEDIA_FFMPEG_TRANSCODE_JOB_H_
+#ifndef AVBASE_MEDIA_TRANSCODE_TRANSCODE_JOB_H_
+#define AVBASE_MEDIA_TRANSCODE_TRANSCODE_JOB_H_
 
 #include <atomic>
 #include <cstdint>
@@ -15,10 +15,10 @@
 #include "base/memory/scoped_refptr.h"
 #include "media/base/decoder_config.h"  // VideoCodec
 #include "media/base/media_error.h"
-#include "media/ffmpeg/video_encoder_factory.h"
 #include "media/filters/decoder_selector.h"  // HwCodecFlag, HwCodecMask
 #include "media/filters/encoded_packet.h"
 #include "media/media_export.h"
+#include "media/transcode/video_encoder_factory.h"
 
 namespace avbase::media {
 
@@ -174,4 +174,4 @@ class AVBASE_MEDIA_EXPORT TranscodeJob {
 
 }  // namespace avbase::media
 
-#endif  // AVBASE_MEDIA_FFMPEG_TRANSCODE_JOB_H_
+#endif  // AVBASE_MEDIA_TRANSCODE_TRANSCODE_JOB_H_

@@ -130,6 +130,24 @@ PLATFORM_MACRO_RE = re.compile(r'\b(__ANDROID__|__APPLE__|__linux__|_WIN32|__lin
 PLATFORM_SUFFIX_RE = re.compile(
     r"_(posix|linux|win|mac|ios|android|fuchsia|epoll|x11|wayland)\.(cc|h)$")
 
+# The one file pair under media/transcode/ that names platform encoders.
+#
+# CreateVideoEncoderFactories() puts VideoToolbox / VAAPI / NVENC into the list
+# under #if defined(__APPLE__) / __linux__. Its decoder twin solved this the
+# right way: the specs live in platform/hwaccel/*_hw_spec.h and
+# player/video_decoder_defaults.cc assembles the list, because player is the
+# injection point (docs/02 §6 rule 1). The encoder side has not been converted
+# yet -- docs/12 §5 tracks it -- so these two files are exempted here.
+#
+# Deliberately PER FILE, not per directory: C5 still guards the other sixteen
+# files in media/transcode/, so a stray __APPLE__ in the transcode pump is
+# still a violation. Exempting the directory would have been the easy thing to
+# write and the wrong thing to keep.
+ENCODER_SPEC_FILES = frozenset({
+    "media/transcode/video_encoder_factory.cc",
+    "media/transcode/video_encoder_factory.h",
+})
+
 
 DRAFT_FILES: list[str] = []
 
@@ -226,18 +244,21 @@ def check_file(path: pathlib.Path, rel: str, report: Report) -> None:
 
         # C5: no platform headers or macros in base/ media/ player/.
         # Exempt: base/'s per-platform translation units (see PLATFORM_SUFFIX_RE),
-        # and media/ffmpeg/ -- the vendor adapter, which is where platform/ffmpeg
-        # went when FFmpeg stopped being filed as a platform. Its files name
-        # platform-specific encoders and hwaccels by nature; C5 never covered
-        # them while they sat under platform/, and a directory move is not the
-        # moment to change what this rule enforces. The rule's job is to keep
-        # the PORTABLE layers portable, and media/ffmpeg/ is opt-in
+        # media/ffmpeg/ -- the vendor adapter, which is where platform/ffmpeg
+        # went when FFmpeg stopped being filed as a platform -- and the encoder
+        # factory pair under media/transcode/ (see ENCODER_SPEC_FILES). The
+        # media/ffmpeg/ files name platform-specific encoders and hwaccels by
+        # nature; C5 never covered them while they sat under platform/, and a
+        # directory move is not the moment to change what this rule enforces.
+        # The rule's job is to keep the PORTABLE layers portable, and
+        # media/ffmpeg/ and media/transcode/ are both opt-in
         # (AVBASE_ENABLE_FFMPEG) rather than portable.
         is_platform_tu = rel.startswith("base/") and bool(
             PLATFORM_SUFFIX_RE.search(rel))
         is_vendor_adapter = rel.startswith("media/ffmpeg/")
         if (rel.startswith(("base/", "media/", "player/")) and not is_test
-                and not is_platform_tu and not is_vendor_adapter):
+                and not is_platform_tu and not is_vendor_adapter
+                and rel not in ENCODER_SPEC_FILES):
             if PLATFORM_INCLUDE_RE.search(line):
                 report.add("C5", path, i, "platform header in a core file")
             if PLATFORM_MACRO_RE.search(line) and not stripped.startswith("*"):
@@ -291,15 +312,23 @@ def check_file(path: pathlib.Path, rel: str, report: Report) -> None:
         # C4 catches a libav* include, but a core file can pull the whole
         # vendor layer in through media/ffmpeg/<helper>.h without ever naming
         # libav* itself, and C4 cannot see that. This is what makes G2 hold:
-        # avbase_media carries no FFmpeg symbols because nothing outside
-        # media/ffmpeg/ may even name a file inside it.
+        # avbase_media carries no FFmpeg symbols because nothing in the three
+        # PORTABLE media directories may even name a file inside it.
+        #
+        # media/transcode/ is intentionally absent from the list below. It is a
+        # fourth media directory that DOES name media/ffmpeg/ files, on purpose:
+        # it is built on av_includes.h / compat.h / video_convert.h and lives
+        # under AVBASE_ENABLE_FFMPEG. What keeps G2 true is that it is its own
+        # target (avbase_transcode), which avbase_media never links -- not that
+        # it is forbidden from crossing the boundary.
         if (rel.startswith(("media/base/", "media/filters/", "media/renderers/"))
                 and not is_test):
             if re.search(r'#\s*include\s*"media/ffmpeg/', raw_line):
                 report.add("C27", path, i,
                            "core media includes media/ffmpeg/ — the FFmpeg "
                            "quarantine is a directory boundary; only "
-                           "avbase_ffmpeg may cross it")
+                           "avbase_ffmpeg (and avbase_transcode, which builds "
+                           "on it) may cross it")
 
 def load_column_baseline(root: pathlib.Path) -> dict:
     path = root / COLUMN_BASELINE

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_MEDIA_FFMPEG_ENCODE_MUXER_H_
-#define AVBASE_MEDIA_FFMPEG_ENCODE_MUXER_H_
+#ifndef AVBASE_MEDIA_TRANSCODE_ENCODE_MUXER_H_
+#define AVBASE_MEDIA_TRANSCODE_ENCODE_MUXER_H_
 
 #include <cstdint>
 #include <string>
@@ -81,4 +81,4 @@ class AVBASE_MEDIA_EXPORT FFmpegEncodeMuxer {
 
 }  // namespace avbase::media
 
-#endif  // AVBASE_MEDIA_FFMPEG_ENCODE_MUXER_H_
+#endif  // AVBASE_MEDIA_TRANSCODE_ENCODE_MUXER_H_

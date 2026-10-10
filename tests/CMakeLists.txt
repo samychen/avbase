@@ -31,9 +31,9 @@ avbase_configure_target(avbase_media_test_support)
 # Source listing (docs/06 §7.6): unit/base/, unit/media_base/ and unit/player/
 # are one directory per target with nothing picked per platform or per option,
 # so they are globbed and a new *_unittest.cc is picked up with no edit here.
-# unit/media_filters/ is the exception: it holds media_unittests' four files
-# beside the three FFmpeg ones that only media_ffmpeg_unittests may compile, so a
-# glob there would drag those into the no-ffmpeg gate (G2).
+# unit/media_filters/ is the exception: it holds media_unittests' portable
+# suites beside the FFmpeg-only ones that only media_ffmpeg_unittests may
+# compile, so a glob there would drag those into the no-ffmpeg gate (G2).
 
 if(AVBASE_BUILD_TESTS)
 # ---- base ----
@@ -114,7 +114,10 @@ if(AVBASE_ENABLE_FFMPEG)
               unit/media_filters/url_data_source_unittest.cc
               unit/media_filters/live_cue_policy_unittest.cc
               unit/media_filters/video_convert_unittest.cc
-      DEPS avbase::ffmpeg avbase::media_test_support
+      # avbase::transcode links avbase::ffmpeg PUBLIC, so naming ffmpeg here
+      # as well is what made ld report "ignoring duplicate libraries" -- the
+      # same rule the helper's header records for gtest_main and base.
+      DEPS avbase::transcode avbase::media_test_support
            avbase::base_test_support)
   target_compile_definitions(media_ffmpeg_unittests PRIVATE
       AVBASE_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata")

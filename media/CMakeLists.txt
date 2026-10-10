@@ -1,6 +1,7 @@
 # media/ — media framework. media/base holds interfaces and value types,
-# media/filters holds the portable implementations, and media/ffmpeg holds
-# everything that touches libav*. See docs/02 §8 and decision D11.
+# media/filters holds the portable implementations, media/ffmpeg holds
+# everything that touches libav*, and media/transcode holds the offline
+# transcode product line. See docs/02 §8 and decision D11.
 #
 # Source listing (docs/06 §7.6): base/, filters/, renderers/ and
 # filters/legacy/ are all globbed, because in each of them directory
@@ -42,9 +43,10 @@ target_link_libraries(avbase_media PUBLIC avbase::base)
 target_compile_definitions(avbase_media PRIVATE AVBASE_MEDIA_IMPLEMENTATION=1)
 avbase_configure_target(avbase_media)
 
-# FFmpeg adapter layer. This is the ONLY target in the project that links
-# FFmpeg; avbase_media and avbase_base never see a libav* header (design goal
-# G2, invariants C4/C8, docs/02 §8).
+# FFmpeg adapter layer. This is the ONLY target in the project that links the
+# FFmpeg:: libraries; avbase_media and avbase_base never see a libav* header
+# (design goal G2, invariants C4/C8, docs/02 §8). avbase_transcode, below,
+# builds on this target and links no vendor library of its own.
 #
 # It sits under media/ and not platform/ because FFmpeg is not a platform. It
 # is a portable framework that behaves identically on every host, whereas the
@@ -79,4 +81,37 @@ if(AVBASE_ENABLE_FFMPEG)
   # single extern "C" wrap point, so every TU here needs it anyway.
   target_precompile_headers(avbase_ffmpeg PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg/av_includes.h")
+
+  # Offline transcode: the Phase 5 product line (encoders, mux writer, the
+  # Transcode/Concat jobs, remux). It is FFmpeg code, so it is gated by the same
+  # option and sits on top of avbase_ffmpeg -- but it is a separate TARGET
+  # because nothing in the playback path uses it: the ten .cc here had zero
+  # production consumers outside media/ffmpeg when this split was made (the one
+  # caller that looked like one -- player's TakeSnapshot -- goes through
+  # media/ffmpeg/ffmpeg_image_snapshot instead). Keeping it in avbase_ffmpeg
+  # meant every playback build carried the encoder and muxer code; as its own
+  # target a transcode consumer asks for avbase::transcode explicitly, and the
+  # playback SDK stops paying for it. It is deliberately NOT part of the
+  # avbase::avbase umbrella for the same reason.
+  file(GLOB AVBASE_TRANSCODE_SOURCES CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/transcode/*.cc")
+  add_library(avbase_transcode ${AVBASE_TRANSCODE_SOURCES})
+  add_library(avbase::transcode ALIAS avbase_transcode)
+  target_include_directories(avbase_transcode PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+  # PUBLIC, not PRIVATE: transcode's public headers name media types, and its
+  # .cc files reach into the av_includes.h / compat.h / video_convert.h glue.
+  # The FFmpeg::* libraries themselves stay PRIVATE to avbase_ffmpeg, so this
+  # target still links no vendor library of its own.
+  target_link_libraries(avbase_transcode PUBLIC avbase::ffmpeg)
+  # The transcode .cc files name libav* headers, exactly as the media/ffmpeg/
+  # ones do -- include isolation was given up on purpose (D11 chose link
+  # isolation plus directory isolation). What must not happen is a SECOND
+  # target linking the FFmpeg:: libraries, which is why this asks for the
+  # include directories rather than for FFmpeg::avcodec. Same shape as
+  # media_ffmpeg_unittests and avbase-inspect, which add these for themselves:
+  # avbase_ffmpeg links FFmpeg PRIVATE, so they are not inherited.
+  target_include_directories(avbase_transcode SYSTEM PRIVATE
+      ${FFmpeg_INCLUDE_DIRS})
+  avbase_configure_target(avbase_transcode)
 endif()

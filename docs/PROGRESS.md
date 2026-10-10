@@ -24,6 +24,21 @@ seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设�
 仓库自己的 C1 门禁（`ffmpeg_demuxer.cc` 1154 行 > 1140），于是**按既有接缝再拆一次**：
 三个"吃 `AVStream`、吐 decoder config、从不碰 `AVFormatContext`"的纯函数搬进新 TU
 `ffmpeg_demuxer_configs.cc`，**1154 → 1022**，白名单上限随之下调到 1030（棘轮只许往下）。
+> 第三十九轮：**离线转码产品线迁出为 `media/transcode/` + 独立 target `avbase_transcode`**
+> ——判据不是"目录好看"，而是那十个 `.cc` 在 `media/ffmpeg/` 之外**一个生产消费者都没有**
+> （13 条外部 `include` 全来自测试；唯一像调用方的 `player` 截图走的是
+> `media/ffmpeg/ffmpeg_image_snapshot.*`，那是"抓一帧"、不属于这一类）。18 个文件 `git mv`
+> + 33 条 include 改写 + 9 个头文件保护宏改名。**这一步翻出两件早就该发现的事**：① **C5 需要
+> 豁免**——`video_encoder_factory.{h,cc}` 用 `#if defined(__APPLE__) / __linux__` 硬编
+> VideoToolbox/VAAPI/NVENC，而解码侧的兄弟早就把 spec 挪到 `platform/hwaccel/*_hw_spec.h`、
+> 由 `player/video_decoder_defaults.cc` 组装（player 才是注入点）；豁免给的是**文件级**
+> （`ENCODER_SPEC_FILES`）而非目录级，C5 仍守着 `media/transcode/` 其余 16 个文件，并做了
+> 负向测试确认去掉豁免必响（响 6 处，恰好全在这两个文件）。② **链接重复**——`avbase::transcode`
+> PUBLIC 携带 `avbase::ffmpeg`，测试 DEPS 里再显式写一遍就让 ld 报 "ignoring duplicate
+> libraries"；去掉显式那条即止（正是 `avbase_add_unittest` 头部记的那条规矩）。**为什么值得
+> 一个新 target**：留在 `avbase_ffmpeg` 里等于每个播放构建都背着编码器与封装写端；独立后它
+> **刻意不进 `avbase::avbase` 聚合**，转码调用方显式链接 `avbase::transcode`。三预设
+> **553 / 441 / 553** 全绿，`check_invariants` all rules pass（364 文件，C23 基线 37 不变）。
 > 第三十八轮：**FFmpeg 从 `platform/` 迁出，全部归入 `media/ffmpeg/`**（用户的判断：FFmpeg 是
 > 通用全局框架、不是平台后端）——64 个文件搬家 + 目标改名 `avbase_ffmpeg` + 命名空间统一为
 > `avbase::media::ffmpeg`；**`media/filters/` 由此恢复可 glob**（不再是全树唯一要手写清单的

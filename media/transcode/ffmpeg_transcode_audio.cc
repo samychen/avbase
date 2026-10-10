@@ -11,7 +11,7 @@
 // out keeps the stream-preparation helpers (PrepareAudioStream /
 // PrepareVideoStream) and the timestamp rebase in the parent TU.
 
-#include "media/ffmpeg/ffmpeg_transcode_streams.h"
+#include "media/transcode/ffmpeg_transcode_streams.h"
 
 #include <cstring>
 #include <vector>

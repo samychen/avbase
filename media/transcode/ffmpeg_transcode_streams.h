@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_MEDIA_FFMPEG_TRANSCODE_STREAMS_H_
-#define AVBASE_MEDIA_FFMPEG_TRANSCODE_STREAMS_H_
+#ifndef AVBASE_MEDIA_TRANSCODE_TRANSCODE_STREAMS_H_
+#define AVBASE_MEDIA_TRANSCODE_TRANSCODE_STREAMS_H_
 
 #include <cstdint>
 #include <memory>
@@ -14,11 +14,11 @@
 #include "media/base/audio_buffer.h"
 #include "media/base/media_error.h"
 #include "media/base/video_frame.h"
-#include "media/ffmpeg/ffmpeg_audio_encoder.h"
-#include "media/ffmpeg/ffmpeg_encode_muxer.h"
-#include "media/ffmpeg/ffmpeg_transcode_job.h"
-#include "media/ffmpeg/ffmpeg_video_encoder.h"
 #include "media/media_export.h"
+#include "media/transcode/ffmpeg_audio_encoder.h"
+#include "media/transcode/ffmpeg_encode_muxer.h"
+#include "media/transcode/ffmpeg_transcode_job.h"
+#include "media/transcode/ffmpeg_video_encoder.h"
 
 // Forward-declared, not included: this header is compiled into the same
 // target as the transcode job but stays free of libav types so nothing else
@@ -173,4 +173,4 @@ Status PrepareVideoStream(AVFormatContext* in_ctx, int video_stream_idx,
 
 }  // namespace avbase::media
 
-#endif  // AVBASE_MEDIA_FFMPEG_TRANSCODE_STREAMS_H_
+#endif  // AVBASE_MEDIA_TRANSCODE_TRANSCODE_STREAMS_H_

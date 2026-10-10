@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_MEDIA_FFMPEG_VIDEO_ENCODER_FACTORY_H_
-#define AVBASE_MEDIA_FFMPEG_VIDEO_ENCODER_FACTORY_H_
+#ifndef AVBASE_MEDIA_TRANSCODE_VIDEO_ENCODER_FACTORY_H_
+#define AVBASE_MEDIA_TRANSCODE_VIDEO_ENCODER_FACTORY_H_
 
 #include <memory>
 #include <string>
@@ -109,4 +109,4 @@ std::vector<base::scoped_refptr<VideoEncoderFactory>> SelectVideoEncoder(
 
 }  // namespace avbase::media::ffmpeg
 
-#endif  // AVBASE_MEDIA_FFMPEG_VIDEO_ENCODER_FACTORY_H_
+#endif  // AVBASE_MEDIA_TRANSCODE_VIDEO_ENCODER_FACTORY_H_

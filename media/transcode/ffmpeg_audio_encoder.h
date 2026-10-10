@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_MEDIA_FFMPEG_AUDIO_ENCODER_H_
-#define AVBASE_MEDIA_FFMPEG_AUDIO_ENCODER_H_
+#ifndef AVBASE_MEDIA_TRANSCODE_AUDIO_ENCODER_H_
+#define AVBASE_MEDIA_TRANSCODE_AUDIO_ENCODER_H_
 
 #include <cstdint>
 #include <memory>
@@ -89,4 +89,4 @@ class AVBASE_MEDIA_EXPORT FFmpegAudioEncoder {
 
 }  // namespace avbase::media
 
-#endif  // AVBASE_MEDIA_FFMPEG_AUDIO_ENCODER_H_
+#endif  // AVBASE_MEDIA_TRANSCODE_AUDIO_ENCODER_H_

@@ -1013,11 +1013,12 @@ avbase_add_example(avbase_inspect SOURCES examples/avbase_inspect/main.cc
 |---|---|---|
 | `media/base/` · `media/filters/` · `media/renderers/` · `media/filters/legacy/` | glob | 全部属于 `avbase_media`，无平台/开关选择 |
 | `media/ffmpeg/` | glob | 全部属于 `avbase_ffmpeg`；目录本身就是隔离区，由 C4/C27 守着 |
+| `media/transcode/` | glob | 全部属于 `avbase_transcode`（离线转码产品线，建在 `avbase_ffmpeg` 之上） |
 | `platform/sdl2/` | glob | 目录自身单目标，`AVBASE_ENABLE_SDL2` 门控的是 target 而非目录里的某个文件 |
 | `player/` | glob | 单目录单目标 |
 | `tools/inspect/` | glob | 单目录单目标：新增子命令不必再改 CMake |
 | `tests/unit/{base,media_base,player}/` | glob | 测试目录与目标一一对应，也正是新增文件最频繁的地方 |
-| `tests/unit/media_filters/` | 显式 | 4 个进 `media_unittests`，3 个进 `media_ffmpeg_unittests` |
+| `tests/unit/media_filters/` | 显式 | 同一目录里既有进 `media_unittests` 的便携用例，也有只有 `media_ffmpeg_unittests` 能编的 FFmpeg 用例 |
 | `base/` | 显式 | 这一层的抽象就是"每平台一个文件"（今天是 `threading/platform_thread_posix.cc`，§7.1 计划里的 `synchronization/` posix/win 成对文件同理），glob 会编进错误平台的那一个 |
 | `examples/` | 显式 | 两个可执行文件同在一个目录、却在两个不同的开关下 |
 
