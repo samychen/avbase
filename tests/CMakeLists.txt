@@ -28,12 +28,24 @@ target_include_directories(avbase_media_test_support PUBLIC
 target_link_libraries(avbase_media_test_support PUBLIC avbase::media)
 avbase_configure_target(avbase_media_test_support)
 
-# Source listing (docs/06 §7.6): unit/base/, unit/media_base/ and unit/player/
-# are one directory per target with nothing picked per platform or per option,
-# so they are globbed and a new *_unittest.cc is picked up with no edit here.
-# unit/media_filters/ is the exception: it holds media_unittests' portable
-# suites beside the FFmpeg-only ones that only media_ffmpeg_unittests may
-# compile, so a glob there would drag those into the no-ffmpeg gate (G2).
+# Source listing (docs/06 §7.6): every directory under unit/ is globbed now.
+# The rule is the one the library directories already follow -- all the .cc in
+# a directory must belong to the same target -- so "one directory, one glob"
+# holds and a new *_unittest.cc is picked up with no edit here.
+#
+# unit/media_filters/ used to be the exception, and it was the last explicit
+# list in the tree. It held media_unittests' portable suites beside the
+# FFmpeg-only ones that only media_ffmpeg_unittests may compile, so a glob
+# there would have dragged those into the no-ffmpeg gate (G2) and the
+# directory had to be written out file by file. The suites now sit where what
+# they link does: the core media ones stay in unit/media_filters/ and land in
+# avbase_media, the FFmpeg ones moved to unit/media_ffmpeg/, and the offline
+# transcode ones to unit/media_transcode/ beside the avbase_transcode sources.
+#
+# Membership is by TARGET, not by subject. pipeline_throttle/track/text read
+# real containers under tests/testdata/, so they need the FFmpeg target even
+# though what they exercise is core media -- splitting by subject would have
+# put them in the wrong binary.
 
 if(AVBASE_BUILD_TESTS)
 # ---- base ----
@@ -45,26 +57,10 @@ avbase_add_unittest(base_unittests
 
 # ---- media ----
 file(GLOB AVBASE_MEDIA_UNITTEST_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/unit/media_base/*.cc")
+    "${CMAKE_CURRENT_SOURCE_DIR}/unit/media_base/*.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/unit/media_filters/*.cc")
 avbase_add_unittest(media_unittests
-    SOURCES
-        ${AVBASE_MEDIA_UNITTEST_SOURCES}
-        unit/media_filters/av_sync_controller_unittest.cc
-        unit/media_filters/decoder_stream_unittest.cc
-        unit/media_filters/live_edge_policy_unittest.cc
-        unit/media_filters/live_data_source_unittest.cc
-        unit/media_filters/retry_data_source_unittest.cc
-        unit/media_filters/pipeline_seek_unittest.cc
-        unit/media_filters/renderer_impl_unittest.cc
-        unit/media_filters/audio_renderer_impl_unittest.cc
-        unit/media_filters/synthetic_demuxer_unittest.cc
-        unit/media_filters/synthetic_live_demuxer_unittest.cc
-        unit/media_filters/live_cue_expiry_unittest.cc
-        unit/media_filters/pipeline_counts_unittest.cc
-        unit/media_filters/synthetic_decoders_unittest.cc
-        unit/media_filters/video_renderer_impl_unittest.cc
-        unit/media_filters/video_frame_compositor_unittest.cc
-        unit/media_filters/audio_renderer_algorithm_unittest.cc
+    SOURCES ${AVBASE_MEDIA_UNITTEST_SOURCES}
     DEPS avbase::media_test_support avbase::base_test_support)
 # avbase::media is not named here on purpose: media_test_support carries it in its
 # INTERFACE, and naming both sides again makes ld report "ignoring duplicate
@@ -92,32 +88,14 @@ endif()
 # ---- media + FFmpeg: real containers, labelled needs-ffmpeg so the
 # no-ffmpeg gate (design goal G2) skips them.
 if(AVBASE_ENABLE_FFMPEG)
+  file(GLOB AVBASE_MEDIA_FFMPEG_UNITTEST_SOURCES CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/unit/media_ffmpeg/*.cc")
   avbase_add_unittest(media_ffmpeg_unittests
-      SOURCES unit/media_filters/ffmpeg_audio_decoder_unittest.cc
-              unit/media_filters/ffmpeg_demuxer_unittest.cc
-              unit/media_filters/hls_demuxer_unittest.cc
-              unit/media_filters/sei_timecode_unittest.cc
-              unit/media_filters/ffmpeg_image_snapshot_unittest.cc
-              unit/media_filters/ffmpeg_audio_filter_unittest.cc
-              unit/media_filters/ffmpeg_remuxer_unittest.cc
-              unit/media_filters/ffmpeg_video_filter_unittest.cc
-              unit/media_filters/pipeline_snapshot_unittest.cc
-              unit/media_filters/ffmpeg_audio_encoder_unittest.cc
-              unit/media_filters/ffmpeg_encode_muxer_unittest.cc
-              unit/media_filters/ffmpeg_transcode_job_unittest.cc
-              unit/media_filters/ffmpeg_concat_job_unittest.cc
-              unit/media_filters/video_encoder_factory_unittest.cc
-              unit/media_filters/ffmpeg_video_decoder_unittest.cc
-              unit/media_filters/pipeline_throttle_unittest.cc
-              unit/media_filters/pipeline_track_unittest.cc
-              unit/media_filters/pipeline_text_unittest.cc
-              unit/media_filters/url_data_source_unittest.cc
-              unit/media_filters/live_cue_policy_unittest.cc
-              unit/media_filters/video_convert_unittest.cc
-      # avbase::transcode links avbase::ffmpeg PUBLIC, so naming ffmpeg here
-      # as well is what made ld report "ignoring duplicate libraries" -- the
-      # same rule the helper's header records for gtest_main and base.
-      DEPS avbase::transcode avbase::media_test_support
+      SOURCES ${AVBASE_MEDIA_FFMPEG_UNITTEST_SOURCES}
+      # avbase::ffmpeg is named here directly. It used to arrive through
+      # avbase::transcode, which this target no longer links now that the
+      # transcode suites have the binary below to themselves.
+      DEPS avbase::ffmpeg avbase::media_test_support
            avbase::base_test_support)
   target_compile_definitions(media_ffmpeg_unittests PRIVATE
       AVBASE_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata")
@@ -125,6 +103,22 @@ if(AVBASE_ENABLE_FFMPEG)
   # AVFrame fields need them explicitly, and pinned-prefix headers beat
   # whatever /usr/local/include happens to hold.
   target_include_directories(media_ffmpeg_unittests SYSTEM PRIVATE
+      ${FFmpeg_INCLUDE_DIRS})
+
+  # ---- offline transcode: its own binary, mirroring avbase_transcode being a
+  # target of its own. These suites name media/transcode/ headers only and use
+  # no tests/support fixtures, which is why media_test_support is not named --
+  # and avbase::ffmpeg is not named either, because avbase::transcode carries
+  # it PUBLIC; listing both sides is what makes ld report "ignoring duplicate
+  # libraries" (see the helper's header).
+  file(GLOB AVBASE_MEDIA_TRANSCODE_UNITTEST_SOURCES CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/unit/media_transcode/*.cc")
+  avbase_add_unittest(media_transcode_unittests
+      SOURCES ${AVBASE_MEDIA_TRANSCODE_UNITTEST_SOURCES}
+      DEPS avbase::transcode avbase::base_test_support)
+  target_compile_definitions(media_transcode_unittests PRIVATE
+      AVBASE_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata")
+  target_include_directories(media_transcode_unittests SYSTEM PRIVATE
       ${FFmpeg_INCLUDE_DIRS})
 endif()
 endif()

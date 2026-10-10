@@ -12,7 +12,9 @@
 #include "base/functional/bind.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/task_queue.h"
 #include "base/threading/thread.h"
+#include "base/time/time.h"
 #include "gtest/gtest.h"
 #include "media/base/media_error.h"
 
@@ -21,6 +23,11 @@ namespace {
 using media::ffmpeg::UrlDataSource;
 
 constexpr auto kWaitTimeout = std::chrono::seconds(20);
+
+// The same budget is far too generous for the "the worker posted yet?" wait:
+// that is a 512-byte file read, so a regression should fail the test quickly
+// rather than after twenty seconds.
+constexpr auto kPostWaitTimeout = std::chrono::seconds(5);
 
 std::string TestFilePath(const std::string& name) {
   return "file://" + std::string(AVBASE_TESTDATA_DIR) + "/" + name;
@@ -102,15 +109,59 @@ TEST_F(UrlDataSourceTest, AsyncReadPostsResultNeverRunsInline) {
                     ev->Signal();
                   },
                   &done, &callback_tid, &bytes_read));
-  // Posted, never inline: the callback cannot have run before Read() returned
-  // on THIS thread.
-  EXPECT_FALSE(done.IsSignaled());
+  // The contract is about WHICH THREAD the result arrives on, so that is what
+  // this asserts: the runner the caller named, never the caller's own thread.
+  //
+  // This test used to also assert EXPECT_FALSE(done.IsSignaled()) here. That
+  // looked like the same claim and was not: it is a statement about scheduling,
+  // and on a loaded -j8 run the reader thread finishes a 512-byte file read and
+  // posts back before this thread gets to look, so it failed without any
+  // contract being broken. Asserting the callback's thread is deterministic;
+  // asserting the clock is not. The "not inline" half moved to the TaskQueue
+  // test below, where it is a fact rather than a race.
   const std::thread::id caller = std::this_thread::get_id();
   ASSERT_TRUE(done.TimedWait(base::Seconds(static_cast<int64_t>(
       std::chrono::duration_cast<std::chrono::seconds>(kWaitTimeout).count()))))
       << "async read never completed";
+  EXPECT_EQ(callback_tid, reader_thread_.GetThreadId());
   EXPECT_NE(callback_tid, caller);
   EXPECT_EQ(bytes_read, static_cast<int64_t>(buf.size()));
+}
+
+// The deterministic half of the same contract. A TaskQueue runs nothing until
+// it is pumped, so "the callback had not run by the time Read() returned" is
+// observable instead of racy: the result is still PENDING, and only
+// RunAllReadyTasks() can run it. The wait below is for the worker to post --
+// a bounded wait for something that must happen, which is the benign shape;
+// the negative assertion that flaked is the one that is gone.
+TEST_F(UrlDataSourceTest, AsyncReadQueuesTheResultInsteadOfRunningIt) {
+  UrlDataSource source(path_);
+  auto queue = base::MakeRefCounted<base::TaskQueue>();
+
+  std::vector<uint8_t> buf(512);
+  int64_t bytes_read = -1;
+  source.Read(0, buf.size(), buf.data(), queue,
+              base::BindOnce(
+                  [](int64_t* out, media::DataSource::ReadResult result) {
+                    if (result.has_value()) {
+                      *out = *result;
+                    }
+                  },
+                  &bytes_read));
+
+  const auto deadline = std::chrono::steady_clock::now() + kPostWaitTimeout;
+  while (queue->GetPendingTaskCount() == 0 &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  ASSERT_EQ(queue->GetPendingTaskCount(), 1u)
+      << "the async read never posted its result to the given runner";
+  EXPECT_EQ(bytes_read, -1)
+      << "the callback ran without the queue being pumped";
+
+  queue->RunAllReadyTasks(base::TimeTicks::Now());
+  EXPECT_EQ(bytes_read, static_cast<int64_t>(buf.size()));
+  EXPECT_EQ(queue->GetPendingTaskCount(), 0u);
 }
 
 TEST_F(UrlDataSourceTest, AbortErrorsSubsequentReads) {

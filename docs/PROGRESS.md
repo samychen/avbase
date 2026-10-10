@@ -24,6 +24,27 @@ seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设�
 仓库自己的 C1 门禁（`ffmpeg_demuxer.cc` 1154 行 > 1140），于是**按既有接缝再拆一次**：
 三个"吃 `AVStream`、吐 decoder config、从不碰 `AVFormatContext`"的纯函数搬进新 TU
 `ffmpeg_demuxer_configs.cc`，**1154 → 1022**，白名单上限随之下调到 1030（棘轮只许往下）。
+> 第四十轮：**同一把尺子量到测试侧——`tests/unit/media_filters/` 按目标拆成三个目录，全仓再
+> 没有一行显式源文件列举**。判据不是"测试目录该与源目录同名"，而是**跟目标**：那 37 个 `.cc`
+> 里 16 个进 `media_unittests`、21 个进 `media_ffmpeg_unittests`，一个目录混两个二进制，所以它
+> 是全仓最后一个必须手写清单的目录（`docs/06 §7.6` 表里那行"显式"的注释就是它）。按目标拆为
+> `media_filters/`（核心，16）、`media_ffmpeg/`（FFmpeg 适配层，15）、`media_transcode/`
+> （离线转码，6）——最后者与 `avbase_transcode` 同形，配独立目标 `media_transcode_unittests`，
+> 于是转码套件不再把编码器与封装写端拖进 FFmpeg 解码测试的链接集。三者全部恢复 glob，
+> `tests/CMakeLists.txt` 里那段"`unit/media_filters/` 是例外"的注释随之删除。**判据是目标而非
+> 被测主题**：`pipeline_throttle/track/text` 读 `tests/testdata/` 下的真实容器，因此即便测的是
+> 核心 media，也必须待在 FFmpeg 二进制里——按主题分组会把它们放进错误的二进制。连带修正
+> `media_ffmpeg_unittests` 的 DEPS：它此前靠 `avbase::transcode` 间接取得 `avbase::ffmpeg`，
+> 转码套件分出去之后必须自己声明。**同轮修掉一个既有的时序 flake**：
+> `UrlDataSourceTest.AsyncReadPostsResultNeverRunsInline` 的 `EXPECT_FALSE(done.IsSignaled())`
+> 看着是在测"没有内联执行"，其实是在测**调度**——`-j8` 负载下读线程完成一次 512 字节 file://
+> 读并回投，比测试线程走到那一行更快，于是它红得毫无道理。生产实现是对的（worker 干阻塞活、
+> 结果 `PostTask` 回投），错的是断言。改为断言**回调所在线程**
+> （`== reader_thread_.GetThreadId()`，确定性），并把"没有内联"这半边搬进一个用
+> `base::TaskQueue` 的用例——那个 runner **不泵就不跑**，"Read() 返回时回调仍未执行"于是成为
+> 事实而非竞态。负向测试：把 `UrlDataSource::Read` 临时改成内联执行，两条用例**都红**，且都是
+> 确定性地红。三预设 **554 / 441 / 554** 全绿（+1 即新用例），`check_invariants` all rules
+> pass（364 文件，C23 基线 37 不变）。
 > 第三十九轮：**离线转码产品线迁出为 `media/transcode/` + 独立 target `avbase_transcode`**
 > ——判据不是"目录好看"，而是那十个 `.cc` 在 `media/ffmpeg/` 之外**一个生产消费者都没有**
 > （13 条外部 `include` 全来自测试；唯一像调用方的 `player` 截图走的是

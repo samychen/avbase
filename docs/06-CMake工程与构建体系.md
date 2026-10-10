@@ -1017,8 +1017,7 @@ avbase_add_example(avbase_inspect SOURCES examples/avbase_inspect/main.cc
 | `platform/sdl2/` | glob | 目录自身单目标，`AVBASE_ENABLE_SDL2` 门控的是 target 而非目录里的某个文件 |
 | `player/` | glob | 单目录单目标 |
 | `tools/inspect/` | glob | 单目录单目标：新增子命令不必再改 CMake |
-| `tests/unit/{base,media_base,player}/` | glob | 测试目录与目标一一对应，也正是新增文件最频繁的地方 |
-| `tests/unit/media_filters/` | 显式 | 同一目录里既有进 `media_unittests` 的便携用例，也有只有 `media_ffmpeg_unittests` 能编的 FFmpeg 用例 |
+| `tests/unit/{base,media_base,media_filters,media_ffmpeg,media_transcode,player,sdl2}/` | glob | 每个目录的用例都属于同一个测试二进制（`media_base/` 与 `media_filters/` 同属 `media_unittests`），也正是新增文件最频繁的地方 |
 | `base/` | 显式 | 这一层的抽象就是"每平台一个文件"（今天是 `threading/platform_thread_posix.cc`，§7.1 计划里的 `synchronization/` posix/win 成对文件同理），glob 会编进错误平台的那一个 |
 | `examples/` | 显式 | 两个可执行文件同在一个目录、却在两个不同的开关下 |
 
@@ -1027,6 +1026,15 @@ avbase_add_example(avbase_inspect SOURCES examples/avbase_inspect/main.cc
 也从最初的 5 行长到了 21 行，每加一个核心 filter 都要记得改它。FFmpeg 代码整体归入
 `media/ffmpeg/` 之后，这个例外消失了：**两个目录各自单目标，两个都能 glob**。这也是为什么
 目录划分值得较真——它决定的是"能不能用 glob"，而不是好看不好看。
+
+**同一把尺子后来量到了测试侧。** `tests/unit/media_filters/` 曾是全仓最后一个显式清单：
+它的 37 个用例按**目标**分属两个二进制（16 个进 `media_unittests`、21 个进
+`media_ffmpeg_unittests`），一 glob 就会把 FFmpeg 用例扫进无 FFmpeg 的闸门（G2），所以只能
+逐个手写。按目标拆成 `media_filters/`（核心）、`media_ffmpeg/`（FFmpeg 适配层）与
+`media_transcode/`（离线转码，配独立的 `media_transcode_unittests`）之后，除了 `base/` 与
+`examples/`（两者的理由是"每平台/每开关一个文件"，与目录无关），**全仓再没有一行显式源文件
+列举**。分组判据是**目标而不是被测主题**：`pipeline_throttle/track/text` 读 `tests/testdata/`
+下的真实容器，因此即便测的是核心 media，也必须待在 FFmpeg 二进制里。
 
 `CONFIGURE_DEPENDS` 不是可选项：没有它，新增文件不会触发 CMake 重跑，"我加了文件、
 但没被编译"会静默发生。**不要用 `aux_source_directory`**：它既不递归，也没有重跑语义

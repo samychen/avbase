@@ -109,8 +109,9 @@ if(AVBASE_ENABLE_FFMPEG)
   # isolation plus directory isolation). What must not happen is a SECOND
   # target linking the FFmpeg:: libraries, which is why this asks for the
   # include directories rather than for FFmpeg::avcodec. Same shape as
-  # media_ffmpeg_unittests and avbase-inspect, which add these for themselves:
-  # avbase_ffmpeg links FFmpeg PRIVATE, so they are not inherited.
+  # media_ffmpeg_unittests, media_transcode_unittests and avbase-inspect, which
+  # add these for themselves: avbase_ffmpeg links FFmpeg PRIVATE, so they are
+  # not inherited.
   target_include_directories(avbase_transcode SYSTEM PRIVATE
       ${FFmpeg_INCLUDE_DIRS})
   avbase_configure_target(avbase_transcode)
