@@ -79,16 +79,13 @@ base::scoped_refptr<VideoFrame> AvFrameToVideoFrame(AVFrame* frame, int width,
                                                     int height,
                                                     AVRational pts_time_base) {
   const Size size{width, height};
-  const base::TimeDelta timestamp =
-      frame->pts != AV_NOPTS_VALUE
-          ? base::Microseconds(av_rescale_q(
-                frame->pts, pts_time_base, AVRational{1, 1000000}))
-          : base::TimeDelta();
+  // ff::ToTimeDelta maps AV_NOPTS_VALUE to kNoTimestamp (the trap recorded in
+  // this header) instead of leaking a raw rescale of the sentinel, matching
+  // how the playback-side decoders timestamp their frames.
+  const base::TimeDelta timestamp = ff::ToTimeDelta(frame->pts, pts_time_base);
   const base::TimeDelta dur =
-      frame->duration > 0
-          ? base::Microseconds(av_rescale_q(frame->duration, pts_time_base,
-                                            AVRational{1, 1000000}))
-          : base::Milliseconds(33);
+      frame->duration > 0 ? ff::ToTimeDelta(frame->duration, pts_time_base)
+                          : base::Milliseconds(33);
   auto vf = VideoFrame::CreateBlackFrame(VideoFormat::kI420, size, size,
                                          Rational{1, 1}, timestamp, dur, 0);
   if (!vf) {

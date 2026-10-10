@@ -210,9 +210,9 @@ bool FFmpegAudioFilter::Process(
       const int samples = out_frame->nb_samples;
       const size_t plane =
           static_cast<size_t>(samples) * static_cast<size_t>(bytes);
-      std::vector<uint8_t> data(
-          planar ? plane * static_cast<size_t>(ctx_->channels)
-                 : plane * static_cast<size_t>(ctx_->channels));
+      // For packed formats plane already covers all channels, so the total
+      // is plane * channels either way.
+      std::vector<uint8_t> data(plane * static_cast<size_t>(ctx_->channels));
       if (planar) {
         for (size_t ch = 0; ch < static_cast<size_t>(ctx_->channels); ++ch) {
           std::memcpy(data.data() + ch * plane, out_frame->data[ch], plane);

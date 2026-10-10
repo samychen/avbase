@@ -146,14 +146,19 @@ bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
   // with internal latency read freed memory. KEEP_REF makes av_frame_ref
   // deep-copy the unrefcounted input, so the graph owns its bytes.
   AVFrame* frame = av_frame_alloc();
+  if (!frame) {  // M10 parity: the transcode line checks every allocation.
+    LOG(ERROR) << "video filter: av_frame_alloc failed";
+    return false;
+  }
   frame->format = media::ffmpeg::AvPixelFormatFromVideoFormat(ctx_->format);
   frame->width = ctx_->coded_size.width;
   frame->height = ctx_->coded_size.height;
   // M15: the graph runs at time_base=1/90000 (see the buffersrc args) but
   // the old code fed raw microseconds -- pts were ~90000x too coarse.
+  // FromTimeDelta maps kNoTimestamp back to AV_NOPTS_VALUE instead of
+  // rescaling the sentinel into garbage.
   frame->pts =
-      av_rescale_q(in->timestamp().InMicroseconds(),
-                   AVRational{1, 1000000}, AVRational{1, 90000});
+      media::ffmpeg::FromTimeDelta(in->timestamp(), AVRational{1, 90000});
   const int planes = media::VideoFormatPlaneCount(ctx_->format);
   for (int p = 0; p < planes; ++p) {
     const auto plane = static_cast<VideoFrame::Plane>(p);
@@ -169,6 +174,10 @@ bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
   av_frame_free(&frame);
 
   AVFrame* out_frame = av_frame_alloc();
+  if (!out_frame) {
+    LOG(ERROR) << "video filter: av_frame_alloc failed";
+    return false;
+  }
   const int got = av_buffersink_get_frame(ctx_->sink, out_frame);
   if (got < 0) {
     av_frame_free(&out_frame);

@@ -14,9 +14,9 @@
 #include <chrono>
 #include <thread>
 
-#include "base/logging.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/logging.h"
 
 namespace avbase {
 
@@ -42,13 +42,19 @@ void PlayerImpl::Stop() {
   }
   {
     base::AutoLock scoped(state_lock_);
-    machine_.TransitionTo(PlayerState::kStopping);
+    // kStopping was already taken above; the pipeline->Stop() call could not
+    // have moved the machine anywhere else, so a second kStopping transition
+    // here would be a no-op (the table only allows kStopping -> kStopped).
     machine_.TransitionTo(PlayerState::kStopped);
   }
   // |previous| is the true pre-Stop state (kIdle, kInitialized, kPreparing,
   // kPrepared, ...): the published sequence starts where the player actually
   // was, not at kStopped.
   event_hub_.PostStateChanged(previous, PlayerState::kStopped, GetMediaTime());
+  // A seek parked in pending_seeks_ could only ever be answered by the
+  // pipeline's seek completion, which a stopped pipeline will never run.
+  AbortPendingSeeks("player stopped while the seek was pending",
+                    "re-issue the seek after the next PrepareAsync");
 }
 
 void PlayerImpl::StopSync(base::TimeDelta timeout) {
@@ -99,6 +105,20 @@ void PlayerImpl::StopSync(base::TimeDelta timeout) {
   }
 }
 
+void PlayerImpl::AbortPendingSeeks(std::string reason, std::string suggestion) {
+  base::AutoLock scoped(seek_lock_);
+  std::map<int64_t, Player::SeekCB> pending = std::move(pending_seeks_);
+  pending_seeks_.clear();
+  accurate_seek_targets_.clear();
+  for (auto& entry : pending) {
+    event_hub_.PostClosure(base::BindOnce(
+        std::move(entry.second),
+        base::unexpected(MediaError(
+            ErrorCode::kAborted, reason,
+            "request_id = " + std::to_string(entry.first), suggestion))));
+  }
+}
+
 void PlayerImpl::Reset() {
   StopSync(config_.shutdown_timeout);
   {
@@ -111,25 +131,12 @@ void PlayerImpl::Reset() {
     renderer_factory_.reset();
   }
   // M4: in-flight seeks used to dangle forever -- StopSync stopped the
-  // pipeline, so OnMediaSeekDone could never fire, yet the user callbacks
-  // stayed parked in pending_seeks_. Answer every one of them with kAborted
-  // and drop the seek bookkeeping before the machine resets.
-  {
-    base::AutoLock scoped(seek_lock_);
-    std::map<int64_t, Player::SeekCB> pending =
-        std::move(pending_seeks_);
-    pending_seeks_.clear();
-    accurate_seek_targets_.clear();
-    for (auto& entry : pending) {
-      event_hub_.PostClosure(base::BindOnce(
-          std::move(entry.second),
-          base::unexpected(MediaError(
-              ErrorCode::kAborted, "player reset while the seek was pending",
-              "request_id = " + std::to_string(entry.first),
-              "expected across Reset(); re-issue the seek on the new "
-              "source"))));
-    }
-  }
+  // pipeline, so OnMediaSeekDone could never fire. Stop() already answered
+  // whatever was pending; this is the backstop in case a seek raced the
+  // state gate, before the machine resets.
+  AbortPendingSeeks("player reset while the seek was pending",
+                    "expected across Reset(); re-issue the seek on the new "
+                    "source");
   // The two controllers are media-sequence-bound; rewind them where they live
   // instead of tripping their sequence checkers from the caller's thread.
   // OnSeekCompleted is BufferController's own "start fresh" primitive (it

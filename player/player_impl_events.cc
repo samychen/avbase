@@ -123,25 +123,31 @@ void PlayerImpl::OnError(MediaError error) {
   event_hub_.PostError(std::move(error), GetMediaTime());
 }
 
+// Lives beside OnEnded (its main caller); Start()'s replay path shares it.
+// The completion re-reads GetPipeline(): the seek may outlive a Reset() that
+// replaced or cleared the pipeline it ran on.
+void PlayerImpl::RestartFromBeginning() {
+  const auto pipeline = GetPipeline();
+  if (!pipeline) {
+    return;
+  }
+  pipeline->Seek(base::TimeDelta(),
+                 base::BindOnce(
+                     [](PlayerImpl* self) {
+                       if (const auto p = self->GetPipeline()) {
+                         p->Play();
+                       }
+                     },
+                     base::Unretained(this)));
+}
+
 void PlayerImpl::OnEnded() {
   const int count = loop_count_.load();
   if (count < 0 || count > 1) {
     if (count > 0) {
       loop_count_.store(count - 1);
     }
-    const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
-    if (pipeline) {
-      pipeline->Seek(base::TimeDelta(),
-                     base::BindOnce(
-                         [](PlayerImpl* self) {
-                           const std::shared_ptr<media::PipelineImpl> p =
-                               self->GetPipeline();
-                           if (p) {
-                             p->Play();
-                           }
-                         },
-                         base::Unretained(this)));
-    }
+    RestartFromBeginning();
     return;
   }
   PlayerState previous;

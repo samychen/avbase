@@ -257,8 +257,10 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
     audio_->set_ended_cb(base::BindRepeating(&RendererImpl::PostAudioEnded,
                                              base::Unretained(this)));
     // H2: terminal audio decode errors must reach the pipeline client, or a
-    // dead audio leg leaves the UI buffering forever. Weak receiver: the hop
-    // outlives teardown decisions the same way the ended hop does.
+    // dead audio leg leaves the UI buffering forever. Bound weak (NOT the
+    // same as the ended callbacks above, which are Unretained): ReportError
+    // is invoked directly on S4 with no intermediate weak-bound hop to cancel
+    // a call racing teardown, so the binding itself has to be the weak link.
     audio_->set_error_cb(base::BindRepeating(&RendererImpl::ReportError,
                                              weak_factory_.GetWeakPtr()));
   }

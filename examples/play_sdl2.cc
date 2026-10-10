@@ -24,6 +24,7 @@
 
 #include "base/check.h"
 #include "base/functional/bind.h"
+#include "base/time/time.h"
 #include "media/base/timed_text.h"
 #include "platform/sdl2/sdl2_audio_sink.h"
 #include "platform/sdl2/sdl2_video_sink.h"
@@ -370,7 +371,7 @@ int main(int argc, char** argv) {
   // that may still be flushing races the sink's teardown. StopSync() blocks
   // until the pipeline actually finished stopping (see player.h for the
   // Stop/StopSync contract).
-  player.StopSync(base::Seconds(5));
+  player.StopSync(avbase::base::Seconds(5));
 
   if (gl_context) {
     // The sink released the context in Stop(); destroying it here is the

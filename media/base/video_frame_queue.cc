@@ -170,33 +170,33 @@ VideoFrameQueue::PopStatus
 VideoFrameQueue::Pop(base::scoped_refptr<VideoFrame>* out) {
   DCHECK(out);
   base::AutoLock scoped(lock_);
-    for (;;) {
-      if (abort_flag_.IsSet()) {
-        return PopStatus::kAborted;
-      }
-      // L7: the OLDEST committed slot wins, not the lowest index -- slot
-      // reuse means index order drifts from submission order once the queue
-      // wraps (two frames in flight used to pop out of order).
-      Slot* oldest = nullptr;
-      for (auto& slot : slots_) {
-        if (slot.state == SlotState::kFilled &&
-            (!oldest || slot.fill_seq < oldest->fill_seq)) {
-          oldest = &slot;
-        }
-      }
-      if (oldest) {
-        *out = std::move(oldest->frame);
-        oldest->state = SlotState::kFree;
-        popped_.fetch_add(1, std::memory_order_relaxed);
-        // A freed slot is exactly what a blocked producer is waiting for.
-        slot_available_.Signal();
-        return PopStatus::kOk;
-      }
-      if (eos_ || closed_) {
-        return eos_ ? PopStatus::kEndOfStream : PopStatus::kEmpty;
-      }
-      frame_available_.Wait();
+  for (;;) {
+    if (abort_flag_.IsSet()) {
+      return PopStatus::kAborted;
     }
+    // L7: the OLDEST committed slot wins, not the lowest index -- slot
+    // reuse means index order drifts from submission order once the queue
+    // wraps (two frames in flight used to pop out of order).
+    Slot* oldest = nullptr;
+    for (auto& slot : slots_) {
+      if (slot.state == SlotState::kFilled &&
+          (!oldest || slot.fill_seq < oldest->fill_seq)) {
+        oldest = &slot;
+      }
+    }
+    if (oldest) {
+      *out = std::move(oldest->frame);
+      oldest->state = SlotState::kFree;
+      popped_.fetch_add(1, std::memory_order_relaxed);
+      // A freed slot is exactly what a blocked producer is waiting for.
+      slot_available_.Signal();
+      return PopStatus::kOk;
+    }
+    if (eos_ || closed_) {
+      return eos_ ? PopStatus::kEndOfStream : PopStatus::kEmpty;
+    }
+    frame_available_.Wait();
+  }
 }
 
 size_t VideoFrameQueue::Peek(std::vector<base::scoped_refptr<VideoFrame>>* out,
@@ -211,10 +211,9 @@ size_t VideoFrameQueue::Peek(std::vector<base::scoped_refptr<VideoFrame>>* out,
       filled.push_back(&slot);
     }
   }
-  std::sort(filled.begin(), filled.end(),
-            [](const Slot* a, const Slot* b) {
-              return a->fill_seq < b->fill_seq;
-            });
+  std::sort(filled.begin(), filled.end(), [](const Slot* a, const Slot* b) {
+    return a->fill_seq < b->fill_seq;
+  });
   for (const Slot* slot : filled) {
     if (out->size() >= max) {
       break;

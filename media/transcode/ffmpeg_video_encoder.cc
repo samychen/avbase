@@ -226,8 +226,7 @@ bool FFmpegVideoEncoder::Encode(base::scoped_refptr<VideoFrame> in,
   // microseconds: under the old {1, fps_den} time_base a 33333 us frame
   // interval became 33333 SECONDS of timeline.
   ctx_->converted->pts =
-      av_rescale_q(in->timestamp().InMicroseconds(),
-                   AVRational{1, 1000000}, ctx_->codec->time_base);
+      ff::FromTimeDelta(in->timestamp(), ctx_->codec->time_base);
 
   const int send = avcodec_send_frame(ctx_->codec, ctx_->converted.get());
   if (send < 0) {

@@ -83,30 +83,16 @@ class AVBASE_BASE_EXPORT TimeDelta {
     if (is_zero() || a == 0) {
       return Zero();
     }
+    // Infinite operands keep their own sign rule (SaturatingMul would return
+    // -kMax for Max() * -1; the published convention here is Min()).
     if (is_infinte()) {
       return (micros_ < 0) == (a < 0) ? Max() : Min();
     }
-    // M1: the product is only computed after the division-based bound check
-    // proves it fits, so no signed-overflow UB can happen (the old code did
-    // `micros_ * a` first and inspected the result afterwards).
-    if (micros_ > 0) {
-      if (a > 0) {
-        if (a > std::numeric_limits<int64_t>::max() / micros_) {
-          return Max();
-        }
-      } else if (a < std::numeric_limits<int64_t>::min() / micros_) {
-        return Min();
-      }
-    } else {
-      if (a > 0) {
-        if (micros_ < std::numeric_limits<int64_t>::min() / a) {
-          return Min();
-        }
-      } else if (micros_ < std::numeric_limits<int64_t>::max() / a) {
-        return Max();
-      }
-    }
-    return FromMicroseconds(micros_ * a);
+    // M1: the overflow proof lives in exactly one place -- SaturatingMul's
+    // division-based bound check -- so this used-to-be-duplicate four-branch
+    // tree cannot drift from it again (the product is only computed after the
+    // bound check proves it fits).
+    return FromMicroseconds(SaturatingMul(micros_, a));
   }
   constexpr TimeDelta operator/(int64_t a) const noexcept {
     if (a == 0) {

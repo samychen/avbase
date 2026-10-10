@@ -45,7 +45,7 @@ void EventHub::RemoveObserver(int id) {
       if (observers_[i]->id == id) {
         // Marked dead before being erased: a Dispatch that already snapshotted
         // this entry is about to check exactly this flag.
-        observers_[i]->alive = false;
+        observers_[i]->alive.store(false, std::memory_order_relaxed);
         observers_.erase(observers_.begin() + static_cast<std::ptrdiff_t>(i));
         break;
       }
@@ -129,7 +129,7 @@ void EventHub::Dispatch(PlayerEvent event) {
     // handler above, by an earlier observer in this same loop, or by another
     // thread. The shared_ptr keeps the ENTRY readable; the flag says whether
     // the observer it names is still alive.
-    if (entry->alive) {
+    if (entry->alive.load(std::memory_order_relaxed)) {
       entry->observer->OnEvent(event);
     }
   }

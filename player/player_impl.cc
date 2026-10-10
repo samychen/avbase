@@ -387,23 +387,12 @@ void PlayerImpl::Start() {
     }
     machine_.TransitionTo(PlayerState::kStarted);
   }
-  const auto pipeline = GetPipeline();
-  if (previous == PlayerState::kCompleted && pipeline) {
+  if (previous == PlayerState::kCompleted) {
     // Replay: restart from the beginning rather than unpausing at EOS.
-    pipeline->Seek(base::TimeDelta(),
-                   base::BindOnce(
-                       [](PlayerImpl* self) {
-                         // Re-read through the accessor: the completion may
-                         // arrive after Reset() replaced or cleared the
-                         // pipeline this seek ran on.
-                         if (const auto p = self->GetPipeline()) {
-                           p->Play();
-                         }
-                       },
-                       base::Unretained(this)));
+    RestartFromBeginning();
     return;
   }
-  if (pipeline) {
+  if (const auto pipeline = GetPipeline()) {
     pipeline->Play();
   }
   event_hub_.PostStateChanged(previous, PlayerState::kStarted, GetMediaTime());

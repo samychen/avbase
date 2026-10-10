@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -74,11 +75,14 @@ class AVBASE_PLAYER_EXPORT EventHub {
   // One observer registration. Held by shared_ptr so that a Dispatch which has
   // already snapshotted the list keeps the ENTRY alive even when RemoveObserver
   // erases it meanwhile; |alive| is what tells such a snapshot to skip it, and
-  // |observer| is only ever dereferenced while it is still true.
+  // |observer| is only ever dereferenced while it is still true. |alive| is
+  // written under the lock (RemoveObserver) but read without it (Dispatch's
+  // snapshot loop), hence the atomic -- relaxed is enough: the lock still
+  // orders the list mutation, and the flag only needs to become visible.
   struct ObserverEntry {
     int id{0};
     base::raw_ptr<PlayerObserver> observer{nullptr};
-    bool alive{true};
+    std::atomic<bool> alive{true};
   };
 
   base::Thread thread_;

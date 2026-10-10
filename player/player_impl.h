@@ -189,6 +189,18 @@ class PlayerImpl final : public media::Pipeline::Client {
     return renderer_factory_;
   }
 
+  // Seek(0) then Play() through the CURRENT pipeline snapshot. Shared by the
+  // replay-from-completed path (Start) and the loop path (OnEnded); the
+  // completion callback re-reads GetPipeline() because the seek may outlive a
+  // Reset() that replaced or cleared the pipeline it ran on.
+  void RestartFromBeginning();
+
+  // M4: answers every SeekCB parked in pending_seeks_ with kAborted and drops
+  // the seek bookkeeping. A stopped pipeline will never run its seek
+  // completion, so both Stop() and Reset() must call this -- a plain Stop()
+  // used to strand the callbacks exactly like Reset() did.
+  void AbortPendingSeeks(std::string reason, std::string suggestion);
+
   // Installs are locked writes; the declaration order above is what keeps the
   // factory alive past the pipeline on teardown, so nothing but _Reset_ may
   // touch the pair directly.
