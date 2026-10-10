@@ -18,7 +18,6 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "media/base/media_constants.h"
 #include "media/ffmpeg/av_includes.h"
 #include "media/ffmpeg/av_packet_storage.h"

@@ -261,8 +261,6 @@ class AVBASE_MEDIA_EXPORT AudioRendererImpl final
   void OnDecoderStreamEvent(DecoderStreamEvent event);
   // S4: runs FillBuffer() until the ring is full or the algorithm is dry.
   void PreStretch();
-  // S4: publishes one chunk. Returns false when the ring is full.
-  bool PublishChunk();
   // Media time consumed by |frames| of output at |rate|. Shared by the ring
   // half (audio_renderer_ring.cc) and Render(), which live in different
   // translation units since the file hit the C1 limit for the second time.

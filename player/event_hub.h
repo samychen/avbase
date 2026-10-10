@@ -71,8 +71,8 @@ class AVBASE_PLAYER_EXPORT EventHub {
   // runs Dispatch, and therefore every handler and observer callback.
   bool OnDispatchThread() const;
   // observers_ helpers; the caller holds |lock_|.
-  void EraseObserverLocked(int id);
-  bool ObserverPresentLocked(int id) const;
+  void EraseObserverLocked(int id) EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  bool ObserverPresentLocked(int id) const EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // One observer registration. Mutation discipline (this replaces the old
   // shared_ptr/alive-flag/dispatch-count protocol): observers_ is only ever

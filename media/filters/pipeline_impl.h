@@ -145,10 +145,8 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   void OnRendererInitialized(PipelineStatus status);
   void MaybeReady();
   void DoPlay();
-  void OnDemuxerStarted(Status status);
   void DoPause();
   void DoSeek(base::TimeDelta time, base::OnceClosure seeked_cb);
-  void DoSelectAudioTrack(int stream_index, PipelineStatusCallback cb);
   void SelectTrack(DemuxerStreamType type, int stream_index,
                    PipelineStatusCallback cb);
   void DoSelectTrack(DemuxerStreamType type, int stream_index,

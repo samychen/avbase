@@ -4,7 +4,30 @@
 
 ## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）· 4.6 覆盖率链路本机闭环复现（见第三十五轮）· docs/07 §5 计数三例两例转绿、顺线修掉一个真死锁（见第三十六轮）· docs/07 §5 计数三例**全部转绿**、顺线修掉解码器丢包（见第三十七轮）**
 
-最后更新：2026-10-09（第三十四轮）—— **corpus 加宽到 315 字条，而它当场揪出三个真崩溃**：
+最后更新：**2026-10-10（第四十六轮）** —— 摘要见下方「第四十五 / 四十六轮」两节。
+
+> 第四十六轮：**落地 simplify-code 上报未动的四项深修**。`PipelineImpl::DoStop` 清 seek
+> 簿记（完成回调不再命名着即将销毁的内部件）；`ff::MakeFrame/MakePacket` **检查式工厂**
+> （M10 深修）——compat 内一处 `CHECK` 收编全部 27 个 `av_frame_alloc`/`av_packet_alloc`
+> 调用点，8 处原本未判空的分配由此补上，接口收敛为"返回即可用"；**H2 错误上报契约扩展到
+> 三腿**——video 腿 terminal 解码错误不再伪装播完（原来 `ended_ + SetEndOfStream`），
+> text 腿 read 失败接 `ReportError`，`WireVideo/AudioCallbacks` 收拢 4 处重复接线；
+> **EventHub 注销走自有线程**——跨线程 `RemoveObserver` 投递擦除任务到 hub FIFO 线程并等待，
+> Dispatch 每次调用前重查成员资格，整套 `shared_ptr` 条目 / `alive` 标志 / `dispatching_`
+> 计数 / `drain_idle_` 重武装 / `TimedWait` 轮询约 40 行并发机制归零。
+> 第四十五轮：**simplify-code 四路并行审查清理**。四审查员（复用/质量/效率/altitude）扫
+> `3479d47..HEAD` 三轮修复提交，按风险分层应用：死代码（`player_impl_stop` 恒 no-op 的
+> 第二次 `TransitionTo`、两分支相同的死三目、LP64 恒假的 `SIZE_MAX` 比较）；重复收敛
+> （`time.h` 的 `operator*` 四分支溢出树委托 `SaturatingMul`；三处手写 `av_rescale_q`
+> 收敛到 `ff::To/FromTimeDelta`，NOPTS 语义修正为 `kNoTimestamp`；提取
+> `RestartFromBeginning()` 收拢两份逐字 lambda）；**两处错误处理回归**
+> （`send_or_drain` 曾把 muxer 写失败折叠成可跳过的 send 失败——muxer 死后转码继续白跑；
+> `event_hub` 的 `alive` 锁内写/无锁读数据竞态）。附带发现并修掉 **`Stop()`（不经 Reset）
+> 同样搁浅 `pending_seeks_`**（M4 的兄弟缺陷），提取 `AbortPendingSeeks()` 供两处共用。
+
+以下为更早轮次的重点记录（自第三十四轮起倒序）：
+
+第三十四轮 —— **corpus 加宽到 315 字条，而它当场揪出三个真崩溃**：
 先给矩阵补上一个**组合维度**（tier 2，`full` 独有：12 recipe × 4 scale × 5 fps = 240 条编码，
 覆盖 HEVC/VP9/mpeg4/mjpeg × MP4/MKV/TS/FLV/AVI/WebM），`full` 从 74 条推到 **315 条**
 （本机 15m50s，属周常不属 PR，故 `corpus-full.yml` 另配 `corpus_baseline_full.json`）。
@@ -167,7 +190,87 @@ seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设�
 > 第十八轮：fuzz 目标（libFuzzer + standalone 双驱动 + 语料入库）
 剩余工作以 [12-剩余工作清单](12-剩余工作清单.md) 为准（该项由各轮同步维护,是唯一权威清单）。
 
-## 第三十八轮（本轮）：FFmpeg 不是平台 —— 64 个文件搬家，三条门禁落地
+## 第四十六轮：落地 simplify-code 上报未动的四项深修
+
+第四十五轮把「该深修的」登记为 follow-up，这一轮把它们做完。四项的共同点是：
+**每一项的浅修都曾在正确的位置打过补丁，但补丁没有消灭问题类别**。
+
+### (1) `PipelineImpl::DoStop` 清 seek 簿记
+
+M4 修的是 Player 层（在途 seek 的用户回调以 `kAborted` 作答）。但管线层的
+`seek_cb_` / `pending_seek_cb_` / `seek_in_flight_` 在 `DoStop` 后仍然留着——
+它们命名着**即将被销毁的内部件**，是一份没人读的遗书。停止即 `Reset()` 三件套，
+用户语义仍由 Player 层 `AbortPendingSeeks` 负责，两层各管一件事。
+
+### (2) `ff::MakeFrame()` / `MakePacket()` 检查式工厂（M10 深修）
+
+M10 的浅修是「六处 `av_alloc` 分补判空」。同一份审查报告还点了 8 处**没补**的。
+逐个补 = 每个新调用点都可能再忘一次。改为检查式工厂：compat 内一处 `CHECK`
+（-fno-exceptions，OOM 在帧/包量级不可恢复），**接口收敛为「拿到的必是可用帧/包」**，
+27 个调用点全部收编。**一处检查消灭了整个错误模式**，后续新调用点不可能再忘。
+
+例外是 `media/transcode/ffmpeg_transcode_streams.h`：它的头部有**成文约束**
+（刻意不引入 libav 类型），加 `ff::FramePtr` 会破坏这条约束。那里保留局部 `CHECK`
+并在注释里写明为什么——**尊重成文约束优先于统一**（Chesterton's Fence）。
+
+### (3) H2 错误上报契约扩展到三腿
+
+H2 修的是 audio 腿（terminal 解码错误只 `LOG(ERROR)` 不上报，泵停摆、UI 无限缓冲）。
+**兄弟调用点保留着同样的缺陷**：video 腿把 terminal 错误伪装成「播完」
+（`ended_ = true` + `SetEndOfStream()`），text 腿 read 失败只打日志。三条腿现在走同一条
+`SetErrorCB` 路径，`WireVideo/AudioCallbacks` 消灭 4 处重复接线。
+
+设计上有一个刻意的选择：`SetErrorCB` **没有**加进 `Renderer` 基类虚函数。
+第一版加了，随后撤回——只有一个 `Renderer` 实现时那是**假想 seam**
+（「两个 adapter 才是真 seam」），实际契约是子渲染器同签名方法这一内部 seam，
+与既有的 `set_ended_cb` 同风格。
+
+### (4) EventHub 注销走自有线程
+
+原来的协议是：条目用 `shared_ptr` 延长生命 + `alive` 原子标志 + `dispatching_` 计数 +
+`drain_idle_` 重武装 + `TimedWait` 轮询，约 40 行并发机制，只为回答一个问题——
+**「注销返回后，观察者可以安全销毁吗」**。
+
+hub 只有一个 FIFO 派发线程，答案其实由**队列顺序**给出：跨线程 `RemoveObserver`
+把擦除任务投到 hub 线程并等待，派发在 FIFO 里一定排在它前面。于是整套机制归零，
+Dispatch 每次调用前重查成员资格（覆盖 reaper 场景：列表里靠前的回调注销靠后的观察者）。
+
+**遗留**：本轮构建首次暴露上一轮引入的 4 条 `-Wthread-safety-analysis` 警告
+（`EraseObserverLocked`/`ObserverPresentLocked` 少了 `EXCLUSIVE_LOCKS_REQUIRED`），
+第四十六轮文档整理时补上注解清零。
+
+### (5) 验证
+
+三预设 **468 / 585 / 588** 全绿；`check_invariants` all rules pass。
+
+## 第四十五轮：simplify-code 四路并行审查清理
+
+对 `3479d47..HEAD` 三轮修复提交（62 文件 +2139/-295）派四个并行审查员（复用 / 质量 /
+效率 / 实现深度），合并去重后按风险分层应用。
+
+**死代码 / 无效代码**：`player_impl_stop` 恒 no-op 的第二次 `TransitionTo`（M3 重写残留）；
+audio filter 两分支完全相同的死三目；`inspect_common` 在 LP64 下恒假的 `SIZE_MAX` 比较；
+`video_frame_queue.cc` 的 clang-format 重排（审查员发现的真缩进缺陷）；`play_sdl2.cc`
+第四十四轮 L6 遗留的裸 `base::Seconds`（该文件惯例全限定 `avbase::`，**full 预设首次
+真实编译才暴露**——第四十四轮时 SDL 预设无法编译验证）。
+
+**重复收敛**：`time.h` 的 `operator*` 四分支溢出证明树委托 `SaturatingMul`
+（无穷分支保留原符号约定，因为 `SaturatingMul(Max(), -1)` 返回 `-kMax` 而约定是 `Min()`）；
+三处手写 `av_rescale_q` 收敛到既有的 `ff::To/FromTimeDelta`（顺带修正语义：NOPTS 帧现在出
+`kNoTimestamp` 而非 `Zero()`——原代码会把无时间戳帧全钉在 pts=0）；提取
+`RestartFromBeginning()` 收拢 `Start` 重放 / `OnEnded` 循环两份逐字 lambda。
+
+**两处审查员单独标注的错误处理回归**：`ffmpeg_transcode_job` 的 `send_or_drain` 把 muxer
+写失败折叠成 `AVERROR_EXTERNAL`，调用方当作可跳过的 send 失败 `continue`——**muxer 死了
+转码却不中止**，白跑全部剩余输入；`event_hub` 的 `alive` 锁内写、无锁读的数据竞态。
+
+**附带发现**：`Stop()`（不经 `Reset`）同样搁浅 `pending_seeks_` 里的用户回调——M4 的兄弟
+缺陷。提取 `AbortPendingSeeks()` 供 `Stop()`/`Reset()` 共用，统一 `kAborted` 语义。
+
+三预设 **467 / 584 / 587** 全绿；期间修掉一个门禁插曲（`player_impl.cc` 加 helper 后
+505 > 500 违 C1，helper 挪至 `player_impl_events.cc` 后 487 行）。
+
+## 第三十八轮：FFmpeg 不是平台 —— 64 个文件搬家，三条门禁落地
 
 ### (1) 起因：一句反对推翻了我给的方向
 
@@ -836,7 +939,7 @@ FIFO 成帧**，不报错。所以"把 AAC 换成任意编码器"在成帧这一
 | 采样格式协商 | 明确不做：与视频编码器一致硬编码 FLTP，negotiation 是独立命题 |
 | `AudioEncoderFactory` | 未加：无音频硬件编码器候选时，工厂只是过度设计；按名字直连已满足"通用" |
 
-## 第二十八轮（本轮）：转码 E3/E4/E5 落地——两个“测得的样子像对的”时间戳缺陷
+## 第二十八轮：转码 E3/E4/E5 落地——两个“测得的样子像对的”时间戳缺陷
 
 本轮接手的是第二十七轮留下的 E3/E4/E5 半成品：源码与单测都已写好并注册进 CMake，但
 **从未编译验证过**（E3 单测缺 `#include "base/functional/bind.h"`，编译不过）。编译修好后
@@ -1039,7 +1142,7 @@ mjpeg 测试结尾误删 mp4 的 bug 修正为删除正确的 mkv 路径。
 验证：ffmpeg **487/487**、no-ffmpeg **376/376**、asan **487/487**、weaknet 5 例全过且 **0 GAP**、invariant 302 文件全过。
 
 
-## 第二十二轮（本轮）：docs/07 §5 纯音/纯视频断言 + 合成源单流禁用
+## 第二十二轮：docs/07 §5 纯音/纯视频断言 + 合成源单流禁用
 
 `SyntheticSpec` 增 `enable_video/enable_audio`（GetStream 返回 nullptr、MediaInfo
 去流——与"容器没有该流"同形）。两个管线级断言：**AudioOnlySourcePlaysThrough**
@@ -1056,7 +1159,7 @@ ctest 下偶发挂起（963s 超时；单跑 15s 通过），挂点在 S3 停止
 改动的关系未定（时序敏感，两次全量一红一绿）。按 R12 登记专项诊断，候选方向：
 DestroyOn 与夹具 TearDown 的线程停止顺序竞争。
 
-## 第二十一轮（本轮）：直播追帧端到端验收（docs/12 §2.1 闭合）
+## 第二十一轮：直播追帧端到端验收（docs/12 §2.1 闭合）
 
 `PipelineSeekTest.LiveSourceChasesToTheEdge`：合成源标记 live（duration 10s 作为
 边缘替身）、延迟目标 2s、播放头起步落后 10s——**首个统计节拍触发追帧**（日志：
@@ -1067,7 +1170,7 @@ behind=7942ms, skipping to 9s），播放头落到边缘附近（断言 ≥8.5s�
 
 **§2.1 状态：✅ 闭合**（判定核 + 接线 + 端到端验收；协议覆盖验收见 §2.4，另列）。
 
-## 第二十轮（本轮）：直播追帧判定核（docs/12 §2.1 判定侧）
+## 第二十轮：直播追帧判定核（docs/12 §2.1 判定侧）
 
 `media/filters/live_edge_policy.{h,cc}`：追帧决策纯函数（DecideNextFrame 模式）——
 `ShouldChase(is_live, latency_hint, behind)`：仅直播 + 正向延迟目标 + 严格大于
@@ -1081,7 +1184,7 @@ hint（此前只转发渲染器）；统计节拍（1s，host TU）上检测 直
 一个阈值周期内追平、无死锁）需要合成直播 demuxer 假件（定时产流、时戳随墙钟
 增长），是下一轮主体。
 
-## 第十九轮（本轮）：LiveDataSource——直播字节源基建（docs/12 §2.2 前半）
+## 第十九轮：LiveDataSource——直播字节源基建（docs/12 §2.2 前半）
 
 `media/filters/live_data_source.{h,cc}`：可增长的直播字节源——生产者 `Append()`
 （网络回调/测试 rig），消费者经 DataSource 桥顺序读，**在直播边缘阻塞等待**；
@@ -1096,7 +1199,7 @@ no-ffmpeg 门禁。
 `avbase::media`、filters 列表是手写的（base/legacy/renderers 才 GLOB）、
 ConditionVariable 需显式以锁地址构造——四处全部撞了一遍。
 
-## 第十八轮（本轮）：Phase 4.5 开篇——libFuzzer 目标 · 确定性驱动 · CI smoke
+## 第十八轮：Phase 4.5 开篇——libFuzzer 目标 · 确定性驱动 · CI smoke
 
 依据 avbase 升级计划 Phase 4.5（"对 platform/ffmpeg 输入做结构模糊，语料入库常跑"）。
 
@@ -1121,7 +1224,7 @@ ConditionVariable 需显式以锁地址构造——四处全部撞了一遍。
 - libFuzzer 二进制本机不可链接（无 runtime），由 CI Linux 验证；fuzz-smoke job 已入 workflow。
 - 回归：ffmpeg 439/439、no-ffmpeg 376/376、asan 439/439 ×2；invariant 全过（282 文件）。
 
-## 第十六轮（本轮）：Phase 4.2 运行时音轨切换——SelectAudioTrack 全链
+## 第十六轮：Phase 4.2 运行时音轨切换——SelectAudioTrack 全链
 
 ### 落地面
 
@@ -1163,7 +1266,7 @@ ConditionVariable 需显式以锁地址构造——四处全部撞了一遍。
 - 未做：字幕轨(kText，基座只出文本+时间的文本腿)、视频轨切换、
   `kHardwareOnly` 生产语义、直播追帧（需直播源基建）。
 
-## 第十七轮（本轮）：Phase 4.2 字幕文本腿——kText 轨选择与 TimedText 事件
+## 第十七轮：Phase 4.2 字幕文本腿——kText 轨选择与 TimedText 事件
 
 ### 落地面
 
@@ -1199,7 +1302,7 @@ ConditionVariable 需显式以锁地址构造——四处全部撞了一遍。
 - 未做：WebVTT/ASS 样本覆盖（解码路径同型）、字幕样式信息透传（raw_ass 已带原文）、
   直播字幕的过期 cue 丢弃策略。
 
-## 第十五轮（本轮）：Phase 3 硬解与零拷贝——NativeBuffer · VideoToolbox 全链 · 颜色空间
+## 第十五轮：Phase 3 硬解与零拷贝——NativeBuffer · VideoToolbox 全链 · 颜色空间
 
 依据 avbase 升级计划 Phase 3（1–2 人 × 4 周的量，本轮落地的是其全部结构 + macOS 一条
 实测链；Linux/Windows 的实测验收依赖对应硬件，留给有设备的环境）。
@@ -1245,7 +1348,7 @@ ConditionVariable 需显式以锁地址构造——四处全部撞了一遍。
 - 未跑：4K 硬解 CPU 占用对照、Linux VAAPI-EGL 与 Windows D3D11-GL interop 零拷贝显示链
   （无设备，Phase 3 验收的环境相关部分）。
 
-## 第十四轮（本轮）：Phase 0 仓库改造——更名 avbase · LGPL 清点 · 文档合并
+## 第十四轮：Phase 0 仓库改造——更名 avbase · LGPL 清点 · 文档合并
 
 依据 avbase 升级计划（Phase 0，纯工程与法务，要求更名做成独立 commit）。
 
@@ -1314,7 +1417,7 @@ swr 重采样的消费端胶水）结构上并不相似，"Ported" 措辞疑似*
 - FFmpeg 配置与 sanitizer 配置本机未跑（依赖 Homebrew ffmpeg/SDL2 环境较重），
   以 Linux CI 为准。
 
-## 第十三轮（本轮）：DataSource 桥（M4 余项收口）+ 饥饿信号（M9 第三块）
+## 第十三轮：DataSource 桥（M4 余项收口）+ 饥饿信号（M9 第三块）
 
 | 组件 | 说明 | 备注 |
 |---|---|---|
@@ -1364,7 +1467,7 @@ swr 重采样的消费端胶水）结构上并不相似，"Ported" 措辞疑似*
 
 ---
 
-## 第十二轮（本轮）：M9 精确 seek——丢弃窗口 · 到达检测 · SeekController
+## 第十二轮：M9 精确 seek——丢弃窗口 · 到达检测 · SeekController
 
 `SeekMode::kAccurate` 的 DoD（"精确 seek ±1 帧"）全链落地。此前它按桩返回警告并降级
 关键帧 seek；本轮把它做成真实现。
@@ -1410,7 +1513,7 @@ swr 重采样的消费端胶水）结构上并不相似，"Ported" 措辞疑似*
 
 ---
 
-## 第十一轮（本轮）：M9 开篇——限速假件 · 三级 HWM · 管线级 seek 夹具
+## 第十一轮：M9 开篇——限速假件 · 三级 HWM · 管线级 seek 夹具
 
 M9（缓冲 + Seek 完整版）的前两步，加上上一轮收尾的测试基建：
 

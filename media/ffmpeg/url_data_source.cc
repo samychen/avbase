@@ -205,7 +205,9 @@ bool UrlDataSource::IsStreaming() const {
 }
 
 void UrlDataSource::SetBitrate(int bitrate) {
-  bitrate_ = bitrate;
+  // Interface override only: nothing downstream reads a bitrate hint (the
+  // demuxer measures throughput itself), so there is no field to write.
+  (void)bitrate;
 }
 
 bool UrlDataSource::IsSeekable() const {

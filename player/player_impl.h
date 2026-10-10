@@ -115,8 +115,6 @@ class PlayerImpl final : public media::Pipeline::Client {
   void OnTimedText(const media::TimedTextCue& cue) override;
   void OnVideoConfigChange(const media::VideoDecoderConfig& config) override;
 
-  // State transitions; publishes kStateChanged. Returns the previous state.
-  PlayerState ChangeState(PlayerState to);
   // The ready signal arrives as the pipeline's first
   // OnBufferingStateChange(kHaveMetadata); snapshot media info and publish
   // kPrepared (then auto-start if configured).

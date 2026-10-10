@@ -6,7 +6,6 @@
 #define AVBASE_PLAYER_PUBLIC_GLOBAL_H_
 
 #include "player/public/player_export.h"
-#include "player/public/version.h"
 
 namespace avbase {
 

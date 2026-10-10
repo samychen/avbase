@@ -5,12 +5,12 @@
 # refuses to raise an entry, so this file can only shrink. Do not edit
 # it by hand: an entry added by hand is an exemption with no reason
 # attached, which is what R12 says must not happen.
-# Total: 37 line(s) in 7 file(s).
+# Total: 35 line(s) in 7 file(s).
 
 media/base/data_source_descriptor.cc 1
 media/base/data_source_descriptor.h 1
 media/filters/legacy/av_sync_controller.cc 9
 media/filters/legacy/av_sync_controller.h 2
-media/filters/legacy/clock.cc 9
+media/filters/legacy/clock.cc 7
 media/filters/legacy/video_frame_compositor.cc 11
 media/filters/legacy/video_frame_compositor.h 4

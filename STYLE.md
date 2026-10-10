@@ -5,10 +5,11 @@
 > 工具：`.clang-format`（唯一格式真相源）、`.clang-tidy`、`cpplint`、`tools/check_invariants.py`
 > 违反任一"强制"项 → CI fail，不允许豁免。
 >
-> ⚠️ **工具落地状态**：`.clang-format` ✅ 存在 · `tools/check_invariants.py` ✅
-> 存在（已进 CI）· **`check-format` job ✅ 已接入 CI**（第二十三轮）·
-> `.clang-tidy` ✅ 已落盘但**仍未接入 CI** · `cpplint` ❌ 未接入。
-> 因此下文标注 clang-tidy / cpplint 的规则**目前只靠人工评审执行**。
+> ⚠️ **工具落地状态（第四十六轮核对 `.github/workflows/ci.yml`）**：`.clang-format` ✅ ·
+> `tools/check_invariants.py` ✅ · **`check-format` ✅ 阻塞**（第二十三轮）·
+> **`check-clang-tidy` ✅ 阻塞** · **`check-cpplint` ✅ 阻塞**（第三十三轮，
+> 非测试非 legacy 源 0 违规；`build/c++11` 因项目是 C++20 整类关闭并写进 `CPPLINT.cfg`）。
+> 三个 job 均已接入，下文标注 clang-tidy / cpplint 的规则**由 CI 强制执行**。
 >
 > **一次性全量重排（第二十三轮）**：此前不做全量重排的理由是"那 323 行里有一部分
 > 是模板声明，手工重排有可能改变含义，而收益只有行更短"。这个权衡已经被
@@ -26,9 +27,9 @@
 > ——只有任何位置的漂移都被抓到，这个说法才成立。
 >
 > **列宽**：`check_invariants.py` 的 **C23** 规则以**棘轮**方式守 80 列——
-> 基线 `tools/column_baseline.txt` 记录现存超长行（当前 **37 行 / 7 个文件**），
+> 基线 `tools/column_baseline.txt` 记录现存超长行（当前 **35 行 / 7 个文件**），
 > 规则只拦"某文件超长行数变多"与"新文件有超长行"，`--update-baseline`
-> **拒绝提高任何既有条目**。这 37 行是 `clang-format` 自己也折不动的（宏续行、
+> **拒绝提高任何既有条目**。这 35 行是 `clang-format` 自己也折不动的（宏续行、
 > 长字面量等），留给人工判断。
 >
 > **棘轮的意义是：从此每个因别的原因被改到的文件，都必须顺手清干净，且清完不会退化。**
@@ -246,48 +247,13 @@ class VideoRendererImpl : public Renderer {
 
 ## 8. `.clang-tidy` 配置
 
-> **状态：`.clang-tidy` 已于第十轮落盘，内容即本节**（见文首的工具落地状态），
-> 但仍**未接入 CI**；`check-clang-tidy`、`check-cpplint`、`check-format` 三个 job
-> 都还欠（docs/07 §13 的门禁清单里有它们）。本节配置就是落盘时的照抄源，保持不动。
+**配置的唯一真相源是仓库根的 [`.clang-tidy`](.clang-tidy) 文件**——本节不再照抄它
+（照抄会立刻与真身漂移，而漂移的配置比没有配置更误导）。`check-clang-tidy` job
+以 `WarningsAsErrors: '*'` 阻塞模式跑它，见文首的工具落地状态。
 
-```yaml
-Checks: >
-  -*,
-  bugprone-*,
-  google-*,
-  modernize-*,
-  performance-*,
-  portability-*,
-  readability-identifier-naming,
-  readability-redundant-*,
-  cppcoreguidelines-interfaces-global-init,
-  cppcoreguidelines-pro-type-member-init,
-  misc-unused-*,
-  -google-readability-todo,
-  -modernize-use-trailing-return-type,
-  -bugprone-easily-swappable-parameters,
-  -readability-identifier-length
-CheckOptions:
-  readability-identifier-naming.ClassCase: CamelCase
-  readability-identifier-naming.StructCase: CamelCase
-  readability-identifier-naming.EnumCase: CamelCase
-  readability-identifier-naming.EnumConstantPrefix: k
-  readability-identifier-naming.FunctionCase: CamelCase
-  readability-identifier-naming.MethodCase: CamelCase
-  readability-identifier-naming.VariableCase: lower_case
-  readability-identifier-naming.MemberSuffix: _
-  readability-identifier-naming.PrivateMemberSuffix: _
-  readability-identifier-naming.ParameterCase: lower_case
-  readability-identifier-naming.ConstantPrefix: k
-  readability-identifier-naming.NamespaceCase: lower_case
-  readability-identifier-naming.MacroCase: UPPER_CASE
-  modernize-use-nullptr.NullMacros: 'NULL'
-WarningsAsErrors: '*'
-HeaderFilterRegex: '(base|media|player|platform)/.*\.h$'
-FormatStyle: file
-```
-
-额外：`cpplint --filter=+whitespace/comments,+build/include_order --linelength=80`，以及 Chromium 的 `presubmit` 思路——`tools/check_invariants.py`（见 [docs/06](docs/06-CMake工程与构建体系.md) §9）。
+额外：`cpplint --filter=+whitespace/comments,+build/include_order --linelength=80`
+（`CPPLINT.cfg` 里另关掉整类 `build/c++11`——项目是 C++20），以及 Chromium 的
+`presubmit` 思路——`tools/check_invariants.py`（见 [docs/06](docs/06-CMake工程与构建体系.md) §9）。
 
 ## 9. Git 提交规范
 

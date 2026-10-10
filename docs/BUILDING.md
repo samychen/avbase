@@ -52,7 +52,8 @@ ctest --preset no-ffmpeg --output-on-failure
 ```
 
 这条验证设计目标 **G2**：核心只用一个 C++20 编译器就能构建并通过测试。
-预期 **324 个用例全绿**（不含需要 FFmpeg 的 35 个）。
+预期 **468 个用例全绿**（不含需要 FFmpeg 的那部分）。用例数随轮次增长，
+最新值以 [PROGRESS.md](PROGRESS.md) 为准。
 
 ### 3.2 带真实媒体的完整测试
 
@@ -63,7 +64,8 @@ cmake --build --preset linux-ffmpeg711
 ctest --test-dir build/linux-ffmpeg711 --output-on-failure
 ```
 
-预期 **359 = 324 + 35** 全绿。默认装进仓库内的 `tools/build/`（gitignored），
+预期 **585 个用例全绿**（`ffmpeg` 预设；`full` 预设再加 SDL2，588 个）。
+默认装进仓库内的 `tools/build/`（gitignored），
 `FindFFmpeg` 在 `AVBASE_FFMPEG_ROOT` 未设置时自动优先使用它——MediaComponent 的
 「头文件在仓库里、clone 即用」的体验，等价但不破坏 C4 头隔离约束；要装到别处
 （如 `/opt/ffmpeg-7.1.1`）就传第二个参数并 `-DAVBASE_FFMPEG_ROOT=<prefix>`（或
@@ -89,7 +91,7 @@ ctest --test-dir build/linux-ffmpeg711 --output-on-failure
   TLS 后端冲突时 openssl 优先）。选了 `x264`/`fdk-aac` 会连带打开
   mp4/matroska/adts muxer 和原生 aac 编码器。注意 `fdk-aac` 使产物变成
   `--enable-nonfree`，不能以 Apache/BSD 身份再分发。`libyuv` 启用
-  `platform/ffmpeg/video_convert.cc` 的 SIMD 像素转换快速路径（NV12/422/10bit→I420、
+  `media/ffmpeg/video_convert.cc` 的 SIMD 像素转换快速路径（NV12/422/10bit→I420、
   I420→RGB 带色彩矩阵），是**可选的**：没编 libyuv 时该模块自动退化为纯 sws_scale，
   行为不变只是慢一些。
 - **头/库同源探测**：配置 avbase 时，`cmake/FindFFmpeg.cmake` 会编译并运行一个
@@ -127,7 +129,7 @@ cmake --preset debug && cmake --build build/debug
 **新代码第一次编译就应该在这里过，而不是在 `no-ffmpeg` 里过。**
 
 `debug` 同时打开 `AVBASE_ENABLE_FFMPEG`（严格告警必须覆盖全部目标）。在此之前它
-沿用默认值 OFF，于是 `platform/ffmpeg/*` 与 `media/filters/ffmpeg_*.cc` 只被非严格的
+沿用默认值 OFF，于是 `media/ffmpeg/*` 与 `media/filters/ffmpeg_*.cc` 只被非严格的
 `ffmpeg` / `linux-sdl2` 预设编过——"零警告"实际只覆盖了不含 FFmpeg 的那半棵树，
 而 FFmpeg 适配层正好是 `-Wthread-safety` 最容易说话的地方之一。
 
@@ -170,11 +172,11 @@ CI job 守护）。需要 Homebrew 安装依赖：
 brew install sdl2 ffmpeg cmake ninja
 cmake --preset macos-sdl2
 cmake --build --preset macos-sdl2
-ctest --preset macos-sdl2 --output-on-failure     # 预期 481 用例全绿
+ctest --preset macos-sdl2 --output-on-failure     # 预期 588 用例全绿
 ```
 
 `macos-sdl2` 产出 `play_sdl2` 真窗口二进制（`otool -L` 确认链接 `libSDL2-2.0.0` +
-`libavformat.61`）。VideoToolbox 硬解走 `platform/ffmpeg/ffmpeg_hw_video_decoder.cc`
+`libavformat.61`）。VideoToolbox 硬解走 `media/ffmpeg/ffmpeg_hw_video_decoder.cc`
 的 libavcodec hwaccel，**需实机验证**（CI 沙箱无 VideoToolbox 设备）。
 
 也支持不带 SDL2 的无 FFmpeg 配置（`cmake --preset no-ffmpeg`，同 Linux）。
@@ -232,30 +234,35 @@ cue。注意：pinned FFmpeg 组件清单已包含 srt/ass/webvtt/mov_text 解�
 ```
 
 `Player` 门面已接线：SetDataSource / PrepareAsync / PrepareSync / Start / Pause /
-Stop / SeekTo（按 request_id 回调）/ 音量 / 静音 / 倍速 / 循环 / SetVideoSurface /
-事件流全部可用。**仍返回 kNotImplemented 的**：StepOnce、SelectTrack、TakeSnapshot、
-UpdateConfig、RunUntilIdle（各自注明所需里程碑）。
+Stop / SeekTo（按 request_id 回调）/ SelectTrack / TakeSnapshot / 音量 / 静音 /
+倍速 / 循环 / SetVideoSurface / 事件流全部可用。**仍是 `kNotImplemented` 占位桩的**：
+`StepOnce`、`UpdateConfig`（两个都在注释里自陈，是刻意保留的公共 API 占位）。
+
+> 本节曾把 `SelectTrack` 与 `TakeSnapshot` 也列为 `kNotImplemented`，与同文件 §3.6
+> （"TakeSnapshot：真实现"）自相矛盾。两者早已闭合：精确 seek 第十二轮、音轨切换
+> 第十六轮、视频轨切换第二十四轮。第四十六轮更正。
 
 ## 4.1 还跑不起来的东西
 
 | 想跑的 | 状态 | 原因 |
 |---|---|---|
-| `cmake --preset linux-native` / `linux-all` | ❌ 配置期 `FATAL_ERROR` | 原生 GL 后端仍是 M12 |
+| `cmake --preset linux-native` / `linux-all` | ❌ 配置期 `FATAL_ERROR` | 原生 GL 后端仍是 M12，且**已顺延为可选**（方案见 `docs/archive/09`） |
 | `cmake --preset android-arm64` | ❌ | `platform/android/` 不存在（M16） |
 | Golden Test | ❌ | `tools/ijkplayer-recorder/`、`golden_*.py`、`tests/golden/` 不存在（M10），且被开放问题 Q8 卡住 |
-| 精确 seek / 轨选切换 / 快照 | ❌ kNotImplemented | M9（SeekController、子渲染器重建） |
 
-**一句话：这个仓库现在能构建、能测、能分析媒体文件，并且能播放视频（headless +
-SDL2 双通道验证过）；精确 seek、golden 对齐和原生 GL 后端仍在 M9–M12。**
+**一句话：这个仓库现在能构建、能测、能分析媒体文件，能播放视频（headless +
+SDL2 双通道验证过），能转码；精确 seek 与音/视频轨切换均已闭合。仍未落地的是
+golden 对齐（M10）与原生 GL 后端（M12，已顺延）。**
 
 ---
 
 ## 5. 不需要编译器就能跑的三个工具
 
-这三个是**当前唯一有 CI 门禁的自动化检查**，只要有 Python 3 就能跑：
+这三个是最常用的检查，只要有 Python 3 就能跑（CI 里另有 format / clang-tidy /
+cpplint / corpus / soak / fuzz 等共 16 个 job，见 §7）：
 
 ```bash
-# 架构与风格不变量（14 条规则），并列出所有 DRAFT 文件防止被遗忘
+# 架构与风格不变量（C1–C27，367 个文件）
 python3 tools/check_invariants.py --root .
 
 # 移植常量三方交叉校验：ffplay #define ⟷ avbase 代码 ⟷ docs/05 表 7
@@ -320,7 +327,7 @@ done
 | `renderer_factory.h` 的前置声明够不够 | 我为了缩小传递闭包把 5 个类型改成了前置声明（33 → 27 个头）。只以指针出现的类型够用，但任何 include 它的 TU 若要**调用** `Create*()` 就必须自己 include 完整类型 |
 | `base::BindOnce` 能不能搬 `unique_ptr` | `renderer_impl.cc` 的 `Initialize()` 把 `unique_ptr<VideoRendererSink>` 绑进了 `BindOnce`。`bind.h` 自称是 R2 降级的 **L1 层**，明确列出不支持 `Passed()`/`Owned()`/变参包，**但没说 move-only 绑定参数支不支持**。若不支持，改成"任务体内读成员字段" |
 | `pipeline_controller.h` 的抽象声明 | 我把它声明为抽象类，而 docs/03 §6 与 Chromium 都是持有 `unique_ptr<Pipeline>` 的具体类。这是刻意偏离，编译期不会有意见，但 M8 接线时要认账 |
-| 80 列 / 命名 / `-Wshadow` | 列宽已由 C23 棘轮守着（基线 310 行），`-Wshadow` 与其余编译告警由 `debug` preset 的 `-Werror` 全量守（该预设现已含 FFmpeg 层，见 §3.3）；但**命名规则没有任何门禁**——`.clang-tidy` 已落盘却未接线，`check-format` / `check-cpplint` 两个 job 也刻意没开（见 §7 末） |
+| 80 列 / 命名 / `-Wshadow` | 列宽已由 C23 棘轮守着（**基线 37 行**，第二十三轮由 286 降下来），`-Wshadow` 与其余编译告警由 `debug` preset 的 `-Werror` 全量守（该预设现已含 FFmpeg 层，见 §3.3）。> 原文此处写"基线 310 行、`.clang-tidy` 未接线、format/cpplint 两 job 刻意没开"——**三项均已过期**：`check-format` / `check-clang-tidy` / `check-cpplint` 现在**全部以阻塞模式接入 CI**（见 §7）。此处保留原文，因为本节是第十轮的历史记录 |
 
 ```bash
 # 第 2 步：语法过了再进构建。media/base 的 7 个头加入 avbase_media

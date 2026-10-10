@@ -9,23 +9,25 @@
 > golden 对拍 ijkplayer 保留为回归资产);现按 avbase 升级计划演进为
 > 三平台、硬解、网络流完备的企业播放器基座。
 
-> **当前状态：M0–M6 ✅ · M7 渲染层代码完成 · M8 播放链路已接线 ✅ · 端到端播放 ✅（headless + SDL2 真窗口）**
+> **当前状态：M0–M11 ✅ · Phase 0/1/3/4 与转码 E1–E5 已铺设 · 审查报告
+> Critical/High/Medium/Low 全部清零（第四十三、四十四轮）· 清理与深修两轮（第四十五、四十六轮）**
 >
 > | 配置 | 结果 |
 > |---|---|
-> | `no-ffmpeg`（无 FFmpeg / SDL2 / X11） | ✅ 324/324 |
-> | mac 配置（FFmpeg 7.1.1 + SDL2 + 示例） | ✅ 359/359，`headless`/`play_sdl2` 真实播放到 kCompleted |
+> | `no-ffmpeg`（无 FFmpeg / SDL2 / X11） | ✅ **468/468** |
+> | `ffmpeg`（FFmpeg + 解复用/解码/转码） | ✅ **585/585** |
+> | `full`（FFmpeg + SDL2 + 示例，macOS 真窗口） | ✅ **588/588** |
 > | `debug`（Debug + DCHECK + `-Werror`） | ✅ 全绿，零警告 |
 > | `asan`（ASan + UBSan + **LSan**） | ✅ 全绿，**0 泄漏** |
 > | `tsan`（**ThreadSanitizer**） | ✅ 全绿，**0 data race** |
-> | `check_invariants.py` | ✅ 全规则通过（220 文件；C23 列宽棘轮 323→310） |
+> | `check_invariants.py` | ✅ 全规则通过（**364 文件**；C23 列宽棘轮 **35**） |
 > | `extract_constants.py --selftest` | ✅ 24 个移植常量与 docs/05 表 7 一致 |
 >
-> ⚠️ **用例数以 [docs/PROGRESS.md](docs/PROGRESS.md) 为准**（活文档，第十轮为
-> 359/359 与 324/324，macOS / AppleClang 21 / Homebrew FFmpeg 7.1.1 实测）。
+> ⚠️ **用例数以 [docs/PROGRESS.md](docs/PROGRESS.md) 为准**（活文档，第四十六轮实测值见上表）。
 > **能播放了**：`examples/headless <url>` 完整播到 kCompleted，`examples/play_sdl2
-> --url <url>` 真窗口带音频出画（SDL2 后端，M11 代码提前落地）。
-> Sanitizer 历史战果与第十轮抓到的 12 个真 bug → [docs/PROGRESS.md](docs/PROGRESS.md)
+> --url <url>` 真窗口带音频出画（SDL2 后端）。
+> 覆盖率当前为**棘轮基线**（core line 75.5% / branch 58.8%，见 `coverage_baseline.json`），
+> **不是**已达标值——门禁只拦下降，不要求及格线。
 ---
 
 ## 0. TL;DR
@@ -40,9 +42,9 @@
 | 错误处理 | `base::expected<T, MediaError>` + `RETURN_IF_ERROR` / `ASSIGN_OR_RETURN`，**零异常** |
 | 引用计数 | `scoped_refptr<T>` + `base::RefCountedThreadSafe<T>`（不用 `std::shared_ptr`） |
 | 构建 | CMake ≥ 3.20 + `CMakePresets.json`，全 target 化，无 Android.mk / 无 shell 脚本前置 |
-| Linux 视频 | ① `platform/sdl2`（最快出画）② `platform/linux`（原生 OpenGL 3.3 + EGL/GLX + Wayland/X11 + ALSA/PulseAudio，零第三方） |
+| Linux 视频 | ① `platform/sdl2`（最快出画，已交付）② `platform/linux`（原生 OpenGL 3.3 + EGL/GLX + Wayland/X11 + ALSA/PulseAudio，零第三方）—— **M12 已顺延，方案见 docs/archive/09** |
 | 窗口归属 | **嵌入模式为核心**（渲染到调用方给的 `X11 Window` / `wl_surface`），`examples/` 额外提供内建窗口 |
-| 验收 demo | `examples/play_sdl2 --url x.mp4` 与 `examples/play_native` 在 Linux 上流畅播放 1080p |
+| 验收 demo | `examples/play_sdl2 --url x.mp4`（真窗口带音频）· `examples/headless`（无窗口播到 kCompleted）· `examples/pull_frames`（抽帧） |
 | 质量验收 | **Golden Test**：与原版 ijkplayer 逐帧 pts / 音频样本校验和对齐 |
 | 工期 | 核心 + Linux 双后端 **单人约 23 周 / 双人约 12 周**（M0–M13） |
 
@@ -54,7 +56,6 @@
 |---|---|---|
 | — | [STYLE.md](STYLE.md) | **代码风格细则**：Google Style 落地规则、Chromium 约定、命名表、注释模板、clang-tidy 配置、提交规范、**与 Chromium 的对照速查表** |
 | — | [PROGRESS.md](docs/PROGRESS.md) | **实施进度活文档**：已完成/未完成清单、可执行验证命令、check_invariants 抓到的真实问题、移植中发现的 2 个缺陷 |
-| — | [项目架构与能力分析](docs/项目架构与能力分析.md) | **时点快照**（第十轮开工前 @ `7b1e039`）：按代码实测的架构与能力盘点、逐项缺口、以及"文档说到了但代码还没有"的对照（§5.4）。快照不随代码更新 |
 | 01 | [现状剖析与设计目标](docs/01-现状剖析与设计目标.md) | ijkplayer 的 12 条病灶（代码取证）、设计目标 G1–G12、10 条设计原则、"为什么参照 Chromium media" |
 | 02 | [总体架构与模块划分](docs/02-总体架构与模块划分.md) | **Chromium 式四层架构**（base/media/player/platform）、完整目录树（镜像 `media/base` + `media/filters`）、CMake target 拓扑、依赖方向铁律 |
 | 03 | [核心类与接口设计](docs/03-核心类与接口设计.md) | 头文件级 C++20 声明，**命名与签名对齐 Chromium**：`DecoderBuffer` / `VideoFrame` / `AudioBus` / `DemuxerStream` / `VideoDecoder` / `Renderer` / `Pipeline` / `VideoFrameCompositor` / `AudioRendererSink` / `MediaLog` / `Player` |
@@ -63,10 +64,10 @@
 | 06 | [CMake 工程与构建体系](docs/06-CMake工程与构建体系.md) | `.cc` + Google flags + `-fno-exceptions`、`FindFFmpeg`（三级查找）、FFmpeg 4.4~7.x 兼容层、**Linux 依赖探测**（SDL2/OpenGL/EGL/X11/Wayland/ALSA/Pulse）、install/export、CI 矩阵、符号隐藏 |
 | 07 | [测试策略与可观测性](docs/07-测试策略与可观测性.md) | **`base::test::TaskEnvironment`** 单测模型、Chromium 式 Mock（`MockVideoDecoder`/`MockDemuxerStream`）、合成数据源、Golden Test、Fuzz、Sanitizer、覆盖率门禁 |
 | 08 | [实施路线图与风险](docs/08-实施路线图与风险.md) | M0–M12 里程碑与 DoD、双人并行方案、工作量估算、砍掉/后置清单、**16 条风险登记册**、"平替"验收标准 A1–A16 |
-| 09 | [Linux 平台实现方案](docs/09-Linux平台实现方案.md) | **双后端详细设计**：SDL2 后端、原生 OpenGL 后端（GLX/EGL + X11/Wayland）、ALSA/PulseAudio/PipeWire、vsync 与 Present 扩展、零拷贝 dmabuf、色彩空间、嵌入模式窗口协议 |
+| ~~09~~ | [Linux 平台实现方案](docs/archive/09-Linux平台实现方案.md) | **已归档**（第四十六轮）：M12 原生 OpenGL 后端顺延为可选，`platform/linux/` 从未落地，Linux 出画由 SDL2 交付。原文为双后端（SDL2 + 原生 OpenGL）的详细设计，保留为决策记录 |
 | 10 | [SDK 易用性设计](docs/10-SDK易用性设计.md) | **面向二次开发者**：10 行 quick-start、可操作错误信息规范、API 人体工学清单、文档体系、示例矩阵、打包与集成方式、常见任务 cookbook |
-| 12 | [剩余工作清单](docs/12-剩余工作清单.md) | **执行快照**(2026-10-03,第十八轮后):Phase 0–4 逐阶段完成度、剩余项(直播追帧/零拷贝显示/Qt 门面/corpus/soak/Windows CI)、环境事项与开放决策点 |
 | 11 | [行为规范卷](docs/11-行为规范卷.md) | **验收依据**（自 avbase_design.md §5/§7/§8 并入）：线程与任务模型、背压级联与 seek 序列、三级水位表。Phase 1–2 的验收标准引用本章 |
+| 12 | [剩余工作清单](docs/12-剩余工作清单.md) | **执行快照**：Phase 0–4 逐阶段完成度、剩余项（零拷贝显示 / Qt 门面 / soak / Windows CI）、环境事项与开放决策点 |
 
 ---
 
@@ -75,9 +76,9 @@
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
 │ player/          SDK 门面层                                                │
-│   public/player.h  player_config.h  player_events.h  media_info.h         │
-│   player_impl.cc   state_machine.cc  event_hub.cc  seek_controller.cc     │
-│   buffer_controller.cc  option_registry.cc  diagnostics.cc                │
+│   public/player.h  player_config.h  player_event.h  media_info.h          │
+│   player_impl.cc（+ _events/_stop）  state_machine.cc  event_hub.cc       │
+│   seek_controller.cc  buffer_controller.cc  option_registry.cc            │
 │   ↔ Chromium: media/mojo/clients + blink HTMLMediaElement 的库化版本        │
 ├───────────────────────────────────────────────────────────────────────────┤
 │ media/           媒体框架层                                                │
@@ -87,14 +88,18 @@
 │             demuxer · demuxer_stream · renderer · renderer_client          │
 │             pipeline · pipeline_controller · time_source                   │
 │             audio_renderer_sink · video_renderer_sink · media_log          │
-│   filters/  具体实现                                                       │
+│   ffmpeg/   ★全项目唯一 include libav*.h 的层（第三十八轮自 platform 迁入）  │
 │             ffmpeg_demuxer · ffmpeg_video_decoder · ffmpeg_audio_decoder    │
-│             ffmpeg_glue · decoder_stream<T,D> · decoder_selector           │
-│             video_renderer_impl · audio_renderer_impl                      │
-│             video_frame_compositor ★ · audio_renderer_algorithm(WSOLA)     │
-│             renderer_impl · default_decoder_factory                        │
+│             ffmpeg_glue · ffmpeg_hw_video_decoder · hw_frame_readback      │
+│             av_packet_storage · ffmpeg_{video,audio}_filter                │
+│   filters/  具体实现                                                       │
+│             decoder_stream<T,D> · decoder_selector · pipeline_impl         │
+│             video_renderer_impl · audio_renderer_impl · renderer_impl      │
+│             audio_renderer_algorithm(WSOLA) · null_{video,audio}_sink      │
+│             legacy/  video_frame_compositor ★ · av_sync_controller · clock │
+│                      （LGPL-2.1 隔离区，见该目录 README.md）                 │
+│   transcode/ 转码流水线（编码器层 · 滤镜 · concat · remux · 异步任务）        │
 │   renderers/ default_renderer_factory                                     │
-│   audio/     audio_manager · audio_output_device · null_audio_output        │
 │   ↔ Chromium: media/  （目录结构与类名一一对应）                             │
 ├───────────────────────────────────────────────────────────────────────────┤
 │ base/            基础设施层（Chromium base/ 的同名同语义最小子集，自研）       │
@@ -108,14 +113,12 @@
 │   test/{task_environment,mock_callback,scoped_feature_list}                 │
 │   ↔ Chromium: base/                                                        │
 ├───────────────────────────────────────────────────────────────────────────┤
-│ platform/        平台后端（唯一允许出现平台 SDK 与 FFmpeg 头之外的东西）       │
-│   null/       NullVideoSink / NullAudioSink（headless、CI）                  │
+│ platform/        平台后端（唯一允许出现平台 SDK 头文件的地方）                  │
 │   sdl2/       Sdl2VideoSink / Sdl2AudioSink / Sdl2Window（最快出画）          │
-│   linux/      GlVideoSink（OpenGL 3.3）+ EGL/GLX/Wayland/X11                │
+│   hwaccel/    VideoToolbox / VAAPI / D3D11 的硬件解码 spec                  │
+│   linux/      ⬜ M12 顺延：GlVideoSink(OpenGL 3.3) + EGL/GLX/Wayland/X11     │
 │               AlsaAudioSink / PulseAudioSink / PipeWireSink                 │
 │               DmaBufVideoFrame（零拷贝）· PresentExtension（vsync）          │
-│   ffmpeg/     FFmpeg 适配（AvIncludes.h · Compat.h · LogBridge）             │
-│               ★全项目唯一 include libav*.h 的地方                            │
 │   ↔ Chromium: ui/gl + media/audio/linux + media/base/linux                 │
 └───────────────────────────────────────────────────────────────────────────┘
 依赖方向： player → media → base ；platform → media/base（实现接口，由 player 注入）
@@ -268,101 +271,67 @@ avbase/
 ├── .clang-tidy              ⬜ STYLE.md §8 有完整配置内容，文件本身不存在
 ├── .editorconfig            ⬜
 ├── STYLE.md · VERSION.txt(0.1.0) · CMakeLists.txt · CMakePresets.json ✅
-├── .github/workflows/ci.yml ✅ quick + full 矩阵；ffmpeg-matrix 与 e2e-linux 仍是 if:false
-├── cmake/                   ✅ 8 个：AvbaseOptions · AvbaseCompilerFlags · AvbaseThirdParty
-│                               FindFFmpeg · FindSDL2 · AvbaseCheckInvariants
-│                               BuildConfig.h.in · Version.h.in
-│                            ⬜ FindLinuxMediaDeps(M12) · AvbaseInstall(M8) · avbase.map(R18)
-├── base/                    ✅ 44 文件 / 3,799 行
+├── .github/workflows/ci.yml ✅ 16 个 job（含 format / clang-tidy / cpplint / corpus /
+│                               soak / fuzz-smoke / windows-msvc 等）；e2e-linux 仍 if:false
+├── cmake/                   ✅ 10 个：AvbaseOptions · AvbaseCompilerFlags · AvbaseThirdParty
+│                               FindFFmpeg · FindSDL2 · FindLibyuv · AvbaseCheckInvariants
+│                               BuildConfig.h.in · Version.h.in · AvbaseSanitizers
+│                            ⬜ FindLinuxMediaDeps(M12，已顺延) · avbase.map(R18)
+├── base/                    ✅ 44 文件 / 3,987 行
 │   ├── functional/ memory/ time/ synchronization/ task/ threading/ types/ test/
-│   └── ⬜ containers/ files/ strings/ trace_event/ · feature_list.h
-│         threading/message_pump_epoll.cc（R2 的 L2 降级：现为 TaskQueue 驱动）
+│   └── ⬜ containers/ files/ strings/ · feature_list.h
 ├── media/
-│   ├── base/                ✅ 59 文件 / 5,798 行
-│   │     第九轮冻结的 7 个接口头（pipeline_status · media_resource ·
-│   │     renderer_client · renderer · renderer_factory · pipeline ·
-│   │     pipeline_controller）第十轮已进构建，缺口的注释作为历史保留
-│   ├── filters/             ✅ 40 文件 / 9,751 行（ffmpeg_* · decoder_stream ·
-│   │                            decoder_selector · ffmpeg_glue · pipeline_impl
+│   ├── base/                ✅ 64 文件 / 6,882 行（值类型 + 接口头）
+│   ├── ffmpeg/              ✅ 44 文件 / 6,559 行 —— **全项目唯一链接 libav\* 的层**
+│   │                            （第三十八轮由 `platform/ffmpeg` 整体迁入）
+│   ├── filters/             ✅ 44 文件 / 10,064 行（decoder_stream · pipeline_impl
 │   │                            + pipeline_impl_host · null 双 sink ·
-│   │                            renderer_impl + renderer_impl_controls）
-│   │   └── legacy/          ✅ 6 文件 / 1,720 行 —— LGPL-2.1 隔离区（第九轮建）：
+│   │                            renderer_impl + renderer_impl_controls ·
+│   │                            audio_renderer_algorithm 等）
+│   │   └── legacy/          ✅ 6 文件 —— LGPL-2.1 隔离区（第九轮建）：
 │   │                            video_frame_compositor · av_sync_controller · clock
-│   │                            + LICENSE.LGPL-2.1(501 行) + README.md（准入规则）
-│   ├── renderers/           ✅ 2 文件 / 183 行 —— DefaultRendererFactory（M8）
-│   └── audio/               ⬜ M7
+│   │                            + LICENSE.LGPL-2.1 + README.md（准入规则）
+│   ├── transcode/           ✅ 18 文件 / 3,484 行（转码 E1–E5：编解码器层 · 滤镜 ·
+│   │                            拼接 · remux · 异步任务）
+│   └── renderers/           ✅ DefaultRendererFactory
 ├── player/
-│   ├── public/              ✅ 12 个 SDK 头 / 1,051 行（M8 契约冻结）
-│   └── *.cc                 ✅ 11 文件 / 1,891 行 —— 门面已实现：10 个方法里 9 个接通
-│                               （player_impl + player_impl_events 承载状态机、事件枢纽
-│                               与 S1/S3/S4 三线程）；option_registry 仍只覆盖 8/60+ 个 key
-│                            ⬜ seek_controller · buffer_controller · diagnostics · public/c/
+│   ├── public/              ✅ 11 个 SDK 头（`version.h` 第四十六轮删：只有声明无定义）
+│   └── *.cc                 ✅ 17 文件 —— player_impl 拆 events/stop 等 TU 承载
+│                               状态机、事件枢纽与 S1/S3/S4 三线程
 ├── platform/
-│   ├── ffmpeg/              ✅ 9 文件 / 776 行（全项目唯一链接 FFmpeg 的 target）
-│   ├── sdl2/                ✅ 5 文件 / 592 行 —— M11 的双后端提前落地（M8 轮）
-│   └── null/ · linux/       ⬜ M10 / M12 —— null 仍是空目录；linux 开关在
-│                               platform/CMakeLists.txt 里是有意的 FATAL_ERROR
-├── tests/                   ✅ unit/ 26 文件 / 6,773 行 · 324 用例 · testdata/ 5 个样本
-│                               （两个曾被记为"未计入总数"的测试文件均已进构建并跑绿）
-│                            ⬜ contract/ integration/ golden/ e2e/ stress/ fuzz/
-│                               bench/ support/
-├── tools/                   ✅ check_invariants.py(604，16 条规则/220 文件)
-│                               extract_constants.py(547) + ported_constants.py(222)
-│                               gen_options.py(820) · option_map.py(327) · sim_wsola.py(704)
+│   ├── sdl2/                ✅ 10 文件 / 1,875 行 —— Linux 出画由 SDL2 后端交付
+│   ├── hwaccel/             ✅ VideoToolbox / VAAPI / D3D11 的 hw spec 头
+│   └── linux/               ⬜ M12 已顺延；开关在 platform/CMakeLists.txt 里是
+│                               有意的 FATAL_ERROR（见 docs/archive/09）
+├── tests/                   ✅ 91 文件 / 19,842 行 · 588 用例（`full` 预设）
+│                               unit/ 66 个 .cc · support/ 夹具 · fuzz/ 2 个目标
+│                            ⬜ contract/ integration/ golden/ e2e/ stress/ bench/
+├── tools/                   ✅ `tools/*.py` 5,721 行
+│                               check_invariants.py（C1–C27 / 364 文件）
+│                               extract_constants.py · gen_options.py · sim_wsola.py
 │                               inspect/ → avbase-inspect（probe · decode · sync）
-│                               setup_ffmpeg.sh（FindFFmpeg.cmake 引用，非死代码）
 │                            ⬜ golden_record.py · golden_diff.py · verify_e2e.py
-│                               ijkplayer-recorder/ · build_linux.sh
-│                               inspect 的 doctor/play/dump/golden 子命令
-├── examples/                ✅ 2 个 / 328 行（headless · play_sdl2）；⬜ 其余 10 个
+├── examples/                ✅ 3 个 / 759 行（headless · play_sdl2 · pull_frames）
 ├── third_party/             ⬜ 按设计保持为空（不 vendor）
-└── docs/                    ✅ 15 篇（01–12 + PROGRESS + BUILDING + 项目架构与能力分析，
-                             约 49.5 万字符）
+└── docs/                    ✅ 13 篇（01–08 + 10–12 + PROGRESS + BUILDING）
+                             + archive/（1–9 轮进度 · 09 Linux 方案）+ reviews/
                              ⬜ API · COOKBOOK · MIGRATION · TROUBLESHOOTING
                                 EXTENDING · PERFORMANCE · CHANGELOG（M13 发版 blocker）
 ```
 
-合计：**220 个 `.h`/`.cc`**（无 DRAFT：第九轮冻结的 DRAFT 文件第十轮全部转正）、
-C++ **32,154 行**（实现 25,381 / 测试 6,773）、`tools/*.py` **3,224 行**。逐项进度以 [docs/PROGRESS.md](docs/PROGRESS.md) 的
-"未完成（按里程碑）"与"工具与门禁现状"两张表为准。
+合计：**364 个 `.h`/`.cc`** —— C++ **39,488 行实现 + 19,842 行测试**，
+`tools/*.py` **5,721 行**。逐项进度以 [docs/PROGRESS.md](docs/PROGRESS.md) 为准。
 
-### 8.2 规划（目标布局，docs/02 §2 的完整版）
-
-```
-avbase/
-├── .clang-format  .clang-tidy  .editorconfig  STYLE.md  VERSION  LICENSE
-├── CMakeLists.txt  CMakePresets.json
-├── cmake/            AvbaseOptions · CompilerFlags · FindFFmpeg · FindLinuxMediaDeps
-│                     AvbaseInstall · AvbaseCheckInvariants · avbase.map
-├── base/             ← Chromium base/ 同名同语义子集（~28 文件）
-│   ├── functional/ memory/ time/ synchronization/ task/ threading/
-│   ├── containers/ files/ types/ trace_event/ test/
-│   ├── check.h logging.h observer_list.h feature_list.h sequence_checker.h
-├── media/
-│   ├── base/         接口与核心类型（~30 文件）
-│   ├── filters/      具体实现（~18 文件，含 ffmpeg_* 与 legacy/ 的三个移植件）
-│   ├── renderers/    default_renderer_factory
-│   └── audio/        audio_manager · audio_output_device · null/
-├── player/
-│   ├── public/       ★SDK 唯一对外头文件目录（12 个）
-│   └── *.cc          实现
-├── platform/
-│   ├── null/  sdl2/  linux/  ffmpeg/
-│   └── (android/ ios/ 预留)
-├── examples/         play_sdl2 · play_native · play_embed · headless · avbase_inspect
-├── tests/            unit/ contract/ integration/ golden/ stress/ fuzz/ bench/ testdata/
-├── tools/            check_invariants.py · extract_constants.py · gen_options.py
-│                     golden_record.py · golden_diff.py · verify_e2e.py · build_linux.sh
-├── third_party/      （空或仅 vendored 单头）
-└── docs/             01–10（本套设计文档）+ BUILDING/API/COOKBOOK/MIGRATION/...
-```
-
-> **路径变更通知（第九轮）**：`video_frame_compositor.{h,cc}`、`av_sync_controller.{h,cc}`、
-> `clock.{h,cc}` 已从 `media/filters/` 移入 **`media/filters/legacy/`**（LGPL-2.1 隔离，
-> 见该目录的 README.md）。docs/01–08 是 v2.0 已评审的设计文档，**其中的旧路径刻意保留不改**
-> ——事后改路径会让"当时决定了什么"失真。当前布局以本节与 PROGRESS 为准。
+> **路径变更通知（第九轮 / 第三十八轮）**：① 第九轮 `video_frame_compositor.{h,cc}`、
+> `av_sync_controller.{h,cc}`、`clock.{h,cc}` 移入 `media/filters/legacy/`（LGPL-2.1 隔离），
+> docs/01–08 中的**旧路径刻意保留不改**——事后改路径会让"当时决定了什么"失真。
+> ② 第三十八轮 `platform/ffmpeg/*` + `media/filters/ffmpeg_*` 整体迁入 **`media/ffmpeg/`**
+> （目录边界应等于 target 边界）；这一批是**目录本身已不存在**，故全套文档已回填，
+> 不回填会让读者按图索骥到空目录。
 
 ---
 
-*文档版本 v2.0 · 2026-09-29 · 状态：待评审*
-*v2.0 变更：全面对齐 Google C++ Style 与 Chromium base/media 分层；Linux 双后端纳入核心范围；线程模型改为 task runner + sequence；解码器接口改为异步回调式；新增 09/10 两篇。*
+*文档版本 v2.1 · 2026-10-10（第四十六轮）*
+*v2.1 变更：状态、用例数与目录树按第四十六轮实测重写；`platform/ffmpeg/` 路径回填为
+`media/ffmpeg/`；删除与实测树冲突的 §8.2 规划树；09 Linux 方案因 M12 顺延移入 archive；
+删除自声明冻结的「项目架构与能力分析」快照。*

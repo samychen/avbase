@@ -184,6 +184,7 @@ class PipelineTestFixture : public ::testing::Test {
   // Builds the graph and starts it. |custom_source| overrides the default
   // testdata-file source (throttled sources etc.); synthetic mode ignores it.
   void StartPipeline(base::scoped_refptr<DataSource> custom_source = nullptr) {
+    (void)custom_source;  // Synthetic mode has no file source to override.
     av_sync_ = std::make_shared<AvSyncController>(
         AvSyncController::MasterType::kAudio, &tick_clock_,
         AvSyncController::Thresholds());

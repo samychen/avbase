@@ -61,9 +61,6 @@ constexpr auto kWaitTimeout = std::chrono::seconds(10);
 // The seek target: 5 s of a 30 fps source is frame 150.
 constexpr uint32_t kSeekFrame = 150;
 constexpr uint32_t kLandingSlack = 2;
-// Audio ring chunk, kept small so a pump round moves a noticeable slice.
-constexpr int kFramesPerBuffer = 256;
-constexpr int kAudioChannels = 2;
 
 template <typename Pred>
 bool WaitFor(Pred pred) {
@@ -380,10 +377,10 @@ TEST_F(PipelineSeekTest, MidFlightSeekIsNotDropped) {
   constexpr uint32_t kSecondTarget = 240;
   bool first_seeked = false;
   bool second_seeked = false;
-  pipeline_->Seek(base::Seconds(5), base::BindOnce([](bool* f) { *f = true; },
-                                                    &first_seeked));
-  pipeline_->Seek(base::Seconds(8), base::BindOnce([](bool* f) { *f = true; },
-                                                    &second_seeked));
+  pipeline_->Seek(base::Seconds(5),
+                  base::BindOnce([](bool* f) { *f = true; }, &first_seeked));
+  pipeline_->Seek(base::Seconds(8),
+                  base::BindOnce([](bool* f) { *f = true; }, &second_seeked));
   // The two Seek() calls post onto the same runner back to back, so the
   // second DoSeek() deterministically observes seek_in_flight_.
   ASSERT_TRUE(PumpUntil([&] {
@@ -402,8 +399,7 @@ TEST_F(PipelineSeekTest, MidFlightSeekIsNotDropped) {
     PumpRound();
     return LandingFrame(*video, kSeekFrame, first_batch) != nullptr;
   })) << "no frame >= "
-      << kSeekFrame
-      << " presented after the seek batch; events:\n"
+      << kSeekFrame << " presented after the seek batch; events:\n"
       << client_.EventLog();
 
   const base::scoped_refptr<VideoFrame>* landed =

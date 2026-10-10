@@ -175,17 +175,6 @@ void PipelineImpl::DoPlay() {
   renderer_->SetPaused(false);
 }
 
-void PipelineImpl::OnDemuxerStarted(Status status) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (!status) {
-    LOG(WARNING) << "avbase.pipeline: demuxer start reported "
-                 << status.error().summary();
-  }
-  if (state_ == State::kReady && renderer_) {
-    renderer_->StartPlayingFrom(base::TimeDelta());
-  }
-}
-
 void PipelineImpl::Pause() {
   if (media_runner_) {
     media_runner_->PostTask(FROM_HERE,

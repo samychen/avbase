@@ -1,9 +1,15 @@
 # 09 · Linux 平台实现方案
 
-> 上一篇：[08 实施路线图与风险](08-实施路线图与风险.md) ｜ 返回：[README](../README.md)
+> ⚠️ **本篇已于第四十六轮移入 `docs/archive/`：M12（原生 OpenGL 后端）已顺延为可选，
+> `platform/linux/` 目录从未落地（`linux-native` preset 至今仍是 `FATAL_ERROR`），
+> Linux 出画由 SDL2 后端交付。全文 29 处 `platform/linux/*` 路径均指向不存在的目录。**
+> 保留为决策记录（当时为什么选双后端、dlopen 弱依赖、xvfb 验收），**不作为当前状态的依据**；
+> 当前状态以 [PROGRESS.md](../PROGRESS.md) 与 [12-剩余工作清单](../12-剩余工作清单.md) 为准。
+
+> 上一篇：[08 实施路线图与风险](../08-实施路线图与风险.md) ｜ 返回：[README](../../README.md)
 
 > **实现状态**：本篇是设计文档，描述目标形态。**当前已落地到哪一步以
-> [PROGRESS.md](PROGRESS.md) 为唯一真相源**；两者的差异（已实现 / 计划中）在 PROGRESS.md 里逐项标注。
+> [PROGRESS.md](../PROGRESS.md) 为唯一真相源**；两者的差异（已实现 / 计划中）在 PROGRESS.md 里逐项标注。
 
 本篇是"**最终要实现 Linux 平台播放视频**"这一目标的落地方案：双后端（SDL2 + 原生 OpenGL）、嵌入模式优先、dlopen 弱依赖、xvfb 可验收。
 

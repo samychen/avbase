@@ -476,10 +476,10 @@ endif()
 
 ## 5. FFmpeg 多版本兼容层
 
-**规则**：所有 `#if LIBAV*_VERSION_*` 只允许出现在 `platform/ffmpeg/av_includes.h` 与 `platform/ffmpeg/compat.h` 两个文件（check_invariants C8）。
+**规则**：所有 `#if LIBAV*_VERSION_*` 只允许出现在 `media/ffmpeg/av_includes.h` 与 `media/ffmpeg/compat.h` 两个文件（check_invariants C8）。
 
 ```cpp
-// platform/ffmpeg/av_includes.h —— 全项目唯一的 extern "C" 包裹点
+// media/ffmpeg/av_includes.h —— 全项目唯一的 extern "C" 包裹点
 #ifndef AVBASE_PLATFORM_FFMPEG_AV_INCLUDES_H_
 #define AVBASE_PLATFORM_FFMPEG_AV_INCLUDES_H_
 
@@ -530,7 +530,7 @@ extern "C" {
 ```
 
 ```cpp
-// platform/ffmpeg/compat.h（节选）
+// media/ffmpeg/compat.h（节选）
 namespace avbase::platform::ffmpeg {
 
 // ---------- RAII deleters（消灭原版 50+ 处 goto fail） ----------
@@ -825,27 +825,19 @@ target_compile_definitions(avbase_media PRIVATE AVBASE_IMPLEMENTING_MEDIA=1)
 avbase_configure_target(avbase_media)
 # ★不链接 FFmpeg
 
-# ---------- platform/ffmpeg（唯一链接 FFmpeg 的 target） ----------
+# ---------- media/ffmpeg（唯一链接 FFmpeg 的 target，第三十八轮改名 avbase_ffmpeg） ----------
+# 目录现由 file(GLOB) 收录，下列是第三十八轮搬家后的真实成员（节选）：
+#   compat · av_packet_storage · log_bridge · data_source_io · url_data_source
+#   ffmpeg_glue · ffmpeg_demuxer(+_configs/_track_select) · ffmpeg_{video,audio}_decoder
+#   ffmpeg_hw_video_decoder · ffmpeg_hw_decoder_factory · ffmpeg_decoder_factories
+#   ffmpeg_{video,audio}_filter · video_convert · color_space_bridge · hw_frame_readback
+#   ffmpeg_text_decoder · ffmpeg_image_snapshot · sei_timecode
+# （av_frame_storage / dict_converter / interrupt_callback 三个从未落地；
+#   interrupt_callback.{h,cc} 已于第四十六轮作为死代码删除）
 if(AVBASE_ENABLE_FFMPEG)
-  add_library(avbase_platform_ffmpeg
-      platform/ffmpeg/compat.cc
-      platform/ffmpeg/av_packet_storage.cc
-      platform/ffmpeg/av_frame_storage.cc
-      platform/ffmpeg/log_bridge.cc
-      platform/ffmpeg/dict_converter.cc
-      platform/ffmpeg/interrupt_callback.cc
-      media/filters/ffmpeg_glue.cc
-      media/filters/ffmpeg_demuxer.cc
-      media/filters/ffmpeg_demuxer_stream.cc
-      media/filters/ffmpeg_video_decoder.cc
-      media/filters/ffmpeg_audio_decoder.cc
-      media/filters/ffmpeg_video_frame_converter.cc
-      media/filters/ffmpeg_audio_converter.cc
-      media/filters/ffmpeg_decoder_factory.cc
-      media/filters/file_data_source.cc
-      media/filters/buffered_data_source.cc)
-  add_library(avbase::platform_ffmpeg ALIAS avbase_platform_ffmpeg)
-  target_link_libraries(avbase_platform_ffmpeg
+  add_library(avbase_ffmpeg ${AVBASE_FFMPEG_SOURCES})
+  add_library(avbase::ffmpeg ALIAS avbase_ffmpeg)
+  target_link_libraries(avbase_ffmpeg
       PUBLIC  avbase::media
       PRIVATE FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil
               FFmpeg::swscale FFmpeg::swresample)
@@ -853,12 +845,12 @@ if(AVBASE_ENABLE_FFMPEG)
   target_include_directories(avbase_platform_ffmpeg PRIVATE ${CMAKE_SOURCE_DIR})
   avbase_configure_target(avbase_platform_ffmpeg)
   target_precompile_headers(avbase_platform_ffmpeg PRIVATE
-      "${CMAKE_SOURCE_DIR}/platform/ffmpeg/av_includes.h")
+      "${CMAKE_SOURCE_DIR}/media/ffmpeg/av_includes.h")
 endif()
 ```
 
-> **D11 边界说明**：`media/filters/ffmpeg_*.cc` 会 include `platform/ffmpeg/av_includes.h`。也就是说，`media/filters/` 里 FFmpeg 相关实现**确实**会见到 `libav*.h`，但它们被单独放进 `avbase_platform_ffmpeg` target，链接隔离仍然成立（`avbase_media` 不含任何 FFmpeg 符号）。
-> 若要更严格（`media/filters/ffmpeg_*.cc` 也不 include FFmpeg，全部走 `platform/ffmpeg/` 的薄封装），实现成本约 +15%。**这是需要拍板的 D11**；本设计取"链接隔离 + 目录隔离，放弃 include 隔离"。
+> **D11 边界说明**：`media/filters/ffmpeg_*.cc` 会 include `media/ffmpeg/av_includes.h`。也就是说，`media/filters/` 里 FFmpeg 相关实现**确实**会见到 `libav*.h`，但它们被单独放进 `avbase_platform_ffmpeg` target，链接隔离仍然成立（`avbase_media` 不含任何 FFmpeg 符号）。
+> 若要更严格（`media/filters/ffmpeg_*.cc` 也不 include FFmpeg，全部走 `media/ffmpeg/` 的薄封装），实现成本约 +15%。**这是需要拍板的 D11**；本设计取"链接隔离 + 目录隔离，放弃 include 隔离"。
 
 ### 7.3 `platform/CMakeLists.txt`
 
@@ -877,11 +869,10 @@ avbase_configure_target(avbase_platform_null)
 # ---------- sdl2 ----------
 if(AVBASE_ENABLE_SDL2)
   add_library(avbase_platform_sdl2
-      platform/sdl2/sdl2_video_renderer_sink.cc
-      platform/sdl2/sdl2_audio_renderer_sink.cc
-      platform/sdl2/sdl2_window.cc
-      platform/sdl2/sdl2_gl_renderer.cc
-      platform/sdl2/sdl2_backend.cc)
+      platform/sdl2/sdl2_video_sink.cc
+      platform/sdl2/sdl2_audio_sink.cc
+      platform/sdl2/gl_present.cc
+      platform/sdl2/text_raster.cc)
   add_library(avbase::platform_sdl2 ALIAS avbase_platform_sdl2)
   target_link_libraries(avbase_platform_sdl2 PUBLIC avbase::media PRIVATE SDL2::SDL2)
   avbase_configure_target(avbase_platform_sdl2)
@@ -1172,7 +1163,7 @@ endif()
 | C5 | `base/` `media/` `player/` 不含 `__linux__`/`__APPLE__`/`_WIN32`/`SDL2/`/`X11/`/`wayland-`/`alsa/`/`GL/` | grep |
 | C6 | `player/public/*.h` 不含 `media/` `base/` 内部头（白名单：`base/time/time.h`） | grep |
 | C7 | `base/` `media/` `player/` 不含裸 `new`/`delete`/`malloc`/`free`（白名单：`base/memory/`） | grep |
-| C8 | `#if LIBAV.*VERSION` 只出现在 `platform/ffmpeg/av_includes.h` | grep |
+| C8 | `#if LIBAV.*VERSION` 只出现在 `media/ffmpeg/av_includes.h` | grep |
 | C9 | `goto` 出现次数 = 0 | grep |
 | C10 | include 图无环 | 构建 DAG 检测 |
 | C11 | 每个 `<layer>/<module>/` 都有对应 `tests/unit/<layer>_<module>/` | 目录存在性 |
@@ -1195,15 +1186,19 @@ endif()
 | job | 证明的命题 |
 |---|---|
 | `quick` | **G2**：只有 C++20 编译器（无 FFmpeg/X11/SDL2）也能编译核心、全过测试，且门禁通过 |
-| `ffmpeg` | 发行版 FFmpeg 可用（**A14**：不 vendor、不 patch），FFmpeg 层可编译、384 用例全过 |
+| `ffmpeg` | 发行版 FFmpeg 可用（**A14**：不 vendor、不 patch），FFmpeg 层可编译、585 用例全过 |
 | `e2e-headless` | 端到端：5 个样本真实播到 kCompleted；`--seek` 走通；损坏文件**以可操作错误失败**且退出码正确 |
 | `sdl2-build` | SDL2 后端在 Linux（发行版 SDL2 + 音频栈）上可编译可链接 |
 | `strict` | Debug + DCHECK + 严格告警 + `-Werror` 覆盖含 FFmpeg 的整棵树（clang；GCC 半边等 `-Wuseless-cast` 实测，理由见 job 注释） |
 | `full` | 矩阵：ubuntu 22.04/24.04 双 GCC（G2 跨编译器）、asan / tsan / ubsan / coverage、macOS（no-ffmpeg + Homebrew FFmpeg——第十轮两处平台坑的回归位） |
 | `e2e-linux` | `if: false` 骨架：xvfb + llvmpipe 双后端真窗口出画，M11/M12 落地 |
 
-`check-format` / cpplint / clang-tidy **有意缺席**：C23 棘轮就是因为今天还有 310 行超 80 列——
-第一天就红的门禁教人无视门禁（R12），见 STYLE.md 的"工具落地状态"。
+> **原文此处写"`check-format` / cpplint / clang-tidy 有意缺席：C23 棘轮就是因为今天还有
+> 310 行超 80 列"——已过期。** 三条此后各自做了修树轮并**全部以阻塞模式接入**：
+> `check-format`（第二十三轮，C23 基线由 286 降到 **37 行**）· `check-clang-tidy`
+> （第二十六轮）· `check-cpplint`（第三十三轮）。"先修树再开门、不造红板"的策略本身
+> 是对的，且已经走完：现在 CI 共 **16 个 job**（另含 corpus / soak / fuzz-smoke /
+> protocols / weaknet / macos-player / windows-msvc 等）。
 
 ## 11. Install / Export
 

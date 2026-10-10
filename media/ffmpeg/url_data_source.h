@@ -77,7 +77,6 @@ class AVBASE_MEDIA_EXPORT UrlDataSource final : public media::DataSource {
   bool size_known_ = false;  // GUARDED_BY(lock_)
   int64_t size_ = -1;        // GUARDED_BY(lock_)
   bool seekable_ = false;    // GUARDED_BY(lock_)
-  int bitrate_ = 0;
   // The async-read machinery: one lazily created worker draining a job
   // queue, so Read()'s callback is posted (never inline) while the blocking
   // avio call happens off the caller's thread.
