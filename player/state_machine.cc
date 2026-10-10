@@ -17,9 +17,12 @@ bool PlayerStateMachine::TransitionTo(PlayerState to) {
 bool PlayerStateMachine::CanTransitionTo(PlayerState to) const {
   switch (state_) {
   case PlayerState::kIdle:
-    return to == PlayerState::kInitialized;
+    // M3: stopping straight from kIdle is legal -- without this edge Stop()
+    // could not move the machine at all (it stayed in kIdle while the event
+    // broadcast a fictional kStopped -> kStopped transition).
+    return to == PlayerState::kInitialized || to == PlayerState::kStopping;
   case PlayerState::kInitialized:
-    return to == PlayerState::kPreparing;
+    return to == PlayerState::kPreparing || to == PlayerState::kStopping;
   case PlayerState::kPreparing:
     return to == PlayerState::kPrepared || to == PlayerState::kStopping ||
            to == PlayerState::kError;

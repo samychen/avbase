@@ -148,7 +148,16 @@ class WeakPtrFactory {
 
   ~WeakPtrFactory() { InvalidateWeakPtrs(); }
 
-  WeakPtr<T> GetWeakPtr() const { return WeakPtr<T>(flag_, instance_); }
+  WeakPtr<T> GetWeakPtr() const {
+    // L4: after InvalidateWeakPtrs() the factory used to hand out
+    // permanently-dead handles (flag_ stayed null forever). Match Chromium:
+    // invalidation kills the OLD handles only; the next GetWeakPtr() re-arms
+    // a fresh flag so handles created afterwards work again.
+    if (!flag_) {
+      flag_ = base::MakeRefCounted<internal::WeakReferenceFlag>();
+    }
+    return WeakPtr<T>(flag_, instance_);
+  }
 
   void InvalidateWeakPtrs() {
     if (flag_) {

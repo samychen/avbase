@@ -15,6 +15,8 @@
 #include <thread>
 
 #include "base/logging.h"
+#include "base/functional/bind.h"
+#include "base/location.h"
 
 namespace avbase {
 
@@ -27,14 +29,12 @@ void PlayerImpl::Stop() {
         previous == PlayerState::kStopped) {
       return;
     }
-    // From kIdle/kInitialized there is no pipeline to stop; walk the table to
-    // kStopped so the published sequence is still well-formed.
-    if (previous == PlayerState::kIdle ||
-        previous == PlayerState::kInitialized) {
-      previous = PlayerState::kStopped;
-    } else {
-      machine_.TransitionTo(PlayerState::kStopping);
-    }
+    // M3: kIdle/kInitialized now have a legal kStopping edge (state_machine
+    // .cc), so the machine REALLY reaches kStopped below. The old code
+    // overwrote |previous| with kStopped here because the table refused the
+    // transitions -- the machine stayed in kIdle while observers received a
+    // fictional kStopped -> kStopped event.
+    machine_.TransitionTo(PlayerState::kStopping);
   }
   const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
   if (pipeline) {
@@ -45,6 +45,9 @@ void PlayerImpl::Stop() {
     machine_.TransitionTo(PlayerState::kStopping);
     machine_.TransitionTo(PlayerState::kStopped);
   }
+  // |previous| is the true pre-Stop state (kIdle, kInitialized, kPreparing,
+  // kPrepared, ...): the published sequence starts where the player actually
+  // was, not at kStopped.
   event_hub_.PostStateChanged(previous, PlayerState::kStopped, GetMediaTime());
 }
 
@@ -107,12 +110,47 @@ void PlayerImpl::Reset() {
     pipeline_.reset();
     renderer_factory_.reset();
   }
+  // M4: in-flight seeks used to dangle forever -- StopSync stopped the
+  // pipeline, so OnMediaSeekDone could never fire, yet the user callbacks
+  // stayed parked in pending_seeks_. Answer every one of them with kAborted
+  // and drop the seek bookkeeping before the machine resets.
+  {
+    base::AutoLock scoped(seek_lock_);
+    std::map<int64_t, Player::SeekCB> pending =
+        std::move(pending_seeks_);
+    pending_seeks_.clear();
+    accurate_seek_targets_.clear();
+    for (auto& entry : pending) {
+      event_hub_.PostClosure(base::BindOnce(
+          std::move(entry.second),
+          base::unexpected(MediaError(
+              ErrorCode::kAborted, "player reset while the seek was pending",
+              "request_id = " + std::to_string(entry.first),
+              "expected across Reset(); re-issue the seek on the new "
+              "source"))));
+    }
+  }
+  // The two controllers are media-sequence-bound; rewind them where they live
+  // instead of tripping their sequence checkers from the caller's thread.
+  // OnSeekCompleted is BufferController's own "start fresh" primitive (it
+  // closes a still-open cycle and rewinds the tier to kFirst).
+  media_thread_.task_runner()->PostTask(
+      FROM_HERE, base::BindOnce(
+                     [](PlayerImpl* self) {
+                       self->accurate_seek_.End();
+                       self->buffer_controller_.OnSeekCompleted();
+                     },
+                     base::Unretained(this)));
   {
     base::AutoLock scoped(state_lock_);
     machine_.ForceReset();
     source_set_ = false;
     source_ = media::DataSourceDescriptor();
     prepared_handled_ = false;
+    // M4: the retry decorator belongs to the OLD source; keeping it alive
+    // past Reset() let ReconnectNow() reach a data source that is no longer
+    // wired to anything.
+    retry_source_.reset();
   }
   prepared_event_.Reset();
   event_hub_.PostStateChanged(PlayerState::kStopped, PlayerState::kIdle,

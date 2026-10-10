@@ -87,6 +87,11 @@ bool FFmpegAudioEncoder::Encode(base::scoped_refptr<AudioBuffer> in,
     return false;
   }
   AVFrame* frame = av_frame_alloc();
+  if (!frame) {
+    // M10: OOM used to null-deref on the field writes right below.
+    LOG(ERROR) << "transcode: av_frame_alloc failed in the audio encoder";
+    return false;
+  }
   frame->format = ctx_->codec->sample_fmt;
   frame->sample_rate = ctx_->codec->sample_rate;
   frame->nb_samples = in->frame_count();
@@ -115,6 +120,11 @@ bool FFmpegAudioEncoder::Encode(base::scoped_refptr<AudioBuffer> in,
 
   while (true) {
     ff::PacketPtr packet(av_packet_alloc());
+    if (!packet) {
+      // M10: OOM inside the drain loop used to null-deref in
+      // avcodec_receive_packet.
+      return false;
+    }
     const int got = avcodec_receive_packet(ctx_->codec, packet.get());
     if (got < 0) {
       break;  // EAGAIN: needs more input.
@@ -139,6 +149,11 @@ bool FFmpegAudioEncoder::Flush(std::vector<EncodedPacket>* out) {
   }
   while (true) {
     ff::PacketPtr packet(av_packet_alloc());
+    if (!packet) {
+      // M10: OOM inside the drain loop used to null-deref in
+      // avcodec_receive_packet.
+      return false;
+    }
     const int got = avcodec_receive_packet(ctx_->codec, packet.get());
     if (got < 0) {
       break;

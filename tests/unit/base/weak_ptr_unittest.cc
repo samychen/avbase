@@ -92,6 +92,22 @@ TEST(WeakPtrTest, ResetClearsThePointer) {
   EXPECT_EQ(p.get(), nullptr);
 }
 
+// L4: invalidation kills the handles that existed BEFORE it; handles created
+// afterwards must be live again (Chromium semantics) instead of inheriting a
+// permanently-dead factory.
+TEST(WeakPtrTest, GetWeakPtrAfterInvalidationRearms) {
+  Target target;
+  WeakPtrFactory<Target> factory(&target);
+  WeakPtr<Target> stale = factory.GetWeakPtr();
+  factory.InvalidateWeakPtrs();
+  EXPECT_FALSE(stale.MaybeValid());
+
+  WeakPtr<Target> fresh = target.GetWeakPtr();
+  EXPECT_TRUE(fresh.MaybeValid());
+  EXPECT_EQ(fresh.get(), &target);
+  EXPECT_FALSE(stale.MaybeValid());  // The old handle stays dead.
+}
+
 // The whole point of WeakPtr: a callback that outlives its target must become
 // a silent no-op for void returns.
 TEST(WeakPtrBindTest, VoidCallbackIsSkippedAfterTargetDies) {

@@ -337,6 +337,11 @@ bool FFmpegHwVideoDecoder::DecodeAvailableFrames() {
     AVFrame* held_for_release = av_frame_clone(frame);
     av_frame_unref(frame);
     if (!readback_frame || !held_for_release) {
+      // M7: a partial clone pair must not leak the surviving half
+      // (readback_frame releases itself through its shared_ptr deleter).
+      if (held_for_release) {
+        av_frame_free(&held_for_release);
+      }
       return false;
     }
     auto out = media::VideoFrame::WrapNativeBuffer(
@@ -359,6 +364,10 @@ bool FFmpegHwVideoDecoder::DecodeAvailableFrames() {
             },
             readback_frame, sar, timestamp, duration, current_serial_, cs));
     if (!out) {
+      // M7: WrapNativeBuffer failed, so the release closure bound to
+      // |held_for_release| is destroyed WITHOUT running -- free the cloned
+      // reference here or it leaks on every wrap failure.
+      av_frame_free(&held_for_release);
       return false;
     }
     out->set_color_space(cs);

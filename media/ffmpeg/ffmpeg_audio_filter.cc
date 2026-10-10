@@ -196,20 +196,55 @@ bool FFmpegAudioFilter::Process(
   }
   const int bytes = BytesPerSample(ctx_->format);
   const bool planar = IsPlanar(ctx_->format);
+  // M14: one conversion path for every frame the graph emits. The drain
+  // loop used to count samples and DROP them, so a graph with internal
+  // latency (e.g. a resampler) lost its tail audio at EOS.
+  auto pull_and_emit = [&]() -> bool {
+    while (true) {
+      AVFrame* out_frame = av_frame_alloc();
+      const int got = av_buffersink_get_frame(ctx_->sink, out_frame);
+      if (got < 0) {
+        av_frame_free(&out_frame);
+        break;  // EAGAIN: come back with the next input (or drained).
+      }
+      const int samples = out_frame->nb_samples;
+      const size_t plane =
+          static_cast<size_t>(samples) * static_cast<size_t>(bytes);
+      std::vector<uint8_t> data(
+          planar ? plane * static_cast<size_t>(ctx_->channels)
+                 : plane * static_cast<size_t>(ctx_->channels));
+      if (planar) {
+        for (size_t ch = 0; ch < static_cast<size_t>(ctx_->channels); ++ch) {
+          std::memcpy(data.data() + ch * plane, out_frame->data[ch], plane);
+        }
+      } else {
+        std::memcpy(data.data(), out_frame->data[0],
+                    plane * static_cast<size_t>(ctx_->channels));
+      }
+      const base::TimeDelta ts = base::SecondsD(
+          static_cast<double>(ctx_->next_pts_samples) / ctx_->sample_rate);
+      ctx_->next_pts_samples += samples;
+      auto buffer = AudioBuffer::Create(
+          ctx_->format, ctx_->layout, ctx_->channels, ctx_->sample_rate,
+          samples, ts,
+          base::SecondsD(static_cast<double>(samples) / ctx_->sample_rate), 0,
+          std::move(data));
+      av_frame_free(&out_frame);
+      if (!buffer) {
+        return false;
+      }
+      out->push_back(std::move(buffer));
+    }
+    return true;
+  };
   if (in && in->end_of_stream()) {
     // Drain: send EOF once, pull everything the graph still holds.
     if (!ctx_->drained) {
       (void)av_buffersrc_add_frame_flags(ctx_->src, nullptr, 0);
       ctx_->drained = true;
     }
-    while (true) {
-      AVFrame* frame = av_frame_alloc();
-      if (av_buffersink_get_frame(ctx_->sink, frame) < 0) {
-        av_frame_free(&frame);
-        break;
-      }
-      ctx_->next_pts_samples += frame->nb_samples;
-      av_frame_free(&frame);
+    if (!pull_and_emit()) {
+      return false;
     }
     out->push_back(AudioBuffer::CreateEOSBuffer());
     return true;
@@ -218,9 +253,11 @@ bool FFmpegAudioFilter::Process(
     return false;
   }
 
-  // Push a frame VIEW over the AudioBuffer's planes. No KEEP_REF: the frame
-  // is not refcounted (the data lives in the AudioBuffer), so buffersrc
-  // copies at the default flags.
+  // Push a frame VIEW over the AudioBuffer's planes. The frame is not
+  // refcounted (the data lives in the AudioBuffer), and the graph may hold
+  // it past this call -- M15 (same root cause as the video filter):
+  // flags=0 moved the borrowed pointers in. KEEP_REF deep-copies the
+  // unrefcounted input so the graph owns its bytes.
   {
     AVFrame* frame = av_frame_alloc();
     frame->format = ToAvSampleFormat(ctx_->format);
@@ -234,51 +271,17 @@ bool FFmpegAudioFilter::Process(
         break;  // Packed formats live in channel 0 only.
       }
     }
-    if (av_buffersrc_add_frame_flags(ctx_->src, frame, 0) < 0) {
+    if (av_buffersrc_add_frame_flags(ctx_->src, frame,
+                                     AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
       av_frame_free(&frame);
       LOG(ERROR) << "audio filter: buffersrc rejected a frame";
       return false;
     }
-    av_frame_free(&frame);  // The graph copied what it needs.
+    av_frame_free(&frame);  // The graph owns its own copy now.
   }
 
   // Pull everything the graph makes available this round.
-  while (true) {
-    AVFrame* out_frame = av_frame_alloc();
-    const int got = av_buffersink_get_frame(ctx_->sink, out_frame);
-    if (got < 0) {
-      av_frame_free(&out_frame);
-      break;  // EAGAIN: come back with the next input.
-    }
-    const int samples = out_frame->nb_samples;
-    const size_t plane =
-        static_cast<size_t>(samples) * static_cast<size_t>(bytes);
-    std::vector<uint8_t> data(
-        planar ? plane * static_cast<size_t>(ctx_->channels)
-               : plane * static_cast<size_t>(ctx_->channels));
-    if (planar) {
-      for (size_t ch = 0; ch < static_cast<size_t>(ctx_->channels); ++ch) {
-        std::memcpy(data.data() + ch * plane, out_frame->data[ch], plane);
-      }
-    } else {
-      std::memcpy(data.data(), out_frame->data[0],
-                  plane * static_cast<size_t>(ctx_->channels));
-    }
-    const base::TimeDelta ts = base::SecondsD(
-        static_cast<double>(ctx_->next_pts_samples) / ctx_->sample_rate);
-    ctx_->next_pts_samples += samples;
-    auto buffer = AudioBuffer::Create(
-        ctx_->format, ctx_->layout, ctx_->channels, ctx_->sample_rate, samples,
-        ts, base::SecondsD(static_cast<double>(samples) / ctx_->sample_rate), 0,
-        std::move(data));
-    av_frame_free(&out_frame);
-    if (!buffer) {
-      av_frame_free(&out_frame);
-      return false;
-    }
-    out->push_back(std::move(buffer));
-  }
-  return true;
+  return pull_and_emit();
 }
 
 }  // namespace avbase::media

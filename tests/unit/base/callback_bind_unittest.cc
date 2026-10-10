@@ -265,5 +265,13 @@ TEST(CallbackHelpersTest, ScopedClosureRunnerMoveTransfers) {
   EXPECT_EQ(count, 1);
 }
 
+// M13: Run()&& used to move a shared_ptr into a unique_ptr, which failed to
+// compile the moment anyone instantiated the overload.
+TEST(RepeatingCallbackTest, RvalueRunConsumesTheCallback) {
+  RepeatingCallback<int(int)> cb = BindRepeating(&FreeAdd, 10);
+  EXPECT_EQ(std::move(cb).Run(5), 15);
+  EXPECT_FALSE(cb);  // Consumed: the invoker handle was moved out.
+}
+
 }  // namespace
 }  // namespace avbase::base

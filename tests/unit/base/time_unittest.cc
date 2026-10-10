@@ -70,6 +70,38 @@ TEST(TimeDeltaTest, MultiplicationSaturates) {
   EXPECT_EQ(Seconds(-1) * INT64_MAX, TimeDelta::Min());
 }
 
+// M1/L2: Zero() * INT64_MAX used to fall into the infinite branch (which
+// keyed on the scalar alone) and come back as Max(); zero operands must
+// short-circuit to Zero regardless of the other side.
+TEST(TimeDeltaTest, ZeroTimesHugeScalarIsZero) {
+  EXPECT_EQ(TimeDelta::Zero() * INT64_MAX, TimeDelta::Zero());
+  EXPECT_EQ(TimeDelta::Zero() * INT64_MIN, TimeDelta::Zero());
+  EXPECT_EQ(INT64_MAX * TimeDelta::Zero(), TimeDelta::Zero());
+  EXPECT_EQ(TimeDelta::Max() * 0, TimeDelta::Zero());
+}
+
+// M1: exact-fit boundaries must not saturate and overflow must -- with the
+// bound check BEFORE the product, so no signed-overflow UB is reachable
+// (UBSan/ffmpeg+asan presets gate this file).
+TEST(TimeDeltaTest, MultiplicationExactBoundaries) {
+  EXPECT_EQ(TimeDelta::FromMicroseconds(1) * INT64_MAX, TimeDelta::Max());
+  EXPECT_EQ(TimeDelta::FromMicroseconds(-1) * INT64_MIN, TimeDelta::Max());
+  EXPECT_EQ(TimeDelta::FromMicroseconds(2) * INT64_MAX, TimeDelta::Max());
+  EXPECT_EQ(TimeDelta::FromMicroseconds(-2) * INT64_MAX, TimeDelta::Min());
+  EXPECT_EQ(Milliseconds(1) * -3, Milliseconds(-3));
+}
+
+// M1: subtraction saturates WITHOUT negating the operand first (the old
+// SaturatingAdd(a, -b) evaluated -INT64_MIN, which is UB).
+TEST(TimeDeltaTest, SubtractionSaturatesWithoutNegatingMin) {
+  EXPECT_EQ(TimeDelta::Max() - TimeDelta::Min(), TimeDelta::Max());
+  EXPECT_EQ(TimeDelta::Min() - Seconds(1), TimeDelta::Min());
+  EXPECT_EQ(TimeDelta::Min() - TimeDelta::Min(), TimeDelta::Zero());
+  TimeDelta d = Seconds(1);
+  d -= TimeDelta::Min();
+  EXPECT_EQ(d, TimeDelta::Max());
+}
+
 TEST(TimeDeltaTest, DivisionByZeroDoesNotTrap) {
   EXPECT_EQ(Seconds(1) / 0, TimeDelta::Max());
   EXPECT_EQ(Seconds(-1) / 0, TimeDelta::Min());

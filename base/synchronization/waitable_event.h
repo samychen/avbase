@@ -23,6 +23,10 @@ class WaitableEvent {
   enum class ResetPolicy { kManualReset, kAutomaticReset };
   enum class InitialState { kSignaled, kNotSignaled };
 
+  // L5: the DEFAULT is kManualReset, exactly as in Chromium (whose
+  // WaitableEvent also defaults to manual reset). This is deliberate and
+  // matches every existing call site; pass kAutomaticReset explicitly when
+  // each Signal() should release exactly one waiter.
   WaitableEvent(ResetPolicy reset_policy = ResetPolicy::kManualReset,
                 InitialState initial_state = InitialState::kNotSignaled)
       : manual_reset_(reset_policy == ResetPolicy::kManualReset),

@@ -121,9 +121,14 @@ void Sdl2VideoSink::SetOutputTarget(
   if (display_ && display_->kind() == NativeDisplayKind::kSdl2Window &&
       display_->raw()) {
     const auto* surface = static_cast<const Sdl2Surface*>(display_->raw());
+    // M5: renderer_ was only assigned in Start(), so a retarget to a surface
+    // with a different (or null) SDL_Renderer kept presenting through the OLD
+    // renderer until the next full Start/Stop cycle.
+    renderer_ = surface->renderer;
     gl_context_ = surface->gl_context;
     overlay_slot_ = surface->overlay;
   } else {
+    renderer_ = nullptr;
     gl_context_ = nullptr;
     overlay_slot_ = nullptr;
   }

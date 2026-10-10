@@ -25,6 +25,32 @@ seek 302/308(98.1%) · 崩溃 0**，新增 9 个 value-type 用例，三预设�
 三个"吃 `AVStream`、吐 decoder config、从不碰 `AVFormatContext`"的纯函数搬进新 TU
 `ffmpeg_demuxer_configs.cc`，**1154 → 1022**，白名单上限随之下调到 1030（棘轮只许往下）。
 > 第四十三轮：**审查 High H1–H7 全部落地修复**，每条配承重测试并经负向测试验证。
+> 第四十四轮：**审查 Medium 14 条（M1–M15，M2 已随 C3 顺带修复）+ Low 9 条全部清零**。
+> base 层——M1 `time.h` 三处有符号溢出 UB 改「先除后乘判阈值」（`SaturatingMul`/
+> `operator*`/`SaturatingSub` 新增，`-=` 不再对 `INT64_MIN` 取负）；L2 `Zero() * INT64_MAX`
+> 从 Max() 改回 0（零操作数先短路）；M13 `RepeatingCallback::Run()&&` 的
+> `unique_ptr = shared_ptr` 编译炸弹改 `shared_ptr`；L1 `expected.h` 补 `#include <new>`；
+> L3 `ObserverList::HasObserver` 谓词加 `alive`（迭代期延迟移除后重加不再 CHECK 失败）；
+> L4 `WeakPtrFactory` 失效后 `GetWeakPtr()` 重新武装新 flag（对齐 Chromium 语义）；
+> L5 `WaitableEvent` 默认 manual reset 文档化。播放路径——M3 状态机补 `kIdle/kInitialized
+> → kStopping` 合法边，`Stop()` 事件用真实前态（旧代码机器停在 kIdle 却广播假
+> `kStopped→kStopped`）；M4 `Reset()` 以 `kAborted` 回调在途 seek 并清
+> `pending_seeks_`/`accurate_seek_targets_`/`retry_source_`，媒体序列上重置两个控制器；
+> M12 live-chase 的 `Flush`/`StartPlayingFrom` 改 weak 句柄；L6 示例 `play_sdl2.cc` 改
+> `StopSync()`。FFmpeg/转码——M7 hw 解码器两条错误分支补 `av_frame_free`；M8 转码
+> `send_packet` 的 EAGAIN 从「丢包」改「排空后重发」（drain lambda 复用，编码不再断流）；
+> M9 音频解码按实际 `av_channel_layout` 掩码映射 `k5_1`/`k7_1`（不再强制 kStereo）；
+> M10 六处 `av_alloc` 分补判空（OOM 不再空指针写）；M11 `avio_alloc_context` 失败补
+> `av_freep(&io_buffer_)`；M14 音频滤镜 EOS drain 从「计数即丢」改复用输出路径
+> （带延迟滤镜图不再丢尾音）；M15 视频/音频滤镜 `buffersrc` 改 `AV_BUFFERSRC_FLAG_KEEP_REF`
+> （非引用计数帧由 FFmpeg 深拷贝，图内缓冲不再悬垂借用指针）+ 视频 pts 微秒→
+> `1/90000` 换算。SDL——M5 `SetOutputTarget` 同步刷新 `renderer_`；M6 音频惰性 init
+> 记账 `we_initialized_audio_` 并查返回值，`Stop()`/析构配对 `SDL_QuitSubSystem`。
+> 杂项——L7 `VideoFrameQueue` 槽位加 `fill_seq` 提交序号，`Pop`/`Peek` 按提交序出队
+> （旧代码跨环绕乱序，负向测试证明承重）；L8 `MarkEndOfStream` 幂等（重复调用不再压入
+> 多个 EOS 标记）；L9 `inspect --limit` 用 `strtoull` + errno/范围/负号校验。
+> 新增测试 6 个（time×3、observer_list×1、callback×1、weak_ptr×1、video_frame_queue×1、
+> decoder_buffer_queue×1），`state_machine_unittest` 补 M3 用例。
 > H1——`legacy/clock.cc` 的 `Get()` 把 `speed==0` 当 1.0（暂停时钟照跑，与
 > `renderer_impl_controls.cc`"speed 0 保持锚点"的契约相反），改直接用存储速度；
 > `SetSpeed()` 重锚改用**旧速率外推的当前读数**（旧代码固定按 1 重放已流逝区间：

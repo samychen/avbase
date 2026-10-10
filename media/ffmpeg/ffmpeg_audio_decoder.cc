@@ -26,6 +26,38 @@ struct FFmpegAudioDecoder::Context {
 
 namespace {
 
+// M9: map the decoder's actual channel mask onto the ChannelLayout enum. The
+// old code collapsed everything above mono into kStereo, which left
+// channel_layout_ (kStereo=2) disagreeing with channels_ (6) for 5.1/7.1
+// content even though the enum has k5_1/k7_1.
+media::ChannelLayout ChannelLayoutFromMask(uint64_t mask, int channels) {
+  switch (mask) {
+    case AV_CH_LAYOUT_MONO:
+      return ChannelLayout::kMono;
+    case AV_CH_LAYOUT_STEREO:
+      return ChannelLayout::kStereo;
+    case AV_CH_LAYOUT_2_1:
+      return ChannelLayout::k2_1;
+    case AV_CH_LAYOUT_SURROUND:
+      return ChannelLayout::kSurround;
+    case AV_CH_LAYOUT_QUAD:
+      return ChannelLayout::kQuad;
+    case AV_CH_LAYOUT_4POINT0:
+      return ChannelLayout::k4_0;
+    case AV_CH_LAYOUT_5POINT0:
+      return ChannelLayout::k5_0;
+    case AV_CH_LAYOUT_5POINT1:
+      return ChannelLayout::k5_1;
+    case AV_CH_LAYOUT_7POINT1:
+      return ChannelLayout::k7_1;
+    default:
+      // Unknown mask: keep the coarse count-based guess rather than kDiscrete
+      // (whose ChannelLayoutToChannelCount mapping is 0, which would poison
+      // downstream buffer math).
+      return channels == 1 ? ChannelLayout::kMono : ChannelLayout::kStereo;
+  }
+}
+
 int BytesPerSample(SampleFormat format) {
   switch (format) {
   case SampleFormat::kU8:
@@ -152,7 +184,7 @@ DecoderStatus FFmpegAudioDecoder::OpenCodec(const AudioDecoderConfig& config) {
   sample_rate_ = codec_ctx->sample_rate;
   if (channels_ > 0) {
     channel_layout_ =
-        channels_ == 1 ? ChannelLayout::kMono : ChannelLayout::kStereo;
+        ChannelLayoutFromMask(ff::ChannelLayoutMask(codec_ctx), channels_);
   }
   return DecoderStatus();
 }

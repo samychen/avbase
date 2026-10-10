@@ -40,7 +40,16 @@ void Sdl2AudioSink::Start() {
   // The host may have initialised only video; audio is initialised lazily
   // here so that a video-only host is not forced to name audio at startup.
   if ((SDL_WasInit(0) & SDL_INIT_AUDIO) == 0) {
-    SDL_InitSubSystem(SDL_INIT_AUDIO);
+    // M6: the return value used to be ignored AND the subsystem was never
+    // quit again; record whether THIS sink performed the init so Stop() can
+    // pair the QuitSubSystem (SDL refcounts, so only the incrementer quits).
+    if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) {
+      LOG(ERROR) << "avbase.aout: SDL_InitSubSystem(AUDIO) failed: "
+                 << SDL_GetError();
+      started_.store(false);
+      return;
+    }
+    we_initialized_audio_.store(true);
   }
   SDL_AudioSpec want{};
   want.freq = params_.sample_rate();
@@ -70,6 +79,12 @@ void Sdl2AudioSink::Stop() {
     // is never invoked again (the AudioRendererSink contract).
     SDL_CloseAudioDevice(device);
     device_ = nullptr;
+  }
+  // M6: pair the lazy SDL_InitSubSystem(SDL_INIT_AUDIO) from Start(). The
+  // destructor routes through here, so every teardown path quits exactly
+  // once per init.
+  if (we_initialized_audio_.exchange(false)) {
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
   }
   started_.store(false);
   playing_.store(false);

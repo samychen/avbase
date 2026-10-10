@@ -291,5 +291,40 @@ TEST_F(VideoFrameQueueTest, PopStatusNames) {
                "end-of-stream");
 }
 
+// L7: with capacity 3 and three frames in flight, the freed-then-refilled
+// slots pop out of INDEX order -- Pop must follow submission order (the old
+// implementation scanned for the lowest filled slot index and handed back
+// frames out of FIFO once the queue wrapped).
+TEST_F(VideoFrameQueueTest, PopFollowsSubmissionOrderAcrossSlotReuse) {
+  // Fill the queue completely: slots 0, 1, 2 hold frames 0, 1, 2.
+  for (int i = 0; i < 3; ++i) {
+    auto guard = queue_.Reserve();
+    ASSERT_TRUE(static_cast<bool>(guard));
+    guard.Commit(MakeFrame(i));
+  }
+  // Pop two (freeing slots 0 and 1), then refill both. The refills land on
+  // slots 0 and 1 again -- BELOW frame 2's slot index.
+  for (int round = 0; round < 2; ++round) {
+    base::scoped_refptr<VideoFrame> out;
+    ASSERT_EQ(queue_.Pop(&out), VideoFrameQueue::PopStatus::kOk);
+    EXPECT_EQ(out->timestamp(), base::Milliseconds(round * 33));
+  }
+  for (int i = 3; i < 5; ++i) {
+    auto guard = queue_.Reserve();
+    ASSERT_TRUE(static_cast<bool>(guard));
+    guard.Commit(MakeFrame(i));
+  }
+  // FIFO: 2 (the straggler in the high slot), then 3, then 4 -- the old code
+  // returned 3, 4, 2 because slots 0/1 sort below slot 2. MakeFrame stamps
+  // timestamp = index * 33ms.
+  const int64_t expected_ms[] = {2 * 33, 3 * 33, 4 * 33};
+  for (const int64_t ms : expected_ms) {
+    base::scoped_refptr<VideoFrame> out;
+    ASSERT_EQ(queue_.Pop(&out), VideoFrameQueue::PopStatus::kOk);
+    EXPECT_EQ(out->timestamp(), base::Milliseconds(ms))
+        << "frames came out of submission order";
+  }
+}
+
 }  // namespace
 }  // namespace avbase::media

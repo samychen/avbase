@@ -140,19 +140,28 @@ bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
     return false;
   }
 
-  // Push a view over the frame's planes (not refcounted; buffersrc copies).
+  // Push a view over the frame's planes. The frame is NOT refcounted (data
+  // borrowed from the VideoFrame), and the graph may buffer it past this
+  // call -- M15: the old flags=0 MOVED the borrowed pointers in, so a graph
+  // with internal latency read freed memory. KEEP_REF makes av_frame_ref
+  // deep-copy the unrefcounted input, so the graph owns its bytes.
   AVFrame* frame = av_frame_alloc();
   frame->format = media::ffmpeg::AvPixelFormatFromVideoFormat(ctx_->format);
   frame->width = ctx_->coded_size.width;
   frame->height = ctx_->coded_size.height;
-  frame->pts = in->timestamp().InMicroseconds();
+  // M15: the graph runs at time_base=1/90000 (see the buffersrc args) but
+  // the old code fed raw microseconds -- pts were ~90000x too coarse.
+  frame->pts =
+      av_rescale_q(in->timestamp().InMicroseconds(),
+                   AVRational{1, 1000000}, AVRational{1, 90000});
   const int planes = media::VideoFormatPlaneCount(ctx_->format);
   for (int p = 0; p < planes; ++p) {
     const auto plane = static_cast<VideoFrame::Plane>(p);
     frame->data[p] = const_cast<uint8_t*>(in->visible_data(plane).data());
     frame->linesize[p] = in->stride(plane);
   }
-  if (av_buffersrc_add_frame_flags(ctx_->src, frame, 0) < 0) {
+  if (av_buffersrc_add_frame_flags(ctx_->src, frame,
+                                   AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
     av_frame_free(&frame);
     LOG(ERROR) << "video filter: buffersrc rejected a frame";
     return false;

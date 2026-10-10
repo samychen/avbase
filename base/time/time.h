@@ -67,7 +67,7 @@ class AVBASE_BASE_EXPORT TimeDelta {
     return *this;
   }
   constexpr TimeDelta& operator-=(TimeDelta other) noexcept {
-    micros_ = SaturatingAdd(micros_, -other.micros_);
+    micros_ = SaturatingSub(micros_, other.micros_);
     return *this;
   }
   constexpr TimeDelta operator-() const noexcept {
@@ -78,14 +78,35 @@ class AVBASE_BASE_EXPORT TimeDelta {
 
   // Scaled arithmetic. Multiplication by a scalar saturates.
   constexpr TimeDelta operator*(int64_t a) const noexcept {
-    if (is_infinte() || a == std::numeric_limits<int64_t>::max()) {
+    // M1/L2: zero short-circuits first -- Zero() * INT64_MAX used to fall into
+    // the infinite branch below and come back as Max() instead of Zero().
+    if (is_zero() || a == 0) {
+      return Zero();
+    }
+    if (is_infinte()) {
       return (micros_ < 0) == (a < 0) ? Max() : Min();
     }
-    const int64_t result = micros_ * a;
-    if (a != 0 && result / a != micros_) {
-      return (micros_ < 0) == (a < 0) ? Max() : Min();
+    // M1: the product is only computed after the division-based bound check
+    // proves it fits, so no signed-overflow UB can happen (the old code did
+    // `micros_ * a` first and inspected the result afterwards).
+    if (micros_ > 0) {
+      if (a > 0) {
+        if (a > std::numeric_limits<int64_t>::max() / micros_) {
+          return Max();
+        }
+      } else if (a < std::numeric_limits<int64_t>::min() / micros_) {
+        return Min();
+      }
+    } else {
+      if (a > 0) {
+        if (micros_ < std::numeric_limits<int64_t>::min() / a) {
+          return Min();
+        }
+      } else if (micros_ < std::numeric_limits<int64_t>::max() / a) {
+        return Max();
+      }
     }
-    return FromMicroseconds(result);
+    return FromMicroseconds(micros_ * a);
   }
   constexpr TimeDelta operator/(int64_t a) const noexcept {
     if (a == 0) {
@@ -157,14 +178,40 @@ class AVBASE_BASE_EXPORT TimeDelta {
       return kMin;
     return a + b;
   }
+  // M1: `SaturatingAdd(a, -b)` used to negate b first, which is UB for
+  // b == INT64_MIN. Subtraction is checked directly instead.
+  static constexpr int64_t SaturatingSub(int64_t a, int64_t b) noexcept {
+    const int64_t kMax = std::numeric_limits<int64_t>::max();
+    const int64_t kMin = std::numeric_limits<int64_t>::min();
+    if (b < 0 && a > kMax + b)  // kMax + b cannot overflow for b < 0.
+      return kMax;
+    if (b > 0 && a < kMin + b)  // kMin + b cannot overflow for b > 0.
+      return kMin;
+    return a - b;
+  }
   static constexpr int64_t SaturatingMul(int64_t a, int64_t b) noexcept {
-    if (a == 0)
+    const int64_t kMax = std::numeric_limits<int64_t>::max();
+    const int64_t kMin = std::numeric_limits<int64_t>::min();
+    // M1: division-based bound checks BEFORE the product (the old code
+    // computed `a * b` first, which is UB on overflow).
+    if (a == 0 || b == 0)
       return 0;
-    const int64_t r = a * b;
-    if (r / a != b)
-      return (a < 0) == (b < 0) ? std::numeric_limits<int64_t>::max()
-                                : std::numeric_limits<int64_t>::min();
-    return r;
+    if (a > 0) {
+      if (b > 0) {
+        if (b > kMax / a)
+          return kMax;
+      } else if (b < kMin / a) {
+        return kMin;
+      }
+    } else {
+      if (b > 0) {
+        if (a < kMin / b)
+          return kMin;
+      } else if (a < kMax / b) {  // b < 0; kMax / b is safe for b <= -1.
+        return kMax;
+      }
+    }
+    return a * b;
   }
 
   int64_t micros_{0};

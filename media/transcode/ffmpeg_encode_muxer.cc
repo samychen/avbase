@@ -166,6 +166,10 @@ bool FFmpegEncodeMuxer::WritePacket(int stream_index,
   // Own the payload: av_interleaved_write_frame takes ownership and unrefs
   // internally, so the caller's buffer must be copied into a real packet.
   ff::PacketPtr pkt(av_packet_alloc());
+  if (!pkt) {
+    // M10: OOM used to reach av_new_packet with a null packet.
+    return false;
+  }
   if (av_new_packet(pkt.get(), static_cast<int>(packet.data.size())) < 0) {
     return false;
   }

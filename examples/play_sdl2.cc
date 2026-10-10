@@ -366,7 +366,11 @@ int main(int argc, char** argv) {
   }
 
   const int exit_code = PumpEventsUntilDone(options.max_seconds);
-  player.Stop();
+  // L6: Stop() is asynchronous; tearing SDL resources down against a player
+  // that may still be flushing races the sink's teardown. StopSync() blocks
+  // until the pipeline actually finished stopping (see player.h for the
+  // Stop/StopSync contract).
+  player.StopSync(base::Seconds(5));
 
   if (gl_context) {
     // The sink released the context in Stop(); destroying it here is the

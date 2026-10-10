@@ -68,5 +68,20 @@ TEST(PlayerStateMachineTest, ErrorIsRecoverableOnlyThroughReset) {
   EXPECT_TRUE(m.TransitionTo(PlayerState::kInitialized));
 }
 
+// M3: Stop() from kIdle/kInitialized must have a LEGAL path through the table
+// -- the old table refused kIdle -> kStopping, so the machine stayed put while
+// the player broadcast a fictional kStopped -> kStopped event.
+TEST(PlayerStateMachineTest, StopFromIdleAndInitializedIsLegal) {
+  PlayerStateMachine idle;
+  EXPECT_TRUE(idle.TransitionTo(PlayerState::kStopping));
+  EXPECT_EQ(idle.state(), PlayerState::kStopping);
+  EXPECT_TRUE(idle.TransitionTo(PlayerState::kStopped));
+
+  PlayerStateMachine initialized;
+  initialized.TransitionTo(PlayerState::kInitialized);
+  EXPECT_TRUE(initialized.TransitionTo(PlayerState::kStopping));
+  EXPECT_TRUE(initialized.TransitionTo(PlayerState::kStopped));
+}
+
 }  // namespace
 }  // namespace avbase

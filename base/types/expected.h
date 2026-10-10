@@ -16,6 +16,8 @@
 #define AVBASE_BASE_TYPES_EXPECTED_H_
 
 #include "base/check.h"
+#include <new>  // L1: placement new below; relying on transitive includes
+                // breaks on toolchains where <utility> does not pull it in.
 #include <type_traits>
 #include <utility>
 

@@ -74,6 +74,13 @@
 
 ## Medium（建议修）
 
+> **修复状态（2026-10-10，第四十四轮）**：M1–M15 全部修复（M2 已随第四十二轮 C3 的
+> 单调 `next_observer_id_` 顺带解决）。要点：M1 用除法预检消除溢出 UB 并新增
+> `SaturatingSub`；M3 状态机补 `kIdle/kInitialized→kStopping` 边、事件用真实前态；
+> M4 `Reset()` 以 `kAborted` 回调在途 seek 并清表；M7/M11 补错误分支释放；M8 EAGAIN
+> 排空重发；M9 按实际声道掩码映射；M10 六处分配判空；M14 drain 复用输出路径；
+> M15 `buffersrc` 改 `KEEP_REF` + pts 换算；M5/M6 SDL 目标刷新与子系统配对。
+
 | # | file:line | 问题 | 建议 |
 |---|---|---|---|
 | M1 | `base/time/time.h:84`、`:163`、`:70` | 有符号溢出 UB：`operator*`/`SaturatingMul` 先算 `a*b` 再校验（UBSan 可命中）；`operator-=` 对 `INT64_MIN` 取负 | 先除后乘判阈值，或用 `__builtin_mul_overflow`；`-=` 改为 `*this += -other` |
@@ -95,6 +102,11 @@
 ---
 
 ## Low（可选）
+
+> **修复状态（2026-10-10，第四十四轮）**：L1–L9 全部处理——L1 补 `<new>`；L2 零乘
+> 短路；L3 `HasObserver` 加 `alive`；L4 失效后重武装；L5 文档化（保留 manual 默认，
+> 与 Chromium 一致）；L6 示例改 `StopSync()`；L7 槽位提交序号保证 FIFO（负向测试
+> 承重）；L8 EOS 幂等；L9 `strtoull` 校验。
 
 | # | file:line | 问题 | 建议 |
 |---|---|---|---|

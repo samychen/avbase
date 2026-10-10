@@ -234,6 +234,11 @@ void DecoderBufferQueue::Abort() {
 
 void DecoderBufferQueue::MarkEndOfStream() {
   base::AutoLock scoped(lock_);
+  // L8: idempotence -- a repeated call used to push another EOS marker, and
+  // a consumer popping N EOS buffers could misread that as N distinct ends.
+  if (eos_) {
+    return;
+  }
   eos_ = true;
   buffers_.push_back(DecoderBuffer::CreateEOSBuffer());
   not_empty_.Broadcast();

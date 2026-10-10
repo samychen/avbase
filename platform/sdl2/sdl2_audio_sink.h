@@ -61,6 +61,9 @@ class AVBASE_MEDIA_EXPORT Sdl2AudioSink final : public AudioRendererSink {
                            // video sink keeps its renderer.
   std::atomic<bool> initialized_{false};
   std::atomic<bool> started_{false};
+  // M6: true when THIS sink performed the lazy SDL_INIT_AUDIO (Start), so
+  // Stop() quits the subsystem exactly once and only for its own init.
+  std::atomic<bool> we_initialized_audio_{false};
   std::atomic<bool> playing_{false};
   std::atomic<bool> on_rendering_thread_{false};
   std::atomic<uint64_t> underruns_{0};

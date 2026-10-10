@@ -57,8 +57,12 @@ class ObserverList {
   }
 
   bool HasObserver(const ObserverType* observer) const {
-    return std::any_of(list_.begin(), list_.end(),
-                       [&](const Entry& e) { return e.observer == observer; });
+    // L3: match size()/empty() semantics -- a deferred-removed (dead) entry
+    // must not count, or AddObserver's CHECK(!HasObserver()) misfires during
+    // iteration for an observer that is logically no longer in the list.
+    return std::any_of(list_.begin(), list_.end(), [&](const Entry& e) {
+      return e.alive && e.observer == observer;
+    });
   }
 
   bool empty() const { return size() == 0; }

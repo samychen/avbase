@@ -4,7 +4,9 @@
 
 #include "media/base/video_frame_queue.h"
 
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 #include "base/check.h"
 #include "base/logging.h"
@@ -80,6 +82,8 @@ void VideoFrameQueue::SlotGuard::Commit(base::scoped_refptr<VideoFrame> frame) {
     CHECK(queue->slots_[slot].state == SlotState::kReserved);
     queue->slots_[slot].frame = std::move(frame);
     queue->slots_[slot].state = SlotState::kFilled;
+    // L7: stamp submission order; Pop/Peek follow this, not slot index.
+    queue->slots_[slot].fill_seq = queue->next_fill_seq_++;
     queue->committed_.fetch_add(1, std::memory_order_relaxed);
   }
   queue->frame_available_.Signal();
@@ -166,38 +170,56 @@ VideoFrameQueue::PopStatus
 VideoFrameQueue::Pop(base::scoped_refptr<VideoFrame>* out) {
   DCHECK(out);
   base::AutoLock scoped(lock_);
-  for (;;) {
-    if (abort_flag_.IsSet()) {
-      return PopStatus::kAborted;
-    }
-    for (auto& slot : slots_) {
-      if (slot.state == SlotState::kFilled) {
-        *out = std::move(slot.frame);
-        slot.state = SlotState::kFree;
+    for (;;) {
+      if (abort_flag_.IsSet()) {
+        return PopStatus::kAborted;
+      }
+      // L7: the OLDEST committed slot wins, not the lowest index -- slot
+      // reuse means index order drifts from submission order once the queue
+      // wraps (two frames in flight used to pop out of order).
+      Slot* oldest = nullptr;
+      for (auto& slot : slots_) {
+        if (slot.state == SlotState::kFilled &&
+            (!oldest || slot.fill_seq < oldest->fill_seq)) {
+          oldest = &slot;
+        }
+      }
+      if (oldest) {
+        *out = std::move(oldest->frame);
+        oldest->state = SlotState::kFree;
         popped_.fetch_add(1, std::memory_order_relaxed);
         // A freed slot is exactly what a blocked producer is waiting for.
         slot_available_.Signal();
         return PopStatus::kOk;
       }
+      if (eos_ || closed_) {
+        return eos_ ? PopStatus::kEndOfStream : PopStatus::kEmpty;
+      }
+      frame_available_.Wait();
     }
-    if (eos_ || closed_) {
-      return eos_ ? PopStatus::kEndOfStream : PopStatus::kEmpty;
-    }
-    frame_available_.Wait();
-  }
 }
 
 size_t VideoFrameQueue::Peek(std::vector<base::scoped_refptr<VideoFrame>>* out,
                              size_t max) const {
   DCHECK(out);
   base::AutoLock scoped(lock_);
+  // L7: report in submission order, matching Pop.
+  std::vector<const Slot*> filled;
+  filled.reserve(slots_.size());
   for (const auto& slot : slots_) {
+    if (slot.state == SlotState::kFilled) {
+      filled.push_back(&slot);
+    }
+  }
+  std::sort(filled.begin(), filled.end(),
+            [](const Slot* a, const Slot* b) {
+              return a->fill_seq < b->fill_seq;
+            });
+  for (const Slot* slot : filled) {
     if (out->size() >= max) {
       break;
     }
-    if (slot.state == SlotState::kFilled) {
-      out->push_back(slot.frame);
-    }
+    out->push_back(slot->frame);
   }
   return out->size();
 }

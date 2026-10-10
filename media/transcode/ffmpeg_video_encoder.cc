@@ -185,6 +185,11 @@ bool FFmpegVideoEncoder::Encode(base::scoped_refptr<VideoFrame> in,
   }
   // View over the source planes, then convert into the reused target frame.
   ff::FramePtr src(av_frame_alloc());
+  if (!src) {
+    // M10: OOM used to null-deref on the field writes right below.
+    LOG(ERROR) << "transcode: av_frame_alloc failed in the video encoder";
+    return false;
+  }
   src->width = ctx_->codec->width;
   src->height = ctx_->codec->height;
   src->format = ctx_->in_fmt;

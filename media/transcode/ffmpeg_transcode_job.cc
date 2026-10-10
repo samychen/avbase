@@ -190,6 +190,12 @@ Status Transcode(const std::string& input_uri, const TranscodeParams& params,
   // --- Transcode loop ---
   ff::PacketPtr pkt(av_packet_alloc());
   ff::FramePtr frame(av_frame_alloc());
+  if (!pkt || !frame) {
+    // M10: allocation failures were dereferenced unchecked (OOM -> null
+    // pointer write); every av_alloc site in the transcode line now checks.
+    return Err(ErrorCode::kOutOfMemory, "cannot allocate transcode scratch",
+               input_uri, "av_packet_alloc/av_frame_alloc returned null");
+  }
   int64_t processed_us = 0;
   const int64_t trim_end_us =
       params.duration_seconds > 0.0
@@ -197,6 +203,84 @@ Status Transcode(const std::string& input_uri, const TranscodeParams& params,
                 (params.start_time_seconds + params.duration_seconds) *
                 AV_TIME_BASE)
           : INT64_MAX;
+
+  // M8: EAGAIN from avcodec_send_packet means the decoder's OUTPUT queue is
+  // full, not that the packet is bad. The old code dropped the packet in that
+  // case (a data loss that compounds on high-bitrate inputs); drain + encode
+  // what is buffered and re-send instead. Mirrors the play-side decoder,
+  // ffmpeg_video_decoder.cc, which already tolerates EAGAIN.
+  auto drain_audio = [&]() -> Status {
+    while (true) {
+      const int ret =
+          avcodec_receive_frame(audio.decoder.get(), frame.get());
+      if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+        break;
+      }
+      if (ret < 0) {
+        LOG(WARNING) << "transcode: audio decode failed";
+        break;
+      }
+      // Resample into the encoder's geometry when the two disagree.
+      // This yields zero or more whole codec frames, so the loop is over
+      // the buffers and not over decoded frames.
+      for (auto& buf : FramesForEncoder(&audio, frame.get(),
+                                        audio.encoder.frame_size())) {
+        std::vector<EncodedPacket> out_packets;
+        if (audio.encoder.Encode(std::move(buf), &out_packets)) {
+          for (const auto& ep : out_packets) {
+            if (!write_audio(ep)) {
+              return write_failed("a re-encoded audio packet");
+            }
+          }
+        }
+      }
+      av_frame_unref(frame.get());
+    }
+    return Status();
+  };
+  auto drain_video = [&]() -> Status {
+    while (true) {
+      const int ret =
+          avcodec_receive_frame(video.decoder.get(), frame.get());
+      if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+        break;
+      }
+      if (ret < 0) {
+        LOG(WARNING) << "transcode: video decode failed";
+        break;
+      }
+      // Convert to VideoFrame (I420).
+      auto vf =
+          AvFrameToVideoFrame(frame.get(), video.in_width, video.in_height,
+                              video.decoder->pkt_timebase);
+      if (vf) {
+        std::vector<EncodedPacket> out_packets;
+        if (video.encoder.Encode(std::move(vf), &out_packets)) {
+          for (const auto& ep : out_packets) {
+            if (!write_video(ep)) {
+              return write_failed("a re-encoded video packet");
+            }
+          }
+        }
+      }
+      av_frame_unref(frame.get());
+    }
+    return Status();
+  };
+  // Sends |pkt|, draining the decoder (through |drain|) and re-sending on
+  // EAGAIN. Returns <0 only for a real failure.
+  auto send_or_drain = [](AVCodecContext* ctx, AVPacket* pkt,
+                          const std::function<Status()>& drain)
+      -> int {
+    int ret = avcodec_send_packet(ctx, pkt);
+    while (ret == AVERROR(EAGAIN)) {
+      if (!drain().has_value()) {
+        return AVERROR_EXTERNAL;  // Muxer failed; abort the stream anyway.
+      }
+      ret = avcodec_send_packet(ctx, pkt);
+    }
+    return ret;
+  };
 
   while (!cancelled() && av_read_frame(in_ctx.get(), pkt.get()) >= 0) {
     const int idx = pkt->stream_index;
@@ -233,36 +317,13 @@ Status Transcode(const std::string& input_uri, const TranscodeParams& params,
         }
       } else {
         // Decode → encode.
-        if (avcodec_send_packet(audio.decoder.get(), pkt.get()) < 0) {
+        if (send_or_drain(audio.decoder.get(), pkt.get(), drain_audio) < 0) {
           LOG(WARNING) << "transcode: audio send_packet failed, skipping";
           av_packet_unref(pkt.get());
           continue;
         }
-        while (true) {
-          const int ret =
-              avcodec_receive_frame(audio.decoder.get(), frame.get());
-          if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-            break;
-          }
-          if (ret < 0) {
-            LOG(WARNING) << "transcode: audio decode failed";
-            break;
-          }
-          // Resample into the encoder's geometry when the two disagree.
-          // This yields zero or more whole codec frames, so the loop is over
-          // the buffers and not over decoded frames.
-          for (auto& buf : FramesForEncoder(&audio, frame.get(),
-                                            audio.encoder.frame_size())) {
-            std::vector<EncodedPacket> out_packets;
-            if (audio.encoder.Encode(std::move(buf), &out_packets)) {
-              for (const auto& ep : out_packets) {
-                if (!write_audio(ep)) {
-                  return write_failed("a re-encoded audio packet");
-                }
-              }
-            }
-          }
-          av_frame_unref(frame.get());
+        if (!drain_audio().has_value()) {
+          return write_failed("a re-encoded audio packet");
         }
       }
     } else if (idx == video_stream_idx && want_video) {
@@ -279,36 +340,13 @@ Status Transcode(const std::string& input_uri, const TranscodeParams& params,
           return write_failed("a video copy packet");
         }
       } else {
-        if (avcodec_send_packet(video.decoder.get(), pkt.get()) < 0) {
+        if (send_or_drain(video.decoder.get(), pkt.get(), drain_video) < 0) {
           LOG(WARNING) << "transcode: video send_packet failed, skipping";
           av_packet_unref(pkt.get());
           continue;
         }
-        while (true) {
-          const int ret =
-              avcodec_receive_frame(video.decoder.get(), frame.get());
-          if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-            break;
-          }
-          if (ret < 0) {
-            LOG(WARNING) << "transcode: video decode failed";
-            break;
-          }
-          // Convert to VideoFrame (I420).
-          auto vf =
-              AvFrameToVideoFrame(frame.get(), video.in_width, video.in_height,
-                                  video.decoder->pkt_timebase);
-          if (vf) {
-            std::vector<EncodedPacket> out_packets;
-            if (video.encoder.Encode(std::move(vf), &out_packets)) {
-              for (const auto& ep : out_packets) {
-                if (!write_video(ep)) {
-                  return write_failed("a re-encoded video packet");
-                }
-              }
-            }
-          }
-          av_frame_unref(frame.get());
+        if (!drain_video().has_value()) {
+          return write_failed("a re-encoded video packet");
         }
       }
     }

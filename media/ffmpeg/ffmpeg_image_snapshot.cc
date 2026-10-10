@@ -58,6 +58,13 @@ Status WriteJpegSnapshot(const VideoFrame& frame, const std::string& path) {
         "prefix"));
   }
   ff::CodecCtxPtr ctx(avcodec_alloc_context3(codec));
+  if (!ctx) {
+    // M10: OOM used to null-deref on ctx->width below.
+    return base::unexpected(MediaError(
+        ErrorCode::kOutOfMemory, "cannot allocate the mjpeg encoder context",
+        "avcodec_alloc_context3 returned null",
+        "retry with a smaller frame or free memory"));
+  }
   const int width = frame.coded_size().width;
   const int height = frame.coded_size().height;
   ctx->width = width;

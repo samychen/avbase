@@ -6,6 +6,8 @@
 
 #include <stdlib.h>
 
+#include <cerrno>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -70,7 +72,23 @@ bool ParseArgs(int argc, char** argv, Options* out) {
         fprintf(stderr, "error: --limit needs a value\n");
         return false;
       }
-      out->limit = static_cast<size_t>(atol(argv[++i]));
+      // L9: atol() silently parsed garbage as 0 and wrapped negatives into
+      // huge size_t values; validate instead.
+      const char* value = argv[++i];
+      char* end = nullptr;
+      errno = 0;
+      // strtoull silently accepts a leading '-' and wraps; reject it first.
+      if (value[0] == '-') {
+        fprintf(stderr, "error: --limit '%s' is not a valid count\n", value);
+        return false;
+      }
+      const unsigned long long parsed = strtoull(value, &end, 10);
+      if (end == value || *end != '\0' || errno == ERANGE ||
+          parsed > static_cast<unsigned long long>(SIZE_MAX)) {
+        fprintf(stderr, "error: --limit '%s' is not a valid count\n", value);
+        return false;
+      }
+      out->limit = static_cast<size_t>(parsed);
     } else if (!arg.empty() && arg[0] == '-') {
       fprintf(stderr, "error: unknown option '%s'\n", arg.c_str());
       return false;

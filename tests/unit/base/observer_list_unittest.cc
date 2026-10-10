@@ -50,6 +50,25 @@ TEST(ObserverListTest, HasObserver) {
   EXPECT_TRUE(list.HasObserver(&a));
 }
 
+// L3: a deferred-removed observer is logically gone even though its dead
+// entry still sits in the vector until iteration ends; the old predicate
+// reported true here and made the re-add below CHECK-fail.
+TEST(ObserverListTest, HasObserverIgnoresDeferredRemoval) {
+  ObserverList<Observer> list;
+  RecordingObserver a, b;
+  list.AddObserver(&a);
+  list.AddObserver(&b);
+  for (ObserverList<Observer>::Iterator it(list); Observer* o = it.GetNext();) {
+    o->OnEvent(1);
+    list.RemoveObserver(&b);
+    EXPECT_FALSE(list.HasObserver(&b));
+    list.AddObserver(&b);  // Must not trip AddObserver's duplicate CHECK.
+    break;
+  }
+  EXPECT_TRUE(list.HasObserver(&b));
+  EXPECT_EQ(list.size(), 2u);
+}
+
 // Removing an observer from inside its own notification is the canonical
 // re-entrancy case; the list must not visit it again or crash.
 TEST(ObserverListTest, RemoveDuringIterationIsSafe) {

@@ -162,7 +162,10 @@ class RepeatingCallback<R(Args...)> {
   R operator()(Args... args) const { return Run(std::forward<Args>(args)...); }
   R Run(Args... args) && {
     CHECK(invoker_) << "RepeatingCallback::Run() called on a null callback";
-    std::unique_ptr<Invoker> invoker = std::move(invoker_);
+    // M13: this used to move the shared_ptr into a unique_ptr, which fails to
+    // compile the moment anyone instantiates the overload. Consume the handle
+    // as the shared_ptr it actually is.
+    std::shared_ptr<Invoker> invoker = std::move(invoker_);
     if constexpr (std::is_void_v<R>) {
       invoker->Invoke(std::forward<Args>(args)...);
     } else {

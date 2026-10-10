@@ -62,6 +62,9 @@ bool DataSourceIO::Attach(AVFormatContext* ctx, media::MediaError* error) {
                            /*write_packet=*/nullptr,
                            /*seek=*/seekable ? &DataSourceIO::Seek : nullptr);
   if (!pb_) {
+    // M11: the av_malloc'd 32KB buffer was owned by the (now never created)
+    // AVIOContext -- on this failure path it leaked.
+    av_freep(&io_buffer_);
     *error = UnusableSourceError("avio_alloc_context failed (out of memory)");
     return false;
   }

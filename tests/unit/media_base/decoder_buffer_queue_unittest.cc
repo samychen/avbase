@@ -295,5 +295,27 @@ TEST_F(DecoderBufferQueueTest, PopStatusNames) {
   EXPECT_STREQ(GetPopStatusName(S::kEndOfStream), "end-of-stream");
 }
 
+// L8: MarkEndOfStream used to push one more EOS marker per call, so a
+// consumer could pop several "ends" and read them as distinct stream ends.
+TEST_F(DecoderBufferQueueTest, MarkEndOfStreamIsIdempotent) {
+  base::scoped_refptr<DecoderBuffer> out;
+  queue_.MarkEndOfStream();
+  queue_.MarkEndOfStream();
+  queue_.MarkEndOfStream();
+
+  // Exactly ONE EOS buffer exists: the first Pop hands it out (Pop reports
+  // kEndOfStream when the buffer it returns IS the marker), every later Pop
+  // keeps reporting kEndOfStream from the latch without yielding another
+  // marker buffer.
+  ASSERT_EQ(queue_.Pop(&out), DecoderBufferQueue::PopStatus::kEndOfStream);
+  ASSERT_TRUE(out);
+  EXPECT_TRUE(out->IsEndOfStream());
+
+  base::scoped_refptr<DecoderBuffer> second;
+  EXPECT_EQ(queue_.Pop(&second), DecoderBufferQueue::PopStatus::kEndOfStream);
+  EXPECT_FALSE(second) << "a second EOS marker buffer was delivered";
+  EXPECT_EQ(queue_.size(), 0u);
+}
+
 }  // namespace
 }  // namespace avbase::media

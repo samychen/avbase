@@ -118,6 +118,10 @@ class AVBASE_MEDIA_EXPORT VideoFrameQueue {
   struct Slot {
     SlotState state{SlotState::kFree};
     base::scoped_refptr<VideoFrame> frame;
+    // L7: submission order stamp, set at Commit. Slots are reused LIFO-free,
+    // so the lowest INDEX is not the oldest frame -- consumers must follow
+    // |fill_seq| to keep FIFO across wraps.
+    uint64_t fill_seq{0};
   };
 
   // Called by SlotGuard. Returns the slot to the free pool and wakes a waiter.
@@ -133,6 +137,9 @@ class AVBASE_MEDIA_EXPORT VideoFrameQueue {
   base::ConditionVariable slot_available_;
   base::ConditionVariable frame_available_;
   std::deque<Slot> slots_ GUARDED_BY(lock_);
+  // L7: monotonically increasing submission counter stamped into each slot
+  // at Commit time; guarded by lock_ alongside the slots.
+  uint64_t next_fill_seq_ GUARDED_BY(lock_) = 0;
   bool eos_ GUARDED_BY(lock_){false};
   bool closed_ GUARDED_BY(lock_){false};
 

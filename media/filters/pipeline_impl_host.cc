@@ -161,11 +161,14 @@ void PipelineImpl::OnStatisticsUpdate(const PipelineStatistics& stats) {
       seek_time_ = target;
       seek_demuxer_done_ = false;
       seek_renderer_flushed_ = false;
+      // M12: weak handles, same as every other cross-hop in this file -- the
+      // callbacks can outlive the pipeline if it is Reset() while the live
+      // chase is launching (pipeline_impl.cc's Seek path already does this).
       renderer_->Flush(base::BindOnce(&PipelineImpl::OnRendererFlushed,
-                                      base::Unretained(this)));
+                                      weak_factory_.GetWeakPtr()));
       demuxer_->StartPlayingFrom(
           target, base::BindOnce(&PipelineImpl::OnSeekDemuxerDone,
-                                 base::Unretained(this)));
+                                 weak_factory_.GetWeakPtr()));
     }
   }
   client_->OnStatisticsUpdate(merged);
