@@ -142,7 +142,7 @@ N 个解码器，属播放器层。`--scene pip|fade` 用**同一流的延迟副
 
 ```sh
 python3 tools/check_invariants.py --root .          # C1/C4/C5/C22-C27；C23 列宽棘轮 → 425 文件
-/usr/local/opt/llvm/bin/clang-format --dry-run --Werror --style=file    # 全树 → 425 文件
+/usr/local/opt/llvm/bin/clang-format --dry-run --Werror --style=file    # 全树 → 419 文件
 cmake -S . -B <dir> -G Ninja -DAVBASE_WERROR=ON -DAVBASE_ENABLE_FFMPEG={ON,OFF} \
       -DAVBASE_ENABLE_SDL2=ON -DAVBASE_BUILD_EXAMPLES=ON -DAVBASE_BUILD_TESTS=ON
 ctest --output-on-failure                            # no-ffmpeg 479 / macos-sdl2 630
@@ -153,7 +153,9 @@ ctest --output-on-failure                            # no-ffmpeg 479 / macos-sdl
 - **`clang-format` 不在 PATH**（裸调 exit=127），必须 `/usr/local/opt/llvm/bin/clang-format`；
   同目录 clang-tidy 也是本机唯一可用那份。
 - **两套文件清单数不同别套用**：不变量扫 425（全部自有文件），format 只扫 h/cc/cpp 且排除
-  `render/gl/third_party`、`media/filters/legacy` → 425。
+  `render/gl/third_party`、`media/filters/legacy`、`player/option_registry.inc` → **419**
+  （实测，第六十一轮提交后）。这条就是被自己违反过一次：这里原先写的是 425，那是把不变量
+  的数字套到了 format 上。
 - `check_invariants.py` 的 `cmake_source_paths()` 会解析 `${CMAKE_CURRENT_SOURCE_DIR}`（按
   CMakeLists 所在目录）。之前跳过任何含 `$` 的路径 → 这种写法虽被 CMake 认、文件也真编译，
   却被 C25 报「没有 target 编译它」；**喊狼来了的规则会被关掉**，所以修了。其它变量仍跳过。
@@ -212,6 +214,21 @@ ctest --output-on-failure                            # no-ffmpeg 479 / macos-sdl
 - **别急着把「掉帧」归因给代码。** 两条完全独立的 present 通路（SDL_Renderer / GLFW）报出
   **同一个**可疑帧率 → 是环境（本机 clangd 后台索引把 4 核 load 压到 12）在说话。
   两条通路给出同一个错数是环境；只有一个变才是代码。
+
+## 提交切片怎么切（L1–L4 落成了 8 片）
+
+- **按依赖层次切，不按「轮」、也不按功能主题。** 同一批文件内部是交织的
+  （`gl_present.cc` 同时含 L2/L3/L4，`sdl2_video_sink.cc` 横跨四层），所以「每片都能独立
+  编译」做不到；能让每片不自相矛盾的是**先提交被引用的，后提交引用者**。
+  实际顺序：tools → 数据面(L1) → render/gl 原语(L2) → media/gl 场景层(L3) →
+  platform 后端(L4) → 宿主装配 + 示例 → 测试 → 文档。
+- **接口扩展必须和它的全部实现者一起，或者放到最后** —— 这是硬约束。反过来说，只加**数据
+  字段**的接口扩展（`RenderPerfStats render;`）不破坏既有实现者，可以单独成片。
+- **新 `.cc` 是 GLOB 收进来的**（`render/`、`media/` 都用 `file(GLOB ... CONFIGURE_DEPENDS)`），
+  新增源文件不用改 CMakeLists。代价是：新增文件与引用它的改动必须同一片，否则中间那片会
+  引用未声明的符号。
+- 每片提交后跑 `check_invariants`（几秒）；**完整构建只在最后跑一次** —— 中间片的自洽靠上面的
+  依赖顺序保证，不靠逐片编译验证。
 
 ## 其它
 
