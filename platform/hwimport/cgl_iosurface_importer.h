@@ -23,7 +23,7 @@ namespace avbase::platform::hwimport {
 // back byte-exact, in a 3.3 CORE profile context, on Intel/Iris under macOS
 // 15. Apple's own header agrees -- "target must currently be
 // GL_TEXTURE_RECTANGLE_ARB" -- and the consequence is that the video shader
-// needs a sampler2DRect variant (kYuvRectFragmentShaderBody).
+// needs a sampler2DRect variant (kYuvSamplerRectDefines).
 std::unique_ptr<media::GlHwTextureImporter> CreateCglIosurfaceImporter();
 #endif
 

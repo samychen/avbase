@@ -64,8 +64,7 @@ class CglIosurfaceImporter final : public media::GlHwTextureImporter {
   unsigned int target() const override;
   bool CanImport(const media::VideoFrame& frame) const override;
   bool ImportPlane(const media::VideoFrame& frame, int index,
-                   unsigned int internal_format, unsigned int format,
-                   unsigned int type, int width, int height) override;
+                   const media::PlaneUploadLayout& layout) override;
   const char* name() const override { return "cgl-iosurface"; }
 };
 
@@ -107,12 +106,11 @@ bool CglIosurfaceImporter::CanImport(const media::VideoFrame& frame) const {
 }
 
 bool CglIosurfaceImporter::ImportPlane(const media::VideoFrame& frame,
-                                       int index, unsigned int internal_format,
-                                       unsigned int format, unsigned int type,
-                                       int width, int height) {
+                                       int index,
+                                       const media::PlaneUploadLayout& layout) {
   // Two planes is all an NV12 surface has, and index is the shader's slot
   // order rather than the surface's: slot 1 is the interleaved chroma.
-  if (index < 0 || index > 1 || width <= 0 || height <= 0) {
+  if (index < 0 || index > 1 || layout.width <= 0 || layout.height <= 0) {
     return false;
   }
   CVPixelBufferRef pb = PixelBufferOf(frame);
@@ -130,9 +128,9 @@ bool CglIosurfaceImporter::ImportPlane(const media::VideoFrame& frame,
     return false;
   }
   const CGLError err = CGLTexImageIOSurface2D(
-      ctx, GL_TEXTURE_RECTANGLE, static_cast<GLenum>(internal_format), width,
-      height, static_cast<GLenum>(format), static_cast<GLenum>(type), surface,
-      static_cast<GLuint>(index));
+      ctx, GL_TEXTURE_RECTANGLE, static_cast<GLenum>(layout.internal_format),
+      layout.width, layout.height, static_cast<GLenum>(layout.format),
+      static_cast<GLenum>(layout.type), surface, static_cast<GLuint>(index));
   if (err != kCGLNoError) {
     LogOnce(CGLErrorString(err));
     return false;

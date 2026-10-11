@@ -10,6 +10,23 @@
 
 namespace avbase::media {
 
+// How one plane's texture has to be set up, as the caller's shader contract
+// requires it.
+//
+// These five are one thing: together they are the argument list of the single
+// texImage call the backend makes. Passing them as five positional arguments
+// put the signature at seven parameters and, worse, made every call site a row
+// of bare integers whose order nothing enforced -- GL_R8 and GL_RED are one
+// transposition apart and both compile.
+struct AVBASE_MEDIA_EXPORT PlaneUploadLayout {
+  unsigned int internal_format{0};
+  unsigned int format{0};
+  unsigned int type{0};
+  // The plane's own size, which for chroma is half the coded size.
+  int width{0};
+  int height{0};
+};
+
 // The seam between the GL video path and a host's GPU-interop API.
 //
 // A hardware-decoded frame never reaches CPU memory -- VideoFrame carries a
@@ -68,21 +85,20 @@ class AVBASE_MEDIA_EXPORT GlHwTextureImporter {
   virtual bool CanImport(const VideoFrame& frame) const = 0;
 
   // Binds plane |index| of |frame| to whichever texture is CURRENTLY BOUND to
-  // GL_TEXTURE_2D, replacing that texture's storage.
+  // GL_TEXTURE_2D, replacing that texture's storage, in the layout |layout|
+  // asks for.
   //
   // The caller binds, and the caller owns the textures, because which texture
   // goes on which unit is the shader's contract and not the interop API's
   // business. For the same reason the caller passes the sampling layout it
-  // wants -- |internal_format| / |format| / |type| (GL_R8/GL_RED for luma,
-  // GL_RG8/GL_RG for interleaved chroma) -- so no backend has to hard-code a
-  // GL constant table, which is this tree's most expensive known trap.
+  // wants (GL_R8/GL_RED for luma, GL_RG8/GL_RG for interleaved chroma) -- so
+  // no backend has to hard-code a GL constant table, which is this tree's most
+  // expensive known trap.
   //
-  // |width| and |height| are the plane's own, which for chroma is half the
-  // coded size. Returns false when this plane cannot be imported; the caller
-  // then holds a partially imported frame and must not draw it.
+  // Returns false when this plane cannot be imported; the caller then holds a
+  // partially imported frame and must not draw it.
   virtual bool ImportPlane(const VideoFrame& frame, int index,
-                           unsigned int internal_format, unsigned int format,
-                           unsigned int type, int width, int height) = 0;
+                           const PlaneUploadLayout& layout) = 0;
 
   // For logs and stats: "cgl-iosurface", "egl-image", ...
   virtual const char* name() const = 0;
