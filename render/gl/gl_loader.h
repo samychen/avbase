@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_PLATFORM_SDL2_GL_LOADER_H_
-#define AVBASE_PLATFORM_SDL2_GL_LOADER_H_
-
-#include <SDL.h>
+#ifndef AVBASE_RENDER_GL_GL_LOADER_H_
+#define AVBASE_RENDER_GL_GL_LOADER_H_
 
 #include <string>
 
-// GL 3.3 core entry points resolved through SDL_GL_GetProcAddress. No GLEW:
-// the types are aliased locally and the constants are plain integers, so no
-// system GL header (whose version coverage differs per platform) enters the
-// build. Lives beside gl_present.cc, its only consumer.
+#include "render/gl/native_gl_context.h"
+
+// GL 3.3 core entry points resolved through a NativeGLContext's proc resolver.
+// No GLEW: the types are aliased locally and the constants are plain integers,
+// so no system GL header (whose version coverage differs per platform) enters
+// the build. Lives beside gl_present.cc, its only consumer.
 
 namespace avbase::media {
 
@@ -62,7 +62,7 @@ constexpr GLenum kGLLinkStatus = 0x8B82;
 #endif
 
 // One entry point per row: (name, return type, parameter list); resolved
-// once in Init() via SDL_GL_GetProcAddress.
+// once in Init() through the NativeGLContext's proc resolver.
 #define AVBASE_GL_FOREACH(F)                                                 \
   F(CreateShader, GLuint, (GLenum))                                          \
   F(ShaderSource, void, (GLuint, GLsizei, const char* const*, const GLint*)) \
@@ -123,15 +123,16 @@ struct GlLoader {
 #undef AVBASE_GL_MEMBER
 };
 
-inline bool ResolveGl(GlLoader* gl, std::string* missing) {
-#define AVBASE_GL_RESOLVE(name, ret, params)                                   \
-  gl->name =                                                                   \
-      reinterpret_cast<decltype(gl->name)>(SDL_GL_GetProcAddress("gl" #name)); \
-  if (!gl->name) {                                                             \
-    if (missing) {                                                             \
-      *missing = #name;                                                        \
-    }                                                                          \
-    return false;                                                              \
+inline bool ResolveGl(GlLoader* gl, NativeGLContext* ctx,
+                      std::string* missing) {
+#define AVBASE_GL_RESOLVE(name, ret, params)                                 \
+  gl->name =                                                                 \
+      reinterpret_cast<decltype(gl->name)>(ctx->GetProcAddress("gl" #name)); \
+  if (!gl->name) {                                                           \
+    if (missing) {                                                           \
+      *missing = #name;                                                      \
+    }                                                                        \
+    return false;                                                            \
   }
   AVBASE_GL_FOREACH(AVBASE_GL_RESOLVE)
 #undef AVBASE_GL_RESOLVE
@@ -140,4 +141,4 @@ inline bool ResolveGl(GlLoader* gl, std::string* missing) {
 
 }  // namespace avbase::media
 
-#endif  // AVBASE_PLATFORM_SDL2_GL_LOADER_H_
+#endif  // AVBASE_RENDER_GL_GL_LOADER_H_

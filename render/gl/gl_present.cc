@@ -2,18 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "platform/sdl2/gl_present.h"
+#include "render/gl/gl_present.h"
 
-#include <SDL.h>
 #include <string>
 
 #include "base/logging.h"
-#include "platform/sdl2/gl_loader.h"
+#include "render/gl/gl_loader.h"
 
-// GL 3.3 core, resolved through SDL_GL_GetProcAddress. No GLEW: the entry
-// points live in this file's loader, the GL types are aliased locally, and
-// the constants are plain integers -- so no system GL header (whose version
-// coverage differs per platform) ever enters the build.
+// GL 3.3 core, resolved through the host's NativeGLContext::GetProcAddress.
+// No GLEW: the entry points live in this file's loader, the GL types are
+// aliased locally, and the constants are plain integers -- so no system GL
+// header (whose version coverage differs per platform) ever enters the build.
 
 namespace avbase::media {
 namespace {
@@ -124,8 +123,8 @@ YuvMatrix SelectMatrix(const VideoColorSpace& cs) {
 // free of anything GL-shaped.
 struct GlPresenter::Loader : GlLoader {};
 
-GlPresenter::GlPresenter(void* window, void* context)
-    : window_(window), context_(context) {}
+GlPresenter::GlPresenter(std::unique_ptr<NativeGLContext> ctx)
+    : gl_ctx_(std::move(ctx)) {}
 
 GlPresenter::~GlPresenter() {
   Shutdown();
@@ -135,15 +134,14 @@ bool GlPresenter::Init() {
   if (gl_current_) {
     return true;
   }
-  if (SDL_GL_MakeCurrent(static_cast<SDL_Window*>(window_),
-                         static_cast<SDL_GLContext>(context_)) != 0) {
-    LOG(ERROR) << "gl present: MakeCurrent failed: " << SDL_GetError();
+  if (!gl_ctx_->MakeCurrent()) {
+    LOG(ERROR) << "gl present: MakeCurrent failed: " << gl_ctx_->GetError();
     return false;
   }
   gl_current_ = true;
   loader_ = std::make_unique<Loader>();
   std::string missing;
-  if (!ResolveGl(loader_.get(), &missing)) {
+  if (!ResolveGl(loader_.get(), gl_ctx_.get(), &missing)) {
     LOG(ERROR) << "gl present: missing GL entry point " << missing;
     return false;
   }
@@ -385,8 +383,7 @@ bool GlPresenter::Present(const VideoFrame& frame) {
   UploadPlanes(frame);
   int drawable_w = 0;
   int drawable_h = 0;
-  SDL_GL_GetDrawableSize(static_cast<SDL_Window*>(window_), &drawable_w,
-                         &drawable_h);
+  gl_ctx_->GetDrawableSize(&drawable_w, &drawable_h);
   loader_->Viewport(0, 0, drawable_w, drawable_h);
   loader_->ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   loader_->Clear(kGLColorBufferBit);
@@ -401,7 +398,7 @@ bool GlPresenter::Present(const VideoFrame& frame) {
   loader_->BindVertexArray(vao_);
   loader_->DrawArrays(kGLTriangleStrip, 0, 4);
   DrawOverlay();
-  SDL_GL_SwapWindow(static_cast<SDL_Window*>(window_));
+  gl_ctx_->SwapBuffers();
   return true;
 }
 
@@ -411,8 +408,7 @@ void GlPresenter::Shutdown() {
   }
   // After the render thread stops, the context is current nowhere; the host
   // still owns it, so re-activate to delete cleanly and release again.
-  SDL_GL_MakeCurrent(static_cast<SDL_Window*>(window_),
-                     static_cast<SDL_GLContext>(context_));
+  gl_ctx_->MakeCurrent();
   loader_->DeleteTextures(3, textures_);
   textures_[0] = textures_[1] = textures_[2] = 0;
   if (overlay_texture_) {
@@ -426,7 +422,7 @@ void GlPresenter::Shutdown() {
   loader_->DeleteProgram(program_);
   program_ = 0;
   loader_.reset();
-  SDL_GL_MakeCurrent(static_cast<SDL_Window*>(window_), nullptr);
+  gl_ctx_->ReleaseCurrent();
   gl_current_ = false;
 }
 

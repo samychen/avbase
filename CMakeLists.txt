@@ -57,6 +57,9 @@ configure_file(cmake/Version.h.in     "${CMAKE_BINARY_DIR}/generated/avbase/Vers
 add_subdirectory(base)
 add_subdirectory(media)
 add_subdirectory(player)
+# render/ supplies the graphics-API layer (render/gl) that platform/'s window
+# systems plug into, so it comes before the backends that link it.
+add_subdirectory(render)
 add_subdirectory(platform)
 if(AVBASE_BUILD_EXAMPLES)
   add_subdirectory(examples)

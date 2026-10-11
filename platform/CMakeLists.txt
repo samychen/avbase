@@ -1,7 +1,13 @@
 # platform/ — the only place allowed to touch platform and window-system SDKs:
 # code that is CHOSEN by the host it runs on. A portable vendor library such as
 # FFmpeg does not belong here even though it is a vendor dependency; that one
-# lives in media/ffmpeg/, next to the media code that uses it. See docs/09.
+# lives in media/ffmpeg/, next to the media code that uses it -- see
+# docs/09 for the decision that moved it there.
+
+# The shared GL rendering layer used to live here as platform/gl/. It moved to
+# render/gl/ (target avbase::render_gl): this directory holds what the HOST
+# SELECTS, and that layer is chosen by nobody -- every backend links it and it
+# carries no window-system SDK at all. See render/CMakeLists.txt and docs/02 §6.
 
 # SDL2 backend (M11). The window and renderer belong to the host in embedding
 # mode; see platform/sdl2/surface.h for the two threading rules.
@@ -15,7 +21,7 @@ if(AVBASE_ENABLE_SDL2)
   add_library(avbase::platform_sdl2 ALIAS avbase_platform_sdl2)
   target_include_directories(avbase_platform_sdl2 PUBLIC
       $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
-  target_link_libraries(avbase_platform_sdl2 PUBLIC avbase::media SDL2::SDL2)
+  target_link_libraries(avbase_platform_sdl2 PUBLIC avbase::media avbase::render_gl SDL2::SDL2)
   target_compile_definitions(avbase_platform_sdl2 PRIVATE AVBASE_ENABLE_SDL2=1)
   # Optional FreeType: the subtitle overlay's CPU rasterizer (text_raster.cc).
   # Without it the overlay slot still works with host-supplied bitmaps; only
@@ -31,6 +37,8 @@ if(AVBASE_ENABLE_SDL2)
   endif()
   avbase_configure_target(avbase_platform_sdl2)
 endif()
+
+
 if(AVBASE_ENABLE_LINUX_NATIVE)
   message(FATAL_ERROR "AVBASE_ENABLE_LINUX_NATIVE is scheduled for milestone M12")
 endif()

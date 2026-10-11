@@ -2,28 +2,32 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_PLATFORM_SDL2_GL_PRESENT_H_
-#define AVBASE_PLATFORM_SDL2_GL_PRESENT_H_
+#ifndef AVBASE_RENDER_GL_GL_PRESENT_H_
+#define AVBASE_RENDER_GL_GL_PRESENT_H_
 
 #include <memory>
 
 #include "media/base/video_frame.h"
-#include "platform/sdl2/surface.h"
+#include "render/gl/native_gl_context.h"
+#include "render/gl/overlay.h"
 
 namespace avbase::media {
 
-// The GL presentation half of Sdl2VideoSink: uploads a planar YUV frame into
-// three textures and draws it through a YUV→RGB shader, ported from
+// The GL presentation half of a video sink: uploads a planar YUV frame into
+// three textures and draws it through a YUV->RGB shader, ported from
 // MediaComponent's framework/render/gl programs (nv12_program /
 // base_2d_program) onto the VideoRendererSink contract.
 //
 // The pieces of MediaComponent's GL stack that this deliberately does NOT
-// port: GLEW (functions resolve through SDL_GL_GetProcAddress), the
+// port: GLEW (functions resolve through the host's NativeGLContext), the
 // RenderPipeline/stage abstraction and the ping-pong FBO chain (a display
 // sink is a single pass; the FBO machinery earns its keep only when a second
 // pass -- text overlay, transitions -- lands).
 //
-// All types stay as void* in this header: only the .cc may name SDL or GL.
+// This class is window-system neutral: it holds a NativeGLContext (SDL2 /
+// GLFW / EGL / ...) and never names a window-system SDK itself. Each backend
+// owns the context lifetime and hands it in, so the same YUV->RGB path runs
+// unchanged over any window system.
 //
 // THREADING: Init()/Present()/Shutdown() run on the sink's render thread;
 // Init() makes the context current there and Shutdown() may be called from
@@ -31,9 +35,9 @@ namespace avbase::media {
 // host must not make the context current anywhere else.
 class GlPresenter {
  public:
-  // |window|: SDL_Window*; |context|: SDL_GLContext (GL 3.3 core, created by
-  // the host on its main thread). Both are borrowed, not owned.
-  GlPresenter(void* window, void* context);
+  // Takes ownership of |ctx| (a borrowed wrapper over the host's context:
+  // the wrapper does not destroy the host's window/context on destruction).
+  explicit GlPresenter(std::unique_ptr<NativeGLContext> ctx);
   GlPresenter(const GlPresenter&) = delete;
   GlPresenter& operator=(const GlPresenter&) = delete;
   ~GlPresenter();
@@ -78,8 +82,7 @@ class GlPresenter {
   // A no-op without a slot or with nothing published.
   void DrawOverlay();
 
-  void* window_;   // SDL_Window*
-  void* context_;  // SDL_GLContext
+  std::unique_ptr<NativeGLContext> gl_ctx_;  // Borrowed wrapper, owned here.
   bool gl_current_{false};
   std::unique_ptr<Loader> loader_;
   TextOverlaySlot* overlay_slot_{nullptr};  // Borrowed; may be null.
@@ -100,4 +103,4 @@ class GlPresenter {
 
 }  // namespace avbase::media
 
-#endif  // AVBASE_PLATFORM_SDL2_GL_PRESENT_H_
+#endif  // AVBASE_RENDER_GL_GL_PRESENT_H_

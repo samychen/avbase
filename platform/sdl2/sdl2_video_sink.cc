@@ -12,8 +12,9 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "platform/sdl2/gl_present.h"
+#include "platform/sdl2/sdl_gl_context.h"
 #include "platform/sdl2/surface.h"
+#include "render/gl/gl_present.h"
 
 namespace avbase::media {
 namespace {
@@ -204,8 +205,8 @@ bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
   // makes the context current there).
   if (gl_context_ && !presenter_) {
     const auto* surface = static_cast<const Sdl2Surface*>(display_->raw());
-    auto presenter =
-        std::make_unique<GlPresenter>(surface->window, gl_context_);
+    auto presenter = std::make_unique<GlPresenter>(
+        std::make_unique<SdlGLContext>(surface->window, gl_context_));
     presenter->SetOverlaySource(overlay_slot_);
     if (!presenter->Init()) {
       // Context exists but the shader path is unusable (e.g. a GL 2.0-era
