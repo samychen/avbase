@@ -22,11 +22,6 @@
 namespace avbase::media {
 namespace {
 
-// Render cadence when the sink has no vsync source to wait on. With
-// SDL_RENDERER_PRESENTVSYNC the Present below blocks for the real refresh, so
-// this only bounds the *maximum* rate; without it, this is the rate.
-constexpr base::TimeDelta kMaxPresentInterval = base::Milliseconds(1000) / 60;
-
 // The sink draws 8-bit planar YUV (what sws_scale produces for I420 output);
 // anything else is reported as a submit failure rather than drawn wrong.
 Uint32 SdlPixelFormat(VideoFormat format) {
@@ -155,7 +150,7 @@ bool Sdl2VideoSink::IsRunning() const {
 
 bool Sdl2VideoSink::GetDisplayInterval(base::TimeDelta* interval) const {
   if (interval) {
-    *interval = kMaxPresentInterval;
+    *interval = kDefaultFrameInterval;
   }
   // An estimate, not a measured vsync: returning true makes the compositor
   // use this as its display window, which is closer to the truth than "no
@@ -164,31 +159,11 @@ bool Sdl2VideoSink::GetDisplayInterval(base::TimeDelta* interval) const {
 }
 
 VideoSinkStats Sdl2VideoSink::GetStats() const {
-  VideoSinkStats stats;
-  stats.frames_presented = frames_presented_.load();
-  stats.frames_dropped = frames_dropped_.load();
-  stats.submit_failures = submit_failures_.load();
-  base::AutoLock scoped(stats_lock_);
-  stats.render = render_stats_;
-  if (present_interval_ms_.samples() > 0 &&
-      present_interval_ms_.average_ms() > 0.0) {
-    stats.measured_refresh_hz = 1000.0 / present_interval_ms_.average_ms();
-  }
-  return stats;
+  return stats_.Get();
 }
 
 void Sdl2VideoSink::NotePresentTiming(const PresentTiming& timing) {
-  const base::TimeTicks now = base::TimeTicks::Now();
-  base::AutoLock scoped(stats_lock_);
-  render_stats_.upload.Add(timing.upload_ms);
-  render_stats_.compose.Add(timing.compose_ms);
-  render_stats_.blit.Add(timing.blit_ms);
-  render_stats_.present.Add(timing.present_ms);
-  render_stats_.upload_path = timing.upload_path;
-  if (!last_present_ticks_.is_null() && now > last_present_ticks_) {
-    present_interval_ms_.Add((now - last_present_ticks_).InMillisecondsF());
-  }
-  last_present_ticks_ = now;
+  stats_.NotePresentTiming(timing);
 }
 
 void Sdl2VideoSink::PresentOne() {
@@ -218,7 +193,7 @@ void Sdl2VideoSink::PresentOne() {
       if (!mapped) {
         // No readback path installed: treat as a submit failure so the
         // renderer's stats tell the truth instead of dropping silently.
-        submit_failures_.fetch_add(1);
+        stats_.NoteSubmitFailure();
         frame = nullptr;
       } else {
         static std::atomic<bool> warned{false};
@@ -230,11 +205,11 @@ void Sdl2VideoSink::PresentOne() {
       }
     }
     if (discard_.load() || !frame) {
-      frames_dropped_.fetch_add(1);
+      stats_.NoteDropped();
     } else if (UploadAndPresent(frame)) {
-      frames_presented_.fetch_add(1);
+      stats_.NotePresented();
     } else {
-      submit_failures_.fetch_add(1);
+      stats_.NoteSubmitFailure();
     }
   }
   if (render_runner_) {
@@ -243,7 +218,7 @@ void Sdl2VideoSink::PresentOne() {
     // the two regimes applies.
     const FramePacing pacing =
         NextFrameDelay(frame_start, base::TimeTicks::Now(),
-                       next_frame_deadline_, kMaxPresentInterval);
+                       next_frame_deadline_, kDefaultFrameInterval);
     next_frame_deadline_ = pacing.next_deadline;
     render_runner_->PostDelayedTask(
         FROM_HERE,
@@ -417,7 +392,15 @@ void Sdl2VideoSink::PresentOverlay(void* renderer) {
   if (!overlay_slot_) {
     return;
   }
-  const gl::TextOverlay overlay = overlay_slot_->Snapshot();
+  // Read the version before copying the bitmap: SnapshotTo() moves the whole
+  // RGBA block under the writer's lock, and the common case is that nothing
+  // was published since the last frame.
+  const int version = overlay_slot_->published_version();
+  if (version != snapshot_version_) {
+    overlay_slot_->SnapshotTo(overlay_);
+    snapshot_version_ = version;
+  }
+  const gl::TextOverlay& overlay = overlay_;
   if (!overlay.valid ||
       overlay.rgba.size() != static_cast<size_t>(overlay.width) *
                                  static_cast<size_t>(overlay.height) * 4u) {

@@ -16,15 +16,6 @@
 #include "media/gl/gl_present.h"
 
 namespace avbase::media {
-namespace {
-
-// Render cadence when the sink has no vsync source to block on (Sdl2VideoSink
-// uses the same bound). With a swap interval the present below blocks for the
-// real refresh, so this only caps the *maximum* rate; without it, this is the
-// rate.
-constexpr base::TimeDelta kMaxPresentInterval = base::Milliseconds(1000) / 60;
-
-}  // namespace
 
 GlVideoSink::GlVideoSink(base::scoped_refptr<NativeDisplay> display,
                          NativeDisplayKind expected_kind, const char* name)
@@ -112,7 +103,7 @@ bool GlVideoSink::IsRunning() const {
 
 bool GlVideoSink::GetDisplayInterval(base::TimeDelta* interval) const {
   if (interval) {
-    *interval = kMaxPresentInterval;
+    *interval = kDefaultFrameInterval;
   }
   // An estimate, not a measured vsync: returning true makes the compositor
   // use this as its display window, closer to the truth than "no
@@ -121,34 +112,11 @@ bool GlVideoSink::GetDisplayInterval(base::TimeDelta* interval) const {
 }
 
 VideoSinkStats GlVideoSink::GetStats() const {
-  VideoSinkStats stats;
-  stats.frames_presented = frames_presented_.load();
-  stats.frames_dropped = frames_dropped_.load();
-  stats.submit_failures = submit_failures_.load();
-  base::AutoLock scoped(stats_lock_);
-  stats.render = render_stats_;
-  if (present_interval_ms_.samples() > 0 &&
-      present_interval_ms_.average_ms() > 0.0) {
-    stats.measured_refresh_hz = 1000.0 / present_interval_ms_.average_ms();
-  }
-  return stats;
+  return stats_.Get();
 }
 
 void GlVideoSink::NotePresentTiming(const PresentTiming& timing) {
-  const base::TimeTicks now = base::TimeTicks::Now();
-  base::AutoLock scoped(stats_lock_);
-  render_stats_.upload.Add(timing.upload_ms);
-  render_stats_.compose.Add(timing.compose_ms);
-  render_stats_.blit.Add(timing.blit_ms);
-  render_stats_.present.Add(timing.present_ms);
-  render_stats_.upload_path = timing.upload_path;
-  // The spacing between presents is the only honest source for the display
-  // refresh: GetDisplayInterval() above returns the 60 Hz estimate it was
-  // constructed with, and this is what turns that estimate into a measurement.
-  if (!last_present_ticks_.is_null() && now > last_present_ticks_) {
-    present_interval_ms_.Add((now - last_present_ticks_).InMillisecondsF());
-  }
-  last_present_ticks_ = now;
+  stats_.NotePresentTiming(timing);
 }
 
 bool GlVideoSink::CanImportHardwareFrame(const VideoFrame& frame) const {
@@ -196,15 +164,15 @@ void GlVideoSink::PresentOne() {
       if (!frame) {
         // No readback path installed: treat as a submit failure so the
         // renderer's stats tell the truth instead of dropping silently.
-        submit_failures_.fetch_add(1);
+        stats_.NoteSubmitFailure();
       }
     }
     if (discard_.load() || !frame) {
-      frames_dropped_.fetch_add(1);
+      stats_.NoteDropped();
     } else if (UploadAndPresent(frame)) {
-      frames_presented_.fetch_add(1);
+      stats_.NotePresented();
     } else {
-      submit_failures_.fetch_add(1);
+      stats_.NoteSubmitFailure();
     }
   }
   if (render_runner_) {
@@ -214,7 +182,7 @@ void GlVideoSink::PresentOne() {
     // NextFrameDelay.
     const FramePacing pacing =
         NextFrameDelay(frame_start, base::TimeTicks::Now(),
-                       next_frame_deadline_, kMaxPresentInterval);
+                       next_frame_deadline_, kDefaultFrameInterval);
     next_frame_deadline_ = pacing.next_deadline;
     render_runner_->PostDelayedTask(
         FROM_HERE,

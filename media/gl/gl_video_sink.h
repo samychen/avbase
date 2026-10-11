@@ -15,6 +15,7 @@
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "media/base/native_display.h"
+#include "media/base/present_stats.h"
 #include "media/base/render_perf_stats.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
@@ -160,21 +161,10 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
   // are callable anywhere), read on the render thread.
   std::atomic<bool> playing_{false};
   std::atomic<bool> discard_{false};
-  std::atomic<uint64_t> frames_presented_{0};
-  std::atomic<uint64_t> frames_dropped_{0};
-  std::atomic<uint64_t> submit_failures_{0};
-
-  // Render-thread telemetry, guarded because GetStats() reads it from the
-  // media sequence (the one-second statistics tick). Written only on the
-  // render thread; the copy taken under the lock is a handful of doubles, and
-  // taking it keeps the stats a consistent snapshot instead of letting a
-  // reader see a half-updated average.
-  mutable base::Lock stats_lock_;
-  RenderPerfStats render_stats_;
-  // Wall-clock spacing between presents, for measured_refresh_hz -- the field
-  // VideoSinkStats has always declared and nothing has ever filled.
-  DurationEwma present_interval_ms_;
-  base::TimeTicks last_present_ticks_;
+  // Every number this sink reports, in one object: see media/base/
+  // present_stats.h for why it is not spelled out here -- the SDL2 sink
+  // carried a byte-identical copy of all of it.
+  PresentStats stats_;
   // The cadence anchor for NextFrameDelay(): the deadline the loop is AIMING
   // at, which is not the time it last woke up. Null whenever the refresh is
   // doing the pacing rather than the timer.

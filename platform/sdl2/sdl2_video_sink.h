@@ -15,6 +15,7 @@
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "media/base/native_display.h"
+#include "media/base/present_stats.h"
 #include "media/base/render_perf_stats.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
@@ -113,6 +114,11 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
   int overlay_width_{0};
   int overlay_height_{0};
   int last_overlay_version_{-1};
+  // The last snapshot and which slot version it holds: the version is read
+  // first so a frame that republished nothing copies nothing -- a subtitle
+  // stays up for hundreds of frames and the bitmap is the expensive half.
+  gl::TextOverlay overlay_;
+  int snapshot_version_{-1};
   // Set when the host supplied an SDL_GLContext; owns the shader path.
   void* gl_context_{nullptr};
   // Declared before presenter_, which borrows it: members die in reverse, so
@@ -133,17 +139,8 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
   // are callable anywhere), read on the render thread.
   std::atomic<bool> playing_{false};
   std::atomic<bool> discard_{false};
-  std::atomic<uint64_t> frames_presented_{0};
-  std::atomic<uint64_t> frames_dropped_{0};
-  std::atomic<uint64_t> submit_failures_{0};
-
-  // Render telemetry. Only the GL path fills it: the SDL_Renderer path has no
-  // GL calls to time, and reporting a made-up number for it would be worse
-  // than reporting nothing.
-  mutable base::Lock stats_lock_;
-  RenderPerfStats render_stats_;
-  DurationEwma present_interval_ms_;
-  base::TimeTicks last_present_ticks_;
+  // Shared with GlVideoSink -- see media/base/present_stats.h.
+  PresentStats stats_;
   // The cadence anchor shared with GlVideoSink's; see media/base/
   // render_cadence.h for why it is a deadline and not a wake-up time.
   base::TimeTicks next_frame_deadline_;

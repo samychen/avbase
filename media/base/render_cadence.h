@@ -10,6 +10,25 @@
 
 namespace avbase::media {
 
+// The interval to hand NextFrameDelay() when the sink has no vsync source to
+// block on. Two different things depending on the host, and the difference is
+// the whole reason the name says "interval" and not "period":
+//
+//   * WITH a swap interval the present blocks for the real refresh, so this
+//     only caps the MAXIMUM rate.
+//   * WITHOUT one -- offscreen, or a driver with the interval at 0 -- it IS
+//     the rate.
+//
+// 60 Hz: the common refresh, and the one every source is authored against. A
+// sink that knows its display's real rate passes its own.
+//
+// It lives next to NextFrameDelay() rather than in the sinks that call it
+// because it is that function's input, and an input with two definitions is
+// how two callers end up pacing differently -- the exact failure the
+// extraction itself was made to prevent.
+inline constexpr base::TimeDelta kDefaultFrameInterval =
+    base::Milliseconds(1000) / 60;
+
 // What a render loop should do next.
 struct AVBASE_MEDIA_EXPORT FramePacing {
   // How long to sleep before the next frame. Zero means "go now".
