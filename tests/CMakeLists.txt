@@ -85,6 +85,36 @@ if(AVBASE_ENABLE_SDL2)
       DEPS avbase::platform_sdl2)
 endif()
 
+# ---- render/gl: the one suite that looks at pixels. Gated on GLFW because a
+# GL context has to come from somewhere, and GLFW is the only backend this tree
+# can build against without a display server: the tests create a HIDDEN window,
+# render into it, and read the back buffer back before any swap. That is the
+# only way to catch an orientation error -- every call in a flip bug succeeds.
+#
+# Gated rather than always-on for the same reason the GLFW backend itself is:
+# a host without glfw3 has no context to hand over, and a test that cannot run
+# there would have to be skipped anyway. Where it does build, it runs
+# unskipped.
+if(AVBASE_ENABLE_GLFW)
+  file(GLOB AVBASE_GL_UNITTEST_SOURCES CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/unit/gl/*.cc")
+  avbase_add_unittest(gl_unittests
+      SOURCES ${AVBASE_GL_UNITTEST_SOURCES}
+      # platform_hwimport for gl_hw_import_unittest.cc, which builds a real
+      # CVPixelBuffer to import from. A test that faked the buffer would prove
+      # the plumbing and not the import, and the import is the part with an
+      # orientation to get wrong.
+      DEPS avbase::platform_glfw avbase::platform_hwimport)
+  if(APPLE)
+    # The test allocates the pixel buffer itself, so it needs the framework
+    # rather than only the library that wraps it: hwimport links these
+    # PRIVATE, which is right for the library and not enough for a caller that
+    # calls CVPixelBufferCreate directly.
+    target_link_libraries(gl_unittests PRIVATE
+        "-framework CoreVideo" "-framework IOSurface" "-framework CoreFoundation")
+  endif()
+endif()
+
 # ---- media + FFmpeg: real containers, labelled needs-ffmpeg so the
 # no-ffmpeg gate (design goal G2) skips them.
 if(AVBASE_ENABLE_FFMPEG)
