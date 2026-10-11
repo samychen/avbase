@@ -17,6 +17,8 @@ build system or the compiler cannot catch on its own:
   C25  every .cc in the tree is compiled by some target
   C26  media/ never includes platform/ (the media layer stays portable)
   C27  core media never includes media/ffmpeg/ (the quarantine is a directory)
+  C28  render/ never includes media/, platform/ or base/ (avbase_gl stays
+       zero-dependency and therefore independently distributable)
 
 The nine style rules this gate used to carry (C2, C7-C9, C11, C14, C17, C18,
 C20, C21) were cut in the "keep only what finds bugs" pass: C18 (throw) is
@@ -329,6 +331,31 @@ def check_file(path: pathlib.Path, rel: str, report: Report) -> None:
                            "quarantine is a directory boundary; only "
                            "avbase_ffmpeg (and avbase_transcode, which builds "
                            "on it) may cross it")
+
+        # C28: render/ must include nothing from another avbase layer. This is
+        # the property the module is SOLD on -- docs/02 §6.2 states it and
+        # docs/13 builds a distribution contract on top of it
+        # (find_package(avbase_gl), avbase::gl) -- but until now only prose
+        # enforced it: no rule in this file mentioned render/ at all. A claim
+        # that is written down and never checked is the kind that quietly
+        # stops being true, and the failure is silent: one #include of
+        # media/base/video_frame.h compiles fine and only shows up when a
+        # consumer outside the tree tries to link avbase_gl on its own.
+        #
+        # Deliberately also bars base/ even though base/ is the lowest layer:
+        # "zero dependency" means the module needs nothing but the platform
+        # GL headers, and letting base/ in would make avbase_gl a two-target
+        # distribution for no reason -- everything render/gl actually needs
+        # from base/ is a std type in disguise.
+        if rel.startswith("render/") and not rel.startswith(
+                "render/gl/third_party/"):
+            for layer in ("media/", "platform/", "base/", "player/"):
+                if re.search(r'#\s*include\s*"%s' % layer, raw_line):
+                    report.add("C28", path, i,
+                               "render/ includes %s — avbase_gl must stay "
+                               "zero-dependency so it can be distributed "
+                               "alone (docs/13); everything shaped by a "
+                               "VideoFrame belongs in media/gl/" % layer)
 
 def load_column_baseline(root: pathlib.Path) -> dict:
     path = root / COLUMN_BASELINE
