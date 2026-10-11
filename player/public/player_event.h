@@ -170,8 +170,8 @@ struct AVBASE_PLAYER_EXPORT SnapshotCompletedPayload {
 struct AVBASE_PLAYER_EXPORT StatsPayload {
   PlaybackStats stats;
 };
-struct AVBASE_PLAYER_EXPORT FlushedPayload{};
-struct AVBASE_PLAYER_EXPORT CompletedPayload{};
+struct AVBASE_PLAYER_EXPORT FlushedPayload {};
+struct AVBASE_PLAYER_EXPORT CompletedPayload {};
 struct AVBASE_PLAYER_EXPORT HdrUnsupportedPayload {
   std::string transfer;
 };
