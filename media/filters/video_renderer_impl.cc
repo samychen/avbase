@@ -292,6 +292,12 @@ VideoFrameCompositor::Stats VideoRendererImpl::compositor_stats() const {
   return compositor_.GetStats();
 }
 
+VideoSinkStats VideoRendererImpl::sink_stats() const {
+  // No sink yet (before Initialize(), or after the renderer was torn down
+  // mid-handover) reports zeroes rather than a stale picture.
+  return sink_ ? sink_->GetStats() : VideoSinkStats();
+}
+
 void VideoRendererImpl::TakeSnapshot(base::TimeDelta at,
                                      Renderer::SnapshotFrameCallback callback) {
   (void)at;  // Recorded by the caller; see Renderer::TakeSnapshot.

@@ -14,6 +14,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
 #include "media/base/native_display.h"
+#include "media/base/render_perf_stats.h"
 #include "media/base/video_frame.h"
 #include "media/media_export.h"
 
@@ -24,6 +25,11 @@ struct AVBASE_MEDIA_EXPORT VideoSinkStats {
   uint64_t frames_dropped{0};
   uint64_t submit_failures{0};
   double measured_refresh_hz{0.0};
+  // What each presented frame cost, split by stage. An avbase addition -- the
+  // Chromium shape of this struct stops at the counters above -- because the
+  // render thread is the only place these can be measured and the sink is the
+  // only object that outlives a frame to report them.
+  RenderPerfStats render;
 };
 
 // The video output endpoint.

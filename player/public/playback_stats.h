@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/media_types.h"
+#include "media/base/render_perf_stats.h"
 #include "player/public/player_export.h"
 
 namespace avbase {
@@ -95,6 +96,12 @@ struct AVBASE_PLAYER_EXPORT PlaybackStats {
   // Underrun accounting straight from the audio sink. Turns "sometimes it
   // crackles" into a number you can alert on.
   media::AudioGlitchInfo audio_glitches;
+
+  // What each presented frame actually cost, measured on the GL render thread
+  // and split by stage (upload / compose / blit / present). Distinct from
+  // video_output_fps above, which the player derives from media timestamps:
+  // this one describes the rendering itself and survives a sink swap.
+  media::RenderPerfStats render;
 
   StageTimings stages;
   base::TimeDelta first_frame_latency;

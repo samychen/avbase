@@ -250,6 +250,11 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   bool initialized() const { return initialized_; }
   bool ended() const { return ended_; }
   VideoFrameCompositor::Stats compositor_stats() const;
+  // The sink's counters plus its per-stage render timings (upload / compose /
+  // blit / present). A plain accessor, sampled from the media sequence on the
+  // statistics tick: the sink guards its own telemetry with a leaf lock, so
+  // reading it here cannot block the render thread.
+  VideoSinkStats sink_stats() const;
 
   // S3. Hands back the frame the compositor currently holds; the callback
   // runs on the CALLING sequence with kInvalidState when nothing has been

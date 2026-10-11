@@ -92,6 +92,11 @@ PipelineStatistics RendererImpl::GetStatistics() const {
     if (c.avg_av_diff_ms != 0.0) {
       stats.avg_av_diff_ms = c.avg_av_diff_ms;
     }
+    // Frame counts come from the compositor, which counts them; the per-frame
+    // COST comes from the sink, which is the only object that runs the GL
+    // calls. Sampling it here is what turns sink telemetry into something a
+    // PlaybackStats reader can see, instead of a struct nobody calls.
+    stats.render = video_->sink_stats().render;
   }
   if (audio_) {
     stats.audio_underruns = audio_->underruns();

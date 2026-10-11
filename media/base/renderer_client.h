@@ -54,6 +54,7 @@
 #include "media/base/decoder_config.h"
 #include "media/base/media_error.h"
 #include "media/base/media_types.h"
+#include "media/base/render_perf_stats.h"
 #include "media/base/timed_text.h"
 #include "media/base/waiting.h"
 #include "media/media_export.h"
@@ -122,6 +123,12 @@ struct AVBASE_MEDIA_EXPORT PipelineStatistics {
   double max_av_diff_ms{0.0};
   uint64_t seek_count{0};
   base::TimeDelta last_seek_duration;
+
+  // What presenting each frame cost, from the video sink. An avbase addition
+  // to the Chromium shape, kept as one nested struct so the field list here
+  // does not grow by one per render stage; see render_perf_stats.h for what
+  // the stages mean and why the upload path travels with them.
+  RenderPerfStats render;
 };
 
 // The upward channel from a Renderer to whoever owns it.

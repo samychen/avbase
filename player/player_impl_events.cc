@@ -209,9 +209,24 @@ void PlayerImpl::OnWaiting(media::WaitingReason reason) {
 
 void PlayerImpl::OnStatisticsUpdate(const media::PipelineStatistics& stats) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(buffer_controller_sequence_);
+  const base::TimeTicks now = base::TimeTicks::Now();
   {
     base::AutoLock scoped(snapshot_lock_);
+    // The rate comes from the delta between the two most recent cumulative
+    // counts, not from the counts themselves: a paused player and a saturated
+    // one both show "no change", which is the right answer for both.
+    if (!last_stats_ticks_.is_null() && now > last_stats_ticks_ &&
+        stats.video_frames_presented >= last_stats_.video_frames_presented) {
+      const double elapsed_s = (now - last_stats_ticks_).InSecondsF();
+      if (elapsed_s > 0.0) {
+        video_output_fps_ =
+            static_cast<double>(stats.video_frames_presented -
+                                last_stats_.video_frames_presented) /
+            elapsed_s;
+      }
+    }
     last_stats_ = stats;
+    last_stats_ticks_ = now;
   }
   // While a buffering cycle is open, report progress toward the CURRENT
   // tier's mark (M9's observable hwm_step). The pipeline's own
@@ -304,6 +319,13 @@ PlaybackStats PlayerImpl::GetPlaybackStats() const {
   base::AutoLock scoped(snapshot_lock_);
   stats.av_diff = base::SecondsD(last_stats_.avg_av_diff_ms / 1000.0);
   stats.video.cached_duration = last_stats_.buffered_time;
+  stats.video_output_fps = video_output_fps_;
+  stats.frames_presented = last_stats_.video_frames_presented;
+  stats.frames_dropped = last_stats_.video_frames_dropped;
+  stats.frames_repeated = last_stats_.video_frames_repeated;
+  // Per-frame render cost, carried all the way from the GL render thread
+  // through VideoSinkStats -> PipelineStatistics on the one-second tick.
+  stats.render = last_stats_.render;
   return stats;
 }
 

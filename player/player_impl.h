@@ -234,6 +234,13 @@ class PlayerImpl final : public media::Pipeline::Client {
   mutable base::Lock snapshot_lock_;
   media::MediaInfo media_info_ GUARDED_BY(snapshot_lock_);
   media::PipelineStatistics last_stats_ GUARDED_BY(snapshot_lock_);
+  // Wall-clock of the previous statistics tick plus the output rate derived
+  // from the delta since the one before it. A rate belongs to the observer's
+  // window, not to the counter, so it lives here rather than in
+  // PipelineStatistics: the pipeline reports how many frames, the player
+  // reports how fast.
+  base::TimeTicks last_stats_ticks_ GUARDED_BY(snapshot_lock_);
+  double video_output_fps_ GUARDED_BY(snapshot_lock_) = 0.0;
   media::Size video_coded_size_ GUARDED_BY(snapshot_lock_);
   media::Size video_natural_size_ GUARDED_BY(snapshot_lock_);
   int video_rotation_ GUARDED_BY(snapshot_lock_) = 0;

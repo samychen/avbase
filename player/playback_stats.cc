@@ -28,6 +28,7 @@ std::string PlaybackStats::ToJson() const {
   out += "\"frames_dropped\":" + std::to_string(frames_dropped) + ",";
   out += "\"frames_dropped_late\":" + std::to_string(frames_dropped_late) + ",";
   out += "\"frames_repeated\":" + std::to_string(frames_repeated) + ",";
+  out += "\"render\":" + render.ToJson() + ",";
   out += "\"audio_glitches\":" + std::to_string(audio_glitches.total_glitches) +
          ",";
   out += "\"audio_xruns\":" + std::to_string(audio_glitches.xruns) + ",";
