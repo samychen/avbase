@@ -544,6 +544,12 @@ git checkout main && git merge --ff-only fill-gaps && git push origin main
 # 或者走 PR：git push origin fill-gaps
 ```
 
+> **📌 后记（2026-10-11，非当时的原始记录）：** 上面这条指令已经执行过了。
+> `fill-gaps` 已从第三十八轮起累计承载 198 个 commit，`main` 一直停在首次提交
+> （因此它就是 merge-base），合入是一次纯 fast-forward；随后本地与远端的
+> `fill-gaps` **均已删除**，仓库现在只有 `main` 一个长期分支。
+> 本节其它内容按留档原则保持原样，仅加此注以免被当成当前操作指南。
+
 ### (3e) ★F1 修掉了：`Deps` 的三个字段从 `shared_ptr` 改为 `scoped_refptr` — ✅ 完成
 
 上一轮 (3b) 把 F1 列为"需要接口评审、不擅自改 frozen 头"。本轮改了，因为核查时又找到

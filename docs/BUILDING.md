@@ -16,6 +16,8 @@
 | 真实媒体测试 | 系统 FFmpeg 开发包（4.4 ~ 7.x 均可，**不需要打 patch**） | `pkg-config --modversion libavformat` |
 | FFmpeg 版本锁定 | `tools/setup_ffmpeg.sh`（从源码编一个固定版本到 prefix） | — |
 | SDL2 后端 | ✅ 已实现（M11 的代码提前落地）：`-DAVBASE_ENABLE_SDL2=ON`，另需 SDL2 开发包 | 见 §4 |
+| GLFW 后端 | ✅ 已实现（第五十一轮）：`-DAVBASE_ENABLE_GLFW=ON`，另需 GLFW 3.x；默认 OFF | 见 §3.7 |
+| EGL 后端 | ✅ 已实现（第五十一轮）：`-DAVBASE_ENABLE_EGL=ON`，**仅 Linux**（macOS 无 EGL 开发库） | 见 §3.7 |
 | 原生 Linux 后端（X11/Wayland） | ❌ **尚未实现**（M12）。打开 `AVBASE_ENABLE_LINUX_NATIVE` 会直接 `FATAL_ERROR` | 见 §4 |
 | macOS 构建 | ✅ **已落地（第二十五轮）**：`cmake --preset macos-sdl2`，需 Homebrew 的 SDL2 + FFmpeg | 见 §3.6 |
 
@@ -34,7 +36,8 @@ sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev \
 
 ```bash
 git clone https://github.com/samychen/avbase.git && cd avbase
-git checkout fill-gaps        # ← 本轮全部工作在这个分支，main 还是首次提交
+# 就在 main 上，没有别的长期分支。
+# （第三十八~五十三轮曾工作于 `fill-gaps` 分支，已于 2026-10-11 合入 main 后删除。）
 ```
 
 ---
@@ -64,7 +67,7 @@ cmake --build --preset linux-ffmpeg711
 ctest --test-dir build/linux-ffmpeg711 --output-on-failure
 ```
 
-预期 **585 个用例全绿**（`ffmpeg` 预设；`full` 预设再加 SDL2，588 个）。
+预期 **589 个用例全绿**（`ffmpeg` 预设；`full` 预设再加 SDL2，592 个）。
 默认装进仓库内的 `tools/build/`（gitignored），
 `FindFFmpeg` 在 `AVBASE_FFMPEG_ROOT` 未设置时自动优先使用它——MediaComponent 的
 「头文件在仓库里、clone 即用」的体验，等价但不破坏 C4 头隔离约束；要装到别处
@@ -218,6 +221,35 @@ cue。注意：pinned FFmpeg 组件清单已包含 srt/ass/webvtt/mov_text 解�
 如果你有旧的 `tools/deps` 构建树，重跑一次 `tools/setup_ffmpeg.sh`（configure
 指纹变了会自动重配）。
 
+### 3.7 可选后端：GLFW 与 EGL（第五十一轮起）
+
+GL 渲染层（`render/gl/`）是窗口系统中立的，`platform/{sdl2,glfw,egl}` 才是各个后端；
+三者以同一个 `NativeGLContext` 契约接入，YUV→RGB 的着色器路径在上面跑的是同一份代码。
+
+GLFW 与 EGL 两个后端默认 **OFF**，且 `find_package` 找不到时只打 WARNING 跳过、不会
+`FATAL_ERROR` —— **这就是默认 `bin/` 里看不到 `play_glfw` / `play_egl` 的原因**，不是构建坏了。
+
+```bash
+# GLFW：macOS 上 brew 连不上 ghcr.io 时，改从源码装到仓库内（免 sudo）
+tools/setup_glfw.sh                       # → tools/build/glfw
+
+cmake --preset macos-sdl2 -DAVBASE_ENABLE_GLFW=ON \
+      -DCMAKE_PREFIX_PATH=tools/build/glfw
+cmake --build build/macos-sdl2
+ls build/macos-sdl2/bin/play_glfw         # 出现即成功
+
+# EGL：只有 Linux 能编
+sudo apt-get install -y libegl-dev
+cmake --preset linux-ffmpeg711 -DAVBASE_ENABLE_EGL=ON
+```
+
+> ⚠️ **GLFW 的 target 名坑（第五十四轮实测）**：GLFW 官方 CMake 包导出的 imported
+> target 叫 **`glfw`**，而它产出的文件叫 `libglfw3.a`。写成 `glfw3` 时 CMake 会降级
+> 成裸 `-lglfw3`，include 目录不传递，症状是 `'GLFW/glfw3.h' file not found`。
+>
+> ⚠️ **`play_egl` 在 macOS 上编不出来**，这是环境限制不是代码问题：macOS 不随系统提供
+> EGL 开发库（Linux 上装 `libegl-dev` / Mesa 即可）。
+
 ---
 
 ## 4. 播放：现在能跑了（第十轮起）
@@ -231,6 +263,12 @@ cue。注意：pinned FFmpeg 组件清单已包含 srt/ass/webvtt/mov_text 解�
 # SDL2 真窗口（需 AVBASE_ENABLE_SDL2=ON 配置；宿主创建窗口，嵌入模式见
 # platform/sdl2/surface.h）：
 ./build/<cfg>/bin/play_sdl2 --url tests/testdata/small_h264_aac_3s.mp4
+
+# GLFW 窗口（需 AVBASE_ENABLE_GLFW=ON + GLFW 开发包，见 §3.7）：
+./build/<cfg>/bin/play_glfw --url tests/testdata/small_h264_aac_3s.mp4
+
+# EGL pbuffer（仅 Linux，需 AVBASE_ENABLE_EGL=ON，见 §3.7）：
+#   ./build/<cfg>/bin/play_egl --url tests/testdata/small_h264_aac_3s.mp4
 ```
 
 `Player` 门面已接线：SetDataSource / PrepareAsync / PrepareSync / Start / Pause /
@@ -246,13 +284,14 @@ Stop / SeekTo（按 request_id 回调）/ SelectTrack / TakeSnapshot / 音量 / 
 
 | 想跑的 | 状态 | 原因 |
 |---|---|---|
-| `cmake --preset linux-native` / `linux-all` | ❌ 配置期 `FATAL_ERROR` | 原生 GL 后端仍是 M12，且**已顺延为可选**（方案见 `docs/archive/09`） |
+| `cmake --preset linux-native` / `linux-all` | ❌ 配置期 `FATAL_ERROR` | X11/Wayland **原生窗口后端**仍是 M12（方案见 `docs/archive/09`）。注意它与已落地的 GL 渲染层不是一回事：`render/gl/` 加 `platform/{sdl2,glfw,egl}` 已经提供了完整的 GL 呈现，缺的是直接啃 X11/Wayland 的那一份 |
 | `cmake --preset android-arm64` | ❌ | `platform/android/` 不存在（M16） |
 | Golden Test | ❌ | `tools/ijkplayer-recorder/`、`golden_*.py`、`tests/golden/` 不存在（M10），且被开放问题 Q8 卡住 |
 
-**一句话：这个仓库现在能构建、能测、能分析媒体文件，能播放视频（headless +
-SDL2 双通道验证过），能转码；精确 seek 与音/视频轨切换均已闭合。仍未落地的是
-golden 对齐（M10）与原生 GL 后端（M12，已顺延）。**
+**一句话：这个仓库现在能构建、能测、能分析媒体文件，能播放视频，能转码；精确 seek
+与音/视频轨切换均已闭合。播放通道验证过的有三条**：`headless`（无窗口系统）、
+`play_sdl2`、`play_glfw`（后者需 §3.7 的 GLFW 依赖）。仍未落地的是 golden 对齐
+（M10）、`platform/android/`（M16）与 X11/Wayland 原生窗口后端（M12）。
 
 ---
 
@@ -262,7 +301,7 @@ golden 对齐（M10）与原生 GL 后端（M12，已顺延）。**
 cpplint / corpus / soak / fuzz 等共 16 个 job，见 §7）：
 
 ```bash
-# 架构与风格不变量（C1–C27，367 个文件）
+# 架构与风格不变量（C1–C27，385 个文件）
 python3 tools/check_invariants.py --root .
 
 # 移植常量三方交叉校验：ffplay #define ⟷ avbase 代码 ⟷ docs/05 表 7

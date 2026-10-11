@@ -2186,3 +2186,69 @@ SDL2-GL 路径对齐，形成完整可构建的渲染 sink。
 | C23 列宽基线                 | **35 → 2 行**（少 33），仅剩 `data_source_descriptor.{cc,h}` 各 1 行；已 `--update-baseline` |
 
 **遗留**：GLFW/EGL 实际编译链接仍待有库环境（本机无 glfw3 / EGL）；git 未提交。
+
+---
+
+### 第五十四轮：真机跑通 GL 后端 —— 三个仅在运行时暴露的 bug
+
+上一轮收尾时报告过「GLFW/EGL 待有库环境验证」。本轮把 GLFW 依赖装上了（`brew` 因
+ghcr.io 与 Homebrew API 不可达而失败，改为第三方镜像下载官方 release 包后从源码构建，
+并对源码做了结构与版本校验），于是第一次真正 **编译链接并运行** 了 GLFW 后端。结果证实
+「编译通过」与「能跑起来」是两回事：连着挖出三个只有在运行时才暴露的 bug，其中两个
+位于此前被认为「已验证」的核心 GL 渲染层。
+
+**bug 1 —— `render/gl/gl_loader.h` 的 `kGLVertexShader` 常量是错的**
+
+```cpp
+constexpr GLenum kGLVertexShader = 0x8B33;   // 官方 gl.h：GL_VERTEX_SHADER = 0x8B31
+```
+
+`0x8B33` 根本不是一个 shader 类型。`glCreateShader()` 拿到无效 enum 后返回 0，随后
+`GetShaderiv(COMPILE_STATUS)` 返回 0 且 **info log 为空** —— 症状看起来像「驱动坏了」，
+实际是自己的常量写错。这一个值让 **所有** GL 渲染路径（含之前号称已验证的 SDL2 `--gl`
+路径）在真机上全部无法出画面，而编译期毫无察觉。
+
+既然这里错了一个，就把整套常量用 SDK 的 `gl.h` / `glext.h` 做了一次 **逐项机器核对**
+（32 个常量），揪出第二个：
+
+```cpp
+constexpr GLenum kGLRG8 = 0x822A;            // 官方：GL_RG8 = 0x822B
+```
+
+这是 NV12 半分辨率 UV 平面的 internal format，错了会让 NV12 画面颜色出问题而不报错。
+
+**bug 2 —— 三个示例的 GL 探针照抄了上面那个错误值**
+
+`play_sdl2.cc` / `play_glfw.cc` / `play_egl.cc` 的 `GlRuntimeWorks()` 里写的是
+`create(0x8B33)`，注释却写着 `// GL_VERTEX_SHADER`；同时它们的探针 shader 源码都缺
+`#version` 指令 —— 而 Core Profile 缺 `#version` 会被当作 GLSL 1.10 直接拒绝（driver
+原话：`ERROR: 0:1: '' : #version required and missing.`）。两处都修了：桌面用
+`#version 330 core`，EGL 的 ES3 context 用 `#version 300 es`。
+
+**bug 3 —— CMake target 名：`glfw3` 应为 `glfw`**
+
+GLFW 官方 CMake 包导出的 imported target 叫 **`glfw`**，与产出文件名 `libglfw3.a`
+不一致。写成 `glfw3` 时 CMake 降级为裸 `-lglfw3`，include 目录不传递，症状是
+`'GLFW/glfw3.h' file not found`。
+
+**顺带修的一处（`GlVideoSink::Start`）**：原先在调用方线程同步跑第一次 `PresentOne()`
+（含 GL 绑定），GL context 的 ownership 因此落在不是渲染线程的那个线程上。改成投递到
+render runner 后行为一致。
+
+**验证**
+
+| 项 | 结果 |
+| --- | --- |
+| GLFW 后端 `-Werror` 编译链接 | `exit=0`，**0 warning / 0 error**，`bin/play_glfw` 产出 |
+| `play_glfw` 实播 `small_h264_aac_3s.mp4` | **零 GL 错误**，视频/音频解码器与 renderer 全部 ready |
+| `play_sdl2` 实播（同一 GL 路径） | **零 ERROR** |
+| EGL 后端 | macOS 无 EGL 开发库无法编译；用自建的 EGL 桩头做 `-fsyntax-only` 通过（不含链接） |
+| no-ffmpeg / ffmpeg+sdl2+glfw + `-Werror` | 两个配置均 `exit=0`、0 warning |
+| `clang-format` / `check_invariants` | 全树 0 偏离；all rules pass (385 files) |
+
+**新增 `tools/setup_glfw.sh`**：仿 `tools/setup_ffmpeg.sh` 的约定，把 GLFW 从源码装到
+仓库内的 `tools/build/glfw`（免 sudo、gitignored），并带完整性校验（必须真解压出 GLFW
+源码树、且 `CMakeLists.txt` 里的版本号要对得上）。支持 `AVBASE_GLFW_BASE_URL` 指向镜像。
+
+**遗留**：`play_egl` 仍只能在 Linux 编、跑；GLFW 依赖目前装在本机临时 prefix
+（`/tmp/glfw-prefix`），持久化走 `tools/setup_glfw.sh`。
