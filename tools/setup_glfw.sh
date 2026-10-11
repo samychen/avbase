@@ -22,6 +22,10 @@
 # Default prefix is repo-local tools/build/glfw (gitignored, no sudo), matching
 # tools/setup_ffmpeg.sh's convention.
 #
+# On macOS the static library is built for AVBASE_OSX_DEPLOYMENT_TARGET
+# (default 11.0) rather than for the host OS, so linking avbase's examples
+# against it does not warn about a newer deployment version.  No effect on Linux.
+#
 # If github release downloads fail in your network, point at any mirror that
 # serves the identical file:
 #   AVBASE_GLFW_BASE_URL=https://gh-proxy.com/https://github.com/glfw/glfw/\
@@ -74,12 +78,19 @@ esac
 
 echo ">> building into ${PREFIX}"
 mkdir -p "$PREFIX"
+# Pin the macOS deployment target.  Left to itself CMake builds GLFW for the host
+# OS version, and then every avbase link prints a wall of
+#   ld: warning: object file (libglfw3.a[...]) was built for newer 'macOS'
+#   version (15.8) than being linked (15.7)
+# because the host is newer than the SDK's default target.  Ignored by CMake on
+# non-Apple platforms, so this stays correct for the Linux users of this script.
 cmake -S "${WORK}/${SRC_NAME}" -B "$BUILD_DIR" -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
       -DBUILD_SHARED_LIBS=OFF \
       -DGLFW_BUILD_EXAMPLES=OFF \
       -DGLFW_BUILD_TESTS=OFF \
       -DGLFW_BUILD_DOCS=OFF \
+      -DCMAKE_OSX_DEPLOYMENT_TARGET="${AVBASE_OSX_DEPLOYMENT_TARGET:-11.0}" \
       -DCMAKE_INSTALL_PREFIX="$PREFIX"
 cmake --build "$BUILD_DIR"
 cmake --install "$BUILD_DIR"
