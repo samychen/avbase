@@ -9,7 +9,10 @@
 namespace avbase::media {
 namespace {
 
-constexpr base::TimeDelta kInterval = base::Milliseconds(1000) / 60;
+// The bound the sinks actually use, rather than a second spelling of it:
+// a test that recomputes 1000/60 proves the arithmetic agrees with itself,
+// not that the cadence works at the interval the sinks pass it.
+constexpr base::TimeDelta kInterval = kDefaultFrameInterval;
 
 // Drives `frames` iterations of a render loop that spends `spent_ms` drawing
 // and then wakes `jitter_ms` later than it asked to, and returns the average

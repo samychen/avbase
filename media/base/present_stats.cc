@@ -6,6 +6,34 @@
 
 namespace avbase::media {
 
+FrameOutcome ClassifyFrameOutcome(const bool has_frame, const bool discard,
+                                  const bool readback_failed,
+                                  const bool presented) {
+  if (readback_failed) {
+    // Never became displayable. Reporting it as a drop as well would say both
+    // "we had nothing to show" and "we failed to show it" about one frame.
+    return FrameOutcome::kSubmitFailure;
+  }
+  if (discard || !has_frame) {
+    return FrameOutcome::kDropped;
+  }
+  return presented ? FrameOutcome::kPresented : FrameOutcome::kSubmitFailure;
+}
+
+void PresentStats::NoteFrameOutcome(const FrameOutcome outcome) {
+  switch (outcome) {
+  case FrameOutcome::kPresented:
+    NotePresented();
+    return;
+  case FrameOutcome::kDropped:
+    NoteDropped();
+    return;
+  case FrameOutcome::kSubmitFailure:
+    NoteSubmitFailure();
+    return;
+  }
+}
+
 void PresentStats::NotePresented() {
   frames_presented_.fetch_add(1, std::memory_order_relaxed);
 }

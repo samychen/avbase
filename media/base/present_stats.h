@@ -16,6 +16,36 @@
 
 namespace avbase::media {
 
+// What became of one frame.
+//
+// A frame has exactly one ending, and carrying the decision as a VALUE is what
+// makes that true rather than merely intended. The sinks used to report a
+// readback failure and then -- because the failed readback left the frame null
+// -- fall into the "no frame" branch and report a drop as well, so
+// presented + dropped + failures added up to more frames than the renderer ever
+// handed over. Two call sites that must agree on "did this one count already"
+// is a rule that gets broken; one function that returns the ending cannot be.
+enum class FrameOutcome {
+  kPresented,
+  kDropped,
+  kSubmitFailure,
+};
+
+// Decides a frame's ending from what the sink observed. Pure and free of clock
+// and display, so the rule has one definition and can be tested without either.
+//
+// The order of the questions is the order the sink asked them, and it is the
+// answer: a readback failure outranks everything because the frame never
+// became displayable and that is the part worth reporting -- hence "a submit
+// failure" and not also "a drop".
+//
+//   |readback_failed|  a hardware frame could be neither imported nor read back
+//   |discard|          the sink was told to throw frames away (seeking, flush)
+//   |has_frame|        Render() handed over a frame
+//   |presented|        the upload and the present both succeeded
+FrameOutcome ClassifyFrameOutcome(bool has_frame, bool discard,
+                                  bool readback_failed, bool presented);
+
 // Everything a video sink counts and averages about what it presented.
 //
 // This exists because there was more than one sink that needed it, and the
@@ -39,21 +69,29 @@ class AVBASE_MEDIA_EXPORT PresentStats {
   PresentStats(const PresentStats&) = delete;
   PresentStats& operator=(const PresentStats&) = delete;
 
-  // The counter and the timing are two calls because they happen at two
-  // places: whether a frame counted as presented is decided where the frame
-  // is chosen, while what it cost is only known after the upload ran. Folding
-  // them into one call would force the sink to know the timing before it has
-  // it -- or to count twice.
-  void NotePresented();
+  // The one bookkeeping entry point. Taking the ending as a value instead of
+  // offering NoteDropped()/NoteSubmitFailure() separately is deliberate: it
+  // leaves no way to count one frame twice, which is what the sinks did before
+  // (a failed readback was a submit failure and then, via the null frame it
+  // left behind, a drop).
+  void NoteFrameOutcome(FrameOutcome outcome);
+
+  // Separate from the counter above because it happens elsewhere: whether a
+  // frame counted as presented is decided where the frame is chosen, while
+  // what it cost is only known after the upload ran. Folding them into one
+  // call would force the sink to know the timing before it has it -- or to
+  // count twice.
   void NotePresentTiming(const PresentTiming& timing);
-  void NoteDropped();
-  void NoteSubmitFailure();
 
   // Fills every field of VideoSinkStats: the three counters, the per-stage
   // averages, and the refresh rate derived from the spacing of presents.
   VideoSinkStats Get() const;
 
  private:
+  void NotePresented();
+  void NoteDropped();
+  void NoteSubmitFailure();
+
   std::atomic<uint64_t> frames_presented_{0};
   std::atomic<uint64_t> frames_dropped_{0};
   std::atomic<uint64_t> submit_failures_{0};
