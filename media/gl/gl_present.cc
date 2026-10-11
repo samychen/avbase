@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "base/time/time.h"
 #include "render/gl/gl_shaders.h"
 
 // The video-domain half of the GL path. Entry-point loading, shader
@@ -18,77 +19,20 @@
 namespace avbase::media {
 namespace {
 
-// The YUV->RGB conversion. Sampler units are fixed: 0 = Y, 1 = U (or the
-// interleaved UV of NV12), 2 = V.
-constexpr char kYuvFragmentShaderBody[] = R"(
-in vec2 vTexCoord;
-out vec4 fragColor;
-uniform sampler2D uTexY;
-uniform sampler2D uTexU;
-uniform sampler2D uTexV;
-uniform int uNv12;
-uniform mat3 uMatrix;
-uniform vec3 uOffset;
-void main() {
-    float y = texture(uTexY, vTexCoord).r;
-    vec2 uv = (uNv12 == 1)
-        ? texture(uTexU, vTexCoord).rg
-        : vec2(texture(uTexU, vTexCoord).r, texture(uTexV, vTexCoord).r);
-    vec3 rgb = uMatrix * (vec3(y, uv) - uOffset);
-    fragColor = vec4(clamp(rgb, 0.0, 1.0), 1.0);
-}
-)";
-
-// Rows are (Y, U, V) -> (R, G, B); stored column-major for
-// glUniformMatrix3fv (column 0 = the three Y coefficients, and so on).
-struct YuvMatrix {
-  GLfloat m[9];
-  GLfloat offset_y;
-};
-
-constexpr YuvMatrix kMatrix601Limited = {{1.164383f, 1.164383f, 1.164383f, 0.0f,
-                                          -0.391762f, 2.017232f, 1.596027f,
-                                          -0.812968f, 0.0f},
-                                         16.0f / 255.0f};
-constexpr YuvMatrix kMatrix601Full = {
-    {1.0f, 1.0f, 1.0f, 0.0f, -0.344136f, 1.772f, 1.402f, -0.714136f, 0.0f},
-    0.0f};
-constexpr YuvMatrix kMatrix709Limited = {{1.164383f, 1.164383f, 1.164383f, 0.0f,
-                                          -0.213249f, 2.112402f, 1.792741f,
-                                          -0.532909f, 0.0f},
-                                         16.0f / 255.0f};
-constexpr YuvMatrix kMatrix709Full = {
-    {1.0f, 1.0f, 1.0f, 0.0f, -0.187324f, 1.8556f, 1.5748f, -0.468124f, 0.0f},
-    0.0f};
-// BT.2020 non-constant-luminance, limited range. The chroma coefficients are
-// the FULL-range ones times 255/224 (= 1.138393), the same relationship the two
-// BT.709 rows above have: 0.164553*1.138393 = 0.187326 and 0.571353*1.138393 =
-// 0.650424. Copying the full-range row here instead (as this table briefly did)
-// leaves the limited-range Y scaling and offset in place while the chroma is
-// wrong, which is an off-by-a-matrix colour error rather than a visible crash:
-// limited-range BT.2020 content renders with the wrong saturation.
-constexpr YuvMatrix kMatrix2020Limited = {{1.164383f, 1.164383f, 1.164383f,
-                                           0.0f, -0.187326f, 2.141772f,
-                                           1.678673f, -0.650424f, 0.0f},
-                                          16.0f / 255.0f};
-constexpr YuvMatrix kMatrix2020Full = {
-    {1.0f, 1.0f, 1.0f, 0.0f, -0.164553f, 1.8814f, 1.4746f, -0.571353f, 0.0f},
-    0.0f};
-
-YuvMatrix SelectMatrix(const VideoColorSpace& cs) {
-  const bool full = cs.range == ColorRange::kFull;
-  switch (cs.matrix) {
-  case ColorMatrix::kBT709:
-    return full ? kMatrix709Full : kMatrix709Limited;
-  case ColorMatrix::kBT2020Ncl:
-  case ColorMatrix::kBT2020Cl:
-    return full ? kMatrix2020Full : kMatrix2020Limited;
-  case ColorMatrix::kSMPTE170M:
-    return full ? kMatrix601Full : kMatrix601Limited;
-  default:
-    // Unmarked: sws and libyuv both assume limited-range BT.601; matching
-    // them keeps the GL path indistinguishable from the CPU fallback.
-    return full ? kMatrix601Full : kMatrix601Limited;
+// One frame can be fed by several layers, and with an importer installed they
+// need not all take the same route. A single field then has to mean something
+// more precise than "the last one", and the useful claim is the weakest one:
+// a copy ANYWHERE means the frame was not zero-copy, so kCpuSync wins. The
+// other direction would let a scene with one imported layer and one copied
+// layer report kHwZeroCopy, which is exactly the claim this field exists to
+// keep honest.
+void MergeUploadPath(PresentTiming* timing, UploadPath path) {
+  if (!timing || path == UploadPath::kNone) {
+    return;
+  }
+  if (timing->upload_path == UploadPath::kNone ||
+      path == UploadPath::kCpuSync) {
+    timing->upload_path = path;
   }
 }
 
@@ -126,12 +70,33 @@ bool GlPresenter::Init() {
     LOG(ERROR) << "gl present: quad creation failed";
     return false;
   }
-  for (auto& plane : planes_) {
-    plane = gl::GlTexture::Create(*api_);
-    if (!plane) {
-      LOG(ERROR) << "gl present: texture creation failed";
-      return false;
-    }
+  layer_ = GlVideoLayer::Create(*api_);
+  if (!layer_) {
+    LOG(ERROR) << "gl present: video layer creation failed";
+    return false;
+  }
+  canvas_ = gl::GlFramebuffer::Create(*api_);
+  if (!canvas_) {
+    LOG(ERROR) << "gl present: canvas allocation failed";
+    return false;
+  }
+  std::string blit_error;
+  blitter_ = gl::GlBlitter::Create(*api_, &blit_error);
+  if (!blitter_) {
+    LOG(ERROR) << "gl present: " << blit_error;
+    return false;
+  }
+  // The two cross-fade sides and their mixer. Built here with everything else
+  // that compiles a shader, so a failure to compile is reported at Init()
+  // rather than in the middle of the first transition, when the picture is
+  // already supposed to be fading.
+  transition_from_ = gl::GlFramebuffer::Create(*api_);
+  transition_to_ = gl::GlFramebuffer::Create(*api_);
+  std::string transition_error;
+  transition_ = gl::GlTransition::Create(*api_, &transition_error);
+  if (!transition_from_ || !transition_to_ || !transition_) {
+    LOG(ERROR) << "gl present: " << transition_error;
+    return false;
   }
   return BuildPrograms();
 }
@@ -140,17 +105,33 @@ bool GlPresenter::BuildPrograms() {
   const std::string prologue = gl::ShaderPrologue(*api_);
 
   std::string error;
-  program_ = gl::GlProgram::Create(
-      *api_, (prologue + gl::kQuadVertexShaderBody).c_str(),
-      (prologue + kYuvFragmentShaderBody).c_str(), &error);
+  program_ = CreateVideoLayerProgram(*api_, &error);
   if (!program_) {
     LOG(ERROR) << "gl present: video program: " << error;
     return false;
   }
-  program_->Use();
-  program_->SetInt("uTexY", 0);
-  program_->SetInt("uTexU", 1);
-  program_->SetInt("uTexV", 2);
+  // The rectangle-texture variant, for a frame the host imported rather than
+  // copied. Compiled here so a driver that refuses sampler2DRect says so at
+  // Init() -- the alternative is a picture that is simply black the first time
+  // a hardware frame arrives.
+  rect_program_ = CreateVideoLayerRectProgram(*api_, &error);
+  if (!rect_program_) {
+    LOG(ERROR) << "gl present: video rect program: " << error;
+    return false;
+  }
+  // One source filling the whole canvas. The rect stage is what a scene uses
+  // to place several layers; here it is the identity case, which is what keeps
+  // the single-video path and a scene's first layer on the same shader -- and
+  // why changing how a layer is drawn cannot fix one and break the other.
+  // uRect is a uniform of both programs (they share the vertex stage), so both
+  // have to be told, and both are told the same value.
+  for (gl::GlProgram* program : {program_.get(), rect_program_.get()}) {
+    program->Use();
+    program->SetVec4("uRect", 0.0f, 0.0f, 1.0f, 1.0f);
+    program->SetInt("uTexY", 0);
+    program->SetInt("uTexU", 1);
+    program->SetInt("uTexV", 2);
+  }
 
   overlay_program_ = gl::GlProgram::Create(
       *api_, (prologue + gl::kQuadVertexShaderWithRectBody).c_str(),
@@ -209,111 +190,221 @@ void GlPresenter::DrawOverlay() {
   api_->context().Disable(GL_BLEND);
 }
 
-bool GlPresenter::EnsureTextures(const VideoFrame& frame) {
-  const int format = static_cast<int>(frame.format());
-  if (planes_[0] && texture_width_ == frame.coded_size().width &&
-      texture_height_ == frame.coded_size().height &&
-      texture_format_ == format) {
-    return true;
-  }
-  texture_width_ = frame.coded_size().width;
-  texture_height_ = frame.coded_size().height;
-  texture_format_ = format;
+void GlPresenter::SetCanvasSize(int width, int height) {
+  canvas_width_ = width;
+  canvas_height_ = height;
+}
 
-  // Y linesizes are not always multiples of four (unusual but legal crops).
-  api_->context().PixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  const int w = texture_width_;
-  const int h = texture_height_;
-  const bool nv12 = format == static_cast<int>(VideoFormat::kNV12);
-  // Plane 0: Y (R8). Plane 1: U for planar formats, interleaved UV (RG8) for
-  // NV12. Plane 2: V for planar formats; unused for NV12 but allocated
-  // anyway, so the texture set never has holes.
-  planes_[0]->SetImage2D(GL_R8, w, h, GL_RED, GL_UNSIGNED_BYTE, nullptr);
-  planes_[1]->SetImage2D(nv12 ? GL_RG8 : GL_R8, w / 2, h / 2,
-                         nv12 ? GL_RG : GL_RED, GL_UNSIGNED_BYTE, nullptr);
-  planes_[2]->SetImage2D(GL_R8, w / 2, h / 2, GL_RED, GL_UNSIGNED_BYTE,
-                         nullptr);
-  for (auto& plane : planes_) {
-    plane->SetLinearClamp();
+bool GlPresenter::EnsureCanvas() {
+  // A non-positive request means "follow the drawable", re-read every frame:
+  // that is what keeps a window resize working exactly as it did before the
+  // canvas existed. When the size is unchanged, Ensure() is a no-op.
+  int width = canvas_width_;
+  int height = canvas_height_;
+  if (width <= 0 || height <= 0) {
+    gl_ctx_->GetDrawableSize(&width, &height);
   }
-  program_->Use();
-  program_->SetInt("uNv12", nv12 ? 1 : 0);
+  std::string error;
+  if (!canvas_->Ensure(width, height, &error)) {
+    LOG(ERROR) << "gl present: " << error;
+    return false;
+  }
   return true;
 }
 
-void GlPresenter::UploadPlanes(const VideoFrame& frame) {
-  const int w = texture_width_;
-  const int h = texture_height_;
-  // YV12 stores V before U; the shader's unit 1/2 always mean (U, V) -- the
-  // same swap the SDL_Renderer path does for SDL_PIXELFORMAT_YV12.
-  const bool yv12 = frame.format() == VideoFormat::kYV12;
-  const bool nv12 = frame.format() == VideoFormat::kNV12;
-  struct PlaneUpload {
-    gl::GlTexture* texture;
-    GLenum format;
-    int width;
-    int height;
-    const uint8_t* data;
-  };
-  const PlaneUpload uploads[] = {
-      {planes_[0].get(), GL_RED, w, h,
-       frame.visible_data(VideoFrame::kYPlane).data()},
-      // The cast is load-bearing: glad's enumerants arrive as plain int
-      // literals from #define, so a conditional between two of them is an int,
-      // and a braced initialiser will not narrow a non-constant int to GLenum.
-      {planes_[1].get(), static_cast<GLenum>(nv12 ? GL_RG : GL_RED), w / 2,
-       h / 2,
-       frame.visible_data(yv12 ? VideoFrame::kVPlane : VideoFrame::kUPlane)
-           .data()},
-      {planes_[2].get(), GL_RED, w / 2, h / 2,
-       frame.visible_data(yv12 ? VideoFrame::kUPlane : VideoFrame::kVPlane)
-           .data()},
-  };
-  for (const PlaneUpload& up : uploads) {
-    if (!up.data) {
-      continue;
-    }
-    up.texture->SetSubImage2D(0, 0, up.width, up.height, up.format,
-                              GL_UNSIGNED_BYTE, up.data);
-  }
-}
-
-void GlPresenter::UpdateColorUniforms(const VideoFrame& frame) {
-  const YuvMatrix m = SelectMatrix(frame.color_space());
-  program_->SetMat3("uMatrix", m.m);
-  program_->SetVec3("uOffset", m.offset_y, 0.5f, 0.5f);
-}
-
-bool GlPresenter::Present(const VideoFrame& frame) {
+bool GlPresenter::Compose(const VideoFrame& frame, PresentTiming* timing) {
   if (!gl_current_) {
     return false;
   }
-  if (frame.format() != VideoFormat::kI420 &&
-      frame.format() != VideoFormat::kYV12 &&
-      frame.format() != VideoFormat::kNV12) {
+  if (!IsPlanarYuv(frame.format())) {
     return false;
   }
-  if (!EnsureTextures(frame)) {
+  const base::TimeTicks t_begin =
+      timing ? base::TimeTicks::Now() : base::TimeTicks();
+  if (!EnsureCanvas()) {
     return false;
   }
-  UploadPlanes(frame);
+
+  if (!layer_->Upload(frame, hw_importer_)) {
+    return false;
+  }
+  base::TimeTicks t_uploaded;
+  if (timing) {
+    t_uploaded = base::TimeTicks::Now();
+    timing->upload_ms = (t_uploaded - t_begin).InMillisecondsF();
+    timing->upload_path = layer_->last_upload_path();
+  }
+
+  // Bind() sets the viewport to the canvas size along with the framebuffer, so
+  // the geometry below is expressed in the composition's own coordinates
+  // rather than the window's.
+  canvas_->Bind();
+  api_->context().ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+  api_->context().Clear(GL_COLOR_BUFFER_BIT);
+
+  // Which of the two programs draws this frame follows from the route the
+  // upload just took, not from a mode: a hardware import leaves the layer on
+  // rectangle textures, and only the rect program can read those.
+  gl::GlProgram* video = layer_->texture_target() == GL_TEXTURE_RECTANGLE
+                             ? rect_program_.get()
+                             : program_.get();
+  video->Use();
+  video->SetVec4("uRect", 0.0f, 0.0f, 1.0f, 1.0f);
+  layer_->Bind(*video);
+  quad_->Draw();
+  DrawOverlay();
+  if (timing) {
+    timing->compose_ms =
+        (base::TimeTicks::Now() - t_uploaded).InMillisecondsF();
+  }
+  return true;
+}
+
+GlScene* GlPresenter::EnsureScene() {
+  if (scene_) {
+    return scene_.get();
+  }
+  if (!api_) {
+    return nullptr;
+  }
+  std::string error;
+  scene_ = GlScene::Create(*api_, &error);
+  if (!scene_) {
+    LOG(ERROR) << "gl present: " << error;
+  }
+  return scene_.get();
+}
+
+bool GlPresenter::UploadLayer(GlScene& scene, GlScene::LayerId id,
+                              const VideoFrame& frame, PresentTiming* timing) {
+  const base::TimeTicks t_begin =
+      timing ? base::TimeTicks::Now() : base::TimeTicks();
+  if (!scene.Upload(id, frame, hw_importer_)) {
+    return false;
+  }
+  if (timing) {
+    timing->upload_ms += (base::TimeTicks::Now() - t_begin).InMillisecondsF();
+    // The layer reports its own route; a layer that skipped the upload (already
+    // removed, or a frame it refuses) leaves the path untouched rather than
+    // claiming one.
+    MergeUploadPath(timing, scene.last_upload_path(id));
+  }
+  return true;
+}
+
+bool GlPresenter::ComposeScene(GlScene& scene, PresentTiming* timing) {
+  if (!gl_current_) {
+    return false;
+  }
+  const base::TimeTicks t_begin =
+      timing ? base::TimeTicks::Now() : base::TimeTicks();
+  if (!EnsureCanvas()) {
+    return false;
+  }
+  // Bind() sets the viewport too, which is what makes the scene's normalised
+  // rects land on the composition rather than on the window.
+  canvas_->Bind();
+  // The scene clears and draws; it is told nothing about the canvas, so the
+  // same call composes into an export target just as well.
+  scene.Compose();
+  DrawOverlay();
+  if (timing) {
+    timing->compose_ms = (base::TimeTicks::Now() - t_begin).InMillisecondsF();
+  }
+  return true;
+}
+
+bool GlPresenter::PresentScene(GlScene& scene, PresentTiming* timing) {
+  if (!ComposeScene(scene, timing)) {
+    return false;
+  }
+  return Swap(timing);
+}
+
+bool GlPresenter::ComposeTransition(GlScene& from, GlScene& to, float progress,
+                                    PresentTiming* timing) {
+  if (!gl_current_) {
+    return false;
+  }
+  const base::TimeTicks t_begin =
+      timing ? base::TimeTicks::Now() : base::TimeTicks();
+  if (!EnsureCanvas()) {
+    return false;
+  }
+  std::string error;
+  if (!transition_from_->Ensure(canvas_->width(), canvas_->height(), &error) ||
+      !transition_to_->Ensure(canvas_->width(), canvas_->height(), &error)) {
+    LOG(ERROR) << "gl present: transition target: " << error;
+    return false;
+  }
+
+  transition_from_->Bind();
+  from.Compose();
+  transition_to_->Bind();
+  to.Compose();
+
+  // Back to the canvas for the mix. Its viewport matches the two sides (see
+  // the header on why they are composed at the output size), so the transition
+  // is a combination rather than a resample.
+  canvas_->Bind();
+  transition_->Draw(transition_from_->color_texture(),
+                    transition_to_->color_texture(), progress, canvas_->width(),
+                    canvas_->height());
+  DrawOverlay();
+  if (timing) {
+    timing->compose_ms = (base::TimeTicks::Now() - t_begin).InMillisecondsF();
+  }
+  return true;
+}
+
+bool GlPresenter::PresentTransition(GlScene& from, GlScene& to, float progress,
+                                    PresentTiming* timing) {
+  if (!ComposeTransition(from, to, progress, timing)) {
+    return false;
+  }
+  return Swap(timing);
+}
+
+void GlPresenter::PresentComposed(PresentTiming* timing) {
+  if (!canvas_ || !canvas_->valid()) {
+    return;
+  }
+  const base::TimeTicks t_begin =
+      timing ? base::TimeTicks::Now() : base::TimeTicks();
 
   int drawable_w = 0;
   int drawable_h = 0;
   gl_ctx_->GetDrawableSize(&drawable_w, &drawable_h);
-  api_->context().Viewport(0, 0, drawable_w, drawable_h);
-  api_->context().ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-  api_->context().Clear(GL_COLOR_BUFFER_BIT);
+  // Back to the window's framebuffer before the blit binds its own viewport;
+  // the blitter would otherwise draw the canvas into the canvas.
+  canvas_->Unbind();
+  blitter_->Blit(canvas_->color_texture(), drawable_w, drawable_h);
+  if (timing) {
+    timing->blit_ms = (base::TimeTicks::Now() - t_begin).InMillisecondsF();
+  }
+}
 
-  program_->Use();
-  UpdateColorUniforms(frame);
-  planes_[0]->Bind(0);
-  planes_[1]->Bind(1);
-  planes_[2]->Bind(2);
-  quad_->Draw();
-  DrawOverlay();
+bool GlPresenter::Swap(PresentTiming* timing) {
+  // Each stage probes its own boundaries, so present_ms below measures exactly
+  // the swap -- the one stage that can block on vsync. Composing the three
+  // into a single number would make a vsync-throttled frame indistinguishable
+  // from a slow one.
+  PresentComposed(timing);
+  if (!timing) {
+    gl_ctx_->SwapBuffers();
+    return true;
+  }
+  const base::TimeTicks t_drawn = base::TimeTicks::Now();
   gl_ctx_->SwapBuffers();
+  timing->present_ms = (base::TimeTicks::Now() - t_drawn).InMillisecondsF();
   return true;
+}
+
+bool GlPresenter::Present(const VideoFrame& frame, PresentTiming* timing) {
+  if (!Compose(frame, timing)) {
+    return false;
+  }
+  return Swap(timing);
 }
 
 void GlPresenter::Shutdown() {
@@ -323,12 +414,17 @@ void GlPresenter::Shutdown() {
   // After the render thread stops, the context is current nowhere; the host
   // still owns it, so re-activate to delete cleanly and release again.
   gl_ctx_->MakeCurrent();
+  transition_.reset();
+  transition_to_.reset();
+  transition_from_.reset();
+  blitter_.reset();
+  canvas_.reset();
+  scene_.reset();
   overlay_texture_.reset();
-  for (auto& plane : planes_) {
-    plane.reset();
-  }
+  layer_.reset();
   quad_.reset();
   overlay_program_.reset();
+  rect_program_.reset();
   program_.reset();
   api_.reset();
   gl_ctx_->ReleaseCurrent();
