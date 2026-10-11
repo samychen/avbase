@@ -357,6 +357,26 @@ CMAKE_CALL_RE = re.compile(r"\b(?:add_library|add_executable)\s*\(")
 CMAKE_SOURCE_RE = re.compile(r"(?<![\w./-])([\w./-]+\.(?:cc|cpp|c))(?![\w./-])")
 
 
+def cmake_source_paths(text: str):
+    """Yields every literal source path in a CMakeLists body.
+
+    Two things are deliberately not yielded. A path containing a $ or { is
+    variable-driven and cannot be resolved here. And the tail of a
+    ${VAR}/path expression is skipped: CMAKE_SOURCE_RE matches the longest run
+    of path characters, so "${AVBASE_GLAD_DIR}/src/gl.c" yields "/src/gl.c" --
+    a path that only looks absolute and exists nowhere. The run's preceding
+    `}` is what gives it away, and a real literal path never starts right
+    after one.
+    """
+    for m in CMAKE_SOURCE_RE.finditer(text):
+        if m.start() > 0 and text[m.start() - 1] == "}":
+            continue
+        src = m.group(1)
+        if "$" in src or "{" in src:
+            continue
+        yield src
+
+
 def cmake_target_calls(text: str):
     r"""Yields (target, body) for every add_library/add_executable in |text|.
 
@@ -408,9 +428,7 @@ def check_cmake_sources(root: pathlib.Path, report: Report) -> None:
         for target, body in cmake_target_calls(text):
             if re.search(r"\b(IMPORTED|ALIAS|INTERFACE)\b", body.split("\n")[0]):
                 continue          # no source list to validate
-            for src in CMAKE_SOURCE_RE.findall(body):
-                if "$" in src or "{" in src:
-                    continue      # generated or variable-driven path
+            for src in cmake_source_paths(body):
                 if not (cm.parent / src).exists():
                     report.add("C24", cm, 0,
                                f"target {target} lists {src}, which does not "
@@ -475,9 +493,7 @@ def check_sources_in_a_target(root: pathlib.Path, report: Report) -> None:
         # body with ${T_SOURCES} -- a target-body-only scan reported all seven
         # files listed there as uncompiled. What the rule needs to know is
         # "some build file names it", and that is what this asks.
-        for src in CMAKE_SOURCE_RE.findall(text):
-            if "$" in src or "{" in src:
-                continue          # variable-driven path, covered by its glob
+        for src in cmake_source_paths(text):
             covered.add((cm.parent / src).resolve())
 
     for path in sorted(root.rglob("*.cc")):

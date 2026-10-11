@@ -446,11 +446,13 @@ jobs:
         run: |
           # Same exclusion set the local sweep used: media/filters/legacy/ is
           # the LGPL-2.1 quarantine (its provenance comments must keep the
-          # shape ijkplayer had) and option_registry.inc is generated, so
-          # neither is the formatter's to change.
+          # shape ijkplayer had), option_registry.inc is generated, and
+          # render/gl/third_party/ is the vendored glad output -- all three are
+          # text the formatter is not entitled to rewrite.
           mapfile -t FILES < <(git ls-files '*.cc' '*.h' \
             | grep -v 'media/filters/legacy/' \
-            | grep -v 'player/option_registry.inc')
+            | grep -v 'player/option_registry.inc' \
+            | grep -v 'third_party/')
           echo "checking ${#FILES[@]} files"
           clang-format --dry-run --Werror --style=file "${FILES[@]}"
 
@@ -505,7 +507,20 @@ jobs:
                          'platform/*.cc' 'tools/*.cc' | grep -v 'legacy/')
           "$RUNNER_TEMP/cpplint-venv/bin/cpplint" --repository=. $files
 
+  # A `check-gl-constants` job used to sit here. It machine-checked the
+  # hand-written enumerant table in render/gl/gl_constants.h against the
+  # platform's GL headers, because a typo in that table compiles clean and only
+  # fails at runtime as a driver error nobody reads -- not hypothetically:
+  # GL_VERTEX_SHADER was once 0x8B33 there, and glCreateShader() returned 0
+  # with an empty info log while the card was fine.
+  #
+  # That table no longer exists. render/gl/third_party/glad/ now carries the
+  # enumerants and the entry points as generated output derived from Khronos'
+  # own XML, so the failure mode was removed rather than guarded against. A job
+  # here could only assert that glad generated what glad generates.
+
   # Every style gate the project keeps is now present and blocking:
-  # check-format, check-clang-tidy and check-cpplint. Still open (docs/12-剩余工作清单.md):
-  # check-no-vendor-leak, the coverage job (a `lcov --summary || true` that
-  # cannot fail), and the ffmpeg-matrix / e2e-linux jobs, both still `if: false`.
+  # check-format, check-clang-tidy and check-cpplint. Still open
+  # (docs/12-剩余工作清单.md): check-no-vendor-leak, the coverage job (a
+  # `lcov --summary || true` that cannot fail), and the ffmpeg-matrix /
+  # e2e-linux jobs, both still `if: false`.
