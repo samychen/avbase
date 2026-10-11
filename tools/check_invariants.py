@@ -357,7 +357,12 @@ CMAKE_CALL_RE = re.compile(r"\b(?:add_library|add_executable)\s*\(")
 CMAKE_SOURCE_RE = re.compile(r"(?<![\w./-])([\w./-]+\.(?:cc|cpp|c))(?![\w./-])")
 
 
-def cmake_source_paths(text: str):
+# No trailing slash: the captured path already carries the one that follows the
+# variable, so the prefix to recognise is the reference alone.
+CURRENT_SOURCE_PREFIX = "${CMAKE_CURRENT_SOURCE_DIR}"
+
+
+def cmake_source_paths(text: str, base=None):
     """Yields every literal source path in a CMakeLists body.
 
     Two things are deliberately not yielded. A path containing a $ or { is
@@ -367,9 +372,24 @@ def cmake_source_paths(text: str):
     a path that only looks absolute and exists nowhere. The run's preceding
     `}` is what gives it away, and a real literal path never starts right
     after one.
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/ is the exception, resolved when |base| (the
+    CMakeLists' own directory) is given: its value is fixed by where the file
+    lives, so it is not really variable, and CMake substitutes it before it
+    globs. Leaving it unresolved made C25 report a file that IS compiled as
+    "no target compiles this file" -- which is worse than no rule, because the
+    next person learns to ignore it. It has to be matched against the text
+    rather than the match, since the $ and the braces are outside what
+    CMAKE_SOURCE_RE captures.
     """
     for m in CMAKE_SOURCE_RE.finditer(text):
-        if m.start() > 0 and text[m.start() - 1] == "}":
+        start = m.start()
+        if base is not None and start >= len(CURRENT_SOURCE_PREFIX) and \
+                text[start - len(CURRENT_SOURCE_PREFIX):start] == \
+                CURRENT_SOURCE_PREFIX:
+            yield (base / m.group(1).lstrip("/")).as_posix()
+            continue
+        if start > 0 and text[start - 1] == "}":
             continue
         src = m.group(1)
         if "$" in src or "{" in src:
@@ -428,7 +448,7 @@ def check_cmake_sources(root: pathlib.Path, report: Report) -> None:
         for target, body in cmake_target_calls(text):
             if re.search(r"\b(IMPORTED|ALIAS|INTERFACE)\b", body.split("\n")[0]):
                 continue          # no source list to validate
-            for src in cmake_source_paths(body):
+            for src in cmake_source_paths(body, cm.parent):
                 if not (cm.parent / src).exists():
                     report.add("C24", cm, 0,
                                f"target {target} lists {src}, which does not "
@@ -493,7 +513,7 @@ def check_sources_in_a_target(root: pathlib.Path, report: Report) -> None:
         # body with ${T_SOURCES} -- a target-body-only scan reported all seven
         # files listed there as uncompiled. What the rule needs to know is
         # "some build file names it", and that is what this asks.
-        for src in cmake_source_paths(text):
+        for src in cmake_source_paths(text, cm.parent):
             covered.add((cm.parent / src).resolve())
 
     for path in sorted(root.rglob("*.cc")):
