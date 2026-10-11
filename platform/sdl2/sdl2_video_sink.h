@@ -144,6 +144,9 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
   RenderPerfStats render_stats_;
   DurationEwma present_interval_ms_;
   base::TimeTicks last_present_ticks_;
+  // The cadence anchor shared with GlVideoSink's; see media/base/
+  // render_cadence.h for why it is a deadline and not a wake-up time.
+  base::TimeTicks next_frame_deadline_;
 };
 
 class AVBASE_MEDIA_EXPORT Sdl2VideoSinkFactory final

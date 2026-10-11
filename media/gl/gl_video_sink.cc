@@ -12,6 +12,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/time/time.h"
+#include "media/base/render_cadence.h"
 #include "media/gl/gl_present.h"
 
 namespace avbase::media {
@@ -44,6 +45,9 @@ void GlVideoSink::Start() {
   if (thread_) {
     return;
   }
+  // A restarted loop has no cadence to inherit: the deadline from the previous
+  // run is a time that already passed.
+  next_frame_deadline_ = base::TimeTicks();
   thread_ = std::make_unique<base::Thread>("avbase-gl-video");
   thread_->Start();
   render_runner_ = thread_->task_runner();
@@ -204,32 +208,18 @@ void GlVideoSink::PresentOne() {
     }
   }
   if (render_runner_) {
-    // Budget the interval from the START of this frame, not from now. The
-    // present above can already block on vsync inside SwapBuffers (that wait
-    // is what present_ms measures), and scheduling a further full interval
-    // would add the two: a 60 fps source was measured presenting at 30 fps for
-    // exactly this reason.
-    //
-    // Two regimes, and picking between them is the whole point:
-    //   * The swap blocked -- it already waited for the refresh, so it IS the
-    //     throttle. Waiting again would double-count, so go straight back.
-    //   * The swap returned at once (no vsync: offscreen, or a driver with the
-    //     interval at 0) -- then the timer is the only thing pacing and it
-    //     must supply the whole interval.
-    // The threshold is half a refresh: a swap that took at least that long was
-    // waiting for something, not doing work.
-    const base::TimeDelta spent = base::TimeTicks::Now() - frame_start;
-    const bool swap_waited = spent > kMaxPresentInterval / 2;
-    base::TimeDelta delay;
-    if (swap_waited || spent >= kMaxPresentInterval) {
-      delay = base::TimeDelta();
-    } else {
-      delay = kMaxPresentInterval - spent;
-    }
+    // The cadence lives in media/base rather than here because the SDL2 sink
+    // needs the identical rule, and a rule written twice gets fixed once.
+    // Which of the two regimes applies is decided per frame; see
+    // NextFrameDelay.
+    const FramePacing pacing =
+        NextFrameDelay(frame_start, base::TimeTicks::Now(),
+                       next_frame_deadline_, kMaxPresentInterval);
+    next_frame_deadline_ = pacing.next_deadline;
     render_runner_->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&GlVideoSink::PresentOne, base::Unretained(this)),
-        delay);
+        pacing.delay);
   }
 }
 

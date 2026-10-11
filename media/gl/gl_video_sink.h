@@ -175,6 +175,10 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
   // VideoSinkStats has always declared and nothing has ever filled.
   DurationEwma present_interval_ms_;
   base::TimeTicks last_present_ticks_;
+  // The cadence anchor for NextFrameDelay(): the deadline the loop is AIMING
+  // at, which is not the time it last woke up. Null whenever the refresh is
+  // doing the pacing rather than the timer.
+  base::TimeTicks next_frame_deadline_;
 };
 
 }  // namespace avbase::media

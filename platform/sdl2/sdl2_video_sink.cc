@@ -13,6 +13,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/time/time.h"
+#include "media/base/render_cadence.h"
 #include "media/gl/gl_present.h"
 #include "platform/hwimport/hw_importer_factory.h"
 #include "platform/sdl2/sdl_gl_context.h"
@@ -67,6 +68,8 @@ void Sdl2VideoSink::Start() {
   if (thread_) {
     return;
   }
+  // No cadence to inherit from a previous run; see GlVideoSink::Start().
+  next_frame_deadline_ = base::TimeTicks();
   if (!discard_.load()) {
     const auto* surface = static_cast<const Sdl2Surface*>(display_->raw());
     renderer_ = surface->renderer;
@@ -235,21 +238,17 @@ void Sdl2VideoSink::PresentOne() {
     }
   }
   if (render_runner_) {
-    // Same budget-from-frame-start rule as GlVideoSink, for the same measured
-    // reason: SDL_RENDERER_PRESENTVSYNC makes SDL_RenderPresent block on the
-    // refresh, so adding a full interval on top of it would halve the rate.
-    const base::TimeDelta spent = base::TimeTicks::Now() - frame_start;
-    const bool present_waited = spent > kMaxPresentInterval / 2;
-    base::TimeDelta delay;
-    if (present_waited || spent >= kMaxPresentInterval) {
-      delay = base::TimeDelta();
-    } else {
-      delay = kMaxPresentInterval - spent;
-    }
+    // Shared with GlVideoSink on purpose: two copies of a cadence rule means
+    // one of them eventually keeps the bug. See NextFrameDelay for which of
+    // the two regimes applies.
+    const FramePacing pacing =
+        NextFrameDelay(frame_start, base::TimeTicks::Now(),
+                       next_frame_deadline_, kMaxPresentInterval);
+    next_frame_deadline_ = pacing.next_deadline;
     render_runner_->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&Sdl2VideoSink::PresentOne, base::Unretained(this)),
-        delay);
+        pacing.delay);
   }
 }
 
