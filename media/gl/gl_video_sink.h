@@ -20,42 +20,27 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
 #include "media/gl/gl_hw_texture_importer.h"
+#include "media/gl/gl_output_target.h"
 #include "media/gl/gl_scene_driver.h"
 #include "media/media_export.h"
-#include "render/gl/native_gl_context.h"
 #include "render/gl/overlay.h"
 
 namespace avbase::media {
 
 class GlPresenter;
 
-// The pairing a backend hands the shared sink for one present: the GL context
-// to present through, plus the optional overlay slot to composite over it, plus
-// the optional composition size to compose at.
-//
-// The canvas travels with the binding rather than through a setter on the sink
-// because it is a property of the SURFACE being drawn into: a host that knows
-// it wants 1080p composition states it where it states the window, and a
-// backend that has no opinion leaves both at 0 ("follow the drawable").
-struct AVBASE_MEDIA_EXPORT GlSurfaceBinding {
-  std::unique_ptr<gl::NativeGLContext> context;
-  gl::TextOverlaySlot* overlay{nullptr};
-  // Composition surface in pixels; non-positive in either axis means the
-  // composition follows the drawable. See GlPresenter::SetCanvasSize().
-  int canvas_width{0};
-  int canvas_height{0};
-};
-
 // A window-system-neutral GL video sink. Every backend that presents through
 // GlPresenter (GLFW, EGL, SDL2-GL, ...) drives the same render-thread cadence
-// and stats here; the only backend-specific knowledge -- how to turn the
-// opaque surface pointer into a gl::NativeGLContext -- is expressed by the one
-// BindSurface() hook a subclass supplies.
+// and stats here; the only backend-specific knowledge -- which surface to draw
+// into, and through which API -- is expressed by the GlOutputTarget it is
+// handed at construction.
 //
-// This is the factored-out GL half of Sdl2VideoSink: that class keeps its
-// SDL_Renderer 2D path and delegates the GL path to the same GlPresenter this
-// sink owns outright. Backends that are GL-only (no 2D API: GLFW, EGL)
-// subclass this directly instead of re-deriving the whole render loop.
+// There used to be two sinks. Sdl2VideoSink carried a byte-identical copy of
+// this loop because it could be drawing through either a GL context or an
+// SDL_Renderer and nothing else knew which; the duplication was removed by
+// moving that one question into a target object rather than by giving the sink
+// a second implementation. A backend is now a GlOutputTarget, and a named sink
+// subclass -- where one still exists -- is ten lines that install one.
 //
 // Lives under media/ rather than in the avbase_gl module because it is shaped
 // by VideoRendererSink and VideoFrame: it is the video pipeline's render
@@ -67,8 +52,11 @@ struct AVBASE_MEDIA_EXPORT GlSurfaceBinding {
 // make the context current once it has handed the display to avbase.
 class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
  public:
+  // |output| is how this sink reaches a display; it is owned here and outlives
+  // every presenter, because a target outlives the context it lent out.
   GlVideoSink(base::scoped_refptr<NativeDisplay> display,
-              NativeDisplayKind expected_kind, const char* name);
+              NativeDisplayKind expected_kind, const char* name,
+              std::unique_ptr<GlOutputTarget> output);
   GlVideoSink(const GlVideoSink&) = delete;
   GlVideoSink& operator=(const GlVideoSink&) = delete;
   ~GlVideoSink() override;
@@ -107,11 +95,10 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
   void SetHwTextureImporter(std::unique_ptr<GlHwTextureImporter> importer);
 
  protected:
-  // Backend hook: given the opaque surface pointer carried in the display,
-  // build the gl::NativeGLContext the presenter needs (and report the overlay
-  // slot). A null context puts the sink into present-failure for that frame.
-  // Called on the render thread, once per (re)built presenter.
-  virtual GlSurfaceBinding BindSurface(void* raw) = 0;
+  // The target this sink presents through. Borrowed by subclasses only so a
+  // backend can ask it the one question the loop does not (SDL2's renderer
+  // path uses it to reach the overlay); the sink owns it.
+  GlOutputTarget* output() const { return output_.get(); }
 
  private:
   void PresentOne();
@@ -124,6 +111,9 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
   base::scoped_refptr<NativeDisplay> display_;
   NativeDisplayKind expected_kind_;
   const char* name_;
+  // Declared before presenter_ and scene_: those hold GL objects borrowed from
+  // a context the target handed over, so the target has to outlive them.
+  std::unique_ptr<GlOutputTarget> output_;
   base::raw_ptr<RenderCallback> callback_{nullptr};
   std::unique_ptr<base::Thread> thread_;
   base::scoped_refptr<base::SequencedTaskRunner> render_runner_;

@@ -18,8 +18,12 @@
 namespace avbase::media {
 
 GlVideoSink::GlVideoSink(base::scoped_refptr<NativeDisplay> display,
-                         NativeDisplayKind expected_kind, const char* name)
-    : display_(std::move(display)), expected_kind_(expected_kind), name_(name) {
+                         NativeDisplayKind expected_kind, const char* name,
+                         std::unique_ptr<GlOutputTarget> output)
+    : display_(std::move(display)),
+      expected_kind_(expected_kind),
+      name_(name),
+      output_(std::move(output)) {
   discard_.store(!display_ || display_->kind() != expected_kind_ ||
                  !display_->raw());
 }
@@ -39,6 +43,11 @@ void GlVideoSink::Start() {
   // A restarted loop has no cadence to inherit: the deadline from the previous
   // run is a time that already passed.
   next_frame_deadline_ = base::TimeTicks();
+  // The target has to be told which surface to draw into before the first
+  // present asks it -- a target that caches the renderer/context pair (SDL2)
+  // cannot answer has_gl_route() without it, and that answer decides whether
+  // the very first hardware frame is read back.
+  output_->SetSurface(discard_.load() ? nullptr : display_->raw());
   thread_ = std::make_unique<base::Thread>("avbase-gl-video");
   thread_->Start();
   render_runner_ = thread_->task_runner();
@@ -69,6 +78,9 @@ void GlVideoSink::Stop() {
   scene_.Shutdown();
   presenter_.reset();
   overlay_slot_ = nullptr;
+  // After the render thread is gone: whatever the target owns (an SDL texture,
+  // a borrowed renderer) is used from that thread and nowhere else.
+  output_->ReleaseOutput();
 }
 
 void GlVideoSink::Pause() {
@@ -95,6 +107,7 @@ void GlVideoSink::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
   scene_.Shutdown();
   presenter_.reset();
   overlay_slot_ = nullptr;
+  output_->SetSurface(discard_.load() ? nullptr : display_->raw());
 }
 
 bool GlVideoSink::IsRunning() const {
@@ -125,16 +138,37 @@ void GlVideoSink::PresentOne() {
     base::scoped_refptr<VideoFrame> frame =
         callback_->Render(base::TimeTicks(), base::TimeTicks());
     // Zero-copy contract (avbase §6.2): a hardware frame arrives GPU-resident,
-    // and the sink's job is to keep it that way when it can. It does NOT decide
-    // what happens when it cannot: whether a GPU frame is imported, read back,
-    // or reported as a failure is GlVideoLayer::Upload()'s call, because that
-    // is the one place that knows the frame is still alive and unused. Deciding
-    // it here as well is how this sink grew a second, divergent copy of the
-    // rule -- one before the present and one after a refused import.
+    // and the sink's job is to keep it that way when it can.
+    //
+    // Two questions here, and only two. Is there a frame, and is the target
+    // drawing through an API that needs the pixels in CPU memory? The second is
+    // the one this sink still owns, because only the target knows: an
+    // SDL_Renderer uploads through SDL_UpdateYUVTexture and cannot take a GPU
+    // frame at any price, so one is read back EXPLICITLY, here, and hardware
+    // playback on such a host is expensive rather than broken.
+    //
+    // Everything downstream of that -- import, or read back because there is no
+    // backend, or read back because the driver refused -- is
+    // GlVideoLayer::Upload()'s call. Deciding it here too is how this sink grew
+    // a second, divergent copy of the rule.
+    bool readback_failed = false;
+    if (frame && !frame->IsMappable() && !output_->has_gl_route()) {
+      base::scoped_refptr<VideoFrame> mapped = frame->ToI420();
+      if (!mapped) {
+        frame = nullptr;
+        readback_failed = true;
+      } else {
+        static std::atomic<bool> warned{false};
+        if (!warned.exchange(true)) {
+          LOG(WARNING) << name_ << " target has no GL route; read back a "
+                       << "hardware frame via ToI420() for every frame";
+        }
+        frame = std::move(mapped);
+      }
+    }
     const bool presented = !discard_.load() && frame && UploadAndPresent(frame);
-    const FrameOutcome outcome =
-        ClassifyFrameOutcome(frame != nullptr, discard_.load(),
-                             /*readback_failed=*/false, presented);
+    const FrameOutcome outcome = ClassifyFrameOutcome(
+        frame != nullptr, discard_.load(), readback_failed, presented);
     if (outcome == FrameOutcome::kSubmitFailure) {
       // The renderer keeps its own rate-limited count of these; nothing called
       // it before, so a submit failure was invisible to the pipeline that
@@ -144,7 +178,7 @@ void GlVideoSink::PresentOne() {
     stats_.NoteFrameOutcome(outcome);
   }
   if (render_runner_) {
-    // The cadence lives in media/base rather than here because the SDL2 sink
+    // The cadence lives in media/base rather than here because every sink
     // needs the identical rule, and a rule written twice gets fixed once.
     // Which of the two regimes applies is decided per frame; see
     // NextFrameDelay.
@@ -175,10 +209,22 @@ void GlVideoSink::SetHwTextureImporter(
 
 bool GlVideoSink::UploadAndPresent(
     const base::scoped_refptr<VideoFrame>& frame) {
+  // A target with no GL route draws every frame itself and never builds a
+  // presenter. The old Sdl2VideoSink reached this by having two branches inside
+  // its own copy of the loop; the branch is still here, but it is one question
+  // asked of the target rather than a second sink's worth of state.
+  if (!output_->has_gl_route()) {
+    PresentTiming timing;
+    if (!output_->PresentWithoutGl(*frame, &timing)) {
+      return false;
+    }
+    NotePresentTiming(timing);
+    return true;
+  }
   if (!presenter_) {
     // Lazily bind on the render thread: Init() makes the context current
     // here, which is why the host must never make it current itself.
-    GlSurfaceBinding binding = BindSurface(display_->raw());
+    GlSurfaceBinding binding = output_->BindSurface();
     overlay_slot_ = binding.overlay;
     if (!binding.context) {
       return false;
