@@ -5,6 +5,7 @@
 #include "platform/glfw/glfw_video_sink.h"
 
 #include <memory>
+#include <utility>
 
 #include "platform/glfw/glfw_gl_context.h"
 #include "platform/glfw/glfw_surface.h"
@@ -13,7 +14,8 @@
 namespace avbase::media {
 
 GlfwVideoSink::GlfwVideoSink(base::scoped_refptr<NativeDisplay> display)
-    : GlVideoSink(std::move(display), NativeDisplayKind::kGlfwWindow, "glfw") {
+    : GlVideoSink(std::move(display), NativeDisplayKind::kGlfwWindow, "glfw",
+                  std::make_unique<GlfwOutputTarget>()) {
   // The host's zero-copy backend, built here rather than at BindSurface(): the
   // decision to read a hardware frame back has to be made BEFORE there is a
   // context to import through (see GlVideoSink::PresentOne), so the sink has
@@ -22,14 +24,19 @@ GlfwVideoSink::GlfwVideoSink(base::scoped_refptr<NativeDisplay> display)
   SetHwTextureImporter(platform::hwimport::CreateHwTextureImporter());
 }
 
-GlSurfaceBinding GlfwVideoSink::BindSurface(void* raw) {
+GlSurfaceBinding GlfwOutputTarget::BindSurface() {
   GlSurfaceBinding binding;
-  auto* surface = static_cast<GlfwSurface*>(raw);
+  auto* surface = static_cast<GlfwSurface*>(raw_);
   binding.context = std::make_unique<GlfwGLContext>(surface->window);
   binding.overlay = surface->overlay;
   binding.canvas_width = surface->canvas_width;
   binding.canvas_height = surface->canvas_height;
   return binding;
+}
+
+bool GlfwOutputTarget::PresentWithoutGl(const VideoFrame& /*frame*/,
+                                        PresentTiming* /*timing*/) {
+  return false;
 }
 
 std::unique_ptr<VideoRendererSink>
