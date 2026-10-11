@@ -20,6 +20,9 @@ struct EglSurface {
   void* surface{nullptr};                         // EGLSurface, host-owned.
   void* context{nullptr};                         // EGLContext, host-owned.
   avbase::gl::TextOverlaySlot* overlay{nullptr};  // Optional; per frame.
+  // Composition resolution; 0 in either axis means it follows the drawable.
+  int canvas_width{0};
+  int canvas_height{0};
 };
 
 #endif  // AVBASE_PLATFORM_EGL_EGL_SURFACE_H_

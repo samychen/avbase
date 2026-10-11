@@ -47,6 +47,12 @@ extern const char* const kTextureFragmentShaderBody;
 // covers both plain blits and fades.
 extern const char* const kTextureTintFragmentShaderBody;
 
+// Fragment stage: mixes two textures by uProgress (0 = uFrom, 1 = uTo). The
+// cross-fade every transition is built out of; a wipe or a slide is this
+// shader with a different weight expression, so the two-texture plumbing
+// (units, uniforms, geometry, orientation) is worth stating once.
+extern const char* const kCrossFadeFragmentShaderBody;
+
 }  // namespace avbase::gl
 
 #endif  // AVBASE_RENDER_GL_GL_SHADERS_H_

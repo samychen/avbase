@@ -18,10 +18,17 @@ void* EglGLContext::GetProcAddress(const char* name) {
 }
 
 bool EglGLContext::MakeCurrent() {
-  return eglMakeCurrent(static_cast<EGLDisplay>(display_),
-                        static_cast<EGLSurface>(surface_),
-                        static_cast<EGLSurface>(surface_),
-                        static_cast<EGLContext>(context_)) == EGL_TRUE;
+  if (eglMakeCurrent(static_cast<EGLDisplay>(display_),
+                     static_cast<EGLSurface>(surface_),
+                     static_cast<EGLSurface>(surface_),
+                     static_cast<EGLContext>(context_)) != EGL_TRUE) {
+    return false;
+  }
+  // Same reasoning as the GLFW and SDL2 contexts: request vsync explicitly so
+  // the refresh, not the sink's timer, paces presentation. eglSwapInterval is
+  // only honored while a context is current, which is why it lives here.
+  eglSwapInterval(static_cast<EGLDisplay>(display_), 1);
+  return true;
 }
 
 void EglGLContext::ReleaseCurrent() {

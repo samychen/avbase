@@ -20,6 +20,11 @@
 struct GlfwSurface {
   void* window{nullptr};                          // GLFWwindow*, host-owned.
   avbase::gl::TextOverlaySlot* overlay{nullptr};  // Optional; per frame.
+  // Composition resolution: the frame is drawn into a canvas of this size and
+  // scaled to the window, so it decouples what is composed from what is
+  // displayed. 0 in either axis means the composition follows the window.
+  int canvas_width{0};
+  int canvas_height{0};
 };
 
 #endif  // AVBASE_PLATFORM_GLFW_GLFW_SURFACE_H_

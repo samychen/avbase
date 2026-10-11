@@ -29,6 +29,11 @@ struct Sdl2Surface {
   void* renderer{nullptr};    // SDL_Renderer*
   void* gl_context{nullptr};  // SDL_GLContext, optional; selects the GL path.
   avbase::gl::TextOverlaySlot* overlay{nullptr};  // Optional; GL path only.
+  // Composition resolution, GL path only; 0 in either axis (the default) means
+  // the composition follows the window. The SDL_Renderer 2D path ignores it --
+  // it has no off-screen target, which is why it cannot scale independently.
+  int canvas_width{0};
+  int canvas_height{0};
 };
 
 #endif  // AVBASE_PLATFORM_SDL2_SURFACE_H_

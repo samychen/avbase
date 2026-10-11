@@ -18,8 +18,16 @@ void* SdlGLContext::GetProcAddress(const char* name) {
 }
 
 bool SdlGLContext::MakeCurrent() {
-  return SDL_GL_MakeCurrent(static_cast<SDL_Window*>(window_),
-                            static_cast<SDL_GLContext>(context_)) == 0;
+  if (SDL_GL_MakeCurrent(static_cast<SDL_Window*>(window_),
+                         static_cast<SDL_GLContext>(context_)) != 0) {
+    return false;
+  }
+  // Same reasoning as GlfwGLContext::MakeCurrent: ask for vsync rather than
+  // inheriting whatever SDL_GL_SetAttribute happened to leave behind, so a
+  // blocking swap is what paces the render thread. A driver that refuses
+  // (returns -1) is not an error here -- the sink's timer takes over.
+  SDL_GL_SetSwapInterval(1);
+  return true;
 }
 
 void SdlGLContext::ReleaseCurrent() {

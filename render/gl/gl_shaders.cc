@@ -60,4 +60,16 @@ void main() {
 }
 )";
 
+const char* const kCrossFadeFragmentShaderBody = R"(
+in vec2 vTexCoord;
+out vec4 fragColor;
+uniform sampler2D uFrom;
+uniform sampler2D uTo;
+uniform float uProgress;
+void main() {
+    fragColor = mix(texture(uFrom, vTexCoord), texture(uTo, vTexCoord),
+                    uProgress);
+}
+)";
+
 }  // namespace avbase::gl

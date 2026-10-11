@@ -19,6 +19,14 @@ void* GlfwGLContext::GetProcAddress(const char* name) {
 
 bool GlfwGLContext::MakeCurrent() {
   glfwMakeContextCurrent(window_);
+  // Ask for a swap interval of 1 explicitly instead of inheriting GLFW's
+  // default. That default is 0, but what the platform does with it differs --
+  // CGL happens to vsync anyway, X11 does not -- which is why the same build
+  // measured 60 fps on one run and 53 on the next: with no vsync the sink
+  // falls back to its timer, and a timer is only good to a millisecond or two.
+  // Setting it here makes the refresh the throttle everywhere, which is also
+  // what lets GlVideoSink::PresentOne() recognize a blocking swap.
+  glfwSwapInterval(1);
   return true;
 }
 
