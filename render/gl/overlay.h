@@ -42,12 +42,34 @@ struct AVBASE_GL_EXPORT TextOverlaySlot {
   }
   void Clear() {
     std::lock_guard<std::mutex> lock(mu_);
-    current_.valid = false;
+    // Drops the bitmap rather than only flagging it invalid: a consumer that
+    // skips the copy while the version is unchanged must not keep paying for a
+    // copy of a picture it is no longer allowed to draw.
+    current_ = TextOverlay{};
+    // Version bumped too. Clearing is a change a reader has to see, and a
+    // consumer that early-outs on an unchanged version would otherwise keep
+    // drawing an overlay that was just taken off screen.
+    current_.version = ++version_;
   }
   // Copies the current overlay (or an invalid one when nothing is published).
   TextOverlay Snapshot() {
     std::lock_guard<std::mutex> lock(mu_);
     return current_;
+  }
+  // The same, into a buffer the caller keeps. Prefer this on a per-frame
+  // path: assigning into an existing TextOverlay reuses its rgba capacity, so
+  // the steady state copies without allocating.
+  void SnapshotTo(TextOverlay& out) {
+    std::lock_guard<std::mutex> lock(mu_);
+    out = current_;
+  }
+  // The version alone, without the bitmap. A renderer asks this first and
+  // only pays for a copy when it changed: Snapshot() at 1920x1080 moves ~8 MB
+  // and holds the writer's lock while doing it, which is fine once per cue and
+  // wasteful once per frame -- a subtitle stays up for hundreds of frames.
+  int published_version() {
+    std::lock_guard<std::mutex> lock(mu_);
+    return version_;
   }
 
  private:

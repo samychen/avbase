@@ -399,17 +399,28 @@ void GlVideoLayer::Bind(gl::GlProgram& program, float opacity) const {
   planes_[2]->Bind(2);
 }
 
-std::unique_ptr<gl::GlProgram> CreateVideoLayerProgram(const gl::GlApi& gl,
-                                                       std::string* error) {
+namespace {
+
+// The two video programs differ in exactly one input -- which GLSL sampler
+// type reads their textures -- and in nothing else: same vertex stage, same
+// body layout, same units. Building them from one function is what keeps that
+// true, because the alternative is two functions that have to agree and do
+// not fail when they stop.
+std::unique_ptr<gl::GlProgram> CreateLayerProgram(const gl::GlApi& gl,
+                                                  const char* fragment_body,
+                                                  std::string* error) {
   const std::string prologue = gl::ShaderPrologue(gl);
   auto program = gl::GlProgram::Create(
       gl, (prologue + gl::kQuadVertexShaderWithRectBody).c_str(),
-      (prologue + kYuvFragmentShaderBody).c_str(), error);
+      (prologue + fragment_body).c_str(), error);
   if (!program) {
     return nullptr;
   }
   // The sampler units are part of the contract between this program and
-  // GlVideoLayer::Bind, which binds Y/U/V to exactly these three.
+  // GlVideoLayer::Bind, which binds Y/U/V to exactly these three -- and binds
+  // once for BOTH variants, which is only safe because the units are set the
+  // same way in both. Stated once here rather than once per program, so the
+  // contract has one place to be read and one place to be changed.
   program->Use();
   program->SetInt("uTexY", 0);
   program->SetInt("uTexU", 1);
@@ -417,22 +428,16 @@ std::unique_ptr<gl::GlProgram> CreateVideoLayerProgram(const gl::GlApi& gl,
   return program;
 }
 
+}  // namespace
+
+std::unique_ptr<gl::GlProgram> CreateVideoLayerProgram(const gl::GlApi& gl,
+                                                       std::string* error) {
+  return CreateLayerProgram(gl, kYuvFragmentShaderBody, error);
+}
+
 std::unique_ptr<gl::GlProgram> CreateVideoLayerRectProgram(const gl::GlApi& gl,
                                                            std::string* error) {
-  const std::string prologue = gl::ShaderPrologue(gl);
-  auto program = gl::GlProgram::Create(
-      gl, (prologue + gl::kQuadVertexShaderWithRectBody).c_str(),
-      (prologue + kYuvRectFragmentShaderBody).c_str(), error);
-  if (!program) {
-    return nullptr;
-  }
-  // The same unit contract as the 2D program above; the pair is the reason
-  // GlVideoLayer::Bind can bind once for both.
-  program->Use();
-  program->SetInt("uTexY", 0);
-  program->SetInt("uTexU", 1);
-  program->SetInt("uTexV", 2);
-  return program;
+  return CreateLayerProgram(gl, kYuvRectFragmentShaderBody, error);
 }
 
 void NormalisedRectToUvRect(float x, float y, float w, float h,

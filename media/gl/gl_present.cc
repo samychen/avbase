@@ -124,13 +124,18 @@ bool GlPresenter::BuildPrograms() {
   // the single-video path and a scene's first layer on the same shader -- and
   // why changing how a layer is drawn cannot fix one and break the other.
   // uRect is a uniform of both programs (they share the vertex stage), so both
-  // have to be told, and both are told the same value.
+  // have to be told, and both are told the same value. It is set ONCE, here:
+  // nothing in this path ever places the video anywhere but the full canvas,
+  // so the per-frame SetVec4 this used to carry was re-stating a constant.
+  //
+  // The sampler units are deliberately NOT set here. CreateVideoLayerProgram /
+  // CreateVideoLayerRectProgram set them, and those are the same functions a
+  // GlScene builds its own programs with -- so the binding contract between
+  // "units 0/1/2" and GlVideoLayer::Bind is written once, in one file, instead
+  // of once per program owner.
   for (gl::GlProgram* program : {program_.get(), rect_program_.get()}) {
     program->Use();
     program->SetVec4("uRect", 0.0f, 0.0f, 1.0f, 1.0f);
-    program->SetInt("uTexY", 0);
-    program->SetInt("uTexU", 1);
-    program->SetInt("uTexV", 2);
   }
 
   overlay_program_ = gl::GlProgram::Create(
@@ -171,7 +176,17 @@ void GlPresenter::DrawOverlay() {
   if (!overlay_slot_) {
     return;
   }
-  const gl::TextOverlay overlay = overlay_slot_->Snapshot();
+  // WHY THE VERSION IS READ FIRST. SnapshotTo() copies the entire RGBA block
+  // and holds the writer's lock while doing it; at 1920x1080 that is ~8 MB.
+  // The common case is that nothing was published since the last frame -- a
+  // subtitle cue sits on screen for seconds, i.e. hundreds of frames -- and
+  // every one of those frames used to pay for a copy it did not need.
+  const int version = overlay_slot_->published_version();
+  if (version != snapshot_version_) {
+    overlay_slot_->SnapshotTo(overlay_);
+    snapshot_version_ = version;
+  }
+  const gl::TextOverlay& overlay = overlay_;
   if (!overlay.valid ||
       overlay.rgba.size() != static_cast<size_t>(overlay.width) *
                                  static_cast<size_t>(overlay.height) * 4u) {
@@ -249,7 +264,9 @@ bool GlPresenter::Compose(const VideoFrame& frame, PresentTiming* timing) {
                              ? rect_program_.get()
                              : program_.get();
   video->Use();
-  video->SetVec4("uRect", 0.0f, 0.0f, 1.0f, 1.0f);
+  // No SetVec4("uRect") here: both programs were told the identity rect in
+  // BuildPrograms() and this path never places the layer anywhere else, so a
+  // per-frame write would be re-stating a constant 60 times a second.
   layer_->Bind(*video);
   quad_->Draw();
   DrawOverlay();
@@ -421,6 +438,11 @@ void GlPresenter::Shutdown() {
   canvas_.reset();
   scene_.reset();
   overlay_texture_.reset();
+  // The cached snapshot is a host-sized bitmap; a stopped presenter has no
+  // further use for it, and holding it would pin memory the host already
+  // replaced or cleared.
+  overlay_ = gl::TextOverlay{};
+  snapshot_version_ = -1;
   layer_.reset();
   quad_.reset();
   overlay_program_.reset();

@@ -293,6 +293,13 @@ class AVBASE_MEDIA_EXPORT GlPresenter {
   int overlay_version_{-1};
   int overlay_width_{0};
   int overlay_height_{0};
+  // The last snapshot, and which slot version it holds. Kept as members so a
+  // frame that republished nothing copies nothing: the version is read first
+  // (one int, under a short lock) and the bitmap only moves when it changed.
+  // Assigning into |overlay_| reuses its rgba capacity, so even then the
+  // steady state does not allocate.
+  gl::TextOverlay overlay_;
+  int snapshot_version_{-1};
 };
 
 }  // namespace avbase::media

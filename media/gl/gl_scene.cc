@@ -157,9 +157,19 @@ void GlScene::Compose() {
       draw_order_.push_back(i);
     }
   }
-  std::stable_sort(
-      draw_order_.begin(), draw_order_.end(),
-      [this](size_t a, size_t b) { return layers_[a].z < layers_[b].z; });
+  // sort, not stable_sort, and the INDEX is the tiebreak: draw_order_ holds
+  // ascending indices, so "(z, index)" orders equal-z layers by insertion --
+  // which is exactly what stability would have given, stated instead of
+  // borrowed. It matters because std::stable_sort needs a heap buffer for its
+  // merge, and this runs once per displayed frame: Compose() is documented as
+  // not allocating, and scratch vectors made members do not count for much if
+  // the sort under them allocates anyway.
+  std::sort(draw_order_.begin(), draw_order_.end(), [this](size_t a, size_t b) {
+    if (layers_[a].z != layers_[b].z) {
+      return layers_[a].z < layers_[b].z;
+    }
+    return a < b;
+  });
 
   // Opaque black, the same base the single-video path clears to, so an
   // uncovered area of a scene looks exactly like the letterboxing around a
