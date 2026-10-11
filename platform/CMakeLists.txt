@@ -53,8 +53,12 @@ if(AVBASE_ENABLE_GLFW)
     add_library(avbase::platform_glfw ALIAS avbase_platform_glfw)
     target_include_directories(avbase_platform_glfw PUBLIC
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+    # 注意 target 名是 `glfw` 而不是 `glfw3`：GLFW 官方的 CMake 包导出的 imported
+    # target 叫 glfw，与它产出物的文件名 libglfw3.a 不一致。写成 glfw3 时 CMake 会
+    # 把它降级为裸 `-lglfw3`，既不传 GLFW 的 include 目录也不传 -L，表现为编译期
+    # 'GLFW/glfw3.h' file not found。
     target_link_libraries(avbase_platform_glfw
-        PUBLIC avbase::media avbase::render_gl glfw3)
+        PUBLIC avbase::media avbase::render_gl glfw)
     avbase_configure_target(avbase_platform_glfw)
   else()
     message(WARNING

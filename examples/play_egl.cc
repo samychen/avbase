@@ -30,6 +30,7 @@
 #include <EGL/egl.h>
 
 #include "base/check.h"
+#include "base/functional/bind.h"
 #include "base/time/time.h"
 #include "media/filters/null_audio_sink.h"
 #include "platform/egl/egl_surface.h"
@@ -109,11 +110,14 @@ bool GlRuntimeWorks() {
   if (!create || !source || !compile || !getiv) {
     return false;
   }
-  const unsigned int shader = create(0x8B33);  // GL_VERTEX_SHADER
+  // 0x8B31 = GL_VERTEX_SHADER (not 0x8B33, which is GL_GEOMETRY_SHADER).
+  const unsigned int shader = create(0x8B31);
   if (shader == 0) {
     return false;
   }
-  const char* src = "void main() { gl_Position = vec4(0.0); }";
+  // Same rule as the desktop probes, but ES contexts need "#version 300 es".
+  // Without it the driver falls back to GLSL ES 1.00 and rejects the source.
+  const char* src = "#version 300 es\nvoid main() { gl_Position = vec4(0.0); }";
   source(shader, 1, &src, nullptr);
   compile(shader);
   int status = 0;
