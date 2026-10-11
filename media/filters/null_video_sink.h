@@ -13,6 +13,8 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/threading/thread.h"
 #include "media/base/native_display.h"
+#include "media/base/present_stats.h"
+#include "media/base/render_cadence.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
 #include "media/media_export.h"
@@ -67,9 +69,16 @@ class AVBASE_MEDIA_EXPORT NullVideoSink final : public VideoRendererSink {
   // owner (the sink outlives every callback via VideoRendererImpl::Stop()).
   std::atomic<bool> playing_{false};
   std::atomic<bool> discard_{false};
-  std::atomic<uint64_t> frames_presented_{0};
-  std::atomic<uint64_t> frames_dropped_{0};
-  std::atomic<uint64_t> submit_failures_{0};
+
+  // Shared with the two sinks that have a display -- see
+  // media/base/present_stats.h. A sink that renders nowhere still has to
+  // answer "how many frames did I present", and the answer has to mean the
+  // same thing it means there.
+  PresentStats stats_;
+  // The cadence anchor; see NextFrameDelay. This sink has no vsync to block
+  // on, so the timer is always the pacing source and the anchor is never
+  // dropped.
+  base::TimeTicks next_frame_deadline_;
 };
 
 class AVBASE_MEDIA_EXPORT NullVideoSinkFactory final

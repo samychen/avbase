@@ -10,15 +10,6 @@
 #include "base/location.h"
 
 namespace avbase::media {
-namespace {
-
-// Presentation cadence for a sink with no display. 60 Hz is the most common
-// refresh rate and costs one cheap callback per tick; the compositor's own
-// timestamp logic decides whether anything is actually due, so the exact
-// number only trades a little idle CPU against presentation granularity.
-constexpr base::TimeDelta kNullRenderInterval = base::Milliseconds(1000) / 60;
-
-}  // namespace
 
 NullVideoSink::NullVideoSink() = default;
 
@@ -82,14 +73,11 @@ bool NullVideoSink::GetDisplayInterval(base::TimeDelta* interval) const {
 }
 
 VideoSinkStats NullVideoSink::GetStats() const {
-  VideoSinkStats stats;
-  stats.frames_presented = frames_presented_.load();
-  stats.frames_dropped = frames_dropped_.load();
-  stats.submit_failures = submit_failures_.load();
-  return stats;
+  return stats_.Get();
 }
 
 void NullVideoSink::RenderOne() {
+  const base::TimeTicks frame_start = base::TimeTicks::Now();
   // Render is called even in discard mode: "render nowhere" still means
   // "keep asking the compositor", which is what drives its frame pacing and
   // keeps the video clock alive for video-only streams (docs/07 §4,
@@ -98,19 +86,30 @@ void NullVideoSink::RenderOne() {
   if (playing_.load() && callback_) {
     base::scoped_refptr<VideoFrame> frame =
         callback_->Render(base::TimeTicks(), base::TimeTicks());
-    if (discard_.load() || !frame) {
-      frames_dropped_.fetch_add(1);
-    } else {
-      frames_presented_.fetch_add(1);
-    }
+    // There is no upload to fail and no hardware frame to read back, so the
+    // only question is whether this frame was shown. Same classification the
+    // sinks with a display use, so "presented" means the same thing here.
+    const bool shown = frame != nullptr && !discard_.load();
+    stats_.NoteFrameOutcome(
+        ClassifyFrameOutcome(frame != nullptr, discard_.load(),
+                             /*readback_failed=*/false, shown));
   }
   if (render_runner_) {
     // Re-arm from inside the task: one chained delayed task per tick, so Stop()
     // is simply "the next arm never happens plus Thread::Stop() joins".
+    //
+    // The delay comes from NextFrameDelay for the same reason it does in the
+    // sinks with a display: a timer that budgets each interval from "now"
+    // charges its own wake-up overshoot to every period, and there is nothing
+    // here that could absorb it -- this sink has no swap to block on.
+    const FramePacing pacing =
+        NextFrameDelay(frame_start, base::TimeTicks::Now(),
+                       next_frame_deadline_, kDefaultFrameInterval);
+    next_frame_deadline_ = pacing.next_deadline;
     render_runner_->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&NullVideoSink::RenderOne, base::Unretained(this)),
-        kNullRenderInterval);
+        pacing.delay);
   }
 }
 
