@@ -46,7 +46,14 @@ void GlVideoSink::Start() {
   thread_ = std::make_unique<base::Thread>("avbase-gl-video");
   thread_->Start();
   render_runner_ = thread_->task_runner();
-  PresentOne();
+  // The first present must run on the render thread, not here:
+  // UploadAndPresent() lazily binds the GL context, and a GL context is owned
+  // by whoever made it current. Doing it synchronously would leave the context
+  // current on Start()'s caller thread, and the render thread's later
+  // MakeCurrent() would not take ownership -- every present then runs with no
+  // current context and every shader silently fails to compile.
+  render_runner_->PostTask(FROM_HERE, base::BindOnce(&GlVideoSink::PresentOne,
+                                                     base::Unretained(this)));
 }
 
 void GlVideoSink::Stop() {

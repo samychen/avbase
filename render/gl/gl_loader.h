@@ -33,7 +33,7 @@ constexpr GLenum kGLOneMinusSrcAlpha = 0x0303;
 constexpr GLenum kGLRed = 0x1903;
 constexpr GLenum kGLRG = 0x8227;
 constexpr GLenum kGLR8 = 0x8229;
-constexpr GLenum kGLRG8 = 0x822A;
+constexpr GLenum kGLRG8 = 0x822B;
 constexpr GLenum kGLUnsignedByte = 0x1401;
 constexpr GLenum kGLFloat = 0x1406;
 constexpr GLenum kGLLinear = 0x2601;
@@ -51,7 +51,11 @@ constexpr GLenum kGLActiveTexture0 = 0x84C0;
 constexpr GLenum kGLActiveTexture1 = 0x84C1;
 constexpr GLenum kGLActiveTexture2 = 0x84C2;
 constexpr GLenum kGLFragmentShader = 0x8B30;
-constexpr GLenum kGLVertexShader = 0x8B33;
+// Verified against the macOS SDK's gl.h: GL_VERTEX_SHADER is 0x8B31. Writing
+// 0x8B33 here silently created an INVALID shader type, so glCreateShader()
+// returned 0 and every compile failed with an empty info log -- the whole GL
+// render path looked like "broken driver" while the card was fine.
+constexpr GLenum kGLVertexShader = 0x8B31;
 constexpr GLenum kGLCompileStatus = 0x8B81;
 constexpr GLenum kGLLinkStatus = 0x8B82;
 
