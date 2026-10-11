@@ -132,11 +132,27 @@ N 个解码器，属播放器层。`--scene pip|fade` 用**同一流的延迟副
   SDLRenderer 后端它是 0 且应为 0；但 upload/compose/present 在那条路上必须是真值 ——
   **恒为 0 的字段读起来是「全都免费」而不是「没测」，比字段缺失更危险**。
 - `UploadPath` 报路径而不只是耗时。L4 后 `kHwZeroCopy` 是真值；**`kPbo` 仍是空槽位**。
-- **「present ≈ 1ms 却 53 fps」是既有现象**（`PostDelayedTask` 每次唤醒超 ~1.8ms，请求 16.67
-  实际 ~18.5），软解 A/B 同。**改路线前后比 fps 前先看 `present_ms`**。修法：按上次的**计划**
-  起始时间累加，而不是按「现在」。
+- **改路线前后比 fps 前先看 `present_ms`**：present ≈ 刷新周期 = vsync 在节流（60 fps 可达）；
+  present ≈ 1 ms = 定时器在节流。「present ≈ 1ms 却 53 fps」曾是这个现象，**第六十二轮已修**，
+  见下节。
 - 帧计数**刻意不放进 `RenderPerfStats`**（`VideoSinkStats` 已有 presented/dropped）。
 - **`max_present_ms` 是自进程启动累积的**，新进程里总是启动尖峰，不是稳态最差帧。
+
+### 定时器节流的锚点是「上次计划的时间」，不是「现在」（第六十二轮修）
+
+`PostDelayedTask` 从不在请求的时间点醒来（本机实测每次超 ~1.8 ms）。原公式
+`delay = interval - spent` 从「这一帧的开始」起算，于是这 1.8 ms 被算进**每一个**周期：
+16.67 → 18.5，60 fps 素材稳定跑在 53。按上次**计划**的 deadline 累加让误差互相抵消 ——
+这次晚醒，下次就少睡。
+
+实现在 `media/base/render_cadence.h` 的 `NextFrameDelay()`，两个 sink 共用。原先是两份
+拷贝（SDL2 那份的注释原文是 "Same budget-from-frame-start rule as GlVideoSink"）——
+**写两遍的规则只会被修一遍**，收成一份是这次改动的一半价值。它是纯函数（`now` 是传进来
+的），所以能在没有显示器、没有 runner 的测试里跑。
+
+真机 A/B（同机同 clip，`tools/bench_render.sh`）：720p60 **53.94 → 59.99** fps；1080p30
+不变（30 fps 素材周期 33 ms，定时器本来就不是瓶颈）—— 这正说明测量是定向的。
+反证：把累加改回 `frame_start` 起算，fps 立刻掉回 53.94。
 
 ## 门禁命令
 
@@ -188,6 +204,13 @@ ctest --output-on-failure                            # no-ffmpeg 479 / macos-sdl
   更根本的版本：**门禁的「绿」常常是「没跑」。**
 - **`exit=127` / `command not found` 会让门禁看起来绿**（裸 `clang-format`、toybox `grep`）。
   跑完看 exit code 与输出行数；2 秒跑完的「全树格式检查」一定没跑。
+- **构建失败的那一轮，基准跑的是上一个二进制。** 第六十二轮做反证时 `-Werror` 让构建失败
+  （改完之后某个参数变成未使用），而 `build && bench` 串在一条命令里，bench 照旧跑了旧
+  二进制并报出「没变化」的 59.99 —— 一条看起来推翻反证的数据，其实是没重建。
+  **把构建与测量串起来时，先确认构建的 exit code。**
+- **未跟踪的新文件不在 `git ls-files` 里**，所以「全树格式检查」要用
+  `git ls-files --cached --others --exclude-standard`（422 个 C++ 文件）而不是
+  `git ls-files`（419）—— 差的正好是刚新增还没 add 的那几个。
 - **PATH 上的 `grep` 是 toybox shim**，不支持 `\b` 与 BRE `\|` 且**静默返回 0**。用
   `/usr/bin/grep` 或 Grep 工具。**凡「用 grep 查证某符号不存在」的结论都要换工具复核。**
 - clang-format 与构建**不能并发**跑同一批文件（会读到半格式化文件）。
