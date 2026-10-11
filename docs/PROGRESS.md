@@ -2458,3 +2458,546 @@ helper。这是「变量驱动路径」的第二种形态：第一种是整条�
    `gl.context().Clear`），形状没变。结论修正为：只要模块把 GL 的名字直接暴露给调用方，换表
    就必然泄漏名字；想真正透明就得给每个函数留转发方法，而那正是本模块刻意不做的。选的是
    「名字会变、形状不变」。
+
+### 第五十八轮：渲染性能可观测性（L1）—— 每帧花了多少，终于读得到
+
+**起点是一处空白**：`PlaybackStats` 定义了 40+ 个字段，而 `PlayerImpl::GetPlaybackStats()` 只填
+了 4 个（`playback_rate` / `volume` / `av_diff` / `video.cached_duration`）。`VideoSinkStats` 更
+彻底 —— 它的 `GetStats()` 在**任何生产路径里都没有调用方**（全仓 `sink_->GetStats()` 零命中）。
+渲染管线跑了这么多轮，没有人能说出「一帧的纹理上传 / 合成 / 上屏各花了多少」。
+
+这一轮是「完善渲染，对标 MediaComponent / obs」四层工程的第一层，顺序是
+**L1 可观测性 → L2 FBO 合成地基 → L3 多源场景 → L4 硬件零拷贝**。理由很直接：没有度量，后面
+三层就只能靠猜。
+
+**做法：一个类型 + 一条五跳的接线**
+
+新增 `media/base/render_perf_stats.h`（+ `.cc`）：
+- `PresentTiming`：一帧的三段耗时（`upload_ms` / `compose_ms` / `present_ms`）。分段依据是**真实
+  成本边界** —— 上传是像素进 GPU，合成是 clear + draw，`present` 是 `SwapBuffers`，而 `present`
+  是唯一会在 vsync 上阻塞的一段。合成一个数会让「渲染变慢了」变成没法行动的数字。
+- `UploadPath`：`kNone` / `kCpuSync` / `kPbo` / `kHwZeroCopy`，命名对齐 MediaComponent。**同时报
+  路径而不只是耗时**，因为同样的 0.2 ms 在同步 CPU 拷贝和零拷贝导入上意义完全不同。今天只可能
+  产出 `kCpuSync`，另两个是 L4 要填的槽位 —— 它们现在的作用是让「还没做」这件事**在数据里可见**。
+- `DurationEwma`：指数滑动平均 + 最大值 + 样本数。首个样本**直接播种**而不是从 0 混过来
+  （否则开头几帧会显得异常便宜）。保留 max，因为 1/100 帧的尖峰在均值里看不见，而那通常正是
+  卡顿的来源。
+- `RenderPerfStats` 是快照（三个 EWMA + 路径）；帧计数**刻意不放进来** —— `VideoSinkStats` 已经
+  有 `frames_presented/dropped`，第二份拷贝就是会漂移的重复状态。
+
+接线（一跳都不能少，因为 sink 的统计此前是孤立的）：
+
+| 跳 | 位置 | 做什么 |
+| --- | --- | --- |
+| 1 | `GlPresenter::Present(frame, PresentTiming*)` | 三次 `TimeTicks::Now()` 夹出三段；无调用方传指针时零开销 |
+| 2 | `GlVideoSink::NotePresentTiming()` | 折进 EWMA（叶子 `base::Lock` 保护）；`GetStats()` 填 `render`，并从 present 间隔算 `measured_refresh_hz`（这个字段声明了很久，一直没人填） |
+| 3 | `VideoRendererImpl::sink_stats()` | 仿 `compositor_stats()`，真正调用 `sink_->GetStats()` |
+| 4 | `RendererImpl::GetStatistics()` → `PipelineStatistics::render` | 成本从 sink 取，帧计数仍来自 compositor（谁数谁报） |
+| 5 | `PlayerImpl::GetPlaybackStats()` → `PlaybackStats::render` | 连同 `frames_presented/dropped/repeated` 与 `video_output_fps` 一起填（fps 由两次 1 s 计数的差分算，速率属于观察者的窗口而不属于计数器） |
+
+`Sdl2VideoSink` 的 **GL 路径**（`gl_context_` 非空时它也走 `GlPresenter`）同样接了；SDL_Renderer
+2D 路径没有 GL 调用可测，如实报 0 而不是编一个数。
+
+**examples 与基准**：`play_glfw` / `play_sdl2` / `play_egl` 加 `--stats`，每秒一行
+`PlaybackStats::ToJson()`（可直接喂解析器）。新增 `tools/bench_render.sh`：一条命令生成
+720p/1080p/4K 素材、跑完、打成一张表。
+
+**然后度量立刻抓到两个真问题（这是本轮的主要收获）**
+
+1. **帧率被砍一半。** 1080p**60** 素材实测只有 **30 fps**。原因在 `GlVideoSink::PresentOne()`：
+   它 `PostDelayedTask(kMaxPresentInterval)`，而 `kMaxPresentInterval` 是从**调度点**算起的完整
+   16.67 ms；但 `SwapBuffers` 已经为 vsync 等了 ~13 ms。两段叠加 → 周期 33 ms。修成「从**帧起点**
+   算预算」：下一帧瞄准 `frame_start + interval`，只补差值。
+2. **vsync 时有时无。** 修完 1 后同一份素材一次跑出 60 fps、一次跑出 53 fps。差异在 `present_ms`：
+   一次 15.6 ms（在等 vsync），一次 1.1 ms（没等）。根因是三个后端都**没有显式设置 swap
+   interval** —— GLFW 默认值是 0，而平台各自为政（CGL 恰好还是 vsync，X11 不是）。现在
+   `GlfwGLContext` / `SdlGLContext` / `EglGLContext` 的 `MakeCurrent()` 里显式 `SwapInterval(1)`。
+   这个修复同时让第 1 条的判据可靠：`GlVideoSink` 现在按「本帧是否已经等过 vsync」决定还要不要
+   再等定时器（等过就不再等，否则信号叠信号）。
+
+`--stats` 实测（1080p60，稳态，`play_glfw`）：
+
+| 阶段 | 耗时 | 说明 |
+| --- | --- | --- |
+| `upload_ms` | ~0.8 | 3 MB I420 三平面上传 |
+| `compose_ms` | ~0.06 | clear + 单遍 YUV→RGB |
+| `present_ms` | ~15.1 | `SwapBuffers` 等 vsync —— 它占掉几乎整个刷新周期，**这是正常的** |
+| 输出 | **59.94 fps** | 修复前 30 |
+
+`play_sdl2 --gl` 同一素材 ~53 fps、`present_ms` ~1.2 ms（SDL2-GL 的 swap 未阻塞，节奏由定时器
+决定，是定时器精度而不是 bug）。
+
+**两个发现留作后续（已记录，未动）**
+
+- **4K30 只跑出 25 fps**（素材 30）。上传 1.9 ms 不解释差距；更像合成/上屏与 vblank 的对齐在 4K
+  上更常错过。这与 L4（异步上传来换出预算）是同一个方向。
+- **SDL_Renderer 2D 路径没有耗时统计**（`render` 全 0）。它有 `SDL_RenderPresent` 可测，但那是
+  SDL 2D blit 不是 GL 渲染，本轮没有把它算进「渲染管线」。
+
+**验证**
+
+| 项 | 结果 |
+| --- | --- |
+| no-ffmpeg + `-Werror` | `exit=0`，0 warning/error，ctest **475/475** |
+| macos-sdl2(FFmpeg+SDL2+GLFW) + `-Werror` | `exit=0`，0 warning/error，ctest **599/599** |
+| `play_glfw --stats`（1080p60 素材） | **59.94 fps**；`present_ms` 15.1（vsync），`upload_ms` 0.8，路径 `cpu_sync` |
+| `play_glfw`（720p60 / 1080p30 / 2160p30） | 55 / 28 / 25 fps，`dropped=0`，与素材帧率一致或低 5 |
+| `play_sdl2 --gl --stats` | ~53 fps；`present_ms` ~1.2 |
+| 真机冒烟 `play_glfw`（3 s） | `exit=0`，**0 ERROR** |
+| 新单测（`DurationEwma` 5 + `UploadPathName` 1 + `RenderPerfStats` 1） | **7/7** |
+| `check_invariants` | all rules pass（**398** 文件）；C23 与基线一致 |
+| `clang-format` 全树 | 0 偏离（392 个自有文件，含未跟踪新文件） |
+| `tools/bench_render.sh` | 4 档素材一张表跑通 |
+
+**教训**
+
+1. **「计了」不等于「看得见」。** `VideoSinkStats` 有字段、有实现、有注释，就是没人调用 —— 一个
+   统计只有在**有生产路径真的读它**之后才算存在。本轮有一半工作量花在把
+   `sink -> renderer -> pipeline -> player` 那五跳补齐，而不是花在测量本身。
+2. **可观测性的第一个产出通常不是数字，是 bug。** 本轮没打算改渲染节奏，但一旦能看见
+   `present_ms`，「60 fps 的素材只出 30」就自己站出来了。
+3. **平台默认值不是契约。** 「swap interval 默认是 1」在 macOS 上碰巧成立，换个后端或平台就不
+   成立，而症状是**帧率时好时坏** —— 最难查的一类。凡是决定节奏的东西，显式设。
+
+### 第五十九轮：FBO 合成地基（L2）—— 画布与窗口解耦，代价 0.015 ms
+
+**起点**：L1 让每一帧的四段耗时读得到。这一轮开始用它们。
+
+L2 要解决的是**合成面**。此前 `GlPresenter` 把视频直接画进默认 framebuffer，也就是窗口的 back
+buffer。三个后果，每一个都挡住 L3：
+
+1. **没有第二路源的位置。** 单视频直画可行，两路视频要混合时就无处安放。
+2. **合成分辨率被窗口绑死。** 窗口 resize 连带改变合成的目标尺寸，画质随窗口大小浮动。
+3. **读不回。** 默认 framebuffer 的 back buffer 在 `SwapBuffers` 之后内容未定义，任何「取一帧
+   画面」的能力都无处落脚。
+
+**做法：两段式**
+
+`GlPresenter` 拆成 `Compose()` 与 `PresentComposed()`：
+
+- `Compose(frame, timing*)`：上传三平面 → 绑定 canvas FBO → clear + 画视频 + 画 overlay。
+- `PresentComposed(timing*)`：解绑回默认 framebuffer → `GlBlitter::Blit(canvas texture, drawable)`。
+- `Present(frame, timing*)` = 前两者 + `SwapBuffers`。签名不变，宿主与既有两个后端不用改。
+
+**每一帧都走 canvas，包括单视频场景。** 不是为了单视频（直画更快），而是因为「L3 要建在其上的
+那条路径，必须是被跑过的路径」；绕过 canvas 的快路径才是没被测的那条。
+
+**新增两个原语**（`render/gl/`，留在零依赖模块内）
+
+- `GlFramebuffer`：`Ensure(w,h)` 幂等（同尺寸直接返回，内容保留）；`Bind()` 连 viewport 一起设；
+  `Destroy()` 先删 fbo 再放纹理（反过来是驱动事后才抱怨的顺序）。
+- `GlBlitter`：一个全屏 quad + 纹理 program，`Blit(texture, dst_w, dst_h)`。
+
+**核心陷阱：采样渲染目标要用翻转的 quad**
+
+这是本轮唯一**没有返回值可抓**的错误，所以把推导写下来（第六十轮把这条推导里的一处
+写反的前提改正了，见下）：
+
+- `GlQuad(flip_vertical=false)` 把 `v=0` 放在 NDC 的**顶部**（`kQuadUpright`：
+  `NDC(-1,-1) ↔ uv(0,1)`）。对**自上而下**的 CPU 位图这是对的：第 0 行上传到 `v=0`，
+  落在视口顶部。
+- 而用这个 quad 往 framebuffer 里画，图像第 0 行落在视口**顶部**，也就是 framebuffer 的
+  **最后一行**。于是这张纹理的**第 0 行装的是图像的底**。
+- 所以把一张渲染结果读出来（blit 上屏），必须用 **`flip_vertical=true`**。
+
+搞反的症状是「图上下颠倒」，**没有任何返回值或 GL 错误**。
+
+参考框架对照：MediaComponent 的 `gl_compositor.cpp` 用 `CreateFullscreenQuadVAO(flip_v=true)` 给
+FBO 纹理，结论与此**一致**；但它的 program quad 约定与 avbase 相反，照抄会翻错 —— 所以这里是
+在 avbase 侧独立推导的，`gl_blitter.h` 的注释与 `docs/13 §4.4` 都记了这条。
+
+**`PresentTiming` 新增 `blit_ms`**
+
+不折进 `compose_ms`：blit 是 canvas 这一层引入的成本，而且只有它。折进去，「绘制变贵」与「多
+了一次往返」就再也分不开 —— 那正是这个字段要回答的问题。
+
+**真 bug：`GL_UNPACK_ROW_LENGTH` 的单位是 texel，不是字节**
+
+`UploadPlanes()` 从来没设过它，而 avbase 的 `VideoFrame` 每平面行对齐到 **64 字节**
+（`CreateBlackFrame` 就这么分配，软解也走它）。1080p 恰好色度 stride = 可见宽度（960 = 960），
+把 bug 藏住了；64 宽的画布上色度 stride 是 64、可见只有 32，于是每行多读一半，画面出现周期
+8 行的绿色横条。
+
+单位是 **texel**：`GL_RED` 上传时 1 texel = 1 字节，而 NV12 的交错色度用 `GL_RG`，1 texel =
+2 字节，所以 **NV12 必须传 `stride / 2`**。会暴露的尺寸：320x240（192 vs 160）、
+854x480（448 vs 427）。
+
+`GlTexture` 早就暴露了 `SetUnpackRowLength`，**从没有人调用过** —— 一个没人调用的 API 等价于
+不存在。
+
+**测试：仓库首个 GL 像素测试套件**
+
+`tests/unit/gl/`（`AVBASE_ENABLE_GLFW` 门控，10 个测试）。用**隐藏窗口**（`GLFW_VISIBLE=FALSE`）
+所以不需要显示器、CI 可跑；`glfwSwapInterval(0)` 覆盖掉 `MakeCurrent()` 里那个 1，让测试不被
+vsync 拖慢。三处设计要点：
+
+- 断言用**内容**不用 GL 名字。第一版 `TheSameSizeReallocates` 比较 fbo 名字，结果对着「故意
+  重分配」的实现也通过了 —— GL 会复用刚 delete 的名字，比较名字两边都证明不了。
+- 朝向只能**读回像素**断言，因为错误无返回值可抓。
+- stride 回归测试刻意用 `Compose` + `PresentComposed` 而**不是** `Present`：swap 之后 back
+  buffer 内容未定义，用 `Present` 会读到全黑，把测试变成噪声。
+
+**两次反证确认测试有牙**：
+
+1. 把 `gl_blitter.cc` 的 `flip_vertical` 改回 `false` → 两个朝向测试立刻变红（底部读到 255）。
+2. 把 `SetUnpackRowLength(up.row_texels)` 退回 `0` → 立刻出现 `(55,188,35)` 的绿色条纹。
+
+**测量（`play_glfw`，1080p60，12 s 素材，稳态）**
+
+| 阶段 | L1 | L2 | 说明 |
+| --- | --- | --- | --- |
+| `upload_ms` | ~0.8 | 0.71 | 未变 |
+| `compose_ms` | ~0.06 | 0.058 | 未变 —— FBO 没有让绘制变贵 |
+| `blit_ms` | — | **0.029** | 离屏往返，几乎免费 |
+| `present_ms` | ~15.1 | 15.21 | vsync 阻塞，未变 |
+| 输出 | 59.94 fps | **59.92 fps** | 未变 |
+
+四档素材一张表（`tools/bench_render.sh`）：720p60 → 59.86、1080p30 → 29.99、1080p60 → 59.92、
+2160p30 → 27.98，`dropped=0`。4K30 的 27.98 与 L1 记录的 ~25 是同一个待解项，属 L4 方向。
+
+**本轮最有价值的产出其实是两个测量方法学错误**（都不是渲染 bug）
+
+1. **`bench_render.sh` 把 60 fps 报成 53。** 它取 `median`，而统计约每 4 s 打一行、素材只有
+   3 s —— 启动爬坡（`fps=0` 与 `fps=51` 两个采样）被算进了中位数。改成「丢掉启动段、取尾部 5
+   个采样的中位数」，默认素材从 6 s 提到 **12 s**（并要求播放超出片尾）。同一二进制、同一负载
+   下，修之前报 53、修之后报 59.92。**短素材会让这个工具说谎。**
+2. **脚本从来没在「不带 `--canvas`」的情况下跑过。** `set -u` 下 bash 3.2（macOS 自带，
+   `/usr/bin/env bash` 找到的就是它）把空数组 `"${arr[@]}"` 当未定义变量直接中止。L1 记的
+   「4 档素材一张表跑通」是**带 canvas 参数**的那次。修法是
+   `"${PLAYER_ARGS[@]+"${PLAYER_ARGS[@]}"}"`。
+
+顺带推翻 L1 的一个判断：L1 说「SDL_Renderer 2D 路径没有 GL 调用可测，如实报 0」。**报 0 读起来
+是「全都免费」，不是「没测」** —— 这正是这些字段存在的意义所要防的失败模式。现在它按
+`SDL_UpdateYUVTexture` / clear+copy+overlay / `SDL_RenderPresent` 三段如实计时（`blit` 仍为 0，
+因为这条路直画窗口，确实没有画布）。并且注明：SDL 的绘制是延迟提交的，所以那里的 `compose_ms`
+读作「命令提交」而非「绘制」，一部分成本落在 `present_ms` 里 —— 拆法在两条后端上不完全相同，
+但两个数都不假，各自量的是自己那套 API 定义的区间。
+
+**验证**
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（**407** 文件）；C23 与基线一致 |
+| `clang-format` 全树 | **401** 个自有文件，0 偏离，`exit=0` |
+| no-ffmpeg + `-Werror` | `exit=0`，0 warning/error，ctest **476/476** |
+| macos-sdl2(FFmpeg+SDL2+GLFW) + `-Werror` | `exit=0`，0 warning/error，ctest **610/610** |
+| `gl_unittests`（新增） | **10/10** |
+| 强制重编 6 个本轮源文件 | 0 warning / 0 error |
+| `play_glfw --stats`（12 s 素材 × 4 档） | fps 与素材一致（4K30 除外），`dropped=0` |
+| `play_glfw --canvas 1280x720` | 走缩放 blit，`exit=0` |
+| `play_sdl2`（SDL_Renderer 路径） | `render` 四段有真值，`blit=0` |
+
+**教训**
+
+1. **朝向、stride 这类错误没有返回值可抓**，只能在像素上断言。为此开一套 GL 像素测试是划算的
+   —— 它抓到的第一个 bug（stride）就是 1080p 掩盖、非 1080p 必现的。
+2. **「都免费」和「没测」在 0 上长得一模一样。** 一个恒为 0 的字段比一个缺失的字段更危险。
+3. **尺子要先被量过。** 本轮花在怀疑自己基准脚本上的时间，比花在渲染代码上的还多；而那两个
+   错误（median 吃爬坡、空数组在 bash 3.2 下中止）都会让后续每一层验收都读到假数字。
+4. **门禁的「绿」经常是「没跑」。** 空数组那个 bug 一直在，只是从来没有人不带 `--canvas` 跑过。
+
+
+
+---
+
+### 第六十轮：多源场景层（L3）—— 图层、z 序、rect、不透明度、转场
+
+**起点**：L2 让「合成面」与窗口解耦（画布 → blit → 窗口）。这一轮回答「合成面里放什么」。
+
+参照 `framework/render/scene/`（`render_scene` 267+1320、`render_channel` 97+210、
+`source_transform` 104+275）。它的模型是「一个 scene 有多个 channel，每个 channel 由一个
+producer 供帧」。avbase 侧照这个形状落地，但**帧从哪来**这件事留在了宿主 —— 这一点在后面
+「边界」里说。
+
+**四块新东西，按依赖顺序**
+
+| 层 | 文件 | 职责 |
+| --- | --- | --- |
+| 一层视频 | `media/gl/gl_video_layer.{h,cc}` | 三张平面纹理 + 色彩矩阵 + NV12/YV12/I420 差异 + stride 处理。上传与「把这一层画出去」都在这里 |
+| N 层 | `media/gl/gl_scene.{h,cc}` | 层句柄（**永不复用**）、z 序、归一化 rect、opacity、visible；`Compose()` 画进**当前绑定**的目标 |
+| 两张纹理的混合 | `render/gl/gl_transition.{h,cc}` | 按 progress 交叉淡化。留在零依赖模块里，因为它要的是两张已经画好的图，不知道里面是什么 |
+| 场景跟着帧流走 | `media/gl/gl_scene_driver.{h,cc}` | sink 侧的钩子：把到达的帧送进主图层，再把场景交给宿主补别的层，然后 present |
+
+`GlPresenter` 侧新增 `EnsureScene()` / `UploadLayer()` / `ComposeScene()` / `PresentScene()` /
+`ComposeTransition()` / `PresentTransition()`。
+
+**为什么不把 scene 存成 presenter 的状态**：`PresentScene(scene)` 每帧传进来。哪个场景在屏上
+是宿主每一帧重新做的决定（一次 cut 就是这个决定变了），presenter 记住一个场景，就得额外定义
+「记住的那个比它的 owner 活得久时怎么办」。
+
+**为什么「上传」与「合成」分开**：上传发生在帧**到达**时，有 N 路源时它们不是同一个时刻；
+合成发生在**每个显示帧**一次。揉在一起就等于要求 present 时所有源都在手上 —— 而实时合成器
+恰恰不能假设这一点。所以 `UploadLayer()` 的时间是**累加**进 `upload_ms` 的：一帧喂了三层，
+这一帧上 GPU 的成本就是三者之和；赋值的话会把最后一层的耗时报成整帧的。
+
+**`GlVideoLayer` 抽取时发现的一处「靠巧合工作」**
+
+原 `UploadPlanes` 里是 `if (!up.data) continue;`，我一度改成 `return false`。**NV12 只有 2 个
+平面**（`LayoutFor` 返回 `{2,...}`），第 3 个平面的 `data()` 天生为空，那句 `continue` 正是
+NV12 能跑的原因 —— 改成 `return false` 会让 NV12 完全不上传。现在写成显式的
+`plane_count = nv12 ? 2 : 3`：**该在的平面缺失就失败**（截断的 I420 不再静默通过），
+不该在的平面本来就不该传。
+
+**本轮唯一的「无返回值可抓」错误：转场 quad 的翻转方向**
+
+我在 `gl_transition.h` 里写了一整段推导，论证「转场不需要翻转，blit 才需要」—— 论证很流畅，
+**前提是错的**：我把「渲染目标的第 0 行」当成了图像顶。实际是 `GlQuad(flip_vertical=false)`
+把 `v=0` 放在 NDC 顶部（`kQuadUpright`：`NDC(-1,-1) ↔ uv(0,1)`），所以往 framebuffer 里画时
+图像第 0 行落在视口顶 = framebuffer 的**最后一行**，也就是**这张纹理的第 0 行装的是图像的底**。
+读它的人（`GlBlitter`、`GlTransition`）**都要 `flip_vertical=true`**。
+
+抓到它的是新写的 `ScenePresentTest.ATransitionAtZeroIsTheFromSceneUpright`：读回窗口像素时
+上面是黑的、下面是白的，正好上下颠倒。**这类错误的教训不是「小心」，是「凡是有朝向的代码，
+都要有一条读回像素的断言」** —— 上一轮已经交过这个学费，这一轮是它第二次收款。
+
+**反证（测试有牙）**：把 `GlScene::Compose` 的 z 比较从 `<` 改成 `>`，8 个 scene 测试里
+**5 个立刻变红**，剩下 3 个（同 z 插入序、陈旧句柄、非有限 rect）本就与 z 无关 —— 说明测试是
+定向的，不是相关的。
+
+**真机数据（12 s 素材，三配置，全部取稳态尾部中位数）**
+
+| 素材 | 配置 | fps | upload | compose | blit | present |
+| --- | --- | --- | --- | --- | --- | --- |
+| 720p60 | 单源 | 59.94 | 0.403 | 0.068 | 0.031 | 15.94 |
+| 720p60 | 两层 | **59.94** | 0.958 | 0.110 | 0.028 | 15.49 |
+| 1080p60 | 单源 | 59.98 | 0.768 | 0.071 | 0.029 | 15.10 |
+| 1080p60 | 两层 | **59.98** | 1.552 | 0.085 | 0.019 | 14.71 |
+| 1080p60 | 两层+淡入淡出 | **59.97** | 1.659 | 0.086 | 0.018 | 14.52 |
+| 2160p30 | 单源 | 28.98 | 1.875 | 0.062 | 0.020 | 0.42 |
+| 2160p30 | 两层 | 26.96 | 4.067 | 0.070 | 0.014 | 0.44 |
+| 2160p30 | 两层+淡入淡出 | 25.98 | 4.055 | 0.076 | 0.014 | 10.02 |
+
+读法：**第二层的成本是它的上传（线性），不是它的合成。** 1080p60 上 `upload` 0.77 → 1.55 ms
+（两层各一次全画面上传，理应翻倍），而 `compose` 只从 0.071 涨到 0.085 ms（多一个全视口 pass，
+几乎免费），`blit` 不动（画布上屏那一趟不关心画布里画了几层），**fps 一点没掉**。
+4K30 掉到 26.96 是同一件事在放大：第二层 4K 上传要 4.07 ms，一帧 ~7 帧来不及。
+
+**边界（必须写清楚）**：avbase 的**播放器管线今天仍是单源的** —— `VideoRendererSink` 每次给
+一帧。所以「多路独立解码 → 多图层」这一步在 avbase 里等于要 N 个解码器，属于播放器层，不在
+本轮。本轮交付的是**合成能力本身**：N 层、z 序、rect、不透明度、可见性、层间/场景间转场，
+以及从场景到窗口的完整通路（由像素测试与真机基准守着）。
+
+`--scene pip|fade` 因此用**同一个流的延迟副本**当第二路源（保留 12 帧的环形缓冲）：它是一张
+真正独立的纹理、走真正的上传路径、占真正的图层槽位，只是内容晚了 0.2 s。这样不必引入第二个
+解码器，而演示的每一行代码都是 L3 的真实路径。
+
+场景与场景之间的转场（`ComposeTransition`/`PresentTransition`，两只画布 ping-pong）由
+`tests/unit/gl/gl_scene_present_unittest.cc` 覆盖（progress 0 / 1 / 0.5 三档像素断言），
+**演示里没走这条路** —— 两个场景各自需要一路源，而播放器给不出一路以上。
+
+两个宿主示例都接了钩子：`play_glfw --scene pip|fade`、`play_sdl2 --gl --scene pip|fade`
+（SDL2 侧要求 `--gl`，因为 SDL_Renderer 路径直画窗口，没有地方放第二层 —— 参数解析里就拒绝，
+不是运行时才发现）。SDL2 GL 路径实测 1080p60：`upload 1.61~1.73 / compose 0.08 /
+blit 0.02 / present 15.0`，**59.96 fps，dropped=0**，与 GLFW 侧同一量级。
+
+**修掉了基准工具的第二个方法学错误**
+
+`bench_render.sh` 之前从**最后一个采样**读四段耗时。本轮 `--scene pip` 的一次运行因此报出
+`upload=0.628`，而它自己的采样序列说的是 1.2~1.7 —— 最后一个采样正好落在被抢占的一秒上。
+现在四段耗时也取稳态尾部 5 个采样的**中位数**，与 fps 同源。新增 `SCENE=pip|fade` 环境变量
+（不设则测单源路径）。
+
+**验证**
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（**419** 文件）；C23 与基线一致 |
+| `clang-format` 全树 | **413** 个自有文件，0 偏离，`exit=0` |
+| no-ffmpeg + `-Werror` | `exit=0`，0 warning/error，ctest **476/476** |
+| macos-sdl2(FFmpeg+SDL2+GLFW) + `-Werror` | `exit=0`，0 warning/error，ctest **623/623** |
+| `gl_unittests` | **23/23**（10 原有 + 8 scene + 5 场景上屏/转场） |
+| 反证：z 比较取反 | 8 个 scene 测试红 5 个，恢复后全绿 |
+| 反证：转场 quad 不翻 | 朝向测试红（上面读到 1、下面读到 255） |
+| 真机（单源 / pip / fade × 4 档素材） | 1080p60/720p60 三档均 59.9x，`dropped=0` |
+
+**教训**
+
+1. **推导写得越流畅，越要检查前提。** 转场翻转那段的错误不在推理，在「渲染目标的第 0 行是
+   图像顶还是图像底」这一句假设上 —— 而假设不会被推理本身证伪，只会被读回像素证伪。
+2. **「靠巧合工作」的代码要显式化，不能只是「别碰它」。** `if (!up.data) continue;` 对 NV12 是
+   必需的，对截断的 I420 是掩盖。把它改写成 `plane_count` 之后两类情形各有明确答案 —— 而这类
+   改写只有在有测试（NV12 的上传测试）守着时才敢做。
+3. **GL 对象的生命周期必须跟着 context 走。** 场景归 presenter 所有，不是为了好看，是因为
+   `Shutdown()` 是唯一在宿主线程重新 make current 再删对象的地方。宿主自己拿场景，就得自己
+   复现这套顺序。
+4. **0 与「没测」还是要分开。** `blit` 在 SDL_Renderer 路径上确实是 0（没有画布），
+   而 `upload` 报 0 只可能是没测到 —— 所以 `UploadLayer` 做成累加而不是赋值。
+
+---
+
+### 第六十一轮：硬件零拷贝导入（L4）—— 解码器写好的 surface，直接当纹理用
+
+**起点**：L3 之前，`gl_video_sink.cc` 里有一段写得很坦白的注释：
+
+> Zero-copy contract (avbase §6.2): a hardware frame arrives GPU-resident and the GL path
+> cannot take it directly. The readback is EXPLICIT here -- `ToI420()` ...
+
+也就是说「零拷贝契约」只做了一半：帧确实是 GPU 驻留的，但 GL 路径把它读回了 CPU。
+`UploadPath` 里那个 `kHwZeroCopy` 空槽位，存在的意义就是让这件事在数字上可见 ——
+这一轮把它填上真值。
+
+参照 `framework/render/hw/hw_texture_importer*`（2209 行）。它的接口是
+`CanImport` / `Import` / 后端选择（`hw_texture_importer_mac.mm` 走 CVPixelBuffer → IOSurface）。
+
+**新东西，按依赖顺序**
+
+| 层 | 文件 | 职责 |
+| --- | --- | --- |
+| 形状 | `media/gl/gl_hw_texture_importer.h` | `target()` / `CanImport()` / `ImportPlane()` / `name()`。只认 `VideoFrame`，不认任何 SDK —— 不变量 C5 把 CoreVideo 头挡在 media 之外 |
+| macOS 实现 | `platform/hwimport/cgl_iosurface_importer.{h,cc}` | CVPixelBuffer → IOSurface → `CGLTexImageIOSurface2D` |
+| 主机选择 | `platform/hwimport/hw_importer_factory.{h,cc}` | macOS 给 CGL，其它平台给**空**（不是桩） |
+| 岔路口 | `media/gl/gl_video_layer.{h,cc}` | `Upload(frame, importer)`：按**帧**的属性选拷贝还是导入 |
+| 测试 | `tests/unit/gl/gl_hw_import_unittest.cc` | 真 IOSurface、真 CGL 调用、读回像素 |
+
+`GlTexture` 多了一个 **target** 成员（默认 `GL_TEXTURE_2D`）：一个纹理的名字只属于创建它的
+那个 target，切路线就得切纹理集。`GlScene::Compose()` 现在**按层**选 program，所以一个场景
+可以同时装一个导入层和一个拷贝层。
+
+**为什么 `target()` 是后端的一个方法，不是一个常量**
+
+macOS 的导入只接受 `GL_TEXTURE_RECTANGLE`（实测：`CGLTexImageIOSurface2D` 对 2D 的每一种
+组合都回 `kCGLBadValue`）。麻烦在于这个枚举要跨两套 GL 头：调用方的枚举来自内嵌的 glad，
+后端为了调 CGL 用的是**系统**头，而 Apple 的 `gl.h` 根本没有无后缀的 `GL_TEXTURE_RECTANGLE`
+（只有 `glext.h` 里的 `_ARB` / `_EXT`；`gl3.h` 才有）。
+
+两边各写一遍，写错不报错 —— 它不会编译失败，它只会**画不出来**。所以后端把它说出来
+（`GlHwTextureImporter::target()`），图层照着建纹理，全仓库只有一处把它写成字面量。
+这是「手写 GL 常量」那条老风险的一个新变体：以前是值写错，这里是**同一个常量有两份**。
+
+**为什么两条 fragment 程序（sampler2D / sampler2DRect）**
+
+GLSL 没有一种 sampler 能同时读两种纹理：对 rectangle 纹理用 `sampler2D` 是未定义的，什么都不画。
+所以 `kYuvFragmentShaderBody` 旁边多了 `kYuvRectFragmentShaderBody`，多带两个 uniform
+（`uTexSize` / `uChromaSize`）把 `vTexCoord` 乘成 texel 坐标；NV12 分支、矩阵、opacity
+与 2D 版逐字符相同。两个都在 `Init()` 里编译 —— 谁会用到在第一帧之前不知道，
+而编译失败必须报到 `Init()`。
+
+**岔路口的判据是帧，不是调用方**
+
+```cpp
+if (!frame.IsMappable()) {
+  return importer && ImportGpuPlanes(frame, *importer);   // 没有后端就是 false
+}
+return UploadCpuPlanes(frame);
+```
+
+没有 importer 的宿主不是故障，是**常态**：GPU 帧被**拒绝**，绝不拿旧纹理内容凑一帧。
+sink 负责在「读回」和「不用这个后端」之间做决定；`kHwZeroCopy` 只在这条路真的走了之后才报。
+
+**先把依赖修好，否则这一轮无从验证**
+
+pinned FFmpeg 是 `--disable-autodetect --disable-everything` 编出来的，`CONFIG_VIDEOTOOLBOX 0`
+—— 也就是说**整条管线根本产不出 GPU 帧**，L4 只能靠单测自证。`setup_ffmpeg.sh` 现在按
+`uname` 追加 `--enable-videotoolbox --enable-hwaccel=h264_videotoolbox,hevc_videotoolbox,
+vp9_videotoolbox`（`--disable-everything` 把 hwaccel 也关了，所以两个开关都要）。
+Linux/Windows 不加：CI 没有 GPU，而且对应的互操作后端也没建，只开 hwaccel 会让管线把帧读回来
+—— 不错，只是更慢。
+
+顺带修了脚本的一个坑：**相对 prefix 会被 FFmpeg 按构建目录解析**。
+`tools/setup_ffmpeg.sh 7.1.1 tools/build` 会装到
+`tools/deps/ffmpeg-7.1.1-build-shared/tools/build`，而 install 是最后一步，所以脚本打印
+「Installed:」并退出 0，目标 prefix 一个字节没变。症状要到后面才出现，而且指向的是错的
+地方：「this FFmpeg build has no 'videotoolbox' hw device type」——它怪的是构建，其实是路径。
+现在相对 prefix 在脚本里就解析成绝对路径。
+
+**真机（同一台机器、同一个 clip、相隔几分钟的 A/B）**
+
+| 素材 | 路线 | upload (ms) | path |
+| --- | --- | --- | --- |
+| 1080p60 | 软解 + 拷贝 | 0.697 ~ 0.823 | `cpu_sync` |
+| 1080p60 | 硬解 + 导入 | **0.121 ~ 0.172** | `hw_zero_copy` |
+| 2160p30 | 软解 + 拷贝 | 1.875 | `cpu_sync` |
+| 2160p30 | 硬解 + 导入 | **0.150** | `hw_zero_copy` |
+
+上传便宜了 **6.4×（1080p60）/ 12.5×（4K30）**，而且现在几乎与分辨率无关 ——
+这正是一条「不拷贝」的路该有的形状：原来那 1.875 ms 是 CPU 在搬 4K 像素，现在是重指一个指针。
+
+`bench_render.sh` 全档（12 s 素材，稳态尾部中位数）：
+
+| clip | fps | upload | compose | blit | present | path |
+| --- | --- | --- | --- | --- | --- | --- |
+| 720p60 | 48.98 | 0.114 | 0.067 | 0.019 | 0.730 | hw_zero_copy |
+| 1080p30 | 29.97 | 0.118 | 0.068 | 0.023 | 0.638 | hw_zero_copy |
+| 1080p60 | 48.98 | 0.121 | 0.067 | 0.021 | 0.815 | hw_zero_copy |
+| 2160p30 | 29.99 | 0.150 | 0.060 | 0.017 | 1.152 | hw_zero_copy |
+
+**关于 fps：本轮差点把环境问题记成回归。** 60 fps 的素材从「上一轮的表」里的 59.9x 掉到
+48.98，第一反应是导入引入了开销。加了临时诊断打印每帧的 `spent` / `delay`，看到的是
+「请求周期正好 16.67 ms，实际 ~18.5 ms」—— 于是又临时把 `VideotoolboxHwSpec()` 的
+`device_type` 改坏，强制走软解做 A/B：**软解这一轮也是 ~53 fps，`present_ms` ≈ 0.6**（swap
+不阻塞）。也就是说 60 → 53 与路线无关：上一轮那次运行里 swap 被 vsync 挡住了
+（`present_ms ≈ 15.9`），vsync 自己就是节流器；这一轮的 swap 直接返回，节流交给
+`PostDelayedTask`，而它的唤醒每次超 ~1.8 ms。
+
+这是 `bench_render.sh` 开头那段警告的真人版：**两个后端给出同一个错的数字，那是机器在说话，
+不是代码。** 帧率上限被 timer 而不是 vsync 决定是一个**已存在的**现象，本轮没有改它，
+也没有把它算进 L4 的账。
+
+**测试与反证**
+
+7 个新用例（真 IOSurface-backed `CVPixelBuffer` 包成 `VideoFrame`，走完整的
+`CGLTexImageIOSurface2D` → `sampler2DRect` → 读回像素）：
+
+- `AnImportedFrameReportsTheZeroCopyRoute`
+- `AnImportedFrameLandsUpright`
+- `BothRoutesDrawTheSameColour`
+- `AGpuFrameWithoutAnImporterIsRefused`
+- `AFormatTheBackendCannotPlaceIsDeclined`
+- `ASceneCanMixAnImportedLayerAndACopiedOne`
+- `TheBackendNamesARectangleTarget`
+
+四次反证，每次只红该红的：
+
+| 故意改坏 | 结果 |
+| --- | --- |
+| rect 着色器里 `v` 取反 | 只红 `AnImportedFrameLandsUpright` |
+| 导入谎报 `kCpuSync` | 只红 `AnImportedFrameReportsTheZeroCopyRoute`（**三个像素用例仍绿**，也就是那条路线断言是唯一守着这个声明的） |
+| 交换两个平面的绑定 | 红 3 个（路线 + 朝向 + 两路线同色） |
+| 场景永远只用 2D program | 只红 `ASceneCanMixAnImportedLayerAndACopiedOne` |
+
+**门禁的一处修复**：`check_invariants.py` 的 `cmake_source_paths()` 之前跳过任何含 `$`/`{`
+的路径，于是 `${CMAKE_CURRENT_SOURCE_DIR}/hwimport/*.cc`（CMake 自己会解析，且文件确实被编译）
+被 C25 报成「没有 target 编译它」。现在这个变量会被按 CMakeLists 所在目录解析 —— 它是可解析的，
+不是真变量。**一个喊狼来了的规则会被关掉**，所以这条值得修而不是绕。修完另外造一个孤儿
+`.cc` 验证规则还有牙（照旧报出）。
+
+**边界（诚实写明）**
+
+- **只有 8-bit NV12。** 10-bit P010 是另一种上传（16-bit 元素 + 另一套 range），后端**拒绝**
+  而不是当 8-bit 采样。
+- **Linux / Windows 返回「没有后端」**，于是 GPU 帧走显式回读：画面正确，只是不便宜。
+  `UploadPath` 报的是真话，不是 `kHwZeroCopy`。
+- **SDL_Renderer 路径永远回读**（`SDL_UpdateYUVTexture` 要 CPU 里的字节），本轮实测仍然报
+  `cpu_sync` 并打那条 readback 警告 —— 这是对的，那条路径上回读是唯一正确答案。
+- 导入的纹理**引用**帧的 surface，实现不持有它：帧的 release 回调才是释放它的地方。
+  `GlVideoLayer` 靠「每次上传都重新导入、紧接着就画」来满足这一点。
+
+**验证**
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（**425** 文件）；C23 与基线一致 |
+| `clang-format` 全树 | **425** 个自有文件，0 偏离，`exit=0` |
+| no-ffmpeg + `-Werror` | `exit=0`，0 warning/error，ctest **479/479** |
+| macos-sdl2 + `-Werror` | `exit=0`，0 warning/error，ctest **630/630** |
+| `gl_unittests` | **30/30**（23 原有 + 7 硬件导入） |
+| 真机 GLFW | `VideoToolboxDecoder` + `hw_zero_copy` |
+| 真机 SDL2 `--gl` | `hw_zero_copy`，upload 0.16~0.19 |
+| 真机 SDL2（Renderer） | 回读，`cpu_sync`，upload 0.511 |
+
+**教训**
+
+1. **依赖的开关会决定你能不能验证一件事。** pinned FFmpeg 里没有 videotoolbox，意味着
+   「零拷贝」这件事在整条管线上**根本跑不到**，只能靠单测自证。先把依赖修好，再谈功能。
+2. **同一常量在两个头世界里有两份，是新版的手写 GL 常量。** 修法不是「小心」，是让其中一边
+   把它说出来（一个纯虚方法换掉一类「每个调用都成功、图是黑的」）。
+3. **「帧率掉了」要先问是不是环境问题。** 这次是临时诊断 + 反向 A/B 才把它分开的；
+   直接写进文档就会把一个 timer 的唤醒延迟记成零拷贝的代价。
+4. **没有后端的主机不是故障，是常态，但要说清楚。** 拒绝（`Upload` 返回 false）而不是拿旧
+   纹理凑一帧，sink 再决定读回；`kHwZeroCopy` 只在真走了这条路时才报。
+
+**下一步**：四层路线图到此全部完成（L1 可观测性 / L2 FBO 合成地基 / L3 多源场景层 /
+L4 硬件零拷贝）。剩下的差距在**播放器层而不是渲染层**：avbase 的管线仍是单源
+（`VideoRendererSink` 一次一帧），「N 路独立解码 → N 个图层」要 N 个解码器实例。
+另外记一个**已存在**的现象：sink 的帧率上限由 `PostDelayedTask` 决定（每次唤醒超 ~1.8 ms），
+vsync 不阻塞时 60 fps 素材只能跑到 ~53；修法是按上一次的**计划**起始时间累加，而不是按「现在」。
