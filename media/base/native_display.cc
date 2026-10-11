@@ -32,6 +32,10 @@ const char* GetNativeDisplayKindName(NativeDisplayKind kind) {
     return "caeagl-layer";
   case NativeDisplayKind::kHwnd:
     return "hwnd";
+  case NativeDisplayKind::kGlfwWindow:
+    return "glfw-window";
+  case NativeDisplayKind::kEglWindow:
+    return "egl-surface";
   }
   return "invalid";
 }
@@ -67,6 +71,24 @@ base::scoped_refptr<NativeDisplay> NativeDisplay::FromSdl2Window(void* window) {
   base::scoped_refptr<NativeDisplay> display(
       new NativeDisplay(NativeDisplayKind::kSdl2Window));
   display->raw_ = window;
+  return display;
+}
+
+// static
+base::scoped_refptr<NativeDisplay>
+NativeDisplay::FromGlfwWindow(void* glfw_window) {
+  base::scoped_refptr<NativeDisplay> display(
+      new NativeDisplay(NativeDisplayKind::kGlfwWindow));
+  display->raw_ = glfw_window;
+  return display;
+}
+
+// static
+base::scoped_refptr<NativeDisplay>
+NativeDisplay::FromEglSurface(void* egl_surface) {
+  base::scoped_refptr<NativeDisplay> display(
+      new NativeDisplay(NativeDisplayKind::kEglWindow));
+  display->raw_ = egl_surface;
   return display;
 }
 

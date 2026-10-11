@@ -38,6 +38,51 @@ if(AVBASE_ENABLE_SDL2)
   avbase_configure_target(avbase_platform_sdl2)
 endif()
 
+# GLFW backend: OPTIONAL. The host owns the GLFWwindow and its GL context; this
+# backend only adapts them to NativeGLContext. Enable with -DAVBASE_ENABLE_GLFW=ON.
+# Skipped (warning, no FATAL) when glfw3 is not installed, so a host without
+# GLFW still builds the rest of the tree. The glob below lets check_invariants
+# (C25) see the sources even when this backend is off.
+option(AVBASE_ENABLE_GLFW "Build the GLFW GL backend" OFF)
+if(AVBASE_ENABLE_GLFW)
+  find_package(glfw3 QUIET)
+  if(glfw3_FOUND)
+    file(GLOB AVBASE_GLFW_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/glfw/*.cc")
+    add_library(avbase_platform_glfw ${AVBASE_GLFW_SOURCES})
+    add_library(avbase::platform_glfw ALIAS avbase_platform_glfw)
+    target_include_directories(avbase_platform_glfw PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+    target_link_libraries(avbase_platform_glfw
+        PUBLIC avbase::media avbase::render_gl glfw3)
+    avbase_configure_target(avbase_platform_glfw)
+  else()
+    message(WARNING
+        "AVBASE_ENABLE_GLFW=ON but glfw3 not found; GLFW backend skipped")
+  endif()
+endif()
+
+# EGL backend: OPTIONAL. Same adaptation role as the others; the host owns the
+# EGLDisplay/EGLSurface/EGLContext. Enable with -DAVBASE_ENABLE_EGL=ON; skipped
+# if EGL is not installed.
+option(AVBASE_ENABLE_EGL "Build the EGL GL backend" OFF)
+if(AVBASE_ENABLE_EGL)
+  find_package(EGL QUIET)
+  if(EGL_FOUND)
+    file(GLOB AVBASE_EGL_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/egl/*.cc")
+    add_library(avbase_platform_egl ${AVBASE_EGL_SOURCES})
+    add_library(avbase::platform_egl ALIAS avbase_platform_egl)
+    target_include_directories(avbase_platform_egl PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+    target_link_libraries(avbase_platform_egl
+        PUBLIC avbase::media avbase::render_gl EGL::EGL)
+    avbase_configure_target(avbase_platform_egl)
+  else()
+    message(WARNING
+        "AVBASE_ENABLE_EGL=ON but EGL not found; EGL backend skipped")
+  endif()
+endif()
 
 if(AVBASE_ENABLE_LINUX_NATIVE)
   message(FATAL_ERROR "AVBASE_ENABLE_LINUX_NATIVE is scheduled for milestone M12")

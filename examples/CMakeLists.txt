@@ -22,3 +22,22 @@ if(AVBASE_ENABLE_FFMPEG AND AVBASE_ENABLE_SDL2)
   target_link_libraries(play_sdl2 PRIVATE avbase::avbase avbase::platform_sdl2)
   avbase_configure_target(play_sdl2)
 endif()
+
+# GLFW backend example. Gated the same way as the backend: built only when
+# -DAVBASE_ENABLE_GLFW=ON AND glfw3 was found (the TARGET guard avoids a hard
+# configure error when the option is on but the library is missing -- the
+# backend's WARNING already explained that). avbase::platform_glfw propagates
+# the glfw3 include path and library.
+if(AVBASE_ENABLE_GLFW AND TARGET avbase::platform_glfw)
+  add_executable(play_glfw play_glfw.cc)
+  target_link_libraries(play_glfw PRIVATE avbase::avbase avbase::platform_glfw)
+  avbase_configure_target(play_glfw)
+endif()
+
+# EGL backend example. Same gating shape as GLFW. Not buildable on macOS (no
+# EGL dev libraries); see play_egl.cc's header for the Linux-only caveats.
+if(AVBASE_ENABLE_EGL AND TARGET avbase::platform_egl)
+  add_executable(play_egl play_egl.cc)
+  target_link_libraries(play_egl PRIVATE avbase::avbase avbase::platform_egl)
+  avbase_configure_target(play_egl)
+endif()
