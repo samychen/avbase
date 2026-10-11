@@ -157,12 +157,21 @@ N 个解码器，属播放器层。`--scene pip|fade` 用**同一流的延迟副
 ## 门禁命令
 
 ```sh
-python3 tools/check_invariants.py --root .          # C1/C4/C5/C22-C27；C23 列宽棘轮 → 425 文件
-/usr/local/opt/llvm/bin/clang-format --dry-run --Werror --style=file    # 全树 → 419 文件
+python3 tools/check_invariants.py --root .          # C1/C4/C5/C16/C22-C28；C23 列宽棘轮
+/usr/local/opt/llvm/bin/clang-format --dry-run --Werror --style=file    # 全树
 cmake -S . -B <dir> -G Ninja -DAVBASE_WERROR=ON -DAVBASE_ENABLE_FFMPEG={ON,OFF} \
       -DAVBASE_ENABLE_SDL2=ON -DAVBASE_BUILD_EXAMPLES=ON -DAVBASE_BUILD_TESTS=ON
-ctest --output-on-failure                            # no-ffmpeg 479 / macos-sdl2 630
+ctest --output-on-failure
+tools/bench_render.sh                                # 真机：fps / 四段耗时 / 上传路径
 ```
+
+- **文件数一直在变，别记死数字**（曾把不变量的 425 套到 format 上）。跑完看 exit code
+  与输出行数，别看记忆里的数字。
+- **C28（第六十三轮新增）：`render/` 不得 include `media/`/`platform/`/`base/`/`player/`。**
+  补它的原因值得记住：`docs/02 §6.2` 早就写了「构建不变量会拦」，而 `check_invariants.py`
+  里**没有任何规则提到 `render/`** —— `avbase_gl` 零依赖这个对外售卖的性质此前只有散文
+  在守。写下来却不检查的声明会悄悄失效，且失效是静默的（一个 include 照样编译通过，
+  只在树外消费者单独链接时炸）。
 
 - `avbase` 是 INTERFACE 库，ninja 不能 `--target avbase`。
 - 两个预设都要跑：默认 `macos-sdl2` 预设**不开** `-Werror`，告警只在手动加时暴露。
