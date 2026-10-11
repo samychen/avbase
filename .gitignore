@@ -11,3 +11,29 @@ __pycache__/
 *.pyc
 tools/deps/
 tools/build/
+
+# 本地编辑器 / IDE 与 clangd 工具配置：内含本机绝对路径，入库会污染他人环境
+#   .clangd            -> CompileFlags.Add 写死了 -I/Users/<user>/...
+#   .vscode/           -> settings.json 写死了 clangd.path: /usr/bin/clangd
+# 若日后要共享 clangd 的 ClangTidy 检查清单，应另出一份不含绝对路径的模板提交，
+# 而不是把这两个文件入库。
+.clangd
+.vscode/
+
+# IDE 自身的 ignore 清单，由工具从 .gitignore 同步生成（其文件头已注明同步关系），
+# 属本地工具状态。注意：上面新增的条目在下次同步时会被带进该文件的上半部分。
+.zcodeignore
+
+# 编辑器目录快照，烦人的 macOS 遗留物
+.DS_Store
+
+# CTest 输出目录：ctest 在工作目录生成 Testing/Temporary/*.log。
+# 正常应在 build/ 下跑（已被忽略），仓库根出现的这份是误在根目录执行 ctest 的残留。
+Testing/
+
+# 反忽略：base/test/ 是受版本控制的源码目录，必须能正常增删文件。
+# 根因：某些机器上 ~/.gitignore_global 里写了裸的 `test` 规则（无斜杠的模式匹配
+# 任意层级的同名目录），会连带把 ./base/test/ 判为忽略；后果是该目录下的新文件
+# 对 git 隐身 —— git status 看不见、git add 被拒并要求 -f。
+# 项目级 .gitignore 优先级高于 core.excludesFile，这里显式重新纳入即可免疫。
+!base/test/
