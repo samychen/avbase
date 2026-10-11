@@ -53,6 +53,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERSION="${1:-7.1.1}"
 PREFIX="${2:-${SCRIPT_DIR}/build}"
+# A relative prefix has to be resolved HERE, against the repo root, rather than
+# left for FFmpeg's configure -- which resolves it against the out-of-tree
+# build directory. `tools/setup_ffmpeg.sh 7.1.1 tools/build` would otherwise
+# install into tools/deps/ffmpeg-7.1.1-build-shared/tools/build.
+#
+# The failure is silent, which is what makes it worth this: install is the
+# LAST step, so the run prints "Installed:" and exits 0, the prefix the caller
+# meant is untouched, and the symptom appears later as "this FFmpeg build has
+# no 'videotoolbox' hw device type" -- a message that blames the build for a
+# path mistake.
+case "${PREFIX}" in
+  /*) ;;
+  *) PREFIX="$(cd "${SCRIPT_DIR}/.." && pwd)/${PREFIX}" ;;
+esac
 LINK="${AVBASE_FFMPEG_LINK:-shared}"
 SRC_URL="https://ffmpeg.org/releases/ffmpeg-${VERSION}.tar.xz"
 SRC_DIR="${AVBASE_FFMPEG_SRC_DIR:-${SCRIPT_DIR}/deps}"
@@ -426,6 +440,35 @@ fi
 # NOTE: without AVBASE_FFMPEG_DEPS there is no TLS backend, so https/tls are
 # unavailable (tests use file:// and http:// only). Add "openssl" (or
 # "mbedtls") to AVBASE_FFMPEG_DEPS to switch them on.
+#
+# The hardware-decode hwaccels are HOST flags rather than dependency flags:
+# VideoToolbox needs no third-party source, only the Apple SDK already present
+# on a Mac. They are what makes avbase's zero-copy path reachable at all --
+# without them every frame this build decodes is a software frame, and
+# UploadPath::kHwZeroCopy could never be exercised outside a unit test.
+hwaccel_flags() {
+  case "$(uname -s)" in
+    Darwin)
+      # --disable-everything turns the hwaccels off too, so naming them is not
+      # redundant with --enable-videotoolbox: that switch enables the API,
+      # these enable the three per-codec hooks that make a decoder use it.
+      # The list matches the codecs VideotoolboxHwSpec() advertises
+      # (platform/hwaccel/videotoolbox_hw_spec.h) -- a codec the spec names
+      # but this build cannot decode is rejected at capability query time,
+      # which is a confusing place to discover a configure flag.
+      echo "--enable-videotoolbox --enable-hwaccel=h264_videotoolbox,hevc_videotoolbox,vp9_videotoolbox"
+      ;;
+    *)
+      # Linux would be --enable-vaapi + --enable-hwaccel=h264_vaapi,... and
+      # Windows --enable-d3d11va. Neither is added: CI has no GPU to decode
+      # on, and an interop backend for them is not built either (see
+      # platform/hwimport), so enabling the hwaccel alone would only make the
+      # pipeline read those frames back -- correct, and strictly slower.
+      echo ""
+      ;;
+  esac
+}
+
 configure_flags() {
   cat <<FLAGS
 --prefix="${PREFIX}"
@@ -452,6 +495,7 @@ configure_flags() {
 --enable-avfilter
 --enable-swresample
 --enable-swscale
+$(hwaccel_flags)
 FLAGS
 }
 

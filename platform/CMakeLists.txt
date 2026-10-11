@@ -9,6 +9,35 @@
 # SELECTS, and that layer is chosen by nobody -- every backend links it and it
 # carries no window-system SDK at all. See render/CMakeLists.txt and docs/02 §6.
 
+# Hardware texture import: the platform half of the zero-copy path, and a
+# target of its own because it is an axis of its own. CGL/IOSurface, EGLImage
+# and WGL_NV_DX_interop are chosen by the HOST'S GRAPHICS STACK, not by its
+# window system -- the same CGL backend serves the SDL2, GLFW and EGL sinks --
+# so filing the implementation inside sdl2/ or glfw/ would make three copies of
+# it and a fourth directory combination nobody can build (docs/02 §6).
+#
+# Defined before the backends because they all link it; each one calls
+# CreateHwTextureImporter() and none of them learns which API its host has.
+# The interface it implements lives in media/gl/gl_hw_texture_importer.h, which
+# is where the shape can live and the implementation cannot: invariant C5 keeps
+# OpenGL/CoreVideo headers out of media/.
+add_library(avbase_platform_hwimport
+    "${CMAKE_CURRENT_SOURCE_DIR}/hwimport/hw_importer_factory.cc")
+add_library(avbase::platform_hwimport ALIAS avbase_platform_hwimport)
+target_include_directories(avbase_platform_hwimport PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+target_link_libraries(avbase_platform_hwimport PUBLIC avbase::media)
+if(APPLE)
+  target_sources(avbase_platform_hwimport PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/hwimport/cgl_iosurface_importer.cc")
+  # OpenGL for CGLTexImageIOSurface2D, CoreVideo for CVPixelBuffer, IOSurface
+  # because that is what a CVPixelBuffer hands out on macOS.
+  target_link_libraries(avbase_platform_hwimport PRIVATE
+      "-framework OpenGL" "-framework CoreVideo" "-framework IOSurface"
+      "-framework CoreFoundation")
+endif()
+avbase_configure_target(avbase_platform_hwimport)
+
 # SDL2 backend (M11). The window and renderer belong to the host in embedding
 # mode; see platform/sdl2/surface.h for the two threading rules.
 if(AVBASE_ENABLE_SDL2)
@@ -22,6 +51,8 @@ if(AVBASE_ENABLE_SDL2)
   target_include_directories(avbase_platform_sdl2 PUBLIC
       $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
   target_link_libraries(avbase_platform_sdl2 PUBLIC avbase::media avbase::gl SDL2::SDL2)
+  # The zero-copy import path; the sink builds one and hands it to the presenter.
+  target_link_libraries(avbase_platform_sdl2 PRIVATE avbase::platform_hwimport)
   target_compile_definitions(avbase_platform_sdl2 PRIVATE AVBASE_ENABLE_SDL2=1)
   # Optional FreeType: the subtitle overlay's CPU rasterizer (text_raster.cc).
   # Without it the overlay slot still works with host-supplied bitmaps; only
@@ -59,6 +90,8 @@ if(AVBASE_ENABLE_GLFW)
     # 'GLFW/glfw3.h' file not found。
     target_link_libraries(avbase_platform_glfw
         PUBLIC avbase::media avbase::gl glfw)
+    target_link_libraries(avbase_platform_glfw
+        PRIVATE avbase::platform_hwimport)
     avbase_configure_target(avbase_platform_glfw)
   else()
     message(WARNING
@@ -81,6 +114,8 @@ if(AVBASE_ENABLE_EGL)
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
     target_link_libraries(avbase_platform_egl
         PUBLIC avbase::media avbase::gl EGL::EGL)
+    target_link_libraries(avbase_platform_egl
+        PRIVATE avbase::platform_hwimport)
     avbase_configure_target(avbase_platform_egl)
   else()
     message(WARNING
