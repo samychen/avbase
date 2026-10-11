@@ -385,35 +385,6 @@ int PumpEventsUntilDone(int max_seconds) {
   return g_error.load() ? 1 : 0;
 }
 
-// The plain factory, plus the --scene hook when the host asked for one; see
-// play_glfw.cc for the same wrapper and why it is the only place a host can
-// reach the sink before the player takes it over.
-class SceneSinkFactory final : public avbase::media::VideoRendererSinkFactory {
- public:
-  explicit SceneSinkFactory(bool install_scene) : install_(install_scene) {}
-
-  std::unique_ptr<avbase::media::VideoRendererSink>
-  Create(avbase::base::scoped_refptr<avbase::media::NativeDisplay> display)
-      override {
-    std::unique_ptr<avbase::media::VideoRendererSink> sink =
-        avbase::media::Sdl2VideoSinkFactory().Create(std::move(display));
-    if (install_) {
-      // static_cast, not dynamic_cast: RTTI is off project-wide, and the
-      // factory's contract is that it hands back an Sdl2VideoSink.
-      auto* sdl_sink = static_cast<avbase::media::Sdl2VideoSink*>(sink.get());
-      sdl_sink->SetSceneUpdate(
-          avbase::base::BindRepeating(&avbase::examples::SceneDemo::OnFrame,
-                                      avbase::base::Unretained(g_scene.get())));
-    }
-    return sink;
-  }
-
-  const char* name() const override { return "sdl2-demo"; }
-
- private:
-  bool install_;
-};
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -446,7 +417,9 @@ int main(int argc, char** argv) {
     g_scene = std::make_unique<avbase::examples::SceneDemo>(options.scene);
   }
   deps->video_sink_factory =
-      std::make_shared<SceneSinkFactory>(g_scene != nullptr);
+      std::make_shared<avbase::examples::SceneSinkFactory<
+          avbase::media::Sdl2VideoSinkFactory, avbase::media::Sdl2VideoSink>>(
+          g_scene.get(), "sdl2-demo");
   deps->audio_sink_factory =
       std::make_shared<avbase::media::Sdl2AudioSinkFactory>();
 

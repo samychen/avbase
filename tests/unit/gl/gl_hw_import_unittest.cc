@@ -56,16 +56,6 @@ namespace {
 
 constexpr int kWindowSize = 64;
 
-// Limited-range BT.601: 235 is white, 16 is black, 128 is neutral chroma.
-constexpr uint8_t kWhiteLuma = 235;
-constexpr uint8_t kBlackLuma = 16;
-constexpr uint8_t kNeutralChroma = 128;
-
-constexpr int kBrightThreshold = 200;
-constexpr int kDarkThreshold = 50;
-// Keeps a bilinear sample from reaching one row past a half-way edge.
-constexpr int kSampleInset = 4;
-
 #if defined(__APPLE__)
 // A GPU-resident NV12 frame: an IOSurface-backed CVPixelBuffer of |w| x |h|,
 // top half |y_top| and bottom half |y_bottom|, wrapped the way the FFmpeg
@@ -116,8 +106,8 @@ base::scoped_refptr<VideoFrame> MakeHardwareFrame(int w, int h, uint8_t y_top,
   for (int row = 0; row < h / 2 && chroma; ++row) {
     uint8_t* dst = chroma + row * chroma_stride;
     for (int col = 0; col < w / 2; ++col) {
-      dst[col * 2] = kNeutralChroma;
-      dst[col * 2 + 1] = kNeutralChroma;
+      dst[col * 2] = test::kNeutralChroma;
+      dst[col * 2 + 1] = test::kNeutralChroma;
     }
   }
   CVPixelBufferUnlockBaseAddress(buffer, 0);
@@ -170,8 +160,10 @@ class HwImportTest : public ::testing::Test {
     return test::ReadPixel(*presenter_->api(), window_->width() / 2, y, GL_BACK)
         .r;
   }
-  int WindowTopRed() { return WindowRed(window_->height() - 1 - kSampleInset); }
-  int WindowBottomRed() { return WindowRed(kSampleInset); }
+  int WindowTopRed() {
+    return WindowRed(window_->height() - 1 - test::kSampleInset);
+  }
+  int WindowBottomRed() { return WindowRed(test::kSampleInset); }
 
   std::unique_ptr<test::GlTestWindow> window_;
   std::unique_ptr<GlHwTextureImporter> importer_;
@@ -187,8 +179,9 @@ class HwImportTest : public ::testing::Test {
 // would still pass every pixel assertion below -- so the route is asserted
 // here, on its own, before any colour is looked at.
 TEST_F(HwImportTest, AnImportedFrameReportsTheZeroCopyRoute) {
-  base::scoped_refptr<VideoFrame> frame = MakeHardwareFrame(
-      kWindowSize, kWindowSize, kWhiteLuma, kWhiteLuma, VideoFormat::kNV12);
+  base::scoped_refptr<VideoFrame> frame =
+      MakeHardwareFrame(kWindowSize, kWindowSize, test::kWhiteLuma,
+                        test::kWhiteLuma, VideoFormat::kNV12);
   ASSERT_TRUE(frame);
   EXPECT_FALSE(frame->IsMappable())
       << "the frame's pixels must be GPU-resident";
@@ -202,16 +195,17 @@ TEST_F(HwImportTest, AnImportedFrameReportsTheZeroCopyRoute) {
 // texels, so nothing forces the coordinate space to agree with the 2D path's
 // -- and a flip here is invisible to every call in the chain.
 TEST_F(HwImportTest, AnImportedFrameLandsUpright) {
-  base::scoped_refptr<VideoFrame> frame = MakeHardwareFrame(
-      kWindowSize, kWindowSize, kWhiteLuma, kBlackLuma, VideoFormat::kNV12);
+  base::scoped_refptr<VideoFrame> frame =
+      MakeHardwareFrame(kWindowSize, kWindowSize, test::kWhiteLuma,
+                        test::kBlackLuma, VideoFormat::kNV12);
   ASSERT_TRUE(frame);
 
   ASSERT_TRUE(presenter_->Compose(*frame));
   presenter_->PresentComposed();
 
-  EXPECT_GT(WindowTopRed(), kBrightThreshold)
+  EXPECT_GT(WindowTopRed(), test::kBrightThreshold)
       << "the white half of the frame is its top half";
-  EXPECT_LT(WindowBottomRed(), kDarkThreshold);
+  EXPECT_LT(WindowBottomRed(), test::kDarkThreshold);
 }
 
 // Both routes have to draw the same picture from the same numbers. They reach
@@ -219,11 +213,12 @@ TEST_F(HwImportTest, AnImportedFrameLandsUpright) {
 // one thing that could plausibly disagree is a plane bound to the wrong
 // sampler, and that shows up as the wrong value rather than as an error.
 TEST_F(HwImportTest, BothRoutesDrawTheSameColour) {
-  base::scoped_refptr<VideoFrame> gpu = MakeHardwareFrame(
-      kWindowSize, kWindowSize, kWhiteLuma, kWhiteLuma, VideoFormat::kNV12);
-  base::scoped_refptr<VideoFrame> cpu =
-      test::MakeSolidFrame(VideoFormat::kNV12, kWindowSize, kWindowSize,
-                           kWhiteLuma, kNeutralChroma, kNeutralChroma);
+  base::scoped_refptr<VideoFrame> gpu =
+      MakeHardwareFrame(kWindowSize, kWindowSize, test::kWhiteLuma,
+                        test::kWhiteLuma, VideoFormat::kNV12);
+  base::scoped_refptr<VideoFrame> cpu = test::MakeSolidFrame(
+      VideoFormat::kNV12, kWindowSize, kWindowSize, test::kWhiteLuma,
+      test::kNeutralChroma, test::kNeutralChroma);
   ASSERT_TRUE(gpu);
   ASSERT_TRUE(cpu);
 
@@ -238,7 +233,7 @@ TEST_F(HwImportTest, BothRoutesDrawTheSameColour) {
   EXPECT_NEAR(imported, copied, 2)
       << "an imported frame and a copied one with the same pixels should draw "
          "the same colour";
-  EXPECT_GT(imported, kBrightThreshold);
+  EXPECT_GT(imported, test::kBrightThreshold);
 }
 
 // A GPU frame with no importer is REFUSED, not drawn from whatever the
@@ -247,8 +242,9 @@ TEST_F(HwImportTest, BothRoutesDrawTheSameColour) {
 // produce -- and the reason a host without a backend reads the frame back in
 // the sink instead of handing it here.
 TEST_F(HwImportTest, AGpuFrameWithoutAnImporterIsRefused) {
-  base::scoped_refptr<VideoFrame> frame = MakeHardwareFrame(
-      kWindowSize, kWindowSize, kWhiteLuma, kWhiteLuma, VideoFormat::kNV12);
+  base::scoped_refptr<VideoFrame> frame =
+      MakeHardwareFrame(kWindowSize, kWindowSize, test::kWhiteLuma,
+                        test::kWhiteLuma, VideoFormat::kNV12);
   ASSERT_TRUE(frame);
 
   // A SECOND window, because a context has one owner: presenter_ already made
@@ -273,8 +269,9 @@ TEST_F(HwImportTest, AGpuFrameWithoutAnImporterIsRefused) {
 // so the upload has to fail rather than sample the surface as if it were
 // three planes.
 TEST_F(HwImportTest, AFormatTheBackendCannotPlaceIsDeclined) {
-  base::scoped_refptr<VideoFrame> frame = MakeHardwareFrame(
-      kWindowSize, kWindowSize, kWhiteLuma, kWhiteLuma, VideoFormat::kI420);
+  base::scoped_refptr<VideoFrame> frame =
+      MakeHardwareFrame(kWindowSize, kWindowSize, test::kWhiteLuma,
+                        test::kWhiteLuma, VideoFormat::kI420);
   ASSERT_TRUE(frame);
   EXPECT_FALSE(importer_->CanImport(*frame))
       << "the backend places NV12; a frame declaring I420 is not one it can "
@@ -302,11 +299,12 @@ TEST_F(HwImportTest, ASceneCanMixAnImportedLayerAndACopiedOne) {
   ASSERT_NE(imported, GlScene::kNoLayer);
   ASSERT_NE(copied, GlScene::kNoLayer);
 
-  base::scoped_refptr<VideoFrame> gpu = MakeHardwareFrame(
-      kWindowSize, kWindowSize, kWhiteLuma, kWhiteLuma, VideoFormat::kNV12);
-  base::scoped_refptr<VideoFrame> cpu =
-      test::MakeSolidFrame(VideoFormat::kI420, kWindowSize, kWindowSize,
-                           kBlackLuma, kNeutralChroma, kNeutralChroma);
+  base::scoped_refptr<VideoFrame> gpu =
+      MakeHardwareFrame(kWindowSize, kWindowSize, test::kWhiteLuma,
+                        test::kWhiteLuma, VideoFormat::kNV12);
+  base::scoped_refptr<VideoFrame> cpu = test::MakeSolidFrame(
+      VideoFormat::kI420, kWindowSize, kWindowSize, test::kBlackLuma,
+      test::kNeutralChroma, test::kNeutralChroma);
   ASSERT_TRUE(gpu);
   ASSERT_TRUE(cpu);
   ASSERT_TRUE(presenter_->UploadLayer(*scene, imported, *gpu));
@@ -314,7 +312,7 @@ TEST_F(HwImportTest, ASceneCanMixAnImportedLayerAndACopiedOne) {
 
   ASSERT_TRUE(presenter_->ComposeScene(*scene));
   presenter_->PresentComposed();
-  EXPECT_LT(WindowTopRed(), kDarkThreshold)
+  EXPECT_LT(WindowTopRed(), test::kDarkThreshold)
       << "the copied layer is on top, so the window should be black";
 
   // Same scene, one layer hidden -- and the imported one is what is left. A
@@ -323,7 +321,7 @@ TEST_F(HwImportTest, ASceneCanMixAnImportedLayerAndACopiedOne) {
   ASSERT_TRUE(scene->SetLayerVisible(copied, false));
   ASSERT_TRUE(presenter_->ComposeScene(*scene));
   presenter_->PresentComposed();
-  EXPECT_GT(WindowTopRed(), kBrightThreshold)
+  EXPECT_GT(WindowTopRed(), test::kBrightThreshold)
       << "with the copied layer hidden only the imported one is left";
 }
 

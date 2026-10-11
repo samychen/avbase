@@ -178,37 +178,6 @@ bool GlRuntimeWorks() {
   return status != 0;
 }
 
-// The plain factory, plus the --scene hook when the host asked for one.
-//
-// The sink is created inside the player, so this factory is the only place a
-// host can reach it between construction and the player taking it over -- and
-// GlVideoSink::SetSceneUpdate()'s contract is exactly "before Start()".
-class SceneSinkFactory final : public avbase::media::VideoRendererSinkFactory {
- public:
-  explicit SceneSinkFactory(bool install_scene) : install_(install_scene) {}
-
-  std::unique_ptr<avbase::media::VideoRendererSink>
-  Create(avbase::base::scoped_refptr<avbase::media::NativeDisplay> display)
-      override {
-    std::unique_ptr<avbase::media::VideoRendererSink> sink =
-        avbase::media::GlfwVideoSinkFactory().Create(std::move(display));
-    if (install_) {
-      // static_cast, not dynamic_cast: RTTI is off project-wide, and the
-      // factory's contract is that it hands back a GlfwVideoSink.
-      auto* gl_sink = static_cast<avbase::media::GlfwVideoSink*>(sink.get());
-      gl_sink->SetSceneUpdate(
-          avbase::base::BindRepeating(&avbase::examples::SceneDemo::OnFrame,
-                                      avbase::base::Unretained(g_scene.get())));
-    }
-    return sink;
-  }
-
-  const char* name() const override { return "glfw-demo"; }
-
- private:
-  bool install_;
-};
-
 bool CreateGlfwWindow(GLFWwindow** window) {
   DCHECK(window);
   if (glfwInit() != GLFW_TRUE) {
@@ -291,7 +260,9 @@ int main(int argc, char** argv) {
     g_scene = std::make_unique<avbase::examples::SceneDemo>(options.scene);
   }
   deps->video_sink_factory =
-      std::make_shared<SceneSinkFactory>(g_scene != nullptr);
+      std::make_shared<avbase::examples::SceneSinkFactory<
+          avbase::media::GlfwVideoSinkFactory, avbase::media::GlfwVideoSink>>(
+          g_scene.get(), "glfw-demo");
   deps->audio_sink_factory =
       std::make_shared<avbase::media::NullAudioSinkFactory>();
 

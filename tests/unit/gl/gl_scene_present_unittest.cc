@@ -34,24 +34,11 @@ namespace {
 
 constexpr int kWindowSize = 64;
 
-// Limited-range BT.601: 235 is white, 16 is black, 128 is neutral chroma. The
-// colour matrix turns these into 255 and 0 on every channel.
-constexpr uint8_t kWhiteLuma = 235;
-constexpr uint8_t kBlackLuma = 16;
-constexpr uint8_t kNeutralChroma = 128;
-
-// Deliberately far apart: 0 vs 255 through a known matrix, so anything in
-// between is a different bug than orientation or ordering.
-constexpr int kBrightThreshold = 200;
-constexpr int kDarkThreshold = 50;
 // A cross-fade at half weight should land near the middle of those two, which
 // is 127.5 -- so a band around it, wide enough for the 8-bit round trip and
 // narrow enough that "showed one side only" misses it.
 constexpr int kMidLow = 100;
 constexpr int kMidHigh = 156;
-
-// Keeps a bilinear sample from reaching one row past a half-way edge.
-constexpr int kSampleInset = 4;
 
 class ScenePresentTest : public ::testing::Test {
  protected:
@@ -81,8 +68,10 @@ class ScenePresentTest : public ::testing::Test {
     return test::ReadPixel(*presenter_->api(), window_->width() / 2, y, GL_BACK)
         .r;
   }
-  int WindowTopRed() { return WindowRed(window_->height() - 1 - kSampleInset); }
-  int WindowBottomRed() { return WindowRed(kSampleInset); }
+  int WindowTopRed() {
+    return WindowRed(window_->height() - 1 - test::kSampleInset);
+  }
+  int WindowBottomRed() { return WindowRed(test::kSampleInset); }
 
   std::unique_ptr<test::GlTestWindow> window_;
   std::unique_ptr<GlPresenter> presenter_;
@@ -98,16 +87,17 @@ TEST_F(ScenePresentTest, ASingleLayerSceneLandsUprightOnTheWindow) {
   const GlScene::LayerId layer = scene->AddVideoLayer(0);
   ASSERT_NE(layer, GlScene::kNoLayer);
 
-  base::scoped_refptr<VideoFrame> frame = test::MakeTopHalfFrame(
-      VideoFormat::kI420, kWindowSize, kWindowSize, kWhiteLuma, kBlackLuma);
+  base::scoped_refptr<VideoFrame> frame =
+      test::MakeTopHalfFrame(VideoFormat::kI420, kWindowSize, kWindowSize,
+                             test::kWhiteLuma, test::kBlackLuma);
   ASSERT_TRUE(frame);
   ASSERT_TRUE(presenter_->UploadLayer(*scene, layer, *frame));
   ASSERT_TRUE(presenter_->ComposeScene(*scene));
   presenter_->PresentComposed();
 
-  EXPECT_GT(WindowTopRed(), kBrightThreshold)
+  EXPECT_GT(WindowTopRed(), test::kBrightThreshold)
       << "the top of the window should show the white half of the layer";
-  EXPECT_LT(WindowBottomRed(), kDarkThreshold)
+  EXPECT_LT(WindowBottomRed(), test::kDarkThreshold)
       << "the bottom of the window should show the black half of the layer";
 }
 
@@ -123,12 +113,12 @@ TEST_F(ScenePresentTest, TheHigherLayerWinsAndZCanBeChanged) {
   ASSERT_NE(white, GlScene::kNoLayer);
   ASSERT_NE(black, GlScene::kNoLayer);
 
-  base::scoped_refptr<VideoFrame> bright =
-      test::MakeSolidFrame(VideoFormat::kI420, kWindowSize, kWindowSize,
-                           kWhiteLuma, kNeutralChroma, kNeutralChroma);
-  base::scoped_refptr<VideoFrame> dark =
-      test::MakeSolidFrame(VideoFormat::kI420, kWindowSize, kWindowSize,
-                           kBlackLuma, kNeutralChroma, kNeutralChroma);
+  base::scoped_refptr<VideoFrame> bright = test::MakeSolidFrame(
+      VideoFormat::kI420, kWindowSize, kWindowSize, test::kWhiteLuma,
+      test::kNeutralChroma, test::kNeutralChroma);
+  base::scoped_refptr<VideoFrame> dark = test::MakeSolidFrame(
+      VideoFormat::kI420, kWindowSize, kWindowSize, test::kBlackLuma,
+      test::kNeutralChroma, test::kNeutralChroma);
   ASSERT_TRUE(bright);
   ASSERT_TRUE(dark);
   ASSERT_TRUE(presenter_->UploadLayer(*scene, white, *bright));
@@ -136,7 +126,7 @@ TEST_F(ScenePresentTest, TheHigherLayerWinsAndZCanBeChanged) {
 
   ASSERT_TRUE(presenter_->ComposeScene(*scene));
   presenter_->PresentComposed();
-  EXPECT_LT(WindowTopRed(), kDarkThreshold)
+  EXPECT_LT(WindowTopRed(), test::kDarkThreshold)
       << "z=5 is on top of z=0, so the window should be black";
 
   // Same layers, same frames, one reorder -- and nothing re-uploaded, which is
@@ -144,7 +134,7 @@ TEST_F(ScenePresentTest, TheHigherLayerWinsAndZCanBeChanged) {
   ASSERT_TRUE(scene->SetLayerZ(black, /*z=*/-5));
   ASSERT_TRUE(presenter_->ComposeScene(*scene));
   presenter_->PresentComposed();
-  EXPECT_GT(WindowTopRed(), kBrightThreshold)
+  EXPECT_GT(WindowTopRed(), test::kBrightThreshold)
       << "moving the white layer above the others should show it";
 }
 
@@ -162,11 +152,12 @@ TEST_F(ScenePresentTest, ATransitionAtZeroIsTheFromSceneUpright) {
   ASSERT_NE(from_layer, GlScene::kNoLayer);
   ASSERT_NE(to_layer, GlScene::kNoLayer);
 
-  base::scoped_refptr<VideoFrame> split = test::MakeTopHalfFrame(
-      VideoFormat::kI420, kWindowSize, kWindowSize, kWhiteLuma, kBlackLuma);
-  base::scoped_refptr<VideoFrame> dark =
-      test::MakeSolidFrame(VideoFormat::kI420, kWindowSize, kWindowSize,
-                           kBlackLuma, kNeutralChroma, kNeutralChroma);
+  base::scoped_refptr<VideoFrame> split =
+      test::MakeTopHalfFrame(VideoFormat::kI420, kWindowSize, kWindowSize,
+                             test::kWhiteLuma, test::kBlackLuma);
+  base::scoped_refptr<VideoFrame> dark = test::MakeSolidFrame(
+      VideoFormat::kI420, kWindowSize, kWindowSize, test::kBlackLuma,
+      test::kNeutralChroma, test::kNeutralChroma);
   ASSERT_TRUE(split);
   ASSERT_TRUE(dark);
   ASSERT_TRUE(presenter_->UploadLayer(*from, from_layer, *split));
@@ -175,13 +166,14 @@ TEST_F(ScenePresentTest, ATransitionAtZeroIsTheFromSceneUpright) {
   ASSERT_TRUE(presenter_->ComposeTransition(*from, *to, /*progress=*/0.0f));
   presenter_->PresentComposed();
 
-  EXPECT_GT(WindowTopRed(), kBrightThreshold)
+  EXPECT_GT(WindowTopRed(), test::kBrightThreshold)
       << "progress 0 shows the from scene, and it must be upright";
-  EXPECT_LT(WindowBottomRed(), kDarkThreshold);
+  EXPECT_LT(WindowBottomRed(), test::kDarkThreshold);
 
   ASSERT_TRUE(presenter_->ComposeTransition(*from, *to, /*progress=*/1.0f));
   presenter_->PresentComposed();
-  EXPECT_LT(WindowTopRed(), kDarkThreshold) << "progress 1 shows the to scene";
+  EXPECT_LT(WindowTopRed(), test::kDarkThreshold)
+      << "progress 1 shows the to scene";
 }
 
 // Half weight has to be a real blend: a mixer that rounded progress to one end
@@ -196,12 +188,12 @@ TEST_F(ScenePresentTest, HalfwayIsAnEvenBlendOfBothScenes) {
   ASSERT_TRUE(from_layer != GlScene::kNoLayer);
   ASSERT_TRUE(to_layer != GlScene::kNoLayer);
 
-  base::scoped_refptr<VideoFrame> bright =
-      test::MakeSolidFrame(VideoFormat::kI420, kWindowSize, kWindowSize,
-                           kWhiteLuma, kNeutralChroma, kNeutralChroma);
-  base::scoped_refptr<VideoFrame> dark =
-      test::MakeSolidFrame(VideoFormat::kI420, kWindowSize, kWindowSize,
-                           kBlackLuma, kNeutralChroma, kNeutralChroma);
+  base::scoped_refptr<VideoFrame> bright = test::MakeSolidFrame(
+      VideoFormat::kI420, kWindowSize, kWindowSize, test::kWhiteLuma,
+      test::kNeutralChroma, test::kNeutralChroma);
+  base::scoped_refptr<VideoFrame> dark = test::MakeSolidFrame(
+      VideoFormat::kI420, kWindowSize, kWindowSize, test::kBlackLuma,
+      test::kNeutralChroma, test::kNeutralChroma);
   ASSERT_TRUE(bright);
   ASSERT_TRUE(dark);
   ASSERT_TRUE(presenter_->UploadLayer(*from, from_layer, *bright));
@@ -225,9 +217,9 @@ TEST_F(ScenePresentTest, UploadTimingAccumulatesAcrossLayers) {
   ASSERT_NE(first, GlScene::kNoLayer);
   ASSERT_NE(second, GlScene::kNoLayer);
 
-  base::scoped_refptr<VideoFrame> frame =
-      test::MakeSolidFrame(VideoFormat::kI420, kWindowSize, kWindowSize,
-                           kWhiteLuma, kNeutralChroma, kNeutralChroma);
+  base::scoped_refptr<VideoFrame> frame = test::MakeSolidFrame(
+      VideoFormat::kI420, kWindowSize, kWindowSize, test::kWhiteLuma,
+      test::kNeutralChroma, test::kNeutralChroma);
   ASSERT_TRUE(frame);
 
   PresentTiming timing;

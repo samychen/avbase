@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "gl_test_context.h"
+#include "gl_test_frames.h"
 #include "gtest/gtest.h"
 #include "media/base/video_frame.h"
 #include "media/gl/gl_present.h"
@@ -32,51 +33,6 @@ namespace avbase::media {
 namespace {
 
 constexpr int kWindowSize = 64;
-
-// Limited-range BT.601: luma 235 is white, 16 is black, and the chroma planes
-// sit at 128 so the luma decision is the only thing the colour matrix can get
-// wrong.
-constexpr uint8_t kWhiteLuma = 235;
-constexpr uint8_t kBlackLuma = 16;
-constexpr uint8_t kNeutralChroma = 128;
-
-// A red-flag threshold rather than a tolerance: this is 0 vs 235 luma through a
-// known matrix, so anything in between means a different bug than orientation.
-constexpr int kBrightThreshold = 200;
-constexpr int kDarkThreshold = 50;
-
-// Crops the window to a multiple of four and leaves a margin at both ends, so
-// a bilinear sample that reaches one row past a half-way edge cannot decide the
-// answer.
-constexpr int kSampleInset = 4;
-
-// An owned I420 frame with white over black, split horizontally at the middle:
-// row 0 is white, the last row is black.
-base::scoped_refptr<VideoFrame> MakeTopWhiteFrame(int width, int height) {
-  Size size{width, height};
-  base::scoped_refptr<VideoFrame> frame = VideoFrame::CreateBlackFrame(
-      VideoFormat::kI420, size, size, Rational{1, 1}, base::TimeDelta(),
-      base::TimeDelta(), 0);
-  if (!frame) {
-    return nullptr;
-  }
-  const std::span<uint8_t> luma = frame->mutable_data(VideoFrame::kYPlane);
-  const int32_t stride = frame->stride(VideoFrame::kYPlane);
-  for (int y = 0; y < height; ++y) {
-    const uint8_t value = y < height / 2 ? kWhiteLuma : kBlackLuma;
-    std::fill_n(luma.begin() + static_cast<size_t>(y) * stride, width, value);
-  }
-  for (const VideoFrame::Plane plane :
-       {VideoFrame::kUPlane, VideoFrame::kVPlane}) {
-    const std::span<uint8_t> chroma = frame->mutable_data(plane);
-    const int32_t chroma_stride = frame->stride(plane);
-    for (int y = 0; y < height / 2; ++y) {
-      std::fill_n(chroma.begin() + static_cast<size_t>(y) * chroma_stride,
-                  width / 2, kNeutralChroma);
-    }
-  }
-  return frame;
-}
 
 // Reads one row of the default framebuffer's back buffer -- what the blit just
 // produced, before it is handed to the window. glReadPixels counts y from the
@@ -111,7 +67,8 @@ class OrientationTest : public ::testing::Test {
   // Composes and blits |frame|, optionally into a canvas of its own size.
   void Draw(int canvas_width = 0, int canvas_height = 0) {
     base::scoped_refptr<VideoFrame> frame =
-        MakeTopWhiteFrame(kWindowSize, kWindowSize);
+        test::MakeTopHalfFrame(VideoFormat::kI420, kWindowSize, kWindowSize,
+                               test::kWhiteLuma, test::kBlackLuma);
     ASSERT_TRUE(frame);
     presenter_->SetCanvasSize(canvas_width, canvas_height);
     ASSERT_TRUE(presenter_->Compose(*frame));
@@ -131,14 +88,15 @@ TEST_F(OrientationTest, TheTopOfTheFrameReachesTheTopOfTheWindow) {
   ASSERT_TRUE(api);
   const int width = window_->width();
   const int height = window_->height();
-  ASSERT_GE(height, 2 * kSampleInset + 2);
+  ASSERT_GE(height, 2 * test::kSampleInset + 2);
 
-  const int top = RedOf(ReadBackRow(*api, width, height - 1 - kSampleInset));
-  const int bottom = RedOf(ReadBackRow(*api, width, kSampleInset));
+  const int top =
+      RedOf(ReadBackRow(*api, width, height - 1 - test::kSampleInset));
+  const int bottom = RedOf(ReadBackRow(*api, width, test::kSampleInset));
 
-  EXPECT_GT(top, kBrightThreshold)
+  EXPECT_GT(top, test::kBrightThreshold)
       << "the top of the window should show the white half of the frame";
-  EXPECT_LT(bottom, kDarkThreshold)
+  EXPECT_LT(bottom, test::kDarkThreshold)
       << "the bottom of the window should show the black half of the frame";
 }
 
@@ -153,10 +111,11 @@ TEST_F(OrientationTest, ACanvasOfADifferentSizeStillLandsUpright) {
   const int width = window_->width();
   const int height = window_->height();
 
-  EXPECT_GT(RedOf(ReadBackRow(*api, width, height - 1 - kSampleInset)),
-            kBrightThreshold)
+  EXPECT_GT(RedOf(ReadBackRow(*api, width, height - 1 - test::kSampleInset)),
+            test::kBrightThreshold)
       << "scaling through the canvas must not flip the picture";
-  EXPECT_LT(RedOf(ReadBackRow(*api, width, kSampleInset)), kDarkThreshold);
+  EXPECT_LT(RedOf(ReadBackRow(*api, width, test::kSampleInset)),
+            test::kDarkThreshold);
 }
 
 // Present() is the sink's entry point, and the only one that swaps. Every
@@ -164,7 +123,8 @@ TEST_F(OrientationTest, ACanvasOfADifferentSizeStillLandsUpright) {
 // this one exists to prove the composed path is what Present() actually runs.
 TEST_F(OrientationTest, PresentRunsTheSameComposedPath) {
   base::scoped_refptr<VideoFrame> frame =
-      MakeTopWhiteFrame(kWindowSize, kWindowSize);
+      test::MakeTopHalfFrame(VideoFormat::kI420, kWindowSize, kWindowSize,
+                             test::kWhiteLuma, test::kBlackLuma);
   ASSERT_TRUE(frame);
 
   PresentTiming timing;

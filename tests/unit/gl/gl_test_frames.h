@@ -45,6 +45,34 @@ inline std::string Describe(const Rgb& c) {
          std::to_string(c.b) + ")";
 }
 
+// ---- The colour convention every pixel test compares against --------------
+//
+// Limited-range BT.601: 235 is white, 16 is black, 128 is neutral chroma. The
+// colour matrix turns those into 255 and 0 on every channel.
+//
+// These are shared rather than re-declared per test because they are a
+// CONVENTION, not a choice: a test that picked 255 and 0 would be asserting
+// full-range luma through a limited-range matrix, and it would still "pass" --
+// it would just be reading a different number than it thinks it is. Three
+// files in this directory carried private copies of all six, which is three
+// chances for one of them to drift in the one directory whose entire job is to
+// catch drift.
+inline constexpr uint8_t kWhiteLuma = 235;
+inline constexpr uint8_t kBlackLuma = 16;
+inline constexpr uint8_t kNeutralChroma = 128;
+
+// Red-flag thresholds rather than tolerances: 0 vs 255 through a known matrix
+// leaves nothing in between, so a value that lands between the two is a
+// DIFFERENT bug than the one under test -- which is the point of naming them
+// apart instead of writing a bare number at each comparison.
+inline constexpr int kBrightThreshold = 200;
+inline constexpr int kDarkThreshold = 50;
+
+// Crops the window to a multiple of four and leaves a margin at both ends, so
+// a bilinear sample that reaches one row past a half-way edge cannot decide
+// the answer.
+inline constexpr int kSampleInset = 4;
+
 // Fills |frame| so that every pixel has the same logical (Y, U, V), whatever
 // the format's plane layout is. Logical means the video's U and V, not the
 // plane index: YV12's plane 1 holds V, and NV12's plane 1 holds both words

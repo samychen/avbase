@@ -24,13 +24,17 @@
 #include <cmath>
 #include <cstddef>
 #include <deque>
+#include <numbers>
 #include <string>
 #include <utility>
 
+#include "base/functional/bind.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
+#include "media/base/native_display.h"
 #include "media/base/render_perf_stats.h"
 #include "media/base/video_frame.h"
+#include "media/base/video_renderer_sink.h"
 #include "media/gl/gl_present.h"
 #include "media/gl/gl_scene.h"
 
@@ -97,8 +101,13 @@ class SceneDemo {
       const double seconds = (base::TimeTicks::Now() - start_).InSecondsF();
       // A smooth 0 -> 1 -> 0 rather than a sawtooth: the point is to watch the
       // blend itself, and a jump back to zero would look like a dropped frame.
+      // std::numbers, not a literal and not M_PI: M_PI is a POSIX extension
+      // and exists in this build only because CMAKE_CXX_EXTENSIONS defaults
+      // to ON. media/filters/wsola_internals.h spells out its own kPi for the
+      // same reason -- but that one is internal to a media target, and an
+      // example reaching into media::internal would be worse than <numbers>.
       const double phase =
-          2.0 * 3.14159265358979323846 * seconds / kFadePeriodSeconds;
+          2.0 * std::numbers::pi_v<double> * seconds / kFadePeriodSeconds;
       const float opacity = static_cast<float>(0.5 - 0.5 * std::cos(phase));
       scene.SetLayerOpacity(second_layer_, opacity);
     }
@@ -110,6 +119,44 @@ class SceneDemo {
   std::deque<base::scoped_refptr<media::VideoFrame>> ring_;
   media::GlScene::LayerId second_layer_{media::GlScene::kNoLayer};
   base::TimeTicks start_;
+};
+
+// Wraps a host's sink factory so the demo's hook reaches the sink it creates.
+//
+// The sink is created INSIDE the player, so a factory is the only place a host
+// can get at it between construction and the player taking it over -- and
+// SetSceneUpdate()'s contract is exactly "before Start()".
+//
+// A template because the two hosts that needed it wrote it identically apart
+// from the two types and the name string; a third should not add a third
+// copy. |demo| doubles as the on/off switch: a null demo means no hook, which
+// is the same thing the separate bool used to say with one more field to keep
+// in agreement.
+template <typename SinkFactory, typename Sink>
+class SceneSinkFactory final : public media::VideoRendererSinkFactory {
+ public:
+  SceneSinkFactory(SceneDemo* demo, const char* name)
+      : demo_(demo), name_(name) {}
+
+  std::unique_ptr<media::VideoRendererSink>
+  Create(base::scoped_refptr<media::NativeDisplay> display) override {
+    std::unique_ptr<media::VideoRendererSink> sink =
+        SinkFactory().Create(std::move(display));
+    if (demo_ && demo_->enabled()) {
+      // static_cast, not dynamic_cast: RTTI is off project-wide, and the
+      // factory's contract is that it hands back a |Sink|.
+      static_cast<Sink*>(sink.get())
+          ->SetSceneUpdate(base::BindRepeating(&SceneDemo::OnFrame,
+                                               base::Unretained(demo_)));
+    }
+    return sink;
+  }
+
+  const char* name() const override { return name_; }
+
+ private:
+  SceneDemo* demo_;  // Borrowed; owned by the example's main().
+  const char* name_;
 };
 
 }  // namespace avbase::examples
