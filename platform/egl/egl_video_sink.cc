@@ -8,11 +8,17 @@
 
 #include "platform/egl/egl_gl_context.h"
 #include "platform/egl/egl_surface.h"
+#include "platform/hwimport/hw_importer_factory.h"
 
 namespace avbase::media {
 
 EglVideoSink::EglVideoSink(base::scoped_refptr<NativeDisplay> display)
-    : GlVideoSink(std::move(display), NativeDisplayKind::kEglWindow, "egl") {}
+    : GlVideoSink(std::move(display), NativeDisplayKind::kEglWindow, "egl") {
+  // Same contract as the GLFW backend: the backend is chosen by the HOST'S
+  // GRAPHICS STACK, not by the window system, so an EGL host on macOS gets the
+  // same CGL/IOSurface importer the GLFW one does (see platform/hwimport).
+  SetHwTextureImporter(platform::hwimport::CreateHwTextureImporter());
+}
 
 GlSurfaceBinding EglVideoSink::BindSurface(void* raw) {
   GlSurfaceBinding binding;
@@ -20,6 +26,8 @@ GlSurfaceBinding EglVideoSink::BindSurface(void* raw) {
   binding.context = std::make_unique<EglGLContext>(
       surface->display, surface->surface, surface->context);
   binding.overlay = surface->overlay;
+  binding.canvas_width = surface->canvas_width;
+  binding.canvas_height = surface->canvas_height;
   return binding;
 }
 

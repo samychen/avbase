@@ -12,7 +12,9 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/time/time.h"
 #include "media/gl/gl_present.h"
+#include "platform/hwimport/hw_importer_factory.h"
 #include "platform/sdl2/sdl_gl_context.h"
 #include "platform/sdl2/surface.h"
 
@@ -46,6 +48,11 @@ Sdl2VideoSink::Sdl2VideoSink(base::scoped_refptr<NativeDisplay> display)
   discard_.store(!display_ ||
                  display_->kind() != NativeDisplayKind::kSdl2Window ||
                  !display_->raw());
+  // The host's interop backend, installed here so this sink needs no
+  // second wiring step beyond the one GlVideoSink exposes: on macOS this is
+  // the same CGL/IOSurface importer the GLFW and EGL sinks get, because all
+  // three end up on a CGL context.
+  SetHwTextureImporter(platform::hwimport::CreateHwTextureImporter());
 }
 
 Sdl2VideoSink::~Sdl2VideoSink() {
@@ -84,7 +91,9 @@ void Sdl2VideoSink::Stop() {
   }
   // The presenter must die after the render thread is gone (its GL objects
   // belong to that thread's context) but before the host may destroy the
-  // context it lent us.
+  // context it lent us. The scene driver goes first: it only drops a borrow,
+  // and the presenter is what actually deletes the scene.
+  scene_.Shutdown();
   presenter_.reset();
   if (texture_) {
     SDL_DestroyTexture(static_cast<SDL_Texture*>(texture_));
@@ -117,7 +126,9 @@ void Sdl2VideoSink::SetOutputTarget(
   // Pick up the new renderer on the next present; swapping mid-frame is not
   // possible without owning the render sequence, and the next tick is at
   // most one interval away. The GL context travels the same way: the next
-  // present (re)builds the presenter for it, so drop the old one here.
+  // present (re)builds the presenter for it, so drop the old one -- and the
+  // scene, whose GL objects belong to that context -- here.
+  scene_.Shutdown();
   presenter_.reset();
   if (display_ && display_->kind() == NativeDisplayKind::kSdl2Window &&
       display_->raw()) {
@@ -154,20 +165,52 @@ VideoSinkStats Sdl2VideoSink::GetStats() const {
   stats.frames_presented = frames_presented_.load();
   stats.frames_dropped = frames_dropped_.load();
   stats.submit_failures = submit_failures_.load();
+  base::AutoLock scoped(stats_lock_);
+  stats.render = render_stats_;
+  if (present_interval_ms_.samples() > 0 &&
+      present_interval_ms_.average_ms() > 0.0) {
+    stats.measured_refresh_hz = 1000.0 / present_interval_ms_.average_ms();
+  }
   return stats;
 }
 
+void Sdl2VideoSink::NotePresentTiming(const PresentTiming& timing) {
+  const base::TimeTicks now = base::TimeTicks::Now();
+  base::AutoLock scoped(stats_lock_);
+  render_stats_.upload.Add(timing.upload_ms);
+  render_stats_.compose.Add(timing.compose_ms);
+  render_stats_.blit.Add(timing.blit_ms);
+  render_stats_.present.Add(timing.present_ms);
+  render_stats_.upload_path = timing.upload_path;
+  if (!last_present_ticks_.is_null() && now > last_present_ticks_) {
+    present_interval_ms_.Add((now - last_present_ticks_).InMillisecondsF());
+  }
+  last_present_ticks_ = now;
+}
+
 void Sdl2VideoSink::PresentOne() {
+  const base::TimeTicks frame_start = base::TimeTicks::Now();
   if (playing_.load() && callback_) {
     base::scoped_refptr<VideoFrame> frame =
         callback_->Render(base::TimeTicks(), base::TimeTicks());
-    // Zero-copy contract (avbase §6.2): a hardware frame arrives GPU-resident
-    // and SDL2's CPU blit cannot take it. The readback is EXPLICIT here --
-    // ToI420() -- so the GPU path stays the default and the cost shows up in
-    // exactly one place. A zero-copy SDL display path (NV12 texture import)
-    // is what replaces this when it lands; until then hardware playback is
-    // still correct, just with one readback per presented frame.
-    if (frame && !frame->IsMappable()) {
+    // Zero-copy contract (avbase §6.2): a hardware frame arrives GPU-resident.
+    // Which of two things happens to it is a property of the PATH it is about
+    // to take, not of the frame:
+    //
+    //   * the GL path, with an import backend installed, takes it as it is and
+    //     the presenter points its textures at the decoded surface;
+    //   * every other case -- the SDL_Renderer path, which uploads through
+    //     SDL_UpdateYUVTexture and therefore needs the plane bytes in CPU
+    //     memory -- reads it back, EXPLICITLY, here. That keeps the cost in
+    //     exactly one place, and keeps hardware playback CORRECT on a host
+    //     that cannot import: expensive, not broken.
+    //
+    // The gl_context_ term is the one that makes this sink different from
+    // GlVideoSink: it is a sink that can be running either path, and asking
+    // "can I import" before knowing which one is on would let the renderer
+    // path hand a GPU frame to a CPU upload.
+    if (frame && !frame->IsMappable() &&
+        !(gl_context_ && CanImportHardwareFrame(*frame))) {
       base::scoped_refptr<VideoFrame> mapped = frame->ToI420();
       if (!mapped) {
         // No readback path installed: treat as a submit failure so the
@@ -185,21 +228,52 @@ void Sdl2VideoSink::PresentOne() {
     }
     if (discard_.load() || !frame) {
       frames_dropped_.fetch_add(1);
-    } else if (UploadAndPresent(*frame)) {
+    } else if (UploadAndPresent(frame)) {
       frames_presented_.fetch_add(1);
     } else {
       submit_failures_.fetch_add(1);
     }
   }
   if (render_runner_) {
+    // Same budget-from-frame-start rule as GlVideoSink, for the same measured
+    // reason: SDL_RENDERER_PRESENTVSYNC makes SDL_RenderPresent block on the
+    // refresh, so adding a full interval on top of it would halve the rate.
+    const base::TimeDelta spent = base::TimeTicks::Now() - frame_start;
+    const bool present_waited = spent > kMaxPresentInterval / 2;
+    base::TimeDelta delay;
+    if (present_waited || spent >= kMaxPresentInterval) {
+      delay = base::TimeDelta();
+    } else {
+      delay = kMaxPresentInterval - spent;
+    }
     render_runner_->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&Sdl2VideoSink::PresentOne, base::Unretained(this)),
-        kMaxPresentInterval);
+        delay);
   }
 }
 
-bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
+void Sdl2VideoSink::SetSceneUpdate(GlSceneDriver::UpdateCallback callback) {
+  scene_.SetUpdateCallback(std::move(callback));
+}
+
+bool Sdl2VideoSink::CanImportHardwareFrame(const VideoFrame& frame) const {
+  if (!hw_importer_ || hw_import_failed_.load()) {
+    return false;
+  }
+  return hw_importer_->CanImport(frame);
+}
+
+void Sdl2VideoSink::SetHwTextureImporter(
+    std::unique_ptr<GlHwTextureImporter> importer) {
+  hw_importer_ = std::move(importer);
+  hw_import_failed_.store(false);
+  LOG(INFO) << "Sdl2VideoSink hardware import backend: "
+            << (hw_importer_ ? hw_importer_->name() : "none");
+}
+
+bool Sdl2VideoSink::UploadAndPresent(
+    const base::scoped_refptr<VideoFrame>& frame) {
   // GL path: the host supplied a context with the display. The presenter is
   // created lazily here because Init() must run on the render thread (it
   // makes the context current there).
@@ -208,6 +282,8 @@ bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
     auto presenter = std::make_unique<GlPresenter>(
         std::make_unique<SdlGLContext>(surface->window, gl_context_));
     presenter->SetOverlaySource(overlay_slot_);
+    presenter->SetCanvasSize(surface->canvas_width, surface->canvas_height);
+    presenter->SetHwTextureImporter(hw_importer_.get());
     if (!presenter->Init()) {
       // Context exists but the shader path is unusable (e.g. a GL 2.0-era
       // driver): report failure rather than silently degrade the picture.
@@ -218,18 +294,42 @@ bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
     presenter_ = std::move(presenter);
   }
   if (presenter_) {
-    return presenter_->Present(frame);
+    PresentTiming timing;
+    // One call either way: the driver forwards to Present() when the host
+    // installed no scene hook, so the single-frame path is not a second branch
+    // here that could drift from the scene one.
+    if (scene_.Present(*presenter_, frame, &timing)) {
+      NotePresentTiming(timing);
+      return true;
+    }
+    // The import was refused at the last step -- the backend accepted the
+    // frame but the driver would not point a texture at its surface. One
+    // readback beats a black screen, and the import stays off afterwards.
+    if (hw_importer_ && !frame->IsMappable() &&
+        !hw_import_failed_.exchange(true)) {
+      LOG(ERROR) << "Sdl2VideoSink hardware import failed at draw time; read "
+                    "back this frame and every frame after it";
+      base::scoped_refptr<VideoFrame> mapped = frame->ToI420();
+      if (mapped) {
+        PresentTiming retry;
+        if (scene_.Present(*presenter_, mapped, &retry)) {
+          NotePresentTiming(retry);
+          return true;
+        }
+      }
+    }
+    return false;
   }
   SDL_Renderer* renderer = static_cast<SDL_Renderer*>(renderer_);
   if (!renderer) {
     return false;
   }
-  const Uint32 pixel_format = SdlPixelFormat(frame.format());
+  const Uint32 pixel_format = SdlPixelFormat(frame->format());
   if (pixel_format == SDL_PIXELFORMAT_UNKNOWN) {
     return false;
   }
-  const SDL_Rect bounds{0, 0, frame.coded_size().width,
-                        frame.coded_size().height};
+  const SDL_Rect bounds{0, 0, frame->coded_size().width,
+                        frame->coded_size().height};
   // (Re)create the streaming texture when the coded size changed (Δ3's
   // resolution change arrives here as a new coded size, not an event).
   if (!texture_ || texture_width_ != bounds.w || texture_height_ != bounds.h) {
@@ -247,15 +347,33 @@ bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
     }
   }
   SDL_Texture* texture = static_cast<SDL_Texture*>(texture_);
-  const Uint8* y = frame.visible_data(VideoFrame::kYPlane).data();
-  const Uint8* u = frame.visible_data(VideoFrame::kUPlane).data();
-  const Uint8* v = frame.visible_data(VideoFrame::kVPlane).data();
+  const Uint8* y = frame->visible_data(VideoFrame::kYPlane).data();
+  const Uint8* u = frame->visible_data(VideoFrame::kUPlane).data();
+  const Uint8* v = frame->visible_data(VideoFrame::kVPlane).data();
   if (!y || !u || !v) {
     return false;
   }
-  const int y_pitch = frame.stride(VideoFrame::kYPlane);
-  const int u_pitch = frame.stride(VideoFrame::kUPlane);
-  const int v_pitch = frame.stride(VideoFrame::kVPlane);
+  // Time the same three stages the GL path reports, so the two backends stay
+  // comparable: SDL_UpdateYUVTexture is the copy into the GPU-visible texture
+  // (upload), the clear/copy/overlay triple is the draw (compose), and
+  // SDL_RenderPresent is the swap (present).
+  //
+  // Read compose_ms here as "command submission", not "drawing": SDL queues
+  // these and flushes them inside SDL_RenderPresent, so part of what the GL
+  // path charges to compose lands in present_ms instead. The split is not
+  // identical across backends, but neither number is wrong -- each measures
+  // the span its own API defines.
+  //
+  // blit_ms stays zero on purpose, and it is the one stage where zero is the
+  // right answer rather than a missing measurement: this path draws straight
+  // to the window, so there is no off-screen canvas to round trip through.
+  // Reporting nothing at all -- which is what this path used to do -- read as
+  // "every stage is free", and that is the failure mode the fields exist to
+  // prevent.
+  const base::TimeTicks t_upload_begin = base::TimeTicks::Now();
+  const int y_pitch = frame->stride(VideoFrame::kYPlane);
+  const int u_pitch = frame->stride(VideoFrame::kUPlane);
+  const int v_pitch = frame->stride(VideoFrame::kVPlane);
   int updated = -1;
   if (pixel_format == SDL_PIXELFORMAT_NV12) {
     updated = SDL_UpdateNVTexture(texture, &bounds, y, y_pitch, u, u_pitch);
@@ -274,10 +392,21 @@ bool Sdl2VideoSink::UploadAndPresent(const VideoFrame& frame) {
   if (updated != 0) {
     return false;
   }
+  const base::TimeTicks t_upload_end = base::TimeTicks::Now();
   SDL_RenderClear(renderer);
   SDL_RenderCopy(renderer, texture, nullptr, nullptr);
   PresentOverlay(renderer_);
+  const base::TimeTicks t_compose_end = base::TimeTicks::Now();
   SDL_RenderPresent(renderer);
+  const base::TimeTicks t_present_end = base::TimeTicks::Now();
+
+  PresentTiming timing;
+  timing.upload_ms = (t_upload_end - t_upload_begin).InMillisecondsF();
+  timing.compose_ms = (t_compose_end - t_upload_end).InMillisecondsF();
+  timing.present_ms = (t_present_end - t_compose_end).InMillisecondsF();
+  // Straight to the window, so the CPU frame we just handed SDL is the route.
+  timing.upload_path = UploadPath::kCpuSync;
+  NotePresentTiming(timing);
   return true;
 }
 

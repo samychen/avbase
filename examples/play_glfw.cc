@@ -8,7 +8,8 @@
 // glfwPollEvents and quitting. Audio goes through the null sink, since GLFW
 // ships no audio API of its own.
 //
-//   ./play_glfw --url video.mp4 [--max-seconds n]
+//   ./play_glfw --url video.mp4 [--max-seconds n] [--stats] [--canvas WxH]
+//                [--scene pip|fade]
 //
 // Exit codes: 0 played to completion (or the --max-seconds cap), 1 error.
 
@@ -21,11 +22,20 @@
 #include <thread>
 #include <utility>
 
+// GLFW pulls in the platform's GL header by default. Nothing in this example
+// calls GL directly today -- but the moment it does (a screenshot, a probe
+// shader), the platform header collides with glad's and the build fails with
+// "OpenGL (gl.h) header already included". GLFW_INCLUDE_NONE is the supported
+// way to say "no GL header, thanks", and it must come first.
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
 #include "base/check.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
+#include "examples/scene_demo.h"
 #include "media/filters/null_audio_sink.h"
 #include "platform/glfw/glfw_surface.h"
 #include "platform/glfw/glfw_video_sink.h"
@@ -42,12 +52,29 @@ constexpr int kWindowHeight = 540;
 std::atomic<bool> g_quit{false};
 std::atomic<bool> g_error{false};
 std::atomic<bool> g_completed{false};
+// --stats: print the full PlaybackStats JSON on each one-second tick instead
+// of the position line. Off by default so ordinary runs stay readable.
+std::atomic<bool> g_print_stats{false};
 
 avbase::Player* g_player{nullptr};  // Set in main; outlives the event loop.
+
+// --scene: the multi-source demo. Held by the process rather than by main
+// because the sink's callback outlives main's locals -- the sink is destroyed
+// inside the player, well after the value would have gone out of scope.
+std::unique_ptr<avbase::examples::SceneDemo> g_scene;
 
 struct Options {
   std::string url;
   int max_seconds{0};
+  bool stats{false};
+  // --canvas WxH composes at a fixed resolution and scales to the window;
+  // 0 (the default) means the composition surface follows the window.
+  int canvas_width{0};
+  int canvas_height{0};
+  // --scene pip|fade adds a second layer to the composition so the whole
+  // scene path runs on a real window. Empty means the plain single-source
+  // path. See examples/scene_demo.h.
+  std::string scene;
 };
 
 bool ParseOptions(int argc, char** argv, Options* out) {
@@ -58,10 +85,27 @@ bool ParseOptions(int argc, char** argv, Options* out) {
       out->url = argv[++i];
     } else if (arg == "--max-seconds" && i + 1 < argc) {
       out->max_seconds = std::atoi(argv[++i]);
+    } else if (arg == "--canvas" && i + 1 < argc) {
+      if (std::sscanf(argv[++i], "%dx%d", &out->canvas_width,
+                      &out->canvas_height) != 2 ||
+          out->canvas_width <= 0 || out->canvas_height <= 0) {
+        std::fprintf(stderr, "--canvas wants WxH, e.g. --canvas 1920x1080\n");
+        return false;
+      }
+    } else if (arg == "--scene" && i + 1 < argc) {
+      out->scene = argv[++i];
+      if (!avbase::examples::SceneDemo::IsKnownMode(out->scene)) {
+        std::fprintf(stderr, "--scene wants pip or fade\n");
+        return false;
+      }
+    } else if (arg == "--stats") {
+      out->stats = true;
     }
   }
   if (out->url.empty()) {
-    std::fprintf(stderr, "usage: %s --url <file-or-url> [--max-seconds n]\n",
+    std::fprintf(stderr,
+                 "usage: %s --url <file-or-url> [--max-seconds n] [--stats]\n"
+                 "       [--canvas WxH] [--scene pip|fade]\n",
                  argv[0]);
     return false;
   }
@@ -77,6 +121,14 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
   } else if (e.type == avbase::EventType::kCompleted) {
     g_completed.store(true);
   } else if (e.type == avbase::EventType::kStats) {
+    if (g_print_stats.load()) {
+      if (const auto* payload = avbase::AsStats(e)) {
+        // One line of JSON per tick, so a benchmark harness can parse it
+        // without a second tool.
+        std::printf("stats %s\n", payload->stats.ToJson().c_str());
+      }
+      return;
+    }
     std::printf("position %s / --\n", e.media_time.ToString().c_str());
   }
 }
@@ -125,6 +177,37 @@ bool GlRuntimeWorks() {
   }
   return status != 0;
 }
+
+// The plain factory, plus the --scene hook when the host asked for one.
+//
+// The sink is created inside the player, so this factory is the only place a
+// host can reach it between construction and the player taking it over -- and
+// GlVideoSink::SetSceneUpdate()'s contract is exactly "before Start()".
+class SceneSinkFactory final : public avbase::media::VideoRendererSinkFactory {
+ public:
+  explicit SceneSinkFactory(bool install_scene) : install_(install_scene) {}
+
+  std::unique_ptr<avbase::media::VideoRendererSink>
+  Create(avbase::base::scoped_refptr<avbase::media::NativeDisplay> display)
+      override {
+    std::unique_ptr<avbase::media::VideoRendererSink> sink =
+        avbase::media::GlfwVideoSinkFactory().Create(std::move(display));
+    if (install_) {
+      // static_cast, not dynamic_cast: RTTI is off project-wide, and the
+      // factory's contract is that it hands back a GlfwVideoSink.
+      auto* gl_sink = static_cast<avbase::media::GlfwVideoSink*>(sink.get());
+      gl_sink->SetSceneUpdate(
+          avbase::base::BindRepeating(&avbase::examples::SceneDemo::OnFrame,
+                                      avbase::base::Unretained(g_scene.get())));
+    }
+    return sink;
+  }
+
+  const char* name() const override { return "glfw-demo"; }
+
+ private:
+  bool install_;
+};
 
 bool CreateGlfwWindow(GLFWwindow** window) {
   DCHECK(window);
@@ -199,16 +282,22 @@ int main(int argc, char** argv) {
   GlfwSurface surface;
   surface.window = window;
   surface.overlay = nullptr;
+  surface.canvas_width = options.canvas_width;
+  surface.canvas_height = options.canvas_height;
   auto display = avbase::media::NativeDisplay::FromGlfwWindow(&surface);
 
   auto deps = std::make_unique<avbase::Deps>();
+  if (!options.scene.empty()) {
+    g_scene = std::make_unique<avbase::examples::SceneDemo>(options.scene);
+  }
   deps->video_sink_factory =
-      std::make_shared<avbase::media::GlfwVideoSinkFactory>();
+      std::make_shared<SceneSinkFactory>(g_scene != nullptr);
   deps->audio_sink_factory =
       std::make_shared<avbase::media::NullAudioSinkFactory>();
 
   avbase::Player player(avbase::PlayerConfig(), std::move(deps));
   g_player = &player;
+  g_print_stats.store(options.stats);
   player.SetEventHandler(avbase::base::BindRepeating(&OnPlayerEvent));
   player.SetVideoSurface(display);
   if (const avbase::Status s = player.SetDataSource(options.url); !s) {

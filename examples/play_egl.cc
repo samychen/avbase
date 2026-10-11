@@ -14,7 +14,7 @@
 // A real host builds the EGLSurface from its own window system; here a pbuffer
 // surface keeps the example self-contained and window-system-free.
 //
-//   ./play_egl --url video.mp4 [--max-seconds n]
+//   ./play_egl --url video.mp4 [--max-seconds n] [--stats]
 //
 // Exit codes: 0 played to completion (or the --max-seconds cap), 1 error.
 
@@ -46,6 +46,9 @@ constexpr auto kPollInterval = 10ms;
 std::atomic<bool> g_quit{false};
 std::atomic<bool> g_error{false};
 std::atomic<bool> g_completed{false};
+// --stats: print the full PlaybackStats JSON on each one-second tick instead
+// of the position line.
+std::atomic<bool> g_print_stats{false};
 
 avbase::Player* g_player{nullptr};
 
@@ -57,6 +60,7 @@ EGLContext g_context = EGL_NO_CONTEXT;
 struct Options {
   std::string url;
   int max_seconds{0};
+  bool stats{false};
 };
 
 bool ParseOptions(int argc, char** argv, Options* out) {
@@ -67,10 +71,13 @@ bool ParseOptions(int argc, char** argv, Options* out) {
       out->url = argv[++i];
     } else if (arg == "--max-seconds" && i + 1 < argc) {
       out->max_seconds = std::atoi(argv[++i]);
+    } else if (arg == "--stats") {
+      out->stats = true;
     }
   }
   if (out->url.empty()) {
-    std::fprintf(stderr, "usage: %s --url <file-or-url> [--max-seconds n]\n",
+    std::fprintf(stderr,
+                 "usage: %s --url <file-or-url> [--max-seconds n] [--stats]\n",
                  argv[0]);
     return false;
   }
@@ -86,6 +93,12 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
   } else if (e.type == avbase::EventType::kCompleted) {
     g_completed.store(true);
   } else if (e.type == avbase::EventType::kStats) {
+    if (g_print_stats.load()) {
+      if (const auto* payload = avbase::AsStats(e)) {
+        std::printf("stats %s\n", payload->stats.ToJson().c_str());
+      }
+      return;
+    }
     std::printf("position %s / --\n", e.media_time.ToString().c_str());
   }
 }
@@ -250,6 +263,7 @@ int main(int argc, char** argv) {
   avbase::Player player(avbase::PlayerConfig(), std::move(deps));
   g_player = &player;
   player.SetEventHandler(avbase::base::BindRepeating(&OnPlayerEvent));
+  g_print_stats.store(options.stats);
   player.SetVideoSurface(display);
   if (const avbase::Status s = player.SetDataSource(options.url); !s) {
     std::fprintf(stderr, "SetDataSource failed: %s\n",

@@ -10,11 +10,16 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/threading/thread.h"
+#include "base/time/time.h"
 #include "media/base/native_display.h"
+#include "media/base/render_perf_stats.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
+#include "media/gl/gl_hw_texture_importer.h"
+#include "media/gl/gl_scene_driver.h"
 #include "media/media_export.h"
 #include "platform/sdl2/surface.h"
 
@@ -58,13 +63,38 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
   VideoSinkStats GetStats() const override;
   const char* name() const override { return "Sdl2VideoSink"; }
 
+  // Optional multi-source composition on the GL path; see GlSceneDriver and
+  // GlVideoSink::SetSceneUpdate(), whose contract this is. It has no effect
+  // without a GL context (the SDL_Renderer path draws straight to the window
+  // and has nowhere to compose a second source), so a host passing --gl is
+  // also what enables it.
+  void SetSceneUpdate(GlSceneDriver::UpdateCallback callback);
+
+  // Installs the host's hardware-import backend; see
+  // GlVideoSink::SetHwTextureImporter(), whose contract this is.
+  //
+  // It applies to the GL path only. The SDL_Renderer path uploads through
+  // SDL_UpdateYUVTexture, which needs the plane bytes in CPU memory whatever
+  // the host can do -- so a hardware frame on that path is read back every
+  // time, and reporting anything else would be a lie about a copy.
+  void SetHwTextureImporter(std::unique_ptr<GlHwTextureImporter> importer);
+
  private:
   void PresentOne();
+  // True when the GL path will take |frame| as it is. False without an
+  // importer, after one refusal, or for a frame the backend declines.
+  // Deliberately does NOT ask whether a GL context exists: the SDL_Renderer
+  // path can never import, and that is the caller's distinction to make.
+  bool CanImportHardwareFrame(const VideoFrame& frame) const;
+  // Folds one present's stage timings into the published snapshot. Same shape
+  // and same reasoning as GlVideoSink's: render thread writes, the media
+  // sequence's statistics tick reads, and the lock protects only the copy.
+  void NotePresentTiming(const PresentTiming& timing);
   // SDL_Renderer-path overlay pass; see Present()'s GL counterpart.
   void PresentOverlay(void* renderer);  // SDL_Renderer*.
   // Uploads |frame| into the sink-owned streaming texture and presents it.
   // Returns false when the frame format is not one the sink draws.
-  bool UploadAndPresent(const VideoFrame& frame);
+  bool UploadAndPresent(const base::scoped_refptr<VideoFrame>& frame);
 
   base::scoped_refptr<NativeDisplay> display_;
   base::raw_ptr<RenderCallback> callback_{nullptr};
@@ -85,7 +115,17 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
   int last_overlay_version_{-1};
   // Set when the host supplied an SDL_GLContext; owns the shader path.
   void* gl_context_{nullptr};
+  // Declared before presenter_, which borrows it: members die in reverse, so
+  // the presenter is destroyed first and never sees a dangling importer.
+  std::unique_ptr<GlHwTextureImporter> hw_importer_;
+  // Sticky, for the same reason as GlVideoSink's: a driver that refuses the
+  // interop API refuses it for every frame after the first.
+  std::atomic<bool> hw_import_failed_{false};
   std::unique_ptr<GlPresenter> presenter_;
+  // Keeps a scene in step with the frames when the host installed a hook;
+  // unused (and allocates nothing) otherwise. Declared after presenter_ so it
+  // dies first -- its scene belongs to that presenter.
+  GlSceneDriver scene_;
   // Borrowed from the display's Sdl2Surface; may be null.
   gl::TextOverlaySlot* overlay_slot_{nullptr};
 
@@ -96,6 +136,14 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
   std::atomic<uint64_t> frames_presented_{0};
   std::atomic<uint64_t> frames_dropped_{0};
   std::atomic<uint64_t> submit_failures_{0};
+
+  // Render telemetry. Only the GL path fills it: the SDL_Renderer path has no
+  // GL calls to time, and reporting a made-up number for it would be worse
+  // than reporting nothing.
+  mutable base::Lock stats_lock_;
+  RenderPerfStats render_stats_;
+  DurationEwma present_interval_ms_;
+  base::TimeTicks last_present_ticks_;
 };
 
 class AVBASE_MEDIA_EXPORT Sdl2VideoSinkFactory final

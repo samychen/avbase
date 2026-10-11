@@ -6,7 +6,8 @@
 // renderer (embedding is the core mode, docs/archive/09 §2), avbase renders
 // into them, and the main thread's only jobs are SDL_PollEvent and quitting.
 //
-//   ./play_sdl2 --url video.mp4 [--max-seconds n] [--gl]
+//   ./play_sdl2 --url video.mp4 [--max-seconds n] [--gl] [--stats]
+//                [--canvas WxH]
 //
 // Exit codes: 0 played to completion (or the --max-seconds cap), 1 error.
 
@@ -24,7 +25,9 @@
 
 #include "base/check.h"
 #include "base/functional/bind.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
+#include "examples/scene_demo.h"
 #include "media/base/timed_text.h"
 #include "platform/sdl2/sdl2_audio_sink.h"
 #include "platform/sdl2/sdl2_video_sink.h"
@@ -44,6 +47,9 @@ constexpr int kWindowHeight = 540;
 std::atomic<bool> g_quit{false};
 std::atomic<bool> g_error{false};
 std::atomic<bool> g_completed{false};
+// --stats: print the full PlaybackStats JSON on each one-second tick instead
+// of the position line.
+std::atomic<bool> g_print_stats{false};
 
 // The subtitle overlay the host publishes into (surface.h's TextOverlaySlot
 // contract): kTimedText events rasterize into it, kStats media time expires
@@ -55,6 +61,11 @@ bool g_text_track_selected{false};
 int g_video_width{0};
 int g_video_height{0};
 avbase::Player* g_player{nullptr};  // Set in main; outlives the event loop.
+
+// --scene: the multi-source demo. Held by the process rather than by main
+// because the sink's callback outlives main's locals -- the sink is destroyed
+// inside the player, well after the value would have gone out of scope.
+std::unique_ptr<avbase::examples::SceneDemo> g_scene;
 
 // A first-cut font resolution: the demo is not the SDK. A real host points
 // at the user's configured font; these cover this machine's defaults.
@@ -127,6 +138,14 @@ struct Options {
   // instead of SDL_Renderer. Default off keeps the verified SDL_Renderer
   // path the default.
   bool gl{false};
+  bool stats{false};
+  // --canvas WxH: compose at a fixed resolution on the GL path and scale to
+  // the window. Needs --gl; the SDL_Renderer path has no off-screen target.
+  int canvas_width{0};
+  int canvas_height{0};
+  // --scene pip|fade: add a second layer to the GL path's composition. Needs
+  // --gl for the same reason --canvas does. See examples/scene_demo.h.
+  std::string scene;
 };
 
 bool ParseOptions(int argc, char** argv, Options* out) {
@@ -137,15 +156,43 @@ bool ParseOptions(int argc, char** argv, Options* out) {
       out->url = argv[++i];
     } else if (arg == "--max-seconds" && i + 1 < argc) {
       out->max_seconds = std::atoi(argv[++i]);
+    } else if (arg == "--canvas" && i + 1 < argc) {
+      if (std::sscanf(argv[++i], "%dx%d", &out->canvas_width,
+                      &out->canvas_height) != 2 ||
+          out->canvas_width <= 0 || out->canvas_height <= 0) {
+        std::fprintf(stderr, "--canvas wants WxH, e.g. --canvas 1920x1080\n");
+        return false;
+      }
+    } else if (arg == "--scene" && i + 1 < argc) {
+      out->scene = argv[++i];
+      if (!avbase::examples::SceneDemo::IsKnownMode(out->scene)) {
+        std::fprintf(stderr, "--scene wants pip or fade\n");
+        return false;
+      }
     } else if (arg == "--gl") {
       out->gl = true;
+    } else if (arg == "--stats") {
+      out->stats = true;
     }
   }
   if (out->url.empty()) {
     std::fprintf(stderr,
                  "usage: %s --url <file-or-url> "
-                 "[--max-seconds n] [--gl]\n",
+                 "[--max-seconds n] [--gl] [--stats] [--canvas WxH]\n"
+                 "       [--scene pip|fade]\n",
                  argv[0]);
+    return false;
+  }
+  if ((out->canvas_width > 0 || out->canvas_height > 0) && !out->gl) {
+    std::fprintf(stderr,
+                 "--canvas needs --gl: the SDL_Renderer path has no "
+                 "off-screen composition target\n");
+    return false;
+  }
+  if (!out->scene.empty() && !out->gl) {
+    std::fprintf(stderr,
+                 "--scene needs --gl: the SDL_Renderer path draws straight "
+                 "to the window and has nowhere to compose a second layer\n");
     return false;
   }
   return true;
@@ -196,6 +243,12 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
         e.media_time > g_current_cue.pts + g_current_cue.duration) {
       g_overlay.Clear();
       g_current_cue = avbase::media::TimedTextCue();
+    }
+    if (g_print_stats.load()) {
+      if (const auto* payload = avbase::AsStats(e)) {
+        std::printf("stats %s\n", payload->stats.ToJson().c_str());
+      }
+      return;
     }
     std::printf("position %s / %s\n", e.media_time.ToString().c_str(), "--");
   }
@@ -332,6 +385,35 @@ int PumpEventsUntilDone(int max_seconds) {
   return g_error.load() ? 1 : 0;
 }
 
+// The plain factory, plus the --scene hook when the host asked for one; see
+// play_glfw.cc for the same wrapper and why it is the only place a host can
+// reach the sink before the player takes it over.
+class SceneSinkFactory final : public avbase::media::VideoRendererSinkFactory {
+ public:
+  explicit SceneSinkFactory(bool install_scene) : install_(install_scene) {}
+
+  std::unique_ptr<avbase::media::VideoRendererSink>
+  Create(avbase::base::scoped_refptr<avbase::media::NativeDisplay> display)
+      override {
+    std::unique_ptr<avbase::media::VideoRendererSink> sink =
+        avbase::media::Sdl2VideoSinkFactory().Create(std::move(display));
+    if (install_) {
+      // static_cast, not dynamic_cast: RTTI is off project-wide, and the
+      // factory's contract is that it hands back an Sdl2VideoSink.
+      auto* sdl_sink = static_cast<avbase::media::Sdl2VideoSink*>(sink.get());
+      sdl_sink->SetSceneUpdate(
+          avbase::base::BindRepeating(&avbase::examples::SceneDemo::OnFrame,
+                                      avbase::base::Unretained(g_scene.get())));
+    }
+    return sink;
+  }
+
+  const char* name() const override { return "sdl2-demo"; }
+
+ private:
+  bool install_;
+};
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -354,18 +436,24 @@ int main(int argc, char** argv) {
   surface.renderer = renderer;
   surface.gl_context = gl_context;
   surface.overlay = &g_overlay;
+  surface.canvas_width = options.canvas_width;
+  surface.canvas_height = options.canvas_height;
   g_font_path = FindDemoFont();
   auto display = avbase::media::NativeDisplay::FromSdl2Window(&surface);
 
   auto deps = std::make_unique<avbase::Deps>();
+  if (!options.scene.empty()) {
+    g_scene = std::make_unique<avbase::examples::SceneDemo>(options.scene);
+  }
   deps->video_sink_factory =
-      std::make_shared<avbase::media::Sdl2VideoSinkFactory>();
+      std::make_shared<SceneSinkFactory>(g_scene != nullptr);
   deps->audio_sink_factory =
       std::make_shared<avbase::media::Sdl2AudioSinkFactory>();
 
   avbase::Player player(avbase::PlayerConfig(), std::move(deps));
   g_player = &player;
   player.SetEventHandler(avbase::base::BindRepeating(&OnPlayerEvent));
+  g_print_stats.store(options.stats);
   player.SetVideoSurface(display);
   if (const avbase::Status s = player.SetDataSource(options.url); !s) {
     std::fprintf(stderr, "SetDataSource failed: %s\n",
