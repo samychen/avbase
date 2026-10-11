@@ -3001,3 +3001,102 @@ L4 硬件零拷贝）。剩下的差距在**播放器层而不是渲染层**：a
 （`VideoRendererSink` 一次一帧），「N 路独立解码 → N 个图层」要 N 个解码器实例。
 另外记一个**已存在**的现象：sink 的帧率上限由 `PostDelayedTask` 决定（每次唤醒超 ~1.8 ms），
 vsync 不阻塞时 60 fps 素材只能跑到 ~53；修法是按上一次的**计划**起始时间累加，而不是按「现在」。
+
+---
+
+## 第六十四轮：「已报告未做」的 9 项（任务 #146–154）
+
+第六十三轮的四 reviewer 并行清理报告了 9 项「已报告未做」。本轮逐条落地，**每条配反证**，
+切成 8 个提交（#146–#153 五片 + #154 三片）。
+
+### 九项与它们的反证
+
+| # | 项 | 反证 |
+| --- | --- | --- |
+| 146 | 读回失败的一帧被同时计入 `submit_failures_` 与 `frames_dropped_` → `ClassifyFrameOutcome()` 返回 `FrameOutcome`，`NoteFrameOutcome()` 是唯一记账入口 | 旧双分支写法现在**编译不过**；去掉 readback 规则则行为测试红 |
+| 147 | `null_video_sink` 迁到 `PresentStats` + `NextFrameDelay` | — |
+| 148 | `ImportPlane` 五个布局参数收成 `PlaneUploadLayout`（7 参 → 2 参） | — |
+| 149 | NaN 政策不一致 → 统一为「非有限即拒绝 / 按 0 处理」 | 测试记录的是**实测契约**（所有非有限都按 0，不是我以为的 clamp 到 1） |
+| 150 | `GlProgram` 按 program 缓存 uniform location（-1 也缓存，Set 到 -1 是 no-op） | 改成 static 共享 map → per-program 测试红 |
+| 151 | `kYuvFragmentShaderBody` / `kYuvRectFragmentShaderBody` 合并成**一份文本 + 两组 `#define`** | 把 rect 组的 `LUMA_COORD` 改成一个不存在的 uniform → **8 个 scene 测试立刻红** |
+| 152 | `GlScene::CreateWithPrograms` 复用 presenter 已编译的 program（单视频路径每帧重设 `uRect`） | 去掉每帧 `uRect` → 该测试红 |
+| 153 | 导入回退收进 `GlVideoLayer::Upload` | 去掉回退 → **7 条红 6 条**，剩下那条正是与回退无关的「读不回来」 |
+| 154 | 输出策略化（见下） | 反转 `has_gl_route()` → **4 条红 3 条**，剩下那条是无关的生命周期断言 |
+
+### #151：shader 只有一份文本
+
+两份 body 逐字相同，只差采样器类型和坐标怎么算（`sampler2D` 用归一化坐标，
+`sampler2DRect` 要乘上 `uTexSize` / `uChromaSize` 换成 texel）。现在是一份
+`kYuvFragmentShaderBody` 加 `kYuvSampler2DDefines` / `kYuvSamplerRectDefines` 两组宏，
+`CreateLayerProgram(gl, sampler_defines, error)` 拼起来编译。
+`uTexSize` / `uChromaSize` 在 2D 那份里声明但未用，链接期丢掉 —— 所以 `Bind()` 只在
+RECTANGLE 时设它们。
+
+### #153：回退在图层里，粘滞挂在后端指针上
+
+`GlVideoLayer::Upload()` 三条路一个入口：
+
+1. `IsMappable()` → 拷贝路线；
+2. 否则 `CanImport()` → 导入路线；
+3. 被拒（后端说行、驱动说不行）或根本没有后端 → **读 `ToI420()` 再拷贝**。
+
+回退放在图层而不是 sink，因为那是最后一处还知道帧活着且没被用过的地方：sink 已经把帧
+交出去了，从那儿重试会为了一层失败重走整个场景。
+
+粘滞状态是 `refused_importer_`（**后端指针**，不是 bool）—— 换后端自动重新获得机会，
+不需要谁记得清 flag。`CanImport()` 拒绝一个**格式**不算驱动拒绝，不会连累后面每一帧
+（一个以 P010 关键帧开头的流不该整段都走回读）。
+
+回退必须把纹理从 RECTANGLE **换回 2D**：导入时已经切过去了，而 2D program 采样
+rectangle 纹理画不出东西，且每一个调用都成功。
+
+### #154：输出 = 一个 `GlOutputTarget`，不是第二个 sink
+
+`media/gl/gl_output_target.h`：
+
+```
+SetSurface(raw)              display 的 surface 变了（含变成 null）
+has_gl_route()               这条路走不走 GL
+BindSurface()                GL 路线：presenter 要的 context / overlay / canvas
+PresentWithoutGl(frame, t)   非 GL 路线：自己画，填同样的三段耗时
+ReleaseOutput()              渲染线程已 join 后释放
+```
+
+渲染线程、节拍、统计、场景驱动、硬件导入器全在 `GlVideoSink` 里，对所有后端一致。
+后端 = 一个 target：`Sdl2VideoSink` 从约 500 行变成 10 行（装 `Sdl2OutputTarget` + 导入器），
+SDL_Renderer 那半整个搬进 `Sdl2OutputTarget` —— 它是唯一回答 `has_gl_route() == false` 的，
+因为 `SDL_UpdateYUVTexture` 无论宿主多能干都要 CPU 里的字节。GLFW / EGL 的目标各十行，
+`has_gl_route()` 无条件为真。
+
+sink 侧仍留一个问题：**GPU 帧在 `has_gl_route() == false` 的目标上要先读回** —— 只有
+目标知道，问错了就是把 GPU 帧交给一个要 CPU 字节的 API。
+
+**顺带修掉一个真 bug**：SDL2 原先在 `Start()` 里同步跑一次 `PresentOne()`，于是第一帧的
+context 是在 `Start()` 的**调用线程**上被 make current 的，正是 `GlVideoSink` 注释里警告过
+的所有权错配。现在两条路都走 post。
+
+### 新测试目录 `tests/unit/media_gl/`
+
+按「需不需要 GL context」分，不按主题：需要 `media/gl` 但不需要 context 的那类（sink 的
+路由 —— 它在 context 存在之前就定了）进 `media_unittests`；要读像素的留在 `unit/gl/` 的
+GLFW 门控下。
+
+### 验证
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（**437** 文件） |
+| `clang-format` 全树 | 0 偏离 |
+| GLFW 预设 + `-Werror` | ctest **660/660** |
+| macos-sdl2 预设 + `-Werror` | ctest **618/618** |
+| no-ffmpeg 预设 + `-Werror` | ctest **497/497** |
+| 真机 `play_sdl2 --stats` | `cpu_sync`，blit 0，29.99 fps |
+| 真机 `play_sdl2 --gl --stats` | `hw_zero_copy`，blit 0.020，29.98 fps |
+| 真机 `play_glfw --stats` | `hw_zero_copy`，blit 0.025 |
+
+（`play_glfw` 的 26 fps 是 3 s 素材 + 启动段的读数，不是回归；短素材让测量工具撒谎。）
+
+### 下一步
+
+L5 多源编排（任务 #141–145，未开始）：`LatestFrameQueue` / `GlLayerSource` /
+`GlSceneEngine`。播放器管线仍是单源（`VideoRendererSink` 一次一帧）。
