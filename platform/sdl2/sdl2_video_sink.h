@@ -87,7 +87,7 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
   void* gl_context_{nullptr};
   std::unique_ptr<GlPresenter> presenter_;
   // Borrowed from the display's Sdl2Surface; may be null.
-  TextOverlaySlot* overlay_slot_{nullptr};
+  gl::TextOverlaySlot* overlay_slot_{nullptr};
 
   // Cross-thread flags: written from any thread (Pause/Play/SetOutputTarget
   // are callable anywhere), read on the render thread.

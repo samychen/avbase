@@ -12,9 +12,9 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "media/gl/gl_present.h"
 #include "platform/sdl2/sdl_gl_context.h"
 #include "platform/sdl2/surface.h"
-#include "render/gl/gl_present.h"
 
 namespace avbase::media {
 namespace {
@@ -289,7 +289,7 @@ void Sdl2VideoSink::PresentOverlay(void* renderer) {
   if (!overlay_slot_) {
     return;
   }
-  const TextOverlay overlay = overlay_slot_->Snapshot();
+  const gl::TextOverlay overlay = overlay_slot_->Snapshot();
   if (!overlay.valid ||
       overlay.rgba.size() != static_cast<size_t>(overlay.width) *
                                  static_cast<size_t>(overlay.height) * 4u) {

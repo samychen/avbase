@@ -18,8 +18,8 @@
 // hints) and make the context current at least once so GlRuntimeWorks-style
 // probing can run before playback starts.
 struct GlfwSurface {
-  void* window{nullptr};              // GLFWwindow*, host-owned.
-  TextOverlaySlot* overlay{nullptr};  // Optional; composited over each frame.
+  void* window{nullptr};                          // GLFWwindow*, host-owned.
+  avbase::gl::TextOverlaySlot* overlay{nullptr};  // Optional; per frame.
 };
 
 #endif  // AVBASE_PLATFORM_GLFW_GLFW_SURFACE_H_

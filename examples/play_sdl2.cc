@@ -48,7 +48,7 @@ std::atomic<bool> g_completed{false};
 // The subtitle overlay the host publishes into (surface.h's TextOverlaySlot
 // contract): kTimedText events rasterize into it, kStats media time expires
 // it. Lives as long as |surface| below.
-TextOverlaySlot g_overlay;
+avbase::gl::TextOverlaySlot g_overlay;
 avbase::media::TimedTextCue g_current_cue;
 std::string g_font_path;
 bool g_text_track_selected{false};
@@ -84,7 +84,7 @@ void OnTimedText(const avbase::TimedTextPayload& payload) {
     g_current_cue = avbase::media::TimedTextCue();
     return;
   }
-  TextOverlay overlay;
+  avbase::gl::TextOverlay overlay;
   overlay.width = bitmap.width;
   overlay.height = bitmap.height;
   overlay.rgba = std::move(bitmap.rgba);

@@ -55,11 +55,13 @@ configure_file(cmake/BuildConfig.h.in "${CMAKE_BINARY_DIR}/generated/avbase/Buil
 configure_file(cmake/Version.h.in     "${CMAKE_BINARY_DIR}/generated/avbase/Version.h"     @ONLY)
 
 add_subdirectory(base)
+# render/ publishes the standalone GL module (avbase_gl). It depends on nothing
+# else in the tree, and media/gl links it, so it must come before media.
+add_subdirectory(render)
 add_subdirectory(media)
 add_subdirectory(player)
-# render/ supplies the graphics-API layer (render/gl) that platform/'s window
-# systems plug into, so it comes before the backends that link it.
-add_subdirectory(render)
+# platform/ supplies the window systems that plug into both of the above, so it
+# comes last.
 add_subdirectory(platform)
 if(AVBASE_BUILD_EXAMPLES)
   add_subdirectory(examples)

@@ -14,7 +14,7 @@ namespace avbase::media {
 // NativeGLContext backed by GLFW. Wraps a host-owned GLFWwindow* (whose GL
 // context is current on the calling thread). Borrowed semantics -- the
 // destructor does NOT destroy the host's window/context.
-class GlfwGLContext final : public NativeGLContext {
+class GlfwGLContext final : public gl::NativeGLContext {
  public:
   explicit GlfwGLContext(void* window);
   ~GlfwGLContext() override = default;

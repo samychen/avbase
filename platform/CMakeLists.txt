@@ -5,7 +5,7 @@
 # docs/archive/09 for the decision that moved it there.
 
 # The shared GL rendering layer used to live here as platform/gl/. It moved to
-# render/gl/ (target avbase::render_gl): this directory holds what the HOST
+# render/gl/ (target avbase::gl): this directory holds what the HOST
 # SELECTS, and that layer is chosen by nobody -- every backend links it and it
 # carries no window-system SDK at all. See render/CMakeLists.txt and docs/02 §6.
 
@@ -21,7 +21,7 @@ if(AVBASE_ENABLE_SDL2)
   add_library(avbase::platform_sdl2 ALIAS avbase_platform_sdl2)
   target_include_directories(avbase_platform_sdl2 PUBLIC
       $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
-  target_link_libraries(avbase_platform_sdl2 PUBLIC avbase::media avbase::render_gl SDL2::SDL2)
+  target_link_libraries(avbase_platform_sdl2 PUBLIC avbase::media avbase::gl SDL2::SDL2)
   target_compile_definitions(avbase_platform_sdl2 PRIVATE AVBASE_ENABLE_SDL2=1)
   # Optional FreeType: the subtitle overlay's CPU rasterizer (text_raster.cc).
   # Without it the overlay slot still works with host-supplied bitmaps; only
@@ -58,7 +58,7 @@ if(AVBASE_ENABLE_GLFW)
     # 把它降级为裸 `-lglfw3`，既不传 GLFW 的 include 目录也不传 -L，表现为编译期
     # 'GLFW/glfw3.h' file not found。
     target_link_libraries(avbase_platform_glfw
-        PUBLIC avbase::media avbase::render_gl glfw)
+        PUBLIC avbase::media avbase::gl glfw)
     avbase_configure_target(avbase_platform_glfw)
   else()
     message(WARNING
@@ -80,7 +80,7 @@ if(AVBASE_ENABLE_EGL)
     target_include_directories(avbase_platform_egl PUBLIC
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
     target_link_libraries(avbase_platform_egl
-        PUBLIC avbase::media avbase::render_gl EGL::EGL)
+        PUBLIC avbase::media avbase::gl EGL::EGL)
     avbase_configure_target(avbase_platform_egl)
   else()
     message(WARNING

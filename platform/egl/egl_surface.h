@@ -16,10 +16,10 @@
 // Linux EGL setup the host builds these from a GBM device or an X11/ Wayland
 // EGL display; EglGLContext forwards exactly the three it needs.
 struct EglSurface {
-  void* display{nullptr};             // EGLDisplay, host-owned.
-  void* surface{nullptr};             // EGLSurface, host-owned.
-  void* context{nullptr};             // EGLContext, host-owned.
-  TextOverlaySlot* overlay{nullptr};  // Optional; composited over each frame.
+  void* display{nullptr};                         // EGLDisplay, host-owned.
+  void* surface{nullptr};                         // EGLSurface, host-owned.
+  void* context{nullptr};                         // EGLContext, host-owned.
+  avbase::gl::TextOverlaySlot* overlay{nullptr};  // Optional; per frame.
 };
 
 #endif  // AVBASE_PLATFORM_EGL_EGL_SURFACE_H_

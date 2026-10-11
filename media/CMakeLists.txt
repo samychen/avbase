@@ -23,6 +23,12 @@ file(GLOB AVBASE_MEDIA_LEGACY_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/filters/legacy/*.cc")
 file(GLOB AVBASE_MEDIA_RENDERER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/renderers/*.cc")
+# media/gl is the video-domain half of the GL path: gl_present (YUV planes,
+# colour matrices) and gl_video_sink (the render thread and the
+# VideoRendererSink contract). Its GL primitives come from avbase_gl, which
+# knows nothing about frames -- the split is what lets render/gl stand alone.
+file(GLOB AVBASE_MEDIA_GL_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/gl/*.cc")
 
 add_library(avbase_media
     # The Pipeline interfaces in this glob were promoted from DRAFT in the tenth
@@ -31,6 +37,7 @@ add_library(avbase_media
     ${AVBASE_MEDIA_BASE_SOURCES}
     ${AVBASE_MEDIA_FILTER_SOURCES}
     ${AVBASE_MEDIA_RENDERER_SOURCES}
+    ${AVBASE_MEDIA_GL_SOURCES}
     # LGPL-2.1 quarantine: line-by-line ports of ff_ffplay.c algorithms.
     # See media/filters/legacy/README.md and root LICENSE section 1.
     ${AVBASE_MEDIA_LEGACY_SOURCES})
@@ -39,7 +46,7 @@ add_library(avbase::media ALIAS avbase_media)
 target_include_directories(avbase_media PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/avbase>)
-target_link_libraries(avbase_media PUBLIC avbase::base)
+target_link_libraries(avbase_media PUBLIC avbase::base avbase::gl)
 target_compile_definitions(avbase_media PRIVATE AVBASE_MEDIA_IMPLEMENTATION=1)
 avbase_configure_target(avbase_media)
 

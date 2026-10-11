@@ -1,0 +1,19 @@
+# Copyright 2026 The avbase Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+#
+# Package config for the standalone GL module. Written for a consumer that
+# only wants GL, not the media framework:
+#
+#   find_package(avbase_gl REQUIRED)
+#   target_link_libraries(my_app PRIVATE avbase::gl)
+#
+# The target brings its own include root, so sources keep writing
+# "render/gl/gl_api.h". avbase_gl has no dependencies of its own, which is why
+# this file has nothing to find_package() on the consumer's behalf.
+
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/avbaseGlTargets.cmake")
+
+check_required_components(avbase_gl)

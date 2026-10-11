@@ -18,7 +18,7 @@ namespace avbase::media {
 // core GL functions only through its loader (or dlsym), extend this method
 // accordingly. The SDL2 and GLFW backends avoid the question by using the
 // window-system's own resolver.
-class EglGLContext final : public NativeGLContext {
+class EglGLContext final : public gl::NativeGLContext {
  public:
   EglGLContext(void* display, void* surface, void* context);
   ~EglGLContext() override = default;

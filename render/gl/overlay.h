@@ -7,15 +7,20 @@
 
 #include <cstdint>
 #include <mutex>
+#include <utility>
 #include <vector>
+
+#include "render/gl/gl_export.h"
+
+namespace avbase::gl {
 
 // A host-published overlay bitmap (subtitle cue, watermark, ...): tightly
 // packed straight-alpha RGBA8, placed in fractions of the drawable size.
 //
-// Platform-neutral: lives in the shared GL layer because both the GL presenter
-// and every backend's surface carry it. Moved out of platform/sdl2/surface.h
-// so the GL path no longer depends on the SDL2-only header.
-struct TextOverlay {
+// The bitmap travels as raw RGBA rather than as text because this module has
+// no business knowing what a subtitle is: the host rasterises whatever it
+// wants (including text) and publishes the pixels.
+struct AVBASE_GL_EXPORT TextOverlay {
   bool valid{false};
   int version{0};  // Bumped on every publish; the sink re-uploads on change.
   int width{0};
@@ -25,10 +30,10 @@ struct TextOverlay {
 };
 
 // The host owns the slot and mutates it through Publish()/Clear() from its
-// own threads; the sink snapshots it once per presented frame on the render
-// thread. The mutex is inside because the publish rate (per cue) and the
-// snapshot rate (per frame) are on different threads by design.
-struct TextOverlaySlot {
+// own threads; the renderer snapshots it once per presented frame on the
+// render thread. The mutex is inside because the publish rate (per cue) and
+// the snapshot rate (per frame) are on different threads by design.
+struct AVBASE_GL_EXPORT TextOverlaySlot {
   void Publish(TextOverlay overlay) {
     std::lock_guard<std::mutex> lock(mu_);
     overlay.version = ++version_;
@@ -50,5 +55,7 @@ struct TextOverlaySlot {
   int version_{0};
   TextOverlay current_;
 };
+
+}  // namespace avbase::gl
 
 #endif  // AVBASE_RENDER_GL_OVERLAY_H_

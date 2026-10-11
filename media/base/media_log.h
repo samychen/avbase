@@ -126,18 +126,15 @@ class AVBASE_MEDIA_EXPORT MediaLogRecord {
 };
 
 // Discards the record when |log| is null, so call sites need no null check.
-class AVBASE_MEDIA_EXPORT NullMediaLogRecord{
-  public: template <typename T> NullMediaLogRecord & operator<<(const T&){
-                                                         return *this;
-}  // namespace avbase::media
-NullMediaLogRecord& With(std::string, std::string) {
-  return *this;
-}
-NullMediaLogRecord& With(std::string, int64_t) {
-  return *this;
-}
-}
-;
+class AVBASE_MEDIA_EXPORT NullMediaLogRecord {
+ public:
+  template <typename T>
+  NullMediaLogRecord& operator<<(const T&) {
+    return *this;
+  }
+  NullMediaLogRecord& With(std::string, std::string) { return *this; }
+  NullMediaLogRecord& With(std::string, int64_t) { return *this; }
+};
 
 }  // namespace avbase::media
 

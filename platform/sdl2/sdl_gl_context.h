@@ -12,7 +12,7 @@ namespace avbase::media {
 // NativeGLContext backed by SDL2: wraps a host-owned SDL_Window* and
 // SDL_GLContext. Borrowed semantics -- the destructor does NOT destroy the
 // host's context (per the embedding rules in docs/archive/09).
-class SdlGLContext final : public NativeGLContext {
+class SdlGLContext final : public gl::NativeGLContext {
  public:
   SdlGLContext(void* window, void* context);
   ~SdlGLContext() override = default;

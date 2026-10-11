@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "render/gl/gl_video_sink.h"
+#include "media/gl/gl_video_sink.h"
 
 #include <atomic>
 #include <memory>
@@ -11,7 +11,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "render/gl/gl_present.h"
+#include "media/gl/gl_present.h"
 
 namespace avbase::media {
 namespace {

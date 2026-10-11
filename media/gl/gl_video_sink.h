@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef AVBASE_RENDER_GL_GL_VIDEO_SINK_H_
-#define AVBASE_RENDER_GL_GL_VIDEO_SINK_H_
+#ifndef AVBASE_MEDIA_GL_GL_VIDEO_SINK_H_
+#define AVBASE_MEDIA_GL_GL_VIDEO_SINK_H_
 
 #include <atomic>
 #include <memory>
@@ -15,6 +15,7 @@
 #include "media/base/native_display.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
+#include "media/media_export.h"
 #include "render/gl/native_gl_context.h"
 #include "render/gl/overlay.h"
 
@@ -25,14 +26,14 @@ class GlPresenter;
 // The pairing a backend hands the shared sink for one present: the GL context
 // to present through, plus the optional overlay slot to composite over it.
 struct AVBASE_MEDIA_EXPORT GlSurfaceBinding {
-  std::unique_ptr<NativeGLContext> context;
-  TextOverlaySlot* overlay{nullptr};
+  std::unique_ptr<gl::NativeGLContext> context;
+  gl::TextOverlaySlot* overlay{nullptr};
 };
 
 // A window-system-neutral GL video sink. Every backend that presents through
 // GlPresenter (GLFW, EGL, SDL2-GL, ...) drives the same render-thread cadence
 // and stats here; the only backend-specific knowledge -- how to turn the
-// opaque surface pointer into a NativeGLContext -- is expressed by the one
+// opaque surface pointer into a gl::NativeGLContext -- is expressed by the one
 // BindSurface() hook a subclass supplies.
 //
 // This is the factored-out GL half of Sdl2VideoSink: that class keeps its
@@ -40,9 +41,13 @@ struct AVBASE_MEDIA_EXPORT GlSurfaceBinding {
 // sink owns outright. Backends that are GL-only (no 2D API: GLFW, EGL)
 // subclass this directly instead of re-deriving the whole render loop.
 //
+// Lives under media/ rather than in the avbase_gl module because it is shaped
+// by VideoRendererSink and VideoFrame: it is the video pipeline's render
+// thread, not a reusable GL primitive.
+//
 // THREADING: the host owns the window and its context (embedding mode,
 // docs/archive/09 §2). This sink makes the context current only on its own
-// render thread via the NativeGLContext it is given, so the host must never
+// render thread via the gl::NativeGLContext it is given, so the host must not
 // make the context current once it has handed the display to avbase.
 class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
  public:
@@ -67,7 +72,7 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
 
  protected:
   // Backend hook: given the opaque surface pointer carried in the display,
-  // build the NativeGLContext the presenter needs (and report the overlay
+  // build the gl::NativeGLContext the presenter needs (and report the overlay
   // slot). A null context puts the sink into present-failure for that frame.
   // Called on the render thread, once per (re)built presenter.
   virtual GlSurfaceBinding BindSurface(void* raw) = 0;
@@ -85,7 +90,7 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
 
   // Owns the GL objects (they belong to the render thread's context).
   std::unique_ptr<GlPresenter> presenter_;
-  TextOverlaySlot* overlay_slot_{nullptr};
+  gl::TextOverlaySlot* overlay_slot_{nullptr};
 
   // Cross-thread flags: written from any thread (Pause/Play/SetOutputTarget
   // are callable anywhere), read on the render thread.
@@ -98,4 +103,4 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
 
 }  // namespace avbase::media
 
-#endif  // AVBASE_RENDER_GL_GL_VIDEO_SINK_H_
+#endif  // AVBASE_MEDIA_GL_GL_VIDEO_SINK_H_

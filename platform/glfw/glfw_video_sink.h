@@ -6,7 +6,7 @@
 #define AVBASE_PLATFORM_GLFW_GLFW_VIDEO_SINK_H_
 
 #include "media/base/video_renderer_sink.h"
-#include "render/gl/gl_video_sink.h"
+#include "media/gl/gl_video_sink.h"
 
 namespace avbase::media {
 
