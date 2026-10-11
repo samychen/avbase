@@ -98,6 +98,16 @@ int GlProgram::UniformLocation(const char* name) const {
   return gl_->context().GetUniformLocation(id_, name);
 }
 
+int GlProgram::CachedLocation(const char* name) const {
+  const auto cached = uniform_locations_.find(std::string_view(name));
+  if (cached != uniform_locations_.end()) {
+    return cached->second;
+  }
+  const int kLocation = gl_->context().GetUniformLocation(id_, name);
+  uniform_locations_.emplace(std::string(name), kLocation);
+  return kLocation;
+}
+
 void GlProgram::SetInt(const char* name, int value) const {
   WithUniform(name,
               [this, value](int loc) { gl_->context().Uniform1i(loc, value); });

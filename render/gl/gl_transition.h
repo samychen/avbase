@@ -63,6 +63,15 @@ class AVBASE_GL_EXPORT GlTransition {
   // alone; values outside that range are clamped, since a caller driving the
   // value from a clock will overshoot at the ends.
   //
+  // A non-finite |progress| is DEGRADED to 0 rather than rejected. This is the
+  // per-frame half of the rule and it is the opposite of what a setter does
+  // with a bad number, on purpose: a setter can return false and leave the
+  // previous value standing, whereas this call returns void, has no previous
+  // value to fall back on, and -- being the pass that fills the target --
+  // cannot skip the draw without leaving the target holding whatever it held.
+  // A defined picture from an undefined number is the only outcome available
+  // here. The rejection half belongs to the setters that can report it.
+  //
   // A no-op for a zero texture or a non-positive destination, so a caller that
   // has not composed one side yet -- the first frame of a fade-in -- can call
   // it unconditionally.

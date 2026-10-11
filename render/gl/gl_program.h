@@ -5,8 +5,11 @@
 #ifndef AVBASE_RENDER_GL_GL_PROGRAM_H_
 #define AVBASE_RENDER_GL_GL_PROGRAM_H_
 
+#include <functional>
+#include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "render/gl/gl_api.h"
 
@@ -36,9 +39,15 @@ class GlProgram {
 
   void Use() const;
 
-  // Looks the uniform up by name. Returns -1 for a name the linker optimised
-  // away, which is not an error: setting a uniform that does not exist is a
-  // silent no-op in GL, and callers that set optional uniforms rely on that.
+  // Looks the uniform up by name, in GL, every time. Returns -1 for a name the
+  // linker optimised away, which is not an error: setting a uniform that does
+  // not exist is a silent no-op in GL, and callers that set optional uniforms
+  // rely on that.
+  //
+  // The setters below do NOT come through here -- they answer from a cache, so
+  // this is the un-cached query and exists for callers that want one (a caller
+  // binding its own uniform block, say). Both agree: they ask the same
+  // question of the same linked program, whose answer cannot change.
   int UniformLocation(const char* name) const;
 
   // Uniform setters by name; no-ops when the uniform was optimised out.
@@ -65,14 +74,34 @@ class GlProgram {
   // rules out).
   template <class Apply>
   void WithUniform(const char* name, Apply&& apply) const {
-    const int kLocation = UniformLocation(name);
+    const int kLocation = CachedLocation(name);
     if (kLocation >= 0) {
       apply(kLocation);
     }
   }
 
+  // The cached lookup the setters use; see the member for why it exists.
+  int CachedLocation(const char* name) const;
+
   const GlApi* gl_;
   unsigned int id_{0};
+
+  // name -> location, filled on first use.
+  //
+  // A uniform's location is fixed at link and never changes, while resolving a
+  // name is a driver query that the setters were repeating once per frame per
+  // uniform -- a scene with several layers asks for the same handful of names
+  // dozens of times per frame.
+  //
+  // -1 is cached as well: "the linker dropped this uniform" is an answer too,
+  // and re-asking every frame is the same query with the same result.
+  //
+  // The transparent comparator (std::less<>) is what keeps the lookup free of
+  // allocation: find() takes a string_view of the caller's literal, and only a
+  // first-time insert copies the name. Keying on the caller's `const char*`
+  // would have been cheaper still and wrong -- nothing guarantees two
+  // literals spelling the same name are the same address.
+  mutable std::map<std::string, int, std::less<>> uniform_locations_;
 };
 
 }  // namespace avbase::gl
