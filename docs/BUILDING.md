@@ -249,6 +249,11 @@ cmake --preset linux-ffmpeg711 -DAVBASE_ENABLE_EGL=ON
 >
 > ⚠️ **`play_egl` 在 macOS 上编不出来**，这是环境限制不是代码问题：macOS 不随系统提供
 > EGL 开发库（Linux 上装 `libegl-dev` / Mesa 即可）。
+>
+> ℹ️ **`setup_glfw.sh` 在 macOS 上把 GLFW 固定编到部署目标 11.0**（`AVBASE_OSX_DEPLOYMENT_TARGET`
+> 可覆盖）。不固定的话 GLFW 会按宿主 OS 编，链接 `play_glfw` 时每个目标文件都刷一条
+> `ld: warning: ... was built for newer 'macOS' version (15.8) than being linked (15.7)`。
+> 该变量在非 Apple 平台被 CMake 忽略，同一份脚本在 Linux 上照常可用。
 
 ---
 
