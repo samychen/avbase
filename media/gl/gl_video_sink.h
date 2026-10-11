@@ -116,16 +116,6 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
  private:
   void PresentOne();
   bool UploadAndPresent(const base::scoped_refptr<VideoFrame>& frame);
-  // True when |frame| will be handed to the presenter as-is rather than read
-  // back first. False without an importer, after an import has been refused,
-  // or for a frame the backend declines -- all three of which mean the same
-  // thing to the caller: this frame has to travel through CPU memory.
-  bool CanImportHardwareFrame(const VideoFrame& frame) const;
-  // ToI420() plus the once-per-sink warning. Null when the producer installed
-  // no readback path, which the caller reports as a submit failure rather than
-  // dropping the frame silently.
-  base::scoped_refptr<VideoFrame>
-  ReadBackHardwareFrame(const base::scoped_refptr<VideoFrame>& frame);
   // Folds one present's stage timings into the published snapshot. Runs on the
   // render thread; the lock is a leaf (nothing is called while holding it), so
   // it cannot participate in a lock-order inversion.
@@ -144,10 +134,6 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
   // the host, not of a context, so SetOutputTarget() has no reason to rebuild
   // it.
   std::unique_ptr<GlHwTextureImporter> hw_importer_;
-  // Sticky, and the reason a refused import costs one frame instead of every
-  // frame: a driver that refuses CGLTexImageIOSurface2D refuses it forever, so
-  // the second attempt would only spend the same failure again.
-  std::atomic<bool> hw_import_failed_{false};
 
   // Owns the GL objects (they belong to the render thread's context).
   std::unique_ptr<GlPresenter> presenter_;

@@ -18,6 +18,7 @@
 // version of GlTransition had it the wrong way round and this test was the
 // only thing that noticed.
 
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -204,6 +205,89 @@ TEST_F(ScenePresentTest, HalfwayIsAnEvenBlendOfBothScenes) {
 
   EXPECT_GT(WindowTopRed(), kMidLow);
   EXPECT_LT(WindowTopRed(), kMidHigh);
+}
+
+// The per-frame half of the NaN policy, pinned to pixels: a draw cannot return
+// false, so a non-finite progress degrades to 0 -- the from scene, upright --
+// rather than to an unwritten target. (The setter half of the same policy is
+// in gl_scene_unittest, where a NaN is rejected instead.)
+TEST_F(ScenePresentTest, ANonFiniteProgressDegradesToTheFromScene) {
+  std::unique_ptr<GlScene> from = NewScene();
+  std::unique_ptr<GlScene> to = NewScene();
+  ASSERT_TRUE(from);
+  ASSERT_TRUE(to);
+  const GlScene::LayerId from_layer = from->AddVideoLayer(0);
+  const GlScene::LayerId to_layer = to->AddVideoLayer(0);
+  ASSERT_TRUE(from_layer != GlScene::kNoLayer);
+  ASSERT_TRUE(to_layer != GlScene::kNoLayer);
+
+  base::scoped_refptr<VideoFrame> bright = test::MakeSolidFrame(
+      VideoFormat::kI420, kWindowSize, kWindowSize, test::kWhiteLuma,
+      test::kNeutralChroma, test::kNeutralChroma);
+  base::scoped_refptr<VideoFrame> dark = test::MakeSolidFrame(
+      VideoFormat::kI420, kWindowSize, kWindowSize, test::kBlackLuma,
+      test::kNeutralChroma, test::kNeutralChroma);
+  ASSERT_TRUE(bright);
+  ASSERT_TRUE(dark);
+  ASSERT_TRUE(presenter_->UploadLayer(*from, from_layer, *bright));
+  ASSERT_TRUE(presenter_->UploadLayer(*to, to_layer, *dark));
+
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  ASSERT_TRUE(presenter_->ComposeTransition(*from, *to, nan));
+  presenter_->PresentComposed();
+  EXPECT_GT(WindowTopRed(), test::kBrightThreshold)
+      << "a NaN progress must not leave the transition undrawn";
+
+  // An infinity is the same decision, not a different one: every non-finite
+  // value means "no progress", so +inf lands on the from scene rather than
+  // being clamped to 1. Ending a transition early is not a thing to guess at
+  // -- a progress that ran off the end is more likely a clock that lost its
+  // denominator than a caller that finished early, and the safe end of a
+  // cross-fade is the one the caller was already looking at.
+  ASSERT_TRUE(presenter_->ComposeTransition(
+      *from, *to, std::numeric_limits<float>::infinity()));
+  presenter_->PresentComposed();
+  EXPECT_GT(WindowTopRed(), test::kBrightThreshold);
+
+  ASSERT_TRUE(presenter_->ComposeTransition(
+      *from, *to, -std::numeric_limits<float>::infinity()));
+  presenter_->PresentComposed();
+  EXPECT_GT(WindowTopRed(), test::kBrightThreshold);
+}
+
+// The presenter's scene shares its two video programs with the single-video
+// path (GlScene::CreateWithPrograms), and a uniform belongs to the PROGRAM, not
+// to the path that set it. So a scene that placed a layer somewhere must not
+// leave its rect behind for the next single-video frame to inherit.
+//
+// This is the regression test for that sharing: it fails if the single-video
+// path sets uRect once at build time instead of every frame.
+TEST_F(ScenePresentTest, APlacedSceneLayerDoesNotLeakItsRectIntoTheNextFrame) {
+  GlScene* scene = presenter_->EnsureScene();
+  ASSERT_TRUE(scene);
+  const GlScene::LayerId layer = scene->AddVideoLayer(0);
+  ASSERT_TRUE(layer != GlScene::kNoLayer);
+  // The top quarter only, so the bottom of the window stays cleared to black.
+  ASSERT_TRUE(scene->SetLayerRect(layer, 0.0f, 0.0f, 1.0f, 0.25f));
+
+  base::scoped_refptr<VideoFrame> white = test::MakeSolidFrame(
+      VideoFormat::kI420, kWindowSize, kWindowSize, test::kWhiteLuma,
+      test::kNeutralChroma, test::kNeutralChroma);
+  ASSERT_TRUE(white);
+  ASSERT_TRUE(presenter_->UploadLayer(*scene, layer, *white));
+  ASSERT_TRUE(presenter_->ComposeScene(*scene));
+  presenter_->PresentComposed();
+  ASSERT_GT(WindowTopRed(), test::kBrightThreshold) << "the rect did not apply";
+  ASSERT_LT(WindowBottomRed(), test::kDarkThreshold)
+      << "the rect should have covered only the top";
+
+  // Same program, same frame: if uRect were still the scene's, the bottom
+  // quarter of this frame would be missing.
+  ASSERT_TRUE(presenter_->Compose(*white));
+  presenter_->PresentComposed();
+  EXPECT_GT(WindowBottomRed(), test::kBrightThreshold)
+      << "a single-video frame must fill the canvas even after a placed layer";
+  EXPECT_GT(WindowTopRed(), test::kBrightThreshold);
 }
 
 // UploadLayer ADDS into upload_ms. Assigning would report one layer's cost as

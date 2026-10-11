@@ -4,9 +4,11 @@
 
 #include "media/gl/gl_video_layer.h"
 
+#include <atomic>
 #include <string>
 #include <utility>
 
+#include "base/logging.h"
 #include "render/gl/gl_shaders.h"
 
 // The video-domain half of the GL path, in one place. Entry-point loading,
@@ -20,37 +22,15 @@ namespace avbase::media {
 // alpha is a uniform rather than a second shader because the alternative is
 // two programs whose bodies differ by one character, which is a maintenance
 // trap dressed as a performance win.
+//
+// SAMPLER_TYPE / LUMA_COORD / CHROMA_COORD come from one of the define blocks
+// in the header: this is the one text both programs compile.
 const char* const kYuvFragmentShaderBody = R"(
 in vec2 vTexCoord;
 out vec4 fragColor;
-uniform sampler2D uTexY;
-uniform sampler2D uTexU;
-uniform sampler2D uTexV;
-uniform int uNv12;
-uniform mat3 uMatrix;
-uniform vec3 uOffset;
-uniform float uOpacity;
-void main() {
-    float y = texture(uTexY, vTexCoord).r;
-    vec2 uv = (uNv12 == 1)
-        ? texture(uTexU, vTexCoord).rg
-        : vec2(texture(uTexU, vTexCoord).r, texture(uTexV, vTexCoord).r);
-    vec3 rgb = uMatrix * (vec3(y, uv) - uOffset);
-    fragColor = vec4(clamp(rgb, 0.0, 1.0), uOpacity);
-}
-)";
-
-// The RECTANGLE-texture twin of the body above. A rectangle texture is
-// addressed in texels, not in [0,1], so vTexCoord is scaled by the plane's own
-// size; everything after that -- the NV12 branch, the matrix, the opacity -- is
-// character for character the same, and has to be, because both bodies are
-// drawn with the same vertex stage and the same uRect placement.
-const char* const kYuvRectFragmentShaderBody = R"(
-in vec2 vTexCoord;
-out vec4 fragColor;
-uniform sampler2DRect uTexY;
-uniform sampler2DRect uTexU;
-uniform sampler2DRect uTexV;
+uniform SAMPLER_TYPE uTexY;
+uniform SAMPLER_TYPE uTexU;
+uniform SAMPLER_TYPE uTexV;
 uniform vec2 uTexSize;
 uniform vec2 uChromaSize;
 uniform int uNv12;
@@ -58,15 +38,24 @@ uniform mat3 uMatrix;
 uniform vec3 uOffset;
 uniform float uOpacity;
 void main() {
-    float y = texture(uTexY, vTexCoord * uTexSize).r;
+    float y = texture(uTexY, LUMA_COORD).r;
     vec2 uv = (uNv12 == 1)
-        ? texture(uTexU, vTexCoord * uChromaSize).rg
-        : vec2(texture(uTexU, vTexCoord * uChromaSize).r,
-               texture(uTexV, vTexCoord * uChromaSize).r);
+        ? texture(uTexU, CHROMA_COORD).rg
+        : vec2(texture(uTexU, CHROMA_COORD).r, texture(uTexV, CHROMA_COORD).r);
     vec3 rgb = uMatrix * (vec3(y, uv) - uOffset);
     fragColor = vec4(clamp(rgb, 0.0, 1.0), uOpacity);
 }
 )";
+
+const char* const kYuvSampler2DDefines =
+    "#define SAMPLER_TYPE sampler2D\n"
+    "#define LUMA_COORD vTexCoord\n"
+    "#define CHROMA_COORD vTexCoord\n";
+
+const char* const kYuvSamplerRectDefines =
+    "#define SAMPLER_TYPE sampler2DRect\n"
+    "#define LUMA_COORD (vTexCoord * uTexSize)\n"
+    "#define CHROMA_COORD (vTexCoord * uChromaSize)\n";
 
 namespace {
 
@@ -193,14 +182,43 @@ void GlVideoLayer::ApplySamplers() {
 bool GlVideoLayer::Upload(const VideoFrame& frame,
                           GlHwTextureImporter* importer) {
   last_upload_path_ = UploadPath::kNone;
-  // Which route a frame takes is a property of the frame, so the branch is
-  // here and not at each call site. A GPU frame with no importer is a caller
-  // error, not a crash: false is the answer, and the sink that produced it is
-  // expected to have read the frame back first.
-  if (!frame.IsMappable()) {
-    return importer && ImportGpuPlanes(frame, *importer);
+  if (frame.IsMappable()) {
+    return UploadCpuPlanes(frame);
   }
-  return UploadCpuPlanes(frame);
+
+  // A GPU frame. Try the import route -- unless this backend has already been
+  // refused by it, in which case asking again is a failed import per frame for
+  // the same answer. CanImport() is asked here and once, so that the two ways
+  // of failing are distinguishable below: declining a FORMAT is not a driver
+  // refusal and must not poison the layer for the frames after it.
+  if (importer && refused_importer_ != importer && importer->CanImport(frame)) {
+    if (ImportGpuPlanes(frame, *importer)) {
+      return true;
+    }
+    // The backend said yes and the driver still would not point a texture at
+    // the surface. That answer does not change between frames.
+    refused_importer_ = importer;
+    LOG(ERROR) << "hardware import refused at draw time by " << importer->name()
+               << "; reading back this frame and every frame after it";
+  }
+
+  // Fallback: one readback beats a black screen. It is here rather than in the
+  // sink because this is the last place that knows the frame is still alive
+  // and unused -- the sink has already handed it over, and re-presenting the
+  // whole scene from there would walk every layer again for one that failed.
+  base::scoped_refptr<VideoFrame> mapped = frame.ToI420();
+  if (!mapped) {
+    // No readback path installed by the producer: nothing to draw, and the
+    // caller is the one that can report it.
+    return false;
+  }
+  static std::atomic<bool> warned{false};
+  if (!warned.exchange(true)) {
+    LOG(WARNING) << "gl layer read a hardware frame back via ToI420(); expect "
+                    "this only on a host that cannot import or whose driver "
+                    "refused to";
+  }
+  return UploadCpuPlanes(*mapped);
 }
 
 // The colour uniforms are a function of the frame's tags, and BOTH routes need
@@ -220,7 +238,7 @@ bool GlVideoLayer::ImportGpuPlanes(const VideoFrame& frame,
   }
   const int w = frame.coded_size().width;
   const int h = frame.coded_size().height;
-  if (w <= 0 || h <= 0 || !importer.CanImport(frame)) {
+  if (w <= 0 || h <= 0) {
     return false;
   }
   // From here on the textures no longer hold a complete picture: a half
@@ -259,11 +277,13 @@ bool GlVideoLayer::ImportGpuPlanes(const VideoFrame& frame,
     // one.
     planes_[i]->Bind(static_cast<unsigned int>(i));
     const bool chroma = i > 0;
-    const unsigned int internal_format = (i == 1 && nv12) ? GL_RG8 : GL_R8;
-    const unsigned int format = (i == 1 && nv12) ? GL_RG : GL_RED;
-    if (!importer.ImportPlane(frame, i, internal_format, format,
-                              GL_UNSIGNED_BYTE, chroma ? w / 2 : w,
-                              chroma ? h / 2 : h)) {
+    PlaneUploadLayout layout;
+    layout.internal_format = (i == 1 && nv12) ? GL_RG8 : GL_R8;
+    layout.format = (i == 1 && nv12) ? GL_RG : GL_RED;
+    layout.type = GL_UNSIGNED_BYTE;
+    layout.width = chroma ? w / 2 : w;
+    layout.height = chroma ? h / 2 : h;
+    if (!importer.ImportPlane(frame, i, layout)) {
       return false;
     }
   }
@@ -402,17 +422,17 @@ void GlVideoLayer::Bind(gl::GlProgram& program, float opacity) const {
 namespace {
 
 // The two video programs differ in exactly one input -- which GLSL sampler
-// type reads their textures -- and in nothing else: same vertex stage, same
-// body layout, same units. Building them from one function is what keeps that
-// true, because the alternative is two functions that have to agree and do
-// not fail when they stop.
+// type reads their textures -- and in nothing else: same body, same vertex
+// stage, same units. Building them from one function over one text is what
+// keeps that true, because the alternative is two texts that have to agree and
+// do not fail when they stop.
 std::unique_ptr<gl::GlProgram> CreateLayerProgram(const gl::GlApi& gl,
-                                                  const char* fragment_body,
+                                                  const char* sampler_defines,
                                                   std::string* error) {
   const std::string prologue = gl::ShaderPrologue(gl);
   auto program = gl::GlProgram::Create(
       gl, (prologue + gl::kQuadVertexShaderWithRectBody).c_str(),
-      (prologue + fragment_body).c_str(), error);
+      (prologue + sampler_defines + kYuvFragmentShaderBody).c_str(), error);
   if (!program) {
     return nullptr;
   }
@@ -432,12 +452,12 @@ std::unique_ptr<gl::GlProgram> CreateLayerProgram(const gl::GlApi& gl,
 
 std::unique_ptr<gl::GlProgram> CreateVideoLayerProgram(const gl::GlApi& gl,
                                                        std::string* error) {
-  return CreateLayerProgram(gl, kYuvFragmentShaderBody, error);
+  return CreateLayerProgram(gl, kYuvSampler2DDefines, error);
 }
 
 std::unique_ptr<gl::GlProgram> CreateVideoLayerRectProgram(const gl::GlApi& gl,
                                                            std::string* error) {
-  return CreateLayerProgram(gl, kYuvRectFragmentShaderBody, error);
+  return CreateLayerProgram(gl, kYuvSamplerRectDefines, error);
 }
 
 void NormalisedRectToUvRect(float x, float y, float w, float h,

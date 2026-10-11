@@ -99,8 +99,10 @@ class AVBASE_MEDIA_EXPORT GlPresenter {
   //
   // With an importer installed, a frame whose pixels live on the GPU is
   // imported instead of copied and the present reports
-  // UploadPath::kHwZeroCopy. A GPU frame with NO importer is refused
-  // (Upload() returns false), never silently drawn from stale textures.
+  // UploadPath::kHwZeroCopy. Without one -- or when the backend accepts the
+  // frame and the driver then refuses it -- the layer reads the frame back
+  // itself and reports UploadPath::kCpuSync, so a host that cannot import is
+  // expensive rather than broken. See GlVideoLayer::Upload().
   void SetHwTextureImporter(GlHwTextureImporter* importer) {
     hw_importer_ = importer;
   }
@@ -251,12 +253,14 @@ class AVBASE_MEDIA_EXPORT GlPresenter {
   std::unique_ptr<gl::GlApi> api_;
   bool gl_current_{false};
 
-  std::unique_ptr<gl::GlProgram> program_;  // Video pass.
+  // Video pass. Shared with the scene this presenter builds, which is why it
+  // is not a unique_ptr: see GlScene::CreateWithPrograms.
+  std::shared_ptr<gl::GlProgram> program_;
   // The same pass over rectangle textures, for a layer whose last upload was a
   // hardware import. Both are built in Init(): which one a frame needs is not
   // known there, and a shader compile failure has to be reported before the
   // first frame rather than during it.
-  std::unique_ptr<gl::GlProgram> rect_program_;
+  std::shared_ptr<gl::GlProgram> rect_program_;
   std::unique_ptr<gl::GlProgram> overlay_program_;  // Overlay pass.
   std::unique_ptr<gl::GlQuad> quad_;
   // The one video source the single-frame path draws. The multi-source path

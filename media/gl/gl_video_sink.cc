@@ -119,61 +119,29 @@ void GlVideoSink::NotePresentTiming(const PresentTiming& timing) {
   stats_.NotePresentTiming(timing);
 }
 
-bool GlVideoSink::CanImportHardwareFrame(const VideoFrame& frame) const {
-  if (!hw_importer_ || hw_import_failed_.load()) {
-    return false;
-  }
-  return hw_importer_->CanImport(frame);
-}
-
-base::scoped_refptr<VideoFrame> GlVideoSink::ReadBackHardwareFrame(
-    const base::scoped_refptr<VideoFrame>& frame) {
-  base::scoped_refptr<VideoFrame> mapped = frame->ToI420();
-  if (!mapped) {
-    return nullptr;
-  }
-  static std::atomic<bool> warned{false};
-  if (!warned.exchange(true)) {
-    LOG(WARNING) << name_
-                 << " sink read back a hardware frame via ToI420(); "
-                    "expect this only on the CPU-fallback display path";
-  }
-  return mapped;
-}
-
 void GlVideoSink::PresentOne() {
   const base::TimeTicks frame_start = base::TimeTicks::Now();
   if (playing_.load() && callback_) {
     base::scoped_refptr<VideoFrame> frame =
         callback_->Render(base::TimeTicks(), base::TimeTicks());
     // Zero-copy contract (avbase §6.2): a hardware frame arrives GPU-resident,
-    // and the sink's job is to keep it that way when it can. Which of the two
-    // happens is a property of the HOST, not of the frame:
-    //
-    //   * a host with an import backend takes the frame as it is, and the
-    //     presenter points its plane textures at the decoded surface;
-    //   * otherwise the readback is EXPLICIT here -- ToI420() -- so the GPU
-    //     path stays the default and the cost shows up in exactly one place.
-    //
-    // CanImportHardwareFrame() answers the first question, and it can answer
-    // it before a presenter exists, which matters: on the first frame there
-    // is no context current yet, so a question that needed one would be asked
-    // at the one moment it cannot be answered.
-    if (frame && !frame->IsMappable() && !CanImportHardwareFrame(*frame)) {
-      frame = ReadBackHardwareFrame(frame);
-      if (!frame) {
-        // No readback path installed: treat as a submit failure so the
-        // renderer's stats tell the truth instead of dropping silently.
-        stats_.NoteSubmitFailure();
-      }
+    // and the sink's job is to keep it that way when it can. It does NOT decide
+    // what happens when it cannot: whether a GPU frame is imported, read back,
+    // or reported as a failure is GlVideoLayer::Upload()'s call, because that
+    // is the one place that knows the frame is still alive and unused. Deciding
+    // it here as well is how this sink grew a second, divergent copy of the
+    // rule -- one before the present and one after a refused import.
+    const bool presented = !discard_.load() && frame && UploadAndPresent(frame);
+    const FrameOutcome outcome =
+        ClassifyFrameOutcome(frame != nullptr, discard_.load(),
+                             /*readback_failed=*/false, presented);
+    if (outcome == FrameOutcome::kSubmitFailure) {
+      // The renderer keeps its own rate-limited count of these; nothing called
+      // it before, so a submit failure was invisible to the pipeline that
+      // handed the frame over.
+      callback_->OnFrameSubmitFailure();
     }
-    if (discard_.load() || !frame) {
-      stats_.NoteDropped();
-    } else if (UploadAndPresent(frame)) {
-      stats_.NotePresented();
-    } else {
-      stats_.NoteSubmitFailure();
-    }
+    stats_.NoteFrameOutcome(outcome);
   }
   if (render_runner_) {
     // The cadence lives in media/base rather than here because the SDL2 sink
@@ -198,9 +166,6 @@ void GlVideoSink::SetSceneUpdate(GlSceneDriver::UpdateCallback callback) {
 void GlVideoSink::SetHwTextureImporter(
     std::unique_ptr<GlHwTextureImporter> importer) {
   hw_importer_ = std::move(importer);
-  // A new backend deserves a fresh chance: the sticky flag belongs to the
-  // driver that refused, and this is a different one.
-  hw_import_failed_.store(false);
   // One line per sink, so "which route is this host taking" is answerable from
   // a log rather than from a profiler. "none" is a normal answer, not a
   // failure: it is every host without an interop backend.
@@ -240,26 +205,10 @@ bool GlVideoSink::UploadAndPresent(
     NotePresentTiming(timing);
     return true;
   }
-  // The import was refused at the last step -- the backend accepted the frame
-  // but the driver would not point a texture at its surface. One readback
-  // beats a black screen, and the import stays off afterwards instead of being
-  // retried every frame, because a driver that refuses this API refuses it
-  // forever. The frame is still alive here, which is what makes the retry
-  // possible at all.
-  if (hw_importer_ && !frame->IsMappable() &&
-      !hw_import_failed_.exchange(true)) {
-    LOG(ERROR) << name_
-               << " hardware import failed at draw time; read back this frame "
-                  "and every frame after it";
-    base::scoped_refptr<VideoFrame> mapped = frame->ToI420();
-    if (mapped) {
-      PresentTiming retry;
-      if (scene_.Present(*presenter_, mapped, &retry)) {
-        NotePresentTiming(retry);
-        return true;
-      }
-    }
-  }
+  // No second attempt here. A frame the import route would not take is one
+  // Upload() has already read back and retried, so failing now means failing
+  // twice -- and the retry used to live in BOTH places, which is why the two
+  // sinks could disagree about whether a refused import was a dropped frame.
   return false;
 }
 

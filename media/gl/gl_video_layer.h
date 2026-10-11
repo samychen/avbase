@@ -18,27 +18,41 @@
 
 namespace avbase::media {
 
-// The YUV->RGB fragment stage a GlVideoLayer is drawn with. A *body*, with no
-// #version line: concatenate it after a vertex stage, with
+// The YUV->RGB fragment stage a GlVideoLayer is drawn with -- ONE body, for
+// both texture targets, parameterised by three macros (SAMPLER_TYPE,
+// LUMA_COORD, CHROMA_COORD) that the caller #define's in front of it; see the
+// two define blocks below.
+//
+// A *body*, with no #version line: concatenate it after a vertex stage, with
 // gl::ShaderPrologue(gl) in front of both, the way gl_shaders.h documents.
+//
+// WHY THE SAMPLER TYPE IS A MACRO AND NOT A SECOND BODY. GLSL has no sampler
+// type that reads both kinds: a sampler2D on a rectangle texture is undefined
+// and draws nothing. The two kinds are both needed because the one zero-copy
+// route macOS offers -- an IOSurface imported with CGLTexImageIOSurface2D --
+// accepts GL_TEXTURE_RECTANGLE and rejects GL_TEXTURE_2D outright (measured;
+// see platform/hwimport). Carrying that as two copies of this text meant the
+// NV12 branch, the matrix, the offset and the opacity were each written twice
+// and had to be changed twice; the only real difference is the sampler type
+// and, because a rectangle texture is addressed in texels, how a coordinate is
+// formed.
 //
 // Prefer CreateVideoLayerProgram() below over assembling it by hand: the
 // vertex stage and this one carry a uniform contract (uRect / uTexY..V /
 // uMatrix / uOffset / uOpacity) that only matches as a pair.
 AVBASE_MEDIA_EXPORT extern const char* const kYuvFragmentShaderBody;
 
-// The same conversion over RECTANGLE textures, which sample with TEXEL
-// coordinates rather than normalised ones -- so this body carries two more
-// uniforms (uTexSize / uChromaSize) and multiplies vTexCoord by them.
-//
-// WHY TWO BODIES AND NOT ONE. GLSL has no sampler type that reads both kinds:
-// a sampler2D on a rectangle texture is undefined and draws nothing. The two
-// kinds exist because the one zero-copy route macOS offers -- an IOSurface
-// imported with CGLTexImageIOSurface2D -- accepts GL_TEXTURE_RECTANGLE and
-// rejects GL_TEXTURE_2D outright (measured; see platform/hwimport). So the
-// import path needs this body and nothing else in the tree does, which is why
-// GlVideoLayer::texture_target() is what tells a caller which to draw with.
-AVBASE_MEDIA_EXPORT extern const char* const kYuvRectFragmentShaderBody;
+// Ordinary textures: a coordinate is already normalised, so it is used as it
+// arrives. uTexSize / uChromaSize are declared by the body but unused here, and
+// the linker drops them -- which is why GlVideoLayer::Bind() only bothers
+// setting them for the rectangle case.
+AVBASE_MEDIA_EXPORT extern const char* const kYuvSampler2DDefines;
+
+// Rectangle textures: addressed in TEXELS, so a coordinate has to be scaled by
+// the plane's own size. There are two because the chroma plane is half the
+// luma one and a rect sampler cannot derive that the way a normalised [0,1]
+// coordinate implicitly does.
+AVBASE_MEDIA_EXPORT extern const char* const kYuvSamplerRectDefines;
 
 // Builds the program a GlVideoLayer is drawn with: the *rect* vertex stage,
 // so a layer can be placed anywhere in the target rather than only filling it,
@@ -51,10 +65,11 @@ AVBASE_MEDIA_EXPORT extern const char* const kYuvRectFragmentShaderBody;
 AVBASE_MEDIA_EXPORT std::unique_ptr<gl::GlProgram>
 CreateVideoLayerProgram(const gl::GlApi& gl, std::string* error);
 
-// The same, over kYuvRectFragmentShaderBody: the program for a layer whose
-// texture_target() is GL_TEXTURE_RECTANGLE (an imported GPU frame). It shares
-// the vertex stage and every uniform name with the one above except the two
-// plane sizes, so a caller's placement code does not change with the target.
+// The same, over kYuvSamplerRectDefines: the program for a layer whose
+// texture_target() is GL_TEXTURE_RECTANGLE (an imported GPU frame). Same body,
+// so it shares the vertex stage and every uniform name with the one above
+// except the two plane sizes, and a caller's placement code does not change
+// with the target.
 AVBASE_MEDIA_EXPORT std::unique_ptr<gl::GlProgram>
 CreateVideoLayerRectProgram(const gl::GlApi& gl, std::string* error);
 
@@ -103,17 +118,41 @@ class AVBASE_MEDIA_EXPORT GlVideoLayer {
   // cannot read, so the caller reports a submit failure instead of drawing
   // whatever the old textures happened to hold.
   //
-  // TWO ROUTES, ONE ENTRY POINT. An owned CPU frame takes the copy route: the
-  // plane bytes are uploaded with glTexSubImage2D. A GPU-resident frame takes
-  // the import route, where |importer| points the textures at the decoded
-  // surface and nothing is copied at all. Choosing between them is a property
-  // of the FRAME, not of the caller, so the branch lives here rather than at
-  // every call site -- and a caller that has no importer simply gets false for
-  // a GPU frame, which is the honest answer (the sink is expected to have read
-  // that frame back already; see GlVideoSink::PresentOne).
+  // THREE WAYS TO GET PIXELS, ONE ENTRY POINT. An owned CPU frame takes the
+  // copy route: the plane bytes are uploaded with glTexSubImage2D. A
+  // GPU-resident frame takes the import route, where |importer| points the
+  // textures at the decoded surface and nothing is copied at all. A GPU frame
+  // the import route will not or cannot take falls back to a readback and then
+  // the copy route.
   //
-  // |importer| is borrowed and may be null.
+  // Choosing between them is a property of the FRAME, not of the caller, so
+  // the branch lives here rather than at every call site. So does the fallback,
+  // which is the point of it: a frame is either displayed or it is not, and
+  // "read it back or report a failure" is one decision that used to be made in
+  // two sinks (once before the present, once again if the import was refused
+  // during it) with a sticky flag in each. One answer means one place to be
+  // wrong.
+  //
+  // Returns false only when there is genuinely nothing to draw: a format no
+  // route can read, or a GPU frame with no readback path installed. The caller
+  // reports that as a submit failure.
+  //
+  // |importer| is borrowed and may be null; a null importer means this host has
+  // no interop backend, and a GPU frame then takes the readback route.
   bool Upload(const VideoFrame& frame, GlHwTextureImporter* importer = nullptr);
+
+  // True once the import route has been refused at draw time by the backend
+  // now installed -- it accepted the frame but would not point a texture at
+  // its surface. Sticky, because a driver that declines this API declines it
+  // for every frame after the first: asking again would pay a failed import
+  // per frame to arrive at the same picture.
+  //
+  // Keyed to the BACKEND rather than being a bare flag, so a different one gets
+  // a fresh chance without anybody having to remember to clear anything. The
+  // sinks used to own this state as a bool and reset it in
+  // SetHwTextureImporter(); a flag somebody has to reset is a flag somebody
+  // forgets to reset.
+  bool import_refused() const { return refused_importer_ != nullptr; }
 
   // Which route the last successful Upload() took. The presenter copies this
   // into PresentTiming, which is what makes "why is upload slow" answerable:
@@ -160,6 +199,11 @@ class AVBASE_MEDIA_EXPORT GlVideoLayer {
   // nothing else -- the texture set, the sampler parameters, the NV12 flag and
   // the colour matrix are established the same way, so the shader and Bind()
   // cannot tell which one ran.
+  //
+  // Precondition: importer.CanImport(frame) already answered yes. The question
+  // is asked once, by Upload(), so that "the backend accepted it" is a fact
+  // Upload() can tell apart from "the driver refused it" -- which is exactly
+  // the distinction sticky import_refused_ rests on.
   bool ImportGpuPlanes(const VideoFrame& frame, GlHwTextureImporter& importer);
   // True when the plane textures do not yet describe |w| x |h| in |format|,
   // i.e. when they have to be (re)created and their sampler state (re)set.
@@ -188,6 +232,10 @@ class AVBASE_MEDIA_EXPORT GlVideoLayer {
   int format_{0};  // VideoFormat as int; 0 = kUnknown, i.e. nothing uploaded.
   bool nv12_{false};
   UploadPath last_upload_path_{UploadPath::kNone};
+  // See import_refused(). Per layer rather than per sink: the refusal is the
+  // driver's answer about a surface, and each layer holds its own. Borrowed,
+  // like every importer pointer in this tree.
+  const GlHwTextureImporter* refused_importer_{nullptr};
 
   // The conversion for the last upload, resolved then rather than in Bind() so
   // the layer does not have to hold the frame alive. Column-major, because

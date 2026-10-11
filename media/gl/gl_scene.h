@@ -38,6 +38,23 @@ namespace avbase::media {
 //
 // THREADING: not thread-safe. Every method must run on the thread holding the
 // GL context -- in avbase, the sink's render thread.
+//
+// BAD NUMBERS: the setters REJECT a non-finite value (NaN, infinity) instead
+// of clamping it, and leave the previous value standing.
+//
+// That is deliberately the opposite of what a per-frame draw does, and the two
+// are not in conflict -- they are the same rule applied to two situations:
+//
+//   * A setter can say no. The caller gets false, the layer keeps the value it
+//     had, and a caller that computed a NaN finds out. Reading NaN as 0
+//     instead would make a layer vanish for a reason nothing records.
+//   * A per-frame draw cannot say no. It returns void, it has no previous
+//     value to fall back on, and skipping the draw would leave the target
+//     holding whatever it held. Degrading to a defined value is the only
+//     outcome that keeps the picture defined -- see GlTransition::Draw.
+//
+// So "reject" and "degrade" are one policy split by whether the call can
+// report failure. What is not allowed is a third answer chosen per call site.
 class AVBASE_MEDIA_EXPORT GlScene {
  public:
   // A layer handle. Handles are never reused, so a handle kept across a
@@ -49,6 +66,22 @@ class AVBASE_MEDIA_EXPORT GlScene {
 
   static std::unique_ptr<GlScene> Create(const gl::GlApi& gl,
                                          std::string* error);
+
+  // A scene that draws with programs the caller ALREADY compiled, instead of
+  // compiling its own copies.
+  //
+  // GlPresenter builds exactly these two for its single-video path, so a scene
+  // it created with Create() was paying for an identical compile twice per
+  // presenter.
+  //
+  // Sharing is safe because a program's uniforms are program state rather than
+  // per-owner state, and every draw path sets the ones it depends on before
+  // drawing. That clause is the whole contract, and it is why this is a
+  // separate factory instead of a default on Create(): a caller that shares
+  // has to mean it. The programs must outlive the scene.
+  static std::unique_ptr<GlScene> CreateWithPrograms(
+      const gl::GlApi& gl, std::shared_ptr<gl::GlProgram> program,
+      std::shared_ptr<gl::GlProgram> rect_program, std::string* error);
   GlScene(const GlScene&) = delete;
   GlScene& operator=(const GlScene&) = delete;
   ~GlScene();
@@ -117,8 +150,8 @@ class AVBASE_MEDIA_EXPORT GlScene {
     std::unique_ptr<GlVideoLayer> video;
   };
 
-  GlScene(const gl::GlApi& gl, std::unique_ptr<gl::GlProgram> program,
-          std::unique_ptr<gl::GlProgram> rect_program);
+  GlScene(const gl::GlApi& gl, std::shared_ptr<gl::GlProgram> program,
+          std::shared_ptr<gl::GlProgram> rect_program);
   Layer* Find(LayerId id);
 
   const gl::GlApi* gl_;
@@ -126,8 +159,13 @@ class AVBASE_MEDIA_EXPORT GlScene {
   // frame is drawn from GL_TEXTURE_2D textures and an imported one from
   // GL_TEXTURE_RECTANGLE ones, and no single GLSL sampler type reads both.
   // A scene therefore can -- and normally does -- mix them.
-  std::unique_ptr<gl::GlProgram> program_;
-  std::unique_ptr<gl::GlProgram> rect_program_;
+  // Shared rather than owned when the scene came from CreateWithPrograms --
+  // GlPresenter holds the other reference. shared_ptr and not a borrowed
+  // pointer because there is no single owner to point at: the presenter and
+  // the scene are built in different places, and either may be the one that
+  // compiled them.
+  std::shared_ptr<gl::GlProgram> program_;
+  std::shared_ptr<gl::GlProgram> rect_program_;
   std::unique_ptr<gl::GlQuad> quad_;
   std::vector<Layer> layers_;
   // Monotonic, never reset: see LayerId.

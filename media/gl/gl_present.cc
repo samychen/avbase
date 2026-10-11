@@ -264,9 +264,11 @@ bool GlPresenter::Compose(const VideoFrame& frame, PresentTiming* timing) {
                              ? rect_program_.get()
                              : program_.get();
   video->Use();
-  // No SetVec4("uRect") here: both programs were told the identity rect in
-  // BuildPrograms() and this path never places the layer anywhere else, so a
-  // per-frame write would be re-stating a constant 60 times a second.
+  // Set every frame, and not once at build time: this program is shared with
+  // the scene, whose layers leave their own rect in it. A uniform belongs to
+  // the program, so a path that shares one has to set what it depends on --
+  // and this is the only one Bind() does not cover.
+  video->SetVec4("uRect", 0.0f, 0.0f, 1.0f, 1.0f);
   layer_->Bind(*video);
   quad_->Draw();
   DrawOverlay();
@@ -285,7 +287,10 @@ GlScene* GlPresenter::EnsureScene() {
     return nullptr;
   }
   std::string error;
-  scene_ = GlScene::Create(*api_, &error);
+  // Shares the two video programs instead of compiling its own copies: these
+  // are the same two shaders, and the scene's layers are drawn by the same
+  // GlVideoLayer this presenter draws its single frame with.
+  scene_ = GlScene::CreateWithPrograms(*api_, program_, rect_program_, &error);
   if (!scene_) {
     LOG(ERROR) << "gl present: " << error;
   }

@@ -10,8 +10,8 @@
 
 namespace avbase::media {
 
-GlScene::GlScene(const gl::GlApi& gl, std::unique_ptr<gl::GlProgram> program,
-                 std::unique_ptr<gl::GlProgram> rect_program)
+GlScene::GlScene(const gl::GlApi& gl, std::shared_ptr<gl::GlProgram> program,
+                 std::shared_ptr<gl::GlProgram> rect_program)
     : gl_(&gl),
       program_(std::move(program)),
       rect_program_(std::move(rect_program)) {}
@@ -31,6 +31,14 @@ std::unique_ptr<GlScene> GlScene::Create(const gl::GlApi& gl,
   if (!rect_program) {
     return nullptr;
   }
+  return CreateWithPrograms(
+      gl, std::shared_ptr<gl::GlProgram>(std::move(program)),
+      std::shared_ptr<gl::GlProgram>(std::move(rect_program)), error);
+}
+
+std::unique_ptr<GlScene> GlScene::CreateWithPrograms(
+    const gl::GlApi& gl, std::shared_ptr<gl::GlProgram> program,
+    std::shared_ptr<gl::GlProgram> rect_program, std::string* error) {
   auto quad = gl::GlQuad::Create(gl);
   if (!quad) {
     if (error) {
@@ -103,8 +111,8 @@ bool GlScene::SetLayerOpacity(LayerId id, float opacity) {
   if (!layer) {
     return false;
   }
-  // std::clamp would propagate a NaN and produce an invisible-or-garbage
-  // layer, so a non-finite opacity is a rejected call rather than a clamp.
+  // The setter half of the policy in gl_scene.h: reject and keep the previous
+  // value, because this call can report the failure.
   if (!std::isfinite(opacity)) {
     return false;
   }
@@ -117,6 +125,7 @@ bool GlScene::SetLayerRect(LayerId id, float x, float y, float w, float h) {
   if (!layer) {
     return false;
   }
+  // Same policy as SetLayerOpacity; see gl_scene.h.
   if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(w) ||
       !std::isfinite(h)) {
     return false;

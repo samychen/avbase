@@ -177,24 +177,26 @@ void Sdl2VideoSink::PresentOne() {
     //
     //   * the GL path, with an import backend installed, takes it as it is and
     //     the presenter points its textures at the decoded surface;
-    //   * every other case -- the SDL_Renderer path, which uploads through
-    //     SDL_UpdateYUVTexture and therefore needs the plane bytes in CPU
-    //     memory -- reads it back, EXPLICITLY, here. That keeps the cost in
-    //     exactly one place, and keeps hardware playback CORRECT on a host
-    //     that cannot import: expensive, not broken.
+    //   * the SDL_Renderer path -- which uploads through SDL_UpdateYUVTexture
+    //     and therefore needs the plane bytes in CPU memory -- reads it back,
+    //     EXPLICITLY, here. That keeps the cost in exactly one place, and
+    //     keeps hardware playback CORRECT on a host that cannot import:
+    //     expensive, not broken.
     //
-    // The gl_context_ term is the one that makes this sink different from
-    // GlVideoSink: it is a sink that can be running either path, and asking
-    // "can I import" before knowing which one is on would let the renderer
-    // path hand a GPU frame to a CPU upload.
-    if (frame && !frame->IsMappable() &&
-        !(gl_context_ && CanImportHardwareFrame(*frame))) {
+    // The gl_context_ term is the ONLY question this sink still asks itself.
+    // Everything on the GL side of it -- import, or read back because there is
+    // no backend, or read back because the driver refused -- is
+    // GlVideoLayer::Upload()'s decision now, and asking "can I import" here as
+    // well is what made this sink disagree with the GL sink about whether a
+    // refused import was a dropped frame.
+    bool readback_failed = false;
+    if (frame && !frame->IsMappable() && !gl_context_) {
       base::scoped_refptr<VideoFrame> mapped = frame->ToI420();
       if (!mapped) {
-        // No readback path installed: treat as a submit failure so the
-        // renderer's stats tell the truth instead of dropping silently.
-        stats_.NoteSubmitFailure();
+        // No readback path installed. The frame is dropped here and the
+        // outcome below reports it once, as a failure.
         frame = nullptr;
+        readback_failed = true;
       } else {
         static std::atomic<bool> warned{false};
         if (!warned.exchange(true)) {
@@ -204,13 +206,13 @@ void Sdl2VideoSink::PresentOne() {
         frame = std::move(mapped);
       }
     }
-    if (discard_.load() || !frame) {
-      stats_.NoteDropped();
-    } else if (UploadAndPresent(frame)) {
-      stats_.NotePresented();
-    } else {
-      stats_.NoteSubmitFailure();
+    const bool presented = !discard_.load() && frame && UploadAndPresent(frame);
+    const FrameOutcome outcome = ClassifyFrameOutcome(
+        frame != nullptr, discard_.load(), readback_failed, presented);
+    if (outcome == FrameOutcome::kSubmitFailure) {
+      callback_->OnFrameSubmitFailure();
     }
+    stats_.NoteFrameOutcome(outcome);
   }
   if (render_runner_) {
     // Shared with GlVideoSink on purpose: two copies of a cadence rule means
@@ -231,17 +233,9 @@ void Sdl2VideoSink::SetSceneUpdate(GlSceneDriver::UpdateCallback callback) {
   scene_.SetUpdateCallback(std::move(callback));
 }
 
-bool Sdl2VideoSink::CanImportHardwareFrame(const VideoFrame& frame) const {
-  if (!hw_importer_ || hw_import_failed_.load()) {
-    return false;
-  }
-  return hw_importer_->CanImport(frame);
-}
-
 void Sdl2VideoSink::SetHwTextureImporter(
     std::unique_ptr<GlHwTextureImporter> importer) {
   hw_importer_ = std::move(importer);
-  hw_import_failed_.store(false);
   LOG(INFO) << "Sdl2VideoSink hardware import backend: "
             << (hw_importer_ ? hw_importer_->name() : "none");
 }
@@ -276,22 +270,10 @@ bool Sdl2VideoSink::UploadAndPresent(
       NotePresentTiming(timing);
       return true;
     }
-    // The import was refused at the last step -- the backend accepted the
-    // frame but the driver would not point a texture at its surface. One
-    // readback beats a black screen, and the import stays off afterwards.
-    if (hw_importer_ && !frame->IsMappable() &&
-        !hw_import_failed_.exchange(true)) {
-      LOG(ERROR) << "Sdl2VideoSink hardware import failed at draw time; read "
-                    "back this frame and every frame after it";
-      base::scoped_refptr<VideoFrame> mapped = frame->ToI420();
-      if (mapped) {
-        PresentTiming retry;
-        if (scene_.Present(*presenter_, mapped, &retry)) {
-          NotePresentTiming(retry);
-          return true;
-        }
-      }
-    }
+    // No second attempt here either: a frame the import route would not take
+    // is one Upload() has already read back and retried inside the layer, so
+    // retrying the whole scene from here would walk every layer again for one
+    // that already had its answer.
     return false;
   }
   SDL_Renderer* renderer = static_cast<SDL_Renderer*>(renderer_);

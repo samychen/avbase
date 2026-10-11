@@ -82,11 +82,6 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
 
  private:
   void PresentOne();
-  // True when the GL path will take |frame| as it is. False without an
-  // importer, after one refusal, or for a frame the backend declines.
-  // Deliberately does NOT ask whether a GL context exists: the SDL_Renderer
-  // path can never import, and that is the caller's distinction to make.
-  bool CanImportHardwareFrame(const VideoFrame& frame) const;
   // Folds one present's stage timings into the published snapshot. Same shape
   // and same reasoning as GlVideoSink's: render thread writes, the media
   // sequence's statistics tick reads, and the lock protects only the copy.
@@ -124,9 +119,6 @@ class AVBASE_MEDIA_EXPORT Sdl2VideoSink final : public VideoRendererSink {
   // Declared before presenter_, which borrows it: members die in reverse, so
   // the presenter is destroyed first and never sees a dangling importer.
   std::unique_ptr<GlHwTextureImporter> hw_importer_;
-  // Sticky, for the same reason as GlVideoSink's: a driver that refuses the
-  // interop API refuses it for every frame after the first.
-  std::atomic<bool> hw_import_failed_{false};
   std::unique_ptr<GlPresenter> presenter_;
   // Keeps a scene in step with the frames when the host installed a hook;
   // unused (and allocates nothing) otherwise. Declared after presenter_ so it
