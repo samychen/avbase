@@ -2252,3 +2252,209 @@ render runner 后行为一致。
 
 **遗留**：`play_egl` 仍只能在 Linux 编、跑；GLFW 依赖目前装在本机临时 prefix
 （`/tmp/glfw-prefix`），持久化走 `tools/setup_glfw.sh`。
+
+### 第五十五轮：GLFW 依赖固化与 `play_glfw` 重新产出（补录）
+
+上一轮的 GLFW 装在本机临时 prefix，macOS 清 `/tmp` 后丢失。本轮把它固化到仓库内
+`tools/build/glfw`（`tools/setup_glfw.sh`，免 sudo、gitignored），并用
+`-DAVBASE_ENABLE_GLFW=ON -DCMAKE_PREFIX_PATH=$PWD/tools/build/glfw` 重新产出
+**`build/macos-sdl2/bin/play_glfw`**，冒烟 `EXIT=0`、零 ERROR。
+
+顺带消掉 23 条链接告警：根因是脚本与项目都没设 `CMAKE_OSX_DEPLOYMENT_TARGET`，GLFW 按
+宿主 OS（15.8）编而链接目标是 15.7。脚本改为传
+`-DCMAKE_OSX_DEPLOYMENT_TARGET="${AVBASE_OSX_DEPLOYMENT_TARGET:-11.0}"`（非 Apple 平台
+CMake 自动忽略），删 prefix 重建后 **ld warning 归零**。文档在 `docs/BUILDING.md §3.7`。
+
+> 踩坑：脚本在后台运行时去 Edit 它，bash 按字节偏移惰性读取，读到被改写的文件直接报
+> `unexpected EOF`。与「clang-format 不能与构建并发跑同一批文件」同类 ——
+> **别在长任务运行期间改它正在读的文件**。
+
+### 第五十六轮：GL 层做成可独立分发的零依赖模块 `avbase_gl`
+
+目标（用户原话）：「做成成熟 gl 方案，可以单独作为一个模块供其他项目使用」。三个边界
+问题用户全选推荐项：模块边界 = 加载器 + context + 渲染原语（对标 `libobs-opengl`，不含
+`VideoFrame` 语义）；扩展策略 = 手写表 + 机器核对（零第三方依赖）；交付形态 =
+`avbase_gl` + install/export。
+
+**目录再切一刀：`render/gl`（零依赖）↔ `media/gl`（视频语义）**
+
+`render/gl/` 现在 14 个文件（9 头 + 5 源）构成 `avbase_gl`：`gl_api`（per-instance 装载器）、
+`gl_constants.h`、`gl_program` / `gl_texture` / `gl_quad` / `gl_shaders` / `gl_export.h`、
+`native_gl_context.h`、`overlay.h`。它**不依赖 media/base、不 include GL 头、不用 GLEW/glad**。
+迁出的半边：`gl_present.*` 与 `gl_video_sink.*` 移到 `media/gl/`（YUV→RGB 矩阵、平面拆分、
+overlay 合成），`gl_loader.h` 被 `gl_api` 取代而删除。判据一句话：**任何被 `VideoFrame`
+塑形的东西留在 `media/gl/`** —— 这样 `render/gl` 才能被一个没听过 `VideoFrame` 的项目整个
+拿走。原来的「依赖方向只有 `render → media`」因此反转为
+`platform/* ──实现 NativeGLContext──▶ render/gl ◀──借用── media/gl`（docs/02 §6.2）。
+
+**`GlApi`：一 context 一实例，无进程全局表** —— 这是与 GLEW/glad 最大的语义差别（那两个是
+进程全局表，两个线程两个 context 是 bug 来源）。入口点两张 X-macro 表语义不同：
+`AVBASE_GL_CORE_ENTRY_POINTS` 缺一即 `Load()` 失败并**报出函数名**；
+`AVBASE_GL_EXT_ENTRY_POINTS` 缺则成员留 null、对应特性标记不可用。加函数 = 加一行（展开三次）。
+
+**手写常量表 + 机器核对**（`tools/check_gl_constants.py`，新增）
+
+手写枚举的理由没变（系统 GL 头按平台割裂：Windows 的停在 1.1、Apple 的是 2.1），但代价
+——写错不报错——有了护栏。脚本折叠两侧名字比对（不猜词边界），并加两条增强：
+
+1. **厂商后缀回退**：SDK 只写 `GL_RGBA16F_ARB` 也算。依据是 GL 的硬规则：扩展枚举提升为
+   core 时值不变。
+2. **Khronos 头缓存**（可选）：`tools/build/khronos/{glcorearb.h,glext.h,gl2ext.h}`，
+   三条 curl，gitignored。`registry.khronos.org` 可直连。
+
+覆盖率实测：macOS 单跑 SDK 头 = **100 核对 / 16 查不到**；带缓存 = **116 / 0**。顺带把
+`kGLActiveTexture0..3` 改名成 GL 自己的名字 `kGLTexture0..3`（+4 项立刻可核）。
+
+**交付形态**
+
+`install(EXPORT ... NAMESPACE avbase::)` 会把 `avbase_gl` 导成 `avbase::avbase_gl`，故加
+`set_target_properties(avbase_gl PROPERTIES EXPORT_NAME gl)`。外部项目实测：
+`find_package(avbase_gl REQUIRED)` + `target_link_libraries(app PRIVATE avbase::gl)`，
+配置/编译/运行全通；无真实 context 时 `Load()` 返回 false 且 error 为
+`missing GL entry point glActiveTexture`。CI 新增 `check-gl-constants` job（Linux 跑，
+Mesa 头覆盖面比 Apple 大）。对外契约写在新增的
+[docs/13 GL 模块独立使用指南](13-GL模块独立使用指南.md)。
+
+**顺手修掉的 27 条 clang-tidy 发现（`render/gl` 内，都是真问题）**
+
+C 数组 → `std::array` / `const char* const`；`rfind(...,0)==0` → `starts_with`；
+`std::any_of` → `std::ranges::any_of`；`gl_quad.h` 私有构造**漏了 `explicit`**（另两个都有）；
+宏参数补括号；int→ptr 走 `uintptr_t` 中转加抑制。另核实：`const auto x = f();` **也会**被
+`ConstantPrefix: k` 判定，所以 const 局部量一律 k 前缀（生产代码里零例例外，是真约定）。
+
+> lint 抑制注释要同时伺候两个工具，唯一可用形态是：**类别名写进上一行散文注释、
+> `// NOLINTNEXTLINE` 裸着单独一行**。带括号的类别名 cpplint 不认
+> （`Unknown NOLINT error category: performance-no-int-to-ptr`），带尾随散文 clang-tidy 不认。
+
+**验证**
+
+| 项 | 结果 |
+| --- | --- |
+| no-ffmpeg + `-Werror` | `exit=0`，0 warning，ctest **468/468** |
+| macos-sdl2(FFmpeg+SDL2) + `-Werror` | `exit=0`，0 warning，ctest **592/592** |
+| `check_invariants` | all rules pass（**396** 文件），C23 与基线一致 |
+| `clang-format` 全树 | 0 偏离（396 个自有文件） |
+| `check_gl_constants` | **116/116，0 未覆盖** |
+| 外部消费者 `find_package` 端到端 | 配置/编译/运行全通 |
+
+**发现（未修，需单独决策）—— CI 的两股风格门禁在 main 上是红的**
+
+本轮为了判断「能不能把 `render/` 加进 clang-tidy 的检查清单」，用本机 LLVM 20 扫了既有代码，
+结论与文档不符，证据可复现：`player/player_impl.cc` 20+ 条、`platform/sdl2/`
+`sdl2_audio_sink.cc` 13 条、`base/logging.h` 等头文件上百条；其中
+`enum LogSeverity { LOG_VERBOSE }` 与 `.clang-tidy` 的 `EnumConstantPrefix: k` 直接冲突，
+而这**不是**新版本才有的检查。cpplint（1.6.1，与 CI 同版本）跑 CI 同一文件集有 4 条 error，
+全在本轮未触碰的文件里（3 条缺 `#include <utility>`，1 条 `unsigned long long`）。
+
+根因与第三十二/五十三轮同构：文档里的「15 个代表性文件零发现」是**抽样**，不是按 job 的
+文件清单跑过。**门禁的「绿」有时只是「没跑」。** 这两股门禁不在本轮修，理由见该轮交付说明。
+
+另记一个隐蔽副作用：`.clang-tidy` 的 `HeaderFilterRegex` 是**子串匹配**，而仓库目录叫
+`avbase/`，路径里的 `avbase/` 含子串 `base/`，于是**所有**头文件都被当成命中。
+
+### 第五十七轮：手写 GL 表退役 —— 内嵌 glad 2.0.8 生成物替换装载器
+
+用户原话：「现在还是 `gl_api*` `gl_constants.h` 写法，有没有成熟开源的 GL 框架」。
+一轮调研后用户选「**内嵌 glad2 替换装载器**」。上一轮刚交付的 `avbase_gl` 零依赖/可独立分发
+这条性质必须保住，是本轮的硬约束。
+
+**调研结论（值得留档）：自建 loader 不是土办法**
+
+它不是「业余写法有别于工业写法」，而是业界两种都有的选择：ImGui 的
+`imgui_impl_opengl3_loader.h`（公共领域、单头、由 `gl3w_gen.py` 裁到约 54 个函数）与
+Chromium 的 `ui/gl/gl_bindings.h`（自建 `GLApi`）都属于**自建**这一类。现成的可选项是
+glad2（MIT，OBS 在用）、libepoxy（MIT，零初始化，但是系统运行库）、GLEW（维护停滞、
+无 EGL）、glbinding（类型安全但体量大）；更高一层是 bgfx / sokol_gfx / Magnum / Diligent /
+ANGLE。量出的迁移面：`GlApi` **73** 个入口点（48 core + 25 ext）、`gl_constants.h` **116**
+个常量、真正的调用方只有 **5** 个 `.cc`。
+
+**落地：生成物入库，不是引入依赖**
+
+`render/gl/third_party/glad/` = `include/glad/gl.h`（1920 行）+ `include/KHR/khrplatform.h`
+（311 行）+ `src/gl.c`（641 行），由 glad 2.0.8 生成：
+
+```bash
+pip install glad2==2.0.8
+python -m glad --api gl:core=3.3 --extensions "GL_EXT_texture_sRGB_decode,GL_ARB_copy_image,\
+GL_NV_copy_image,GL_EXT_texture_filter_anisotropic,GL_KHR_debug,GL_ARB_debug_output,\
+GL_EXT_EGL_image_storage" --out-path render/gl/third_party/glad --quiet c --mx
+```
+
+三个选项都是踩出来的，理由写进了 `third_party/glad/README.md`：
+
+- `--mx` **必须**开：只有它生成「一 context 一实例」的 `GladGLContext`，正是 `GlApi`
+  一直以来的语义。默认模式把指针放进全局变量，两线程两 context 就是 bug。
+- `--loader` **不能**开：那会带进 glad 自带的 dlopen/WGL 装载路径，而本模块的装载入口
+  只有一个 —— `NativeGLContext::GetProcAddress`。
+- `--alias` **不要**开：它会静默拉入所有「与 core 3.3 互为别名」的扩展，7 个变 **75** 个。
+  不开则 `CopyImageSubData` 与 `CopyImageSubDataNV` 是两个可独立探测的指针，正是
+  `has_copy_image()` 要知道的。
+
+两个 glad 覆盖不到的坑：① `GL_OES_EGL_image` 是 ES 扩展，桌面 `gl` 规格下生成器**直接拒绝**
+（无任何选项可解）→ 换 `GL_EXT_EGL_image_storage`；② 即便如此
+`glEGLImageTargetTexture2DOES` 仍生成不出来，成为 `GlApi` 里**唯一**一条手工解
+（`PfnEGLImageTargetTexture2DOES`），注释就写在表旁边，让「glad 没覆盖多少」这件事可见。
+
+**`GlApi` 重写：一个访问器 + 一次语义反转**
+
+成员从两张 X-macro 表换成 `GladGLContext context_{}`，经 `context()` 访问器暴露。**不派生**
+有两个理由，都写进了头文件：裸指针不走 `operator->`（派生写法读起来对、编译不过），且
+本类是导出的，导出类派生自无可见性属性的类会触发 `-Wvisibility`。
+
+`Load()` 的失败语义随之反转：原来问「我逐个列的入口点是不是都在」（表是挑出来的 48 个），
+现在变成问「**这里能不能画**」——`is_gles_ ? VERSION_3_0 : VERSION_3_3` 版本门禁。失败只剩
+两种，都指向 context 整体而非某个符号：没有 current context，或 context 太老（error 里是
+驱动自报的版本串）。能力查询改读 glad 的扩展标记
+（`context_.KHR_debug || context_.ARB_debug_output` 等）。
+
+**退役清单**：`gl_constants.h`（116 常量）删除；`tools/check_gl_constants.py` 删除；
+CI `check-gl-constants` job 删除（那台机器守的失败模式现在被**删掉**而不是被守住）；
+`check-format` 清单加 `grep -v 'third_party/'`。调用点机械替换：常量 73 处 + 入口点 73 处，
+接收者形态分 `gl_->context().X(` / `gl.context().X(` / `api_->context().X(` 三种。
+
+**CMake**：`avbase_gl_vendor`（OBJECT 库）编 gl.c，用
+`$<TARGET_OBJECTS:avbase_gl_vendor>` 并进 `avbase_gl` 的源列表。**不能**用
+`target_link_libraries` —— `install(EXPORT)` 要求 PRIVATE 链接依赖同样在导出集里，会报
+`requires target "avbase_gl_vendor" that is not in any export set`。glad 头两条路径加进
+`target_include_directories` 的 BUILD/INSTALL 两个 interface。
+
+**踩坑**：`media/gl/gl_present.cc:257` 触发 `-Wc++11-narrowing` —— glad 的枚举是 `#define`
+的 `int` 字面量，三元表达式结果类型是 `int`，braced init 里窄化进 `GLenum` 就报。字段改
+`GLenum` + 该处 `static_cast<GLenum>(...)`，并把原因写进注释。
+
+**顺手修掉 C24 的一个误报（`tools/check_invariants.py`）**
+
+`add_library(avbase_gl_vendor "${AVBASE_GLAD_DIR}/src/gl.c")` 让 C24 报
+`lists /src/gl.c, which does not exist relative to render`。根因不在 CMake，在 checker：
+`CMAKE_SOURCE_RE` 匹配的是**最长的路径字符游程**，而 `${...}` 里的 `}` 不在字符类里，
+于是 `${AVBASE_GLAD_DIR}/src/gl.c` 被切成 `/src/gl.c` —— 一个看着像绝对路径、其实哪儿都没有的
+东西。原有的「含 `$`/`{` 就跳过」拦不住它，因为切完之后的碎片里两个字符都没了。
+
+修法是新增 `cmake_source_paths()` 收敛这段逻辑，并加一条判据：**游程起始位置的前一个字符若是
+`}`，它就是 `${VAR}/path` 的尾巴**（真正的字面路径不会紧跟在 `}` 后面）。C24 与 C25 都改走这个
+helper。这是「变量驱动路径」的第二种形态：第一种是整条路径都在变量里，第二种是前缀在变量里。
+
+**验证**
+
+| 项 | 结果 |
+| --- | --- |
+| no-ffmpeg + `-Werror` | `exit=0`，0 warning，ctest **468/468** |
+| macos-sdl2(FFmpeg+SDL2+GLFW) + `-Werror` | `exit=0`，0 warning，12 个二进制全产出 |
+| `play_glfw` 实播 | `exit=0`，0 ERROR；日志 `gl present: Intel(R) Iris(TM) Plus Graphics 655 / 4.1 INTEL-23.7.4 (GLSL 4.10)` |
+| `play_sdl2` 实播 | `exit=0`，0 ERROR |
+| `ThrottledDataSourceTest`（并行下曾失败） | 单跑 **7/7 passed** —— 判为负载相关 flaky，非回归 |
+| `check_invariants` | all rules pass（**395** 文件）——少了 `gl_constants.h`；C23 与基线一致 |
+| `clang-format` 全树（含 `third_party/` 排除口径） | 0 偏离（389 个文件，含未跟踪的新文件）；并用一个故意畸形的探针文件确认这股检查会真报错（exit=1） |
+| 外部消费者 `find_package(avbase_gl)` 端到端 | 配置/编译/链接/运行全通：编译命令里的 include 全部来自安装 prefix（模块根 + glad 的 `third_party/glad/include`），`GL_TEXTURE_2D=0x0DE1` / `GL_RGBA8=0x8058` 取值正确，`ShaderPrologue` 18 字节，无 context 时 `Load()` 干净返回 false 且给出原因 |
+
+**两条教训**
+
+1. **「零依赖」≠「零第三方代码」。** 内嵌生成物随源码走：消费者不装 glad、不联网、不跑
+   生成、不继承额外链接项。「我们内嵌了 glad」很容易被读成「`avbase_gl` 现在依赖 glad」，
+   所以 `docs/02`、`docs/BUILDING.md §3.8`、`docs/13 §5` 都补了这句区分。
+2. **换装载器的接缝确实在 `GlApi` 内部，但换表会泄漏到调用方。** 上一轮 `docs/13` 曾断言
+   「`gl_program`/`gl_texture`/`gl_quad` 和所有调用方一行都不用改」——实现了，代价是调用方
+   改了 146 处**名字**（枚举 `kGLTexture2D` → `GL_TEXTURE_2D`，入口点 `gl.Clear` →
+   `gl.context().Clear`），形状没变。结论修正为：只要模块把 GL 的名字直接暴露给调用方，换表
+   就必然泄漏名字；想真正透明就得给每个函数留转发方法，而那正是本模块刻意不做的。选的是
+   「名字会变、形状不变」。

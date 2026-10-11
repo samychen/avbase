@@ -255,6 +255,32 @@ cmake --preset linux-ffmpeg711 -DAVBASE_ENABLE_EGL=ON
 > `ld: warning: ... was built for newer 'macOS' version (15.8) than being linked (15.7)`。
 > 该变量在非 Apple 平台被 CMake 忽略，同一份脚本在 Linux 上照常可用。
 
+### 3.8 `avbase_gl` 也是能单独拿走的模块
+
+`render/gl/` 不只是内部的一层，它同时是一个**零依赖**的 GL 基础设施库，装出来供别的项目用：
+
+```bash
+cmake --install build/macos-sdl2 --prefix /tmp/prefix
+```
+
+```cmake
+find_package(avbase_gl REQUIRED)
+target_link_libraries(my_app PRIVATE avbase::gl)   # 注意不是 avbase::avbase_gl
+```
+
+它不依赖 media/base/窗口 SDK，也不依赖外部 GL 加载器——所以可以被一个完全不玩播放器的
+项目直接拿走。完整的对外契约（context 接缝、入口点表从哪来、GLSL 桌面/ES 方言）见
+[13-GL模块独立使用指南](13-GL模块独立使用指南.md)。
+
+注意「零依赖」不等于「零第三方代码」：入口点与枚举表是**内嵌**在
+`render/gl/third_party/glad/` 的 glad 生成物，随源码走。消费者不用装 glad、不用联网、
+不用跑生成步骤，也不继承任何额外链接项——生成物编进 `avbase_gl` 自己。
+
+> 第五十七轮起，原先那张手写的常量表（`gl_constants.h`）和对它的机核脚本
+> （`tools/check_gl_constants.py`）都退役了：常量值本来就躺在 Khronos 的 XML 里，
+> 手抄一遍等于给自己造了一个**写错也不报错**的失败模式。那个失败模式现在是被删掉，
+> 不是被守住。这段历史与理由见 `docs/13` §4.2。
+
 ---
 
 ## 4. 播放：现在能跑了（第十轮起）
@@ -303,10 +329,10 @@ Stop / SeekTo（按 request_id 回调）/ SelectTrack / TakeSnapshot / 音量 / 
 ## 5. 不需要编译器就能跑的三个工具
 
 这三个是最常用的检查，只要有 Python 3 就能跑（CI 里另有 format / clang-tidy /
-cpplint / corpus / soak / fuzz 等共 16 个 job，见 §7）：
+cpplint / corpus / soak / fuzz 等共 17 个 job，见 §7）：
 
 ```bash
-# 架构与风格不变量（C1–C27，385 个文件）
+# 架构与风格不变量（C1–C27，395 个文件）
 python3 tools/check_invariants.py --root .
 
 # 移植常量三方交叉校验：ffplay #define ⟷ avbase 代码 ⟷ docs/05 表 7
