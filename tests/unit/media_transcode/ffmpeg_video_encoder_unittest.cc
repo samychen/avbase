@@ -8,8 +8,8 @@
 // ~10^6; the frame converter hardcoded 1/90000 for every container. Both are
 // asserted here against values no wrong unit can satisfy.
 
-#include "media/transcode/ffmpeg_transcode_streams.h"
 #include "media/transcode/ffmpeg_video_encoder.h"
+#include "media/transcode/ffmpeg_transcode_streams.h"
 
 #include <cstring>
 #include <vector>
@@ -67,8 +67,7 @@ TEST(VideoEncoderTimeBaseTest, UniformFpsInputProducesConsecutivePts) {
   for (int i = 0; i < 8; ++i) {
     std::vector<EncodedPacket> packets;
     ASSERT_TRUE(encoder.Encode(MakeGrayFrame(base::Microseconds(
-                                   static_cast<int64_t>(i) *
-                                   kFrameIntervalUs)),
+                                   static_cast<int64_t>(i) * kFrameIntervalUs)),
                                &packets));
     out.insert(out.end(), std::make_move_iterator(packets.begin()),
                std::make_move_iterator(packets.end()));
@@ -112,8 +111,8 @@ TEST(VideoEncoderTimeBaseTest, NonIntegerRateStaysOnTheTimeline) {
     std::vector<EncodedPacket> packets;
     // Microsecond timestamps of the ideal 30000/1001 grid.
     const int64_t us = static_cast<int64_t>(i) * 1001 * 1000000 / 30000;
-    ASSERT_TRUE(encoder.Encode(MakeGrayFrame(base::Microseconds(us)),
-                               &packets));
+    ASSERT_TRUE(
+        encoder.Encode(MakeGrayFrame(base::Microseconds(us)), &packets));
     out.insert(out.end(), std::make_move_iterator(packets.begin()),
                std::make_move_iterator(packets.end()));
   }

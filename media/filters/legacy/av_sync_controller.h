@@ -27,7 +27,8 @@
 // AlignAudioDurationToVideo() are line-by-line ports of ijkplayer's
 // get_master_sync_type(), get_master_clock(), synchronize_audio() and
 // synchronize_audio_to_video(), which makes this a derivative work
-// (LGPL-2.1). The rest of avbase is BSD-3-Clause; see media/filters/legacy/README.md.
+// (LGPL-2.1). The rest of avbase is BSD-3-Clause; see
+// media/filters/legacy/README.md.
 //
 // ALGORITHM PROVENANCE
 // --------------------
@@ -69,11 +70,12 @@ class AVBASE_MEDIA_EXPORT AvSyncController final : public TimeSource {
   // Thresholds ported verbatim from ffplay. Values must come from
   // tools/extract_constants.py, not from memory.
   struct Thresholds {
-    double audio_diff_avg_coef{0.9};       // AV_DIFF_AVG_COEF
-    int audio_diff_avg_count{10};          // AV_DIFF_AVG_NB
-    double audio_diff_threshold{0.1};      // AV_DIFF_THRESHOLD
-    int sample_correction_percent_max{10}; // SAMPLE_CORRECTION_PERCENT_MAX
-    base::TimeDelta no_sync_threshold = base::Seconds(10);  // AV_NOSYNC_THRESHOLD
+    double audio_diff_avg_coef{0.9};        // AV_DIFF_AVG_COEF
+    int audio_diff_avg_count{10};           // AV_DIFF_AVG_NB
+    double audio_diff_threshold{0.1};       // AV_DIFF_THRESHOLD
+    int sample_correction_percent_max{10};  // SAMPLE_CORRECTION_PERCENT_MAX
+    base::TimeDelta no_sync_threshold =
+        base::Seconds(10);  // AV_NOSYNC_THRESHOLD
   };
 
   struct Snapshot {
@@ -170,8 +172,8 @@ class AVBASE_MEDIA_EXPORT AvSyncController final : public TimeSource {
   std::atomic<float> rate_{1.0f};
 };
 
-AVBASE_MEDIA_EXPORT const char* GetMasterTypeName(
-    AvSyncController::MasterType type);
+AVBASE_MEDIA_EXPORT const char*
+GetMasterTypeName(AvSyncController::MasterType type);
 
 }  // namespace avbase::media
 

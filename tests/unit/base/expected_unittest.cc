@@ -140,12 +140,12 @@ TEST(ExpectedTest, ConstructionAndDestructionAreBalanced) {
   Counted::constructed = 0;
   Counted::destroyed = 0;
   {
-    expected<Counted, Error> a;                               // default
-    expected<Counted, Error> b(a);                            // copy
-    expected<Counted, Error> c(std::move(b));                 // move
-    expected<Counted, Error> d(unexpected(Error{}));          // error only
-    d = a;                                                    // error -> value
-    c = expected<Counted, Error>(unexpected(Error{}));        // value -> error
+    expected<Counted, Error> a;                         // default
+    expected<Counted, Error> b(a);                      // copy
+    expected<Counted, Error> c(std::move(b));           // move
+    expected<Counted, Error> d(unexpected(Error{}));    // error only
+    d = a;                                              // error -> value
+    c = expected<Counted, Error>(unexpected(Error{}));  // value -> error
   }
   EXPECT_EQ(Counted::constructed, Counted::destroyed)
       << "every construction must be matched by exactly one destruction";

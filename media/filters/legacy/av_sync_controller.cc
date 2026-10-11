@@ -27,7 +27,8 @@
 // AlignAudioDurationToVideo() are line-by-line ports of ijkplayer's
 // get_master_sync_type(), get_master_clock(), synchronize_audio() and
 // synchronize_audio_to_video(), which makes this a derivative work
-// (LGPL-2.1). The rest of avbase is BSD-3-Clause; see media/filters/legacy/README.md.
+// (LGPL-2.1). The rest of avbase is BSD-3-Clause; see
+// media/filters/legacy/README.md.
 
 #include "media/filters/legacy/av_sync_controller.h"
 
@@ -43,9 +44,12 @@ namespace avbase::media {
 const char* GetMasterTypeName(AvSyncController::MasterType type) {
   using M = AvSyncController::MasterType;
   switch (type) {
-    case M::kAudio:    return "audio";
-    case M::kVideo:    return "video";
-    case M::kExternal: return "external";
+  case M::kAudio:
+    return "audio";
+  case M::kVideo:
+    return "video";
+  case M::kExternal:
+    return "external";
   }
   return "invalid";
 }
@@ -115,12 +119,12 @@ AvSyncController::MasterType AvSyncController::ResolveMasterType() const {
   const bool audio = has_audio_.load(std::memory_order_acquire);
   const bool video = has_video_.load(std::memory_order_acquire);
   switch (requested_master_) {
-    case MasterType::kVideo:
-      return video ? MasterType::kVideo : MasterType::kAudio;
-    case MasterType::kAudio:
-      return audio ? MasterType::kAudio : MasterType::kVideo;
-    case MasterType::kExternal:
-      return MasterType::kExternal;
+  case MasterType::kVideo:
+    return video ? MasterType::kVideo : MasterType::kAudio;
+  case MasterType::kAudio:
+    return audio ? MasterType::kAudio : MasterType::kVideo;
+  case MasterType::kExternal:
+    return MasterType::kExternal;
   }
   return MasterType::kExternal;
 }
@@ -131,9 +135,15 @@ base::TimeDelta AvSyncController::GetMasterClock() const {
   const MasterType resolved = ResolveMasterType();
   base::TimeDelta value;
   switch (resolved) {
-    case MasterType::kVideo:    value = video_.Get();    break;
-    case MasterType::kAudio:    value = audio_.Get();    break;
-    case MasterType::kExternal: value = external_.Get(); break;
+  case MasterType::kVideo:
+    value = video_.Get();
+    break;
+  case MasterType::kAudio:
+    value = audio_.Get();
+    break;
+  case MasterType::kExternal:
+    value = external_.Get();
+    break;
   }
   if (!media::IsNoTimestamp(value)) {
     return value;
@@ -146,9 +156,12 @@ base::TimeDelta AvSyncController::GetMasterClock() const {
 
 int32_t AvSyncController::master_serial() const {
   switch (ResolveMasterType()) {
-    case MasterType::kVideo:    return video_.serial();
-    case MasterType::kAudio:    return audio_.serial();
-    case MasterType::kExternal: return external_.serial();
+  case MasterType::kVideo:
+    return video_.serial();
+  case MasterType::kAudio:
+    return audio_.serial();
+  case MasterType::kExternal:
+    return external_.serial();
   }
   return -1;
 }
@@ -169,8 +182,8 @@ base::TimeDelta AvSyncController::av_diff() const {
 void AvSyncController::UpdateAudioDiff(base::TimeDelta diff) const {
   base::AutoLock scoped(diff_lock_);
   // ffplay:  audio_diff_cum = diff + audio_diff_avg_coef * audio_diff_cum
-  audio_diff_cum_ = diff.InSecondsF() +
-                    thresholds_.audio_diff_avg_coef * audio_diff_cum_;
+  audio_diff_cum_ =
+      diff.InSecondsF() + thresholds_.audio_diff_avg_coef * audio_diff_cum_;
   if (audio_diff_samples_ < thresholds_.audio_diff_avg_count) {
     ++audio_diff_samples_;
   } else {
@@ -186,7 +199,8 @@ int AvSyncController::ComputeAudioSampleAdjustment(int buffer_frames,
     return 0;
   }
   // ffplay only corrects audio when it is the slave clock. When audio is the
-  // master there is nothing to follow, and correcting would fight the reference.
+  // master there is nothing to follow, and correcting would fight the
+  // reference.
   if (ResolveMasterType() == MasterType::kAudio) {
     return 0;
   }
@@ -199,8 +213,9 @@ int AvSyncController::ComputeAudioSampleAdjustment(int buffer_frames,
     return 0;
   }
   const base::TimeDelta diff = audio_now - ref_clock;
-  if (diff > thresholds_.no_sync_threshold || diff < -thresholds_.no_sync_threshold) {
-    return 0;   // Too far apart to correct by resampling; snap instead.
+  if (diff > thresholds_.no_sync_threshold ||
+      diff < -thresholds_.no_sync_threshold) {
+    return 0;  // Too far apart to correct by resampling; snap instead.
   }
   UpdateAudioDiff(diff);
 
@@ -208,7 +223,7 @@ int AvSyncController::ComputeAudioSampleAdjustment(int buffer_frames,
   {
     base::AutoLock scoped(diff_lock_);
     if (audio_diff_samples_ < thresholds_.audio_diff_avg_count) {
-      return 0;   // Still filling the window; ffplay does not correct yet.
+      return 0;  // Still filling the window; ffplay does not correct yet.
     }
     avg_diff = audio_diff_avg_;
   }
@@ -216,18 +231,22 @@ int AvSyncController::ComputeAudioSampleAdjustment(int buffer_frames,
     return 0;
   }
 
-  // wanted = frames + diff * sample_rate, clamped to ±sample_correction_percent_max.
-  int wanted = buffer_frames +
-               static_cast<int>(diff.InSecondsF() * static_cast<double>(sample_rate));
-  const int lo = buffer_frames * (100 - thresholds_.sample_correction_percent_max) / 100;
-  const int hi = buffer_frames * (100 + thresholds_.sample_correction_percent_max) / 100;
+  // wanted = frames + diff * sample_rate, clamped to
+  // ±sample_correction_percent_max.
+  int wanted =
+      buffer_frames +
+      static_cast<int>(diff.InSecondsF() * static_cast<double>(sample_rate));
+  const int lo =
+      buffer_frames * (100 - thresholds_.sample_correction_percent_max) / 100;
+  const int hi =
+      buffer_frames * (100 + thresholds_.sample_correction_percent_max) / 100;
   return std::clamp(wanted, lo, hi) - buffer_frames;
 }
 
 // Port of synchronize_audio_to_video(): returns a duration nudged toward the
 // video clock so audio converges instead of drifting further.
-base::TimeDelta AvSyncController::AlignAudioDurationToVideo(
-    base::TimeDelta raw_duration) {
+base::TimeDelta
+AvSyncController::AlignAudioDurationToVideo(base::TimeDelta raw_duration) {
   if (ResolveMasterType() != MasterType::kAudio) {
     return raw_duration;
   }
@@ -237,7 +256,8 @@ base::TimeDelta AvSyncController::AlignAudioDurationToVideo(
     return raw_duration;
   }
   const base::TimeDelta diff = audio_now - video_now;
-  if (diff > thresholds_.no_sync_threshold || diff < -thresholds_.no_sync_threshold) {
+  if (diff > thresholds_.no_sync_threshold ||
+      diff < -thresholds_.no_sync_threshold) {
     return raw_duration;
   }
   // ffplay: if audio is behind video, shorten the next buffer so it catches up;
@@ -261,8 +281,7 @@ base::TimeDelta AvSyncController::AlignAudioDurationToVideo(
 
 void AvSyncController::GetWallClockTimes(
     const std::vector<base::TimeDelta>& media_timestamps,
-    base::TimeTicks reference_time,
-    std::vector<WallClockTime>* out) {
+    base::TimeTicks reference_time, std::vector<WallClockTime>* out) {
   CHECK(out);
   out->clear();
   out->reserve(media_timestamps.size());
@@ -275,10 +294,10 @@ void AvSyncController::GetWallClockTimes(
     if (media::IsNoTimestamp(master) || media::IsNoTimestamp(media_time)) {
       entry.wall_time = reference_time;
     } else {
-      const double offset_seconds =
-          (media_time - master).InSecondsF() / scale;
-      entry.wall_time = reference_time +
-                        base::Microseconds(static_cast<int64_t>(offset_seconds * 1e6));
+      const double offset_seconds = (media_time - master).InSecondsF() / scale;
+      entry.wall_time =
+          reference_time +
+          base::Microseconds(static_cast<int64_t>(offset_seconds * 1e6));
     }
     out->push_back(entry);
   }

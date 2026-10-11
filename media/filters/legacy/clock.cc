@@ -36,8 +36,9 @@
 namespace avbase::media {
 
 Clock::Clock(const base::TickClock* wall_clock) : wall_(wall_clock) {
-  CHECK(wall_) << "Clock needs a TickClock; pass DefaultTickClock::GetInstance() "
-                  "in production and SimpleTestTickClock in tests";
+  CHECK(wall_)
+      << "Clock needs a TickClock; pass DefaultTickClock::GetInstance() "
+         "in production and SimpleTestTickClock in tests";
 }
 
 uint32_t Clock::ReadRetry() const {
@@ -50,7 +51,8 @@ uint32_t Clock::ReadRetry() const {
   return seq;
 }
 
-void Clock::Set(base::TimeDelta pts, int32_t serial, base::TimeTicks wall_time) {
+void Clock::Set(base::TimeDelta pts, int32_t serial,
+                base::TimeTicks wall_time) {
   // Writer protocol: make the sequence odd, publish, make it even again.
   seq_.fetch_add(1, std::memory_order_relaxed);
   std::atomic_thread_fence(std::memory_order_release);
@@ -108,7 +110,8 @@ Clock::Snapshot Clock::Read() const {
     snapshot.speed = speed_.load(std::memory_order_relaxed);
     const int64_t pts_us = pts_micros_.load(std::memory_order_relaxed);
     const int64_t drift_us = drift_micros_.load(std::memory_order_relaxed);
-    const int64_t updated_us = updated_at_micros_.load(std::memory_order_relaxed);
+    const int64_t updated_us =
+        updated_at_micros_.load(std::memory_order_relaxed);
     std::atomic_thread_fence(std::memory_order_acquire);
     if (seq_.load(std::memory_order_acquire) == before) {
       snapshot.pts = base::Microseconds(pts_us);
@@ -116,8 +119,8 @@ Clock::Snapshot Clock::Read() const {
       snapshot.updated_at = base::TimeTicks::FromMicroseconds(updated_us);
       return snapshot;
     }
-    // A write landed mid-read; retry. Bounded in practice because writers do not
-    // loop, but cap it so a pathological writer cannot livelock a reader.
+    // A write landed mid-read; retry. Bounded in practice because writers do
+    // not loop, but cap it so a pathological writer cannot livelock a reader.
   }
 }
 
@@ -143,23 +146,28 @@ base::TimeDelta Clock::Get() const {
   // already has last_updated subtracted from it, that form removes the capture
   // instant twice and returns a master clock offset by -last_updated -- on a
   // real machine, by negative uptime. It went unnoticed because every unit test
-  // drives a SimpleTestTickClock that starts at zero, where drift == pts and the
-  // two forms agree. `avbase-inspect sync` caught it immediately: the master read
-  // -33185 s on a host up for 9.2 hours, which would have marked every video
-  // frame as infinitely late and dropped the entire stream.
-  // The widening to double is explicit: -Wconversion (debug preset, -Werror)
+  // drives a SimpleTestTickClock that starts at zero, where drift == pts and
+  // the two forms agree. `avbase-inspect sync` caught it immediately: the
+  // master read -33185 s on a host up for 9.2 hours, which would have marked
+  // every video frame as infinitely late and dropped the entire stream. The
+  // widening to double is explicit: -Wconversion (debug preset, -Werror)
   // rejects it otherwise, because an int64 above 2^53 microseconds -- about
   // 285,000 years -- would lose precision. Unreachable, but the cast says so.
-  const double scaled =
-      static_cast<double>(elapsed.InMicroseconds()) * rate;
+  const double scaled = static_cast<double>(elapsed.InMicroseconds()) * rate;
   return base::Microseconds(s.pts.InMicroseconds() +
                             static_cast<int64_t>(scaled));
 }
 
-int32_t Clock::serial() const { return serial_.load(std::memory_order_acquire); }
+int32_t Clock::serial() const {
+  return serial_.load(std::memory_order_acquire);
+}
 
-float Clock::speed() const { return speed_.load(std::memory_order_acquire); }
+float Clock::speed() const {
+  return speed_.load(std::memory_order_acquire);
+}
 
-bool Clock::valid() const { return valid_.load(std::memory_order_acquire); }
+bool Clock::valid() const {
+  return valid_.load(std::memory_order_acquire);
+}
 
 }  // namespace avbase::media

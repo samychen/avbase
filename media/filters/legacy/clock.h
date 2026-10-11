@@ -67,7 +67,7 @@ class AVBASE_MEDIA_EXPORT Clock {
  public:
   struct Snapshot {
     base::TimeDelta pts{media::kNoTimestamp};
-    base::TimeDelta drift;         // pts minus the wall time it was captured at
+    base::TimeDelta drift;  // pts minus the wall time it was captured at
     int32_t serial{-1};
     float speed{1.0f};
     bool valid{false};

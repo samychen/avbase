@@ -52,8 +52,8 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/synchronization/lock.h"
-#include "base/time/time.h"
 #include "base/time/tick_clock.h"
+#include "base/time/time.h"
 #include "media/base/video_frame.h"
 #include "media/media_export.h"
 
@@ -103,8 +103,8 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
     // Candidate frame and its predecessor, in media time.
     base::TimeDelta next_timestamp;
     base::TimeDelta last_timestamp;
-    base::TimeDelta next_duration;        // Per-frame duration from the container.
-    base::TimeDelta fps_duration;         // 1 / avg_frame_rate, used as fallback.
+    base::TimeDelta next_duration;  // Per-frame duration from the container.
+    base::TimeDelta fps_duration;   // 1 / avg_frame_rate, used as fallback.
     int32_t next_serial{0};
     int32_t last_serial{0};
     int32_t queue_serial{0};
@@ -131,7 +131,7 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
     base::TimeTicks deadline_min;
     base::TimeTicks deadline_max;
     base::TimeTicks last_present_wall_time;
-    base::TimeDelta displayed_duration;    // Duration of the frame on screen.
+    base::TimeDelta displayed_duration;  // Duration of the frame on screen.
 
     // Playback state.
     double playback_rate{1.0};
@@ -149,10 +149,10 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
 
   struct FrameSyncOutput {
     Decision decision{Decision::kHold};
-    base::TimeDelta frame_duration;   // Duration this frame should be on screen.
-    base::TimeDelta target_delay;     // compute_target_delay() result.
-    base::TimeDelta av_diff;          // master_clock - video_clock, for stats.
-    base::TimeTicks retry_at;         // Valid when decision == kHold.
+    base::TimeDelta frame_duration;  // Duration this frame should be on screen.
+    base::TimeDelta target_delay;    // compute_target_delay() result.
+    base::TimeDelta av_diff;         // master_clock - video_clock, for stats.
+    base::TimeTicks retry_at;        // Valid when decision == kHold.
     DropReason drop_reason{DropReason::kNone};
   };
 
@@ -166,10 +166,11 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
     base::TimeDelta av_sync_threshold_max = base::Milliseconds(100);  // 0.1
     // AV_NOSYNC_THRESHOLD: beyond this the streams are too far apart to
     // correct by pacing; snap instead.
-    base::TimeDelta no_sync_threshold = base::Seconds(10);            // 10.0
+    base::TimeDelta no_sync_threshold = base::Seconds(10);  // 10.0
     // AV_SYNC_FRAMEDUP_THRESHOLD: only stretch a delay by the full diff when
     // the frame interval already exceeds this, otherwise double it.
-    base::TimeDelta sync_framedup_threshold = base::Milliseconds(10); // 0.1 in ffplay
+    base::TimeDelta sync_framedup_threshold =
+        base::Milliseconds(10);  // 0.1 in ffplay
     // MAX_SLEEP: never sleep longer than this in one go, so that control
     // messages stay responsive.
     base::TimeDelta max_sleep = base::Seconds(1);
@@ -223,7 +224,7 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
   // Picks the frame that should be visible inside [deadline_min, deadline_max].
   // Returns nullptr when the caller should keep displaying the previous frame.
   base::scoped_refptr<VideoFrame> Render(base::TimeTicks deadline_min,
-                                   base::TimeTicks deadline_max);
+                                         base::TimeTicks deadline_max);
 
   Stats GetStats() const;
 
@@ -316,10 +317,10 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
   std::atomic<uint64_t> av_diff_samples_{0};
 };
 
-AVBASE_MEDIA_EXPORT const char* GetDecisionName(
-    VideoFrameCompositor::Decision decision);
-AVBASE_MEDIA_EXPORT const char* GetDropReasonName(
-    VideoFrameCompositor::DropReason reason);
+AVBASE_MEDIA_EXPORT const char*
+GetDecisionName(VideoFrameCompositor::Decision decision);
+AVBASE_MEDIA_EXPORT const char*
+GetDropReasonName(VideoFrameCompositor::DropReason reason);
 
 }  // namespace avbase::media
 

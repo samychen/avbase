@@ -6,8 +6,8 @@
 
 #include "base/time/simple_test_tick_clock.h"
 #include "base/time/time.h"
-#include "media/base/media_constants.h"
 #include "gtest/gtest.h"
+#include "media/base/media_constants.h"
 
 namespace avbase::media {
 namespace {

@@ -288,10 +288,10 @@ auto BindRepeating(Functor&& functor, BoundArgs&&... bound) {
           std::forward<BoundArgs>(bound))...);
   using BoundTuple = decltype(bound_tuple);
 
-  auto shared = std::make_shared<internal::BindState<
-      CallbackSig, std::remove_cvref_t<Functor>, BoundTuple,
-      /*kIsOnce=*/false>>(std::forward<Functor>(functor),
-                          std::move(bound_tuple));
+  auto shared = std::make_shared<
+      internal::BindState<CallbackSig, std::remove_cvref_t<Functor>, BoundTuple,
+                          /*kIsOnce=*/false>>(std::forward<Functor>(functor),
+                                              std::move(bound_tuple));
 
   return RepeatingCallback<CallbackSig>(
       [shared](auto&&... rest) ->

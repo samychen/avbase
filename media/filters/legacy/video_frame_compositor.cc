@@ -58,8 +58,10 @@ namespace {
 // Clamps |value| into [lo, hi]. Port of ffplay's av_clip for durations.
 base::TimeDelta Clamp(base::TimeDelta value, base::TimeDelta lo,
                       base::TimeDelta hi) {
-  if (value < lo) return lo;
-  if (value > hi) return hi;
+  if (value < lo)
+    return lo;
+  if (value > hi)
+    return hi;
   return value;
 }
 
@@ -99,11 +101,16 @@ bool IsNoTimestamp(base::TimeDelta t) {
 const char* GetDecisionName(VideoFrameCompositor::Decision decision) {
   using D = VideoFrameCompositor::Decision;
   switch (decision) {
-    case D::kPresent:     return "Present";
-    case D::kHold:        return "Hold";
-    case D::kDrop:        return "Drop";
-    case D::kRepeat:      return "Repeat";
-    case D::kEndOfStream: return "EndOfStream";
+  case D::kPresent:
+    return "Present";
+  case D::kHold:
+    return "Hold";
+  case D::kDrop:
+    return "Drop";
+  case D::kRepeat:
+    return "Repeat";
+  case D::kEndOfStream:
+    return "EndOfStream";
   }
   return "Invalid";
 }
@@ -111,11 +118,16 @@ const char* GetDecisionName(VideoFrameCompositor::Decision decision) {
 const char* GetDropReasonName(VideoFrameCompositor::DropReason reason) {
   using R = VideoFrameCompositor::DropReason;
   switch (reason) {
-    case R::kNone:              return "none";
-    case R::kStaleSerial:       return "stale-serial";
-    case R::kLateBeyondWindow:  return "late-beyond-window";
-    case R::kFpsCap:            return "fps-cap";
-    case R::kAccurateSeek:      return "accurate-seek";
+  case R::kNone:
+    return "none";
+  case R::kStaleSerial:
+    return "stale-serial";
+  case R::kLateBeyondWindow:
+    return "late-beyond-window";
+  case R::kFpsCap:
+    return "fps-cap";
+  case R::kAccurateSeek:
+    return "accurate-seek";
   }
   return "invalid";
 }
@@ -130,8 +142,7 @@ base::TimeDelta VideoFrameCompositor::ApplyFpsCap(base::TimeDelta duration,
   if (max_fps <= 0) {
     return duration;
   }
-  const base::TimeDelta min_interval =
-      base::Microseconds(1000000 / max_fps);
+  const base::TimeDelta min_interval = base::Microseconds(1000000 / max_fps);
   return duration < min_interval ? min_interval : duration;
 }
 
@@ -149,8 +160,9 @@ base::TimeDelta VideoFrameCompositor::ApplyFpsCap(base::TimeDelta duration,
 // The serial guard is the critical part: across a seek the pts delta spans the
 // discontinuity and would produce a multi-second stall. See docs/04 §4 rule R6
 // and the regression test SkipsDurationComputationAcrossSeekSerialChange.
-base::TimeDelta VideoFrameCompositor::DeriveFrameDuration(
-    const FrameSyncInput& in, const Thresholds& th) {
+base::TimeDelta
+VideoFrameCompositor::DeriveFrameDuration(const FrameSyncInput& in,
+                                          const Thresholds& th) {
   const bool timestamps_usable =
       !IsNoTimestamp(in.next_timestamp) && !IsNoTimestamp(in.last_timestamp);
 
@@ -189,15 +201,16 @@ base::TimeDelta VideoFrameCompositor::DeriveFrameDuration(
 // `av_diff = master_clock - next_timestamp`, i.e. the negation, so the branch
 // conditions below are mirrored. Positive av_diff means video is behind the
 // master clock and must hurry up; negative means it is ahead and should wait.
-base::TimeDelta VideoFrameCompositor::ComputeTargetDelay(
-    base::TimeDelta last_duration,
-    const FrameSyncInput& in,
-    const Thresholds& th) {
+base::TimeDelta
+VideoFrameCompositor::ComputeTargetDelay(base::TimeDelta last_duration,
+                                         const FrameSyncInput& in,
+                                         const Thresholds& th) {
   base::TimeDelta delay = last_duration;
 
   // ffplay only re-paces video when video is *not* the master clock; when it
   // is the master there is nothing to follow.
-  if (in.master_is_video || !in.master_clock_valid || IsNoTimestamp(in.next_timestamp)) {
+  if (in.master_is_video || !in.master_clock_valid ||
+      IsNoTimestamp(in.next_timestamp)) {
     return delay;
   }
 
@@ -207,7 +220,8 @@ base::TimeDelta VideoFrameCompositor::ComputeTargetDelay(
   }
 
   // AV_NOSYNC_THRESHOLD: streams too far apart to be corrected by pacing.
-  const base::TimeDelta abs_diff = av_diff < base::TimeDelta() ? -av_diff : av_diff;
+  const base::TimeDelta abs_diff =
+      av_diff < base::TimeDelta() ? -av_diff : av_diff;
   if (abs_diff >= th.no_sync_threshold) {
     return delay;
   }
@@ -223,7 +237,7 @@ base::TimeDelta VideoFrameCompositor::ComputeTargetDelay(
   } else if (av_diff <= -sync_threshold) {
     if (delay > th.sync_framedup_threshold) {
       // Long frames: absorb the full drift.
-      delay = delay - av_diff;   // av_diff is negative, so this lengthens.
+      delay = delay - av_diff;  // av_diff is negative, so this lengthens.
     } else {
       // Short frames: ffplay duplicates the frame by doubling the delay.
       delay = delay * 2;
@@ -233,8 +247,8 @@ base::TimeDelta VideoFrameCompositor::ComputeTargetDelay(
   // Playback rate scales wall-clock waiting: 2x speed waits half as long.
   if (in.playback_rate > 0.0 && in.playback_rate != 1.0) {
     // Explicit widening to double: -Wconversion (debug preset, -Werror) rejects
-    // the implicit one. Precision is only lost above 2^53 microseconds, which is
-    // not a reachable presentation delay.
+    // the implicit one. Precision is only lost above 2^53 microseconds, which
+    // is not a reachable presentation delay.
     delay = base::Microseconds(static_cast<int64_t>(
         static_cast<double>(delay.InMicroseconds()) / in.playback_rate));
   }
@@ -248,9 +262,10 @@ base::TimeDelta VideoFrameCompositor::ComputeTargetDelay(
 // ordering is obvious at a glance: a stale-seek frame must be dropped even if
 // it is also late, and an accurate-seek frame must be dropped even if it is
 // inside the fps cap window.
-VideoFrameCompositor::DropReason VideoFrameCompositor::ClassifyCandidate(
-    const FrameSyncInput& in) {
-  // ffplay: `if (vp->serial != is->videoq.serial) { frame_queue_next(); goto retry; }`
+VideoFrameCompositor::DropReason
+VideoFrameCompositor::ClassifyCandidate(const FrameSyncInput& in) {
+  // ffplay: `if (vp->serial != is->videoq.serial) { frame_queue_next(); goto
+  // retry; }`
   if (in.next_serial < in.queue_serial) {
     return DropReason::kStaleSerial;
   }
@@ -277,8 +292,9 @@ VideoFrameCompositor::DropReason VideoFrameCompositor::ClassifyCandidate(
 }
 
 // static
-VideoFrameCompositor::FrameSyncOutput VideoFrameCompositor::DecideNextFrame(
-    const FrameSyncInput& in, const Thresholds& th) {
+VideoFrameCompositor::FrameSyncOutput
+VideoFrameCompositor::DecideNextFrame(const FrameSyncInput& in,
+                                      const Thresholds& th) {
   FrameSyncOutput out;
 
   // --- 1. Gates that stop pacing entirely --------------------------------
@@ -303,9 +319,8 @@ VideoFrameCompositor::FrameSyncOutput VideoFrameCompositor::DecideNextFrame(
   // ffplay: `if (is->step) { is->step = 0; ... }` presents exactly one frame.
   if (in.step_mode) {
     out.decision = Decision::kPresent;
-    out.frame_duration = in.fps_duration > base::TimeDelta()
-                             ? in.fps_duration
-                             : in.next_duration;
+    out.frame_duration = in.fps_duration > base::TimeDelta() ? in.fps_duration
+                                                             : in.next_duration;
     return out;
   }
 
@@ -361,17 +376,17 @@ VideoFrameCompositor::FrameSyncOutput VideoFrameCompositor::DecideNextFrame(
 // timer is snapped instead (step 9), because chasing a large drift by dropping
 // would empty the queue without ever catching up.
 bool VideoFrameCompositor::ShouldDropForLateness(const FrameSyncInput& in,
-                                                const FrameSyncOutput& out,
-                                                base::TimeDelta frame_duration,
-                                                const Thresholds& th) {
+                                                 const FrameSyncOutput& out,
+                                                 base::TimeDelta frame_duration,
+                                                 const Thresholds& th) {
   if (in.max_frame_drop <= 0) {
-    return false;   // ijkplayer "framedrop" = 0 or -1 both disable dropping.
+    return false;  // ijkplayer "framedrop" = 0 or -1 both disable dropping.
   }
   if (in.frames_dropped_since_last_present >= in.max_frame_drop) {
-    return false;   // Budget exhausted; present rather than starve the display.
+    return false;  // Budget exhausted; present rather than starve the display.
   }
   if (in.master_is_video || !in.master_clock_valid) {
-    return false;   // Video is the master, or there is nothing to compare to.
+    return false;  // Video is the master, or there is nothing to compare to.
   }
   return out.av_diff > frame_duration && out.av_diff < th.no_sync_threshold;
 }
@@ -390,7 +405,8 @@ VideoFrameCompositor::VideoFrameCompositor(const Thresholds& thresholds,
 
 VideoFrameCompositor::~VideoFrameCompositor() = default;
 
-void VideoFrameCompositor::PutCurrentFrame(base::scoped_refptr<VideoFrame> frame) {
+void VideoFrameCompositor::PutCurrentFrame(
+    base::scoped_refptr<VideoFrame> frame) {
   if (!frame) {
     return;
   }
@@ -486,8 +502,8 @@ base::scoped_refptr<VideoFrame> VideoFrameCompositor::current_frame() const {
   return current_frame_;
 }
 
-void VideoFrameCompositor::PresentLocked(const base::scoped_refptr<VideoFrame>& frame,
-                                         const FrameSyncOutput& out) {
+void VideoFrameCompositor::PresentLocked(
+    const base::scoped_refptr<VideoFrame>& frame, const FrameSyncOutput& out) {
   current_frame_ = frame;
   last_presented_serial_ = frame->serial();
   const base::TimeTicks now = tick_clock_->NowTicks();
@@ -498,10 +514,11 @@ void VideoFrameCompositor::PresentLocked(const base::scoped_refptr<VideoFrame>& 
   //       is->frame_timer = time;
   // frame_timer_ holds the instant the NEXT frame is due, so advancing it by
   // the duration of the frame just presented is exactly ffplay's invariant.
-  frame_timer_ = (frame_timer_.is_null() ? now : frame_timer_) + out.target_delay;
+  frame_timer_ =
+      (frame_timer_.is_null() ? now : frame_timer_) + out.target_delay;
   if (out.target_delay > base::TimeDelta() &&
       now - frame_timer_ > thresholds_.av_sync_threshold_max) {
-    frame_timer_ = now;   // Snapped: we fell too far behind to catch up.
+    frame_timer_ = now;  // Snapped: we fell too far behind to catch up.
   }
 
   last_present_wall_time_ = now;
@@ -516,8 +533,7 @@ void VideoFrameCompositor::PresentLocked(const base::scoped_refptr<VideoFrame>& 
 
 VideoFrameCompositor::FrameSyncInput
 VideoFrameCompositor::BuildFrameSyncInputLocked(
-    const VideoFrame& candidate,
-    base::TimeTicks deadline_min,
+    const VideoFrame& candidate, base::TimeTicks deadline_min,
     base::TimeTicks deadline_max) const {
   FrameSyncInput in;
   in.next_timestamp = candidate.timestamp();
@@ -530,7 +546,8 @@ VideoFrameCompositor::BuildFrameSyncInputLocked(
   in.master_clock = master_clock_;
   in.master_serial = master_serial_;
   // A clock from a previous seek generation says nothing about this frame.
-  in.master_clock_valid = master_clock_valid_ && master_serial_ == in.next_serial;
+  in.master_clock_valid =
+      master_clock_valid_ && master_serial_ == in.next_serial;
   in.master_is_video = master_is_video_;
   in.frame_timer = frame_timer_;
   in.now = tick_clock_->NowTicks();
@@ -557,55 +574,54 @@ void VideoFrameCompositor::AccountDropLocked(DropReason reason) {
   frames_dropped_.fetch_add(1, std::memory_order_relaxed);
   ++frames_dropped_since_last_present_;
   switch (reason) {
-    case DropReason::kLateBeyondWindow:
-      frames_dropped_late_.fetch_add(1, std::memory_order_relaxed);
-      break;
-    case DropReason::kFpsCap:
-      frames_dropped_fps_.fetch_add(1, std::memory_order_relaxed);
-      break;
-    case DropReason::kStaleSerial:
-      frames_dropped_stale_serial_.fetch_add(1, std::memory_order_relaxed);
-      break;
-    case DropReason::kAccurateSeek:
-      frames_dropped_accurate_seek_.fetch_add(1, std::memory_order_relaxed);
-      break;
-    case DropReason::kNone:
-      break;
+  case DropReason::kLateBeyondWindow:
+    frames_dropped_late_.fetch_add(1, std::memory_order_relaxed);
+    break;
+  case DropReason::kFpsCap:
+    frames_dropped_fps_.fetch_add(1, std::memory_order_relaxed);
+    break;
+  case DropReason::kStaleSerial:
+    frames_dropped_stale_serial_.fetch_add(1, std::memory_order_relaxed);
+    break;
+  case DropReason::kAccurateSeek:
+    frames_dropped_accurate_seek_.fetch_add(1, std::memory_order_relaxed);
+    break;
+  case DropReason::kNone:
+    break;
   }
 }
 
-base::scoped_refptr<VideoFrame> VideoFrameCompositor::Render(
-    base::TimeTicks deadline_min, base::TimeTicks deadline_max) {
+base::scoped_refptr<VideoFrame>
+VideoFrameCompositor::Render(base::TimeTicks deadline_min,
+                             base::TimeTicks deadline_max) {
   base::AutoLock scoped(lock_);
 
   // Consume at most one frame per call; the sink drives the cadence.
   while (!pending_frames_.empty()) {
-    const FrameSyncInput in =
-        BuildFrameSyncInputLocked(*pending_frames_.front(), deadline_min,
-                                  deadline_max);
+    const FrameSyncInput in = BuildFrameSyncInputLocked(
+        *pending_frames_.front(), deadline_min, deadline_max);
     const FrameSyncOutput out = DecideNextFrame(in, thresholds_);
 
     switch (out.decision) {
-      case Decision::kPresent: {
-        base::scoped_refptr<VideoFrame> frame = pending_frames_.front();
-        pending_frames_.pop_front();
-        PresentLocked(frame, out);
-        if (step_mode_) {
-          step_mode_ = false;   // ffplay: is->step is consumed by one frame.
-        }
-        return frame;
+    case Decision::kPresent: {
+      base::scoped_refptr<VideoFrame> frame = pending_frames_.front();
+      pending_frames_.pop_front();
+      PresentLocked(frame, out);
+      if (step_mode_) {
+        step_mode_ = false;  // ffplay: is->step is consumed by one frame.
       }
-      case Decision::kDrop:
-        pending_frames_.pop_front();
-        AccountDropLocked(out.drop_reason);
-        DVLOG(2) << "dropped frame reason="
-                 << GetDropReasonName(out.drop_reason);
-        continue;   // Evaluate the next candidate within the same call.
-      case Decision::kHold:
-      case Decision::kRepeat:
-      case Decision::kEndOfStream:
-        frames_repeated_.fetch_add(1, std::memory_order_relaxed);
-        return nullptr;   // Caller keeps displaying the current frame.
+      return frame;
+    }
+    case Decision::kDrop:
+      pending_frames_.pop_front();
+      AccountDropLocked(out.drop_reason);
+      DVLOG(2) << "dropped frame reason=" << GetDropReasonName(out.drop_reason);
+      continue;  // Evaluate the next candidate within the same call.
+    case Decision::kHold:
+    case Decision::kRepeat:
+    case Decision::kEndOfStream:
+      frames_repeated_.fetch_add(1, std::memory_order_relaxed);
+      return nullptr;  // Caller keeps displaying the current frame.
     }
   }
 
@@ -617,8 +633,10 @@ VideoFrameCompositor::Stats VideoFrameCompositor::GetStats() const {
   Stats stats;
   stats.frames_presented = frames_presented_.load(std::memory_order_relaxed);
   stats.frames_dropped = frames_dropped_.load(std::memory_order_relaxed);
-  stats.frames_dropped_late = frames_dropped_late_.load(std::memory_order_relaxed);
-  stats.frames_dropped_fps = frames_dropped_fps_.load(std::memory_order_relaxed);
+  stats.frames_dropped_late =
+      frames_dropped_late_.load(std::memory_order_relaxed);
+  stats.frames_dropped_fps =
+      frames_dropped_fps_.load(std::memory_order_relaxed);
   stats.frames_dropped_stale_serial =
       frames_dropped_stale_serial_.load(std::memory_order_relaxed);
   stats.frames_dropped_accurate_seek =
@@ -626,9 +644,9 @@ VideoFrameCompositor::Stats VideoFrameCompositor::GetStats() const {
   stats.frames_repeated = frames_repeated_.load(std::memory_order_relaxed);
   const uint64_t samples = av_diff_samples_.load(std::memory_order_relaxed);
   if (samples > 0) {
-    stats.avg_av_diff_ms =
-        static_cast<double>(av_diff_sum_micros_.load(std::memory_order_relaxed)) /
-        static_cast<double>(samples) / 1000.0;
+    stats.avg_av_diff_ms = static_cast<double>(av_diff_sum_micros_.load(
+                               std::memory_order_relaxed)) /
+                           static_cast<double>(samples) / 1000.0;
   }
   return stats;
 }
