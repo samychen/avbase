@@ -81,7 +81,7 @@ class VideoRendererSink;
 // never the other way round (docs/02 §2.1, invariant C22). So the media layer
 // cannot name Sdl2VideoSink or AlsaAudioRendererSink; it can only ask a factory
 // for "a video sink for this display". player/ chooses the factory -- by
-// auto-detecting the backend per docs/09 §2.1, or by taking one from
+// auto-detecting the backend per docs/archive/09 §2.1, or by taking one from
 // player::Deps -- and the rest of the pipeline never learns which platform it
 // is running on. That is also what makes the NullSink CI configuration and a
 // business-specific renderer the same code path rather than two.
@@ -110,7 +110,8 @@ class AVBASE_MEDIA_EXPORT RendererFactory {
 
   // Audio has no display argument: the device is chosen by
   // config.audio.output_device_id and the backend by config.audio.backend
-  // (docs/09 §5.1's priority order PipeWire > Pulse > ALSA > SDL2 > Null).
+  // (docs/archive/09 §5.1's priority order PipeWire > Pulse > ALSA > SDL2 >
+  // Null).
   virtual base::scoped_refptr<AudioRendererSink> CreateAudioRendererSink() = 0;
 
   // Decoder factories, so that a platform can offer hardware decoders without

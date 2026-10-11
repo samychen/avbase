@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 //
 // SDL2 playback: the M11 acceptance example. The host owns the window and
-// renderer (embedding is the core mode, docs/09 §2), avbase renders into them,
-// and the main thread's only jobs are SDL_PollEvent and quitting.
+// renderer (embedding is the core mode, docs/archive/09 §2), avbase renders
+// into them, and the main thread's only jobs are SDL_PollEvent and quitting.
 //
 //   ./play_sdl2 --url video.mp4 [--max-seconds n] [--gl]
 //
@@ -105,7 +105,8 @@ void OnTimedText(const avbase::TimedTextPayload& payload) {
         std::min(1.0f - overlay.y, static_cast<float>(payload.h) /
                                        static_cast<float>(g_video_height));
   } else {
-    constexpr int kWindowWidth = 960, kWindowHeight = 540;
+    // kWindowWidth/kWindowHeight above: scaling the overlay to fractions of
+    // the window is the same default the window was created with.
     overlay.w =
         std::min(0.9f, static_cast<float>(overlay.width) / kWindowWidth);
     overlay.h =
@@ -204,7 +205,11 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
 // hosts SDL_GL_CreateContext succeeds but shader-object entry points fail at
 // call time. Compile a trivial shader and catch that before playback starts,
 // so --gl can fall back instead of presenting nothing.
-bool GlRuntimeWorks(SDL_GLContext context) {
+//
+// Deliberately takes no context argument: SDL_GL_GetProcAddress resolves
+// against whichever context is current, which is the one SDL_GL_CreateContext
+// just installed. A parameter would only imply the probe can choose one.
+bool GlRuntimeWorks() {
   using GlCreateShader = unsigned int (*)(unsigned int);
   using GlShaderSource =
       void (*)(unsigned int, int, const char* const*, const int*);
@@ -265,7 +270,7 @@ bool CreateSdlWindow(bool want_gl, SDL_Window** window, SDL_Renderer** renderer,
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_OPENGL);
     if (*window) {
       *gl_context = SDL_GL_CreateContext(*window);
-      if (*gl_context && GlRuntimeWorks(*gl_context)) {
+      if (*gl_context && GlRuntimeWorks()) {
         return true;
       }
       if (!*gl_context) {

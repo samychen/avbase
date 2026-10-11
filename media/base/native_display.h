@@ -21,7 +21,7 @@ namespace avbase::media {
 //
 // The media layer must never include X11/Wayland/SDL headers, so the handle is
 // carried as an opaque pointer plus a kind tag, with a release callback for
-// handles avbase was asked to own. See docs/09 §3 for the embedding
+// handles avbase was asked to own. See docs/archive/09 §3 for the embedding
 // rules that govern who owns what.
 enum class NativeDisplayKind {
   kNone = 0,
@@ -35,7 +35,7 @@ enum class NativeDisplayKind {
   kCametalLayer,
   kCaEaglLayer,
   kHwnd,
-  kGlfwWindow,  // GLFW GLFWwindow*, host-owned (docs/09 §2 embedding).
+  kGlfwWindow,  // GLFW GLFWwindow*, host-owned (docs/archive/09 §2 embedding).
   kEglWindow,   // EGL EGLSurface carrier, host-owned (see egl_surface.h).
 };
 

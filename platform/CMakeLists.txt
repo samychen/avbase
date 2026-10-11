@@ -2,7 +2,7 @@
 # code that is CHOSEN by the host it runs on. A portable vendor library such as
 # FFmpeg does not belong here even though it is a vendor dependency; that one
 # lives in media/ffmpeg/, next to the media code that uses it -- see
-# docs/09 for the decision that moved it there.
+# docs/archive/09 for the decision that moved it there.
 
 # The shared GL rendering layer used to live here as platform/gl/. It moved to
 # render/gl/ (target avbase::render_gl): this directory holds what the HOST

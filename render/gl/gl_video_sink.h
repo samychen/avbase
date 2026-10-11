@@ -41,7 +41,7 @@ struct AVBASE_MEDIA_EXPORT GlSurfaceBinding {
 // subclass this directly instead of re-deriving the whole render loop.
 //
 // THREADING: the host owns the window and its context (embedding mode,
-// docs/09 §2). This sink makes the context current only on its own
+// docs/archive/09 §2). This sink makes the context current only on its own
 // render thread via the NativeGLContext it is given, so the host must never
 // make the context current once it has handed the display to avbase.
 class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {

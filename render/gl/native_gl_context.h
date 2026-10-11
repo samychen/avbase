@@ -19,7 +19,7 @@ namespace avbase::media {
 //
 // Implementations are BORROWED-semantics wrappers: they do not own the
 // underlying window/context (the host does, per the embedding rules in
-// docs/09), so their destructor must not destroy the host's objects.
+// docs/archive/09), so their destructor must not destroy the host's objects.
 class NativeGLContext {
  public:
   virtual ~NativeGLContext() = default;

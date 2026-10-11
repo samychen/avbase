@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 //
 // GLFW playback: the GLFW backend acceptance example. Embedding mode
-// (docs/09 §2) -- the host owns the GLFWwindow and its GL context,
+// (docs/archive/09 §2) -- the host owns the GLFWwindow and its GL context,
 // avbase renders into it through GlPresenter, and the main thread's only job is
 // glfwPollEvents and quitting. Audio goes through the null sink, since GLFW
 // ships no audio API of its own.

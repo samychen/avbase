@@ -8,7 +8,7 @@
 #include "render/gl/overlay.h"
 
 // The payload carried through NativeDisplay::FromEglSurface() for the EGL
-// backend. Embedding mode (docs/09 §2): the HOST owns the EGLDisplay /
+// backend. Embedding mode (docs/archive/09 §2): the HOST owns the EGLDisplay /
 // EGLSurface / EGLContext, and keeps this struct alive for as long as it
 // passes the display to avbase; the sink only ever draws through them.
 //

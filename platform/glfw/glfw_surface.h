@@ -8,7 +8,7 @@
 #include "render/gl/overlay.h"
 
 // The payload carried through NativeDisplay::FromGlfwWindow() for the GLFW
-// backend. Embedding mode (docs/09 §2): the HOST owns the GLFWwindow
+// backend. Embedding mode (docs/archive/09 §2): the HOST owns the GLFWwindow
 // and its GL context, and keeps this struct alive for as long as it passes the
 // display to avbase; the sink only ever draws into it.
 //

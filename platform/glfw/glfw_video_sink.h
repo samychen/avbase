@@ -10,7 +10,7 @@
 
 namespace avbase::media {
 
-// GLFW video output endpoint (docs/09 §2 embedding mode): the host owns
+// GLFW video output endpoint (docs/archive/09 §2 embedding mode): the host owns
 // the GLFWwindow and its GL context; this sink borrows them through
 // NativeDisplay::FromGlfwWindow() and presents via GlPresenter. GLFW is a
 // GL-only backend, so there is no 2D-renderer path -- the shared GlVideoSink

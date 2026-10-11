@@ -8,7 +8,7 @@
 #include "render/gl/overlay.h"
 
 // The payload carried through NativeDisplay::FromSdl2Window() for the SDL2
-// backend. Embedding mode (docs/09 §2): the HOST owns the window and
+// backend. Embedding mode (docs/archive/09 §2): the HOST owns the window and
 // the renderer and keeps this struct alive for as long as it passes the display
 // to avbase; the sink only ever draws into it.
 //

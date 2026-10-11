@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 //
 // EGL playback: the EGL backend acceptance example. Embedding mode
-// (docs/09 §2) -- the host owns the EGLDisplay / EGLSurface /
+// (docs/archive/09 §2) -- the host owns the EGLDisplay / EGLSurface /
 // EGLContext and carries them through NativeDisplay::FromEglSurface(); avbase
 // renders into the surface through GlPresenter. Audio goes through the null
 // sink.

@@ -10,7 +10,7 @@
 
 namespace avbase::media {
 
-// EGL video output endpoint (docs/09 §2 embedding mode): the host owns
+// EGL video output endpoint (docs/archive/09 §2 embedding mode): the host owns
 // the EGLDisplay / EGLSurface / EGLContext; this sink borrows them through
 // NativeDisplay::FromEglSurface() and presents via GlPresenter. Like GLFW,
 // EGL is GL-only, so the shared GlVideoSink loop is all it needs.

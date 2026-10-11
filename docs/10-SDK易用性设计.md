@@ -167,7 +167,7 @@ int main() {
   AVBASE_RETURN_IF_ERROR(player.SetDataSource("video.mp4"));
   AVBASE_RETURN_IF_ERROR(player.PrepareAsync());
 
-  // 你自己的事件循环；avbase 不碰你的 Display（见 docs/09 §3.1 铁律）
+  // 你自己的事件循环；avbase 不碰你的 Display（见 docs/archive/09 §3.1 铁律）
   XEvent ev;
   while (!ShouldQuit()) {
     while (XPending(dpy)) { XNextEvent(dpy, &ev); HandleEvent(ev); }

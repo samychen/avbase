@@ -15,7 +15,7 @@ namespace avbase {
 //
 // Every Player constructor calls this, so you normally never need to. Call it
 // explicitly only when you must guarantee it happens before your own first
-// X11 call (see docs/09 §10 L1).
+// X11 call (see docs/archive/09 §10 L1).
 //
 // Thread safety: safe to call concurrently; guarded by std::call_once.
 AVBASE_PLAYER_EXPORT void GlobalInit();
