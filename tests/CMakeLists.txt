@@ -58,7 +58,11 @@ avbase_add_unittest(base_unittests
 # ---- media ----
 file(GLOB AVBASE_MEDIA_UNITTEST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/unit/media_base/*.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/unit/media_filters/*.cc")
+    "${CMAKE_CURRENT_SOURCE_DIR}/unit/media_filters/*.cc"
+    # unit/media_gl/: what needs media/gl but NOT a GL context -- the sink's
+    # routing, which is decided before any context exists. The suites that do
+    # need pixels stay in unit/gl/ under the GLFW gate.
+    "${CMAKE_CURRENT_SOURCE_DIR}/unit/media_gl/*.cc")
 avbase_add_unittest(media_unittests
     SOURCES ${AVBASE_MEDIA_UNITTEST_SOURCES}
     DEPS avbase::media_test_support avbase::base_test_support)
