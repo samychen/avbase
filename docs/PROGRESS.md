@@ -3100,3 +3100,164 @@ GLFW 门控下。
 
 L5 多源编排（任务 #141–145，未开始）：`LatestFrameQueue` / `GlLayerSource` /
 `GlSceneEngine`。播放器管线仍是单源（`VideoRendererSink` 一次一帧）。
+
+---
+
+## 第六十五轮：L5 多源编排（任务 #141–145）
+
+第六十四轮收尾时说「L5 未开始」。本轮把它做完：**播放器管线仍是一次一帧的
+`VideoRendererSink`，但合成面从此能编排 N 路各自有自己时钟的源**。
+
+### 三个新文件，按依赖层次排
+
+```
+media/base/latest_frame_queue.{h,cc}   单槽邮箱（不认识 GL）
+media/gl/gl_layer_source.{h,cc}        一路源 = 邮箱 + 一个图层
+media/gl/gl_scene_engine.{h,cc}        N 路源的编排（取代 gl_scene_driver）
+```
+
+`gl_scene_driver.{h,cc}` 随本轮删除：它的职责（「让场景跟着帧流走」）被
+`GlSceneEngine` 完整吸收，留着就是两份回答同一个问题的代码。
+
+### #141：`LatestFrameQueue` 是邮箱，不是队列
+
+| | 队列 | 邮箱（这个） |
+|---|---|---|
+| 生产者超前 | 排队，越积越深 | **取代**槽里那帧 |
+| 消费得慢 | 播放越来越旧的内容 | 永远只显示最新一帧 |
+| 要调的参数 | 深度 N | 无 |
+
+**为什么 `Publish()` 要把被取代的那帧交回来**：生产者是唯一看见它的一方 ——
+消费者从没拿到它，下游没有任何地方能记这一笔。不交回来，「解码了但没显示」这件事
+就**根本无从知晓**，只剩一个会漏掉丢弃帧的计数器，那正是会让管线看起来比实际健康
+的那一种统计。
+
+恒等式（`ExpectAccounted()` 逐场景断言，而不是逐个计数断言 —— 两个错误反向相消时
+逐个查会过，查恒等式才红）：
+
+```
+published == consumed + superseded + cleared + (pending ? 1 : 0)
+```
+
+四项刻意分开：「一帧没被显示」的**三种原因**（消费者慢 / 被 seek 清空 / 还在等）
+是排查卡顿时真正在问的问题。并成一个 `dropped` 只能回答「有些帧没到」，而这没人怀疑过。
+
+### #142：`GlLayerSource` —— 邮箱 + 图层
+
+```
+Publish(frame)   生产者线程，随便几个都行
+        │
+   LatestFrameQueue（只留最新一帧）
+        │
+   Sync(presenter, scene, timing)   GL 线程，每显示帧一次
+        │
+        └─ EnsureLayer → Upload → 保留这一帧
+```
+
+**为什么是邮箱而不是直接调用**：第二路源由另一条管线在另一个线程解码，「给你一帧」
+发生在与显示时钟毫无关系的时刻。直接交给图层，要么让生产者被显示阻塞，要么把帧扔地上。
+邮箱两个都不做。代价是可以被下一帧取代 —— 对一张**画面**来说这是对的取舍。
+
+**为什么保留它上传的那一帧**（第二条理由不显然）：
+
+- 停止生产的源不该变黑 —— 纹理里还有上一张图，所以「没新帧」和「没上传」在这里是同一件事；
+- **导入的帧没有被拷贝**。它的纹理指向解码器自己的 surface，而释放这块 surface 的正是
+  帧的 release 回调 —— 上传完就丢引用，图层就会去采样一块已经释放的 surface。
+  **持有它才是零拷贝安全的原因，不只是整洁。**
+
+### #143：`GlSceneEngine` —— 两个方向都在这里
+
+```
+sink 的 Render()  ──拉──▶ 主图层（A/V 同步的基准流，按显示时钟走）
+                                    │
+第二/三/… 路源    ──推──▶ 各自的 GlLayerSource（有自己的时钟）
+                                    │
+                           Sync()，GL 线程，每显示帧一次
+```
+
+**两个方向的不对称是真的，不是瑕疵**：播放器自己的流被 sink 的 `Render()` 按 deadline 拉，
+因为它是 A/V 同步的基准；第二路源有自己的时钟，没法按一个它从没听过的 deadline 交帧。
+把两者压成一个形状，要么让显示等一个外来解码器，要么把播放器的帧也过一遍仅为满足抽象
+而存在的邮箱。
+
+**单源是特例，不是调用方的一个分支**：没加源、没装钩子时，`Present()` 就是
+`GlPresenter::Present()` —— 单帧路径原样不动。所以多源不是谁要打开的开关，
+不要这套的宿主只付一次比较。
+
+**`Compose()` 与 `Present()` 分开**，理由与 `GlPresenter` 把 `Compose()` 从
+`PresentComposed()` 分开相同：想看合成后像素的测试必须在 `SwapBuffers()` 让 back buffer
+变成未定义**之前**读，而同一道缝也是宿主抓取合成结果时会用的那道。
+
+### #144：第二路**真**解码器
+
+`examples/publisher_sink.h` 是 demo 此前造不出来的那块：第二个 `Player` 是一整条自己的
+管线（自己的 demuxer / decoder / clock），它还得往**某个地方** present，因为那是它的帧被拉出来
+的唯一途径。一个接受拉取、把帧丢进邮箱的 sink，就把「一个播放器的输出」变成「另一个播放器
+的输入」—— 在一个渲染器是单源的库里，「N 路独立解码」只能这么实现。
+
+```
+Player #1 ──▶ GlVideoSink ──▶ GlSceneEngine ──▶ 窗口
+                                   ▲
+Player #2 ──▶ PublisherSink ───────┘  （60Hz 轮询 → 邮箱）
+```
+
+`--second <url>` 用真实第二路源；不带它则退回「同一流的延迟副本」（12 帧环形缓冲）——
+那也是真纹理、真上传、真图层槽位，只是不是真第二路解码。
+
+**踩到一次**：`StartSecondSource` 里在 `PrepareSync()` 之后再调 `Start()`，报
+`Player::Start in state Started is not legal` —— `PlayerConfig::start_on_prepared`
+默认 true，`PrepareSync()` 已经把它起起来了。
+
+### 反证
+
+| # | 项 | 反证 |
+|---|---|---|
+| 141 | 邮箱语义：取代而非排队，且被取代帧被交回 | `Publish()` 改回返回 nullptr → `PublishReturnsTheFrameItSuperseded` 红，其余 6 条仍绿 |
+| 142 | 图层持有它上传的那一帧（零拷贝安全） | `Sync()` 上传后 `displayed_.reset()` → `ASourceHoldsTheFrameItsLayerIsShowing` 红，其余 4 条仍绿 |
+| 143 | 移除的源把图层还回场景 | `Detach()` 不调 `RemoveLayer` → `TheEngineComposesTheMainFrameAndASource` 红（`actual: 1 vs 200`） |
+| 144 | `--second` 真的开了第二个管线 | 指向不存在的 URL → 明确报 `--second: Prepare failed: InvalidState`；真实素材下 `published/consumed/superseded` 非零 |
+| — | HiDPI 采样坐标取自窗口而非常量 | 改回硬编码 64 → 两条断言红（本轮实测确认，见下） |
+| — | 两段式让像素可读 | 测试改用 `Present()` → swap 后 back buffer 未定义，读回全黑，红 |
+
+### 本轮实测的一个教训：别把「数字没变」直接读成「没生效」
+
+第一次跑基准看到双层比单源只多 **0.004 ms**，第一反应是「第二层的上传没被计入」。
+于是交替 A/B 复跑，delta 是 **+0.015 / −0.005 / −0.026 ms** —— 仍是零。
+加探针测第二层上传本身的耗时，读到 **0.033 ~ 0.671 ms**，且
+`upload_after ≈ upload_before + second_ms`，说明计时累加是对的。
+
+结论不是「坏了」，而是**硬件导入太便宜了**：一次导入只是重指一个指针，单帧几百分之一
+毫秒，落在这台机器逐轮 ±0.1 ms 的噪声底下。**「第二层让 upload 翻倍」那个数字是
+L4 之前的旧结论，当时走的是 CPU 拷贝。** 已把 `bench_render.sh` 脚注里那句已经不成立的
+说明改掉，并补上 `SECOND=<url>` 通路，让「真第二路解码」这条路径也能被同一把尺子量。
+
+### 验证
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（**444** 文件） |
+| `clang-format` 全树 | 0 偏离（**438** 文件） |
+| no-ffmpeg 预设 + `-Werror` | ctest **504/504** |
+| macos-sdl2 预设 + `-Werror` | ctest **625/625** |
+| GLFW 预设 + `-Werror` | ctest **672/672** |
+| 真机 `play_glfw --stats`（单源） | `hw_zero_copy`，59.98 fps @1080p60，upload 0.141 |
+| 真机 `--scene pip`（延迟副本） | `hw_zero_copy`，59.98 fps，upload 0.209 |
+| 真机 `--scene pip --second`（双解码器） | `hw_zero_copy`，59.97 fps，upload 0.396 |
+
+**三路 fps 都是 59.9x / 30.0x —— 多加一层在帧率层是免费的。**
+真第二路解码器要付的是**多一次解码 + 多一次上传**，这个在 upload 上看得见
+（1080p60：0.141 → 0.396）。
+
+### 已知未钉住
+
+引擎的早退（无源、无钩子时走单帧路径）**没有反证**：把它去掉，一个测试都不红。
+原因是这条性质从公开 API 观测不到 —— 两条路径逐像素输出相同，差别只在「有没有分配
+一个场景」。要钉住它得给 `GlSceneEngine` 加一个 `scene()` 之类的查询，那是扩大公开
+接口，本轮没有擅自做。
+
+### 下一步
+
+L5 之后剩下的差距**全在播放器层**：`VideoRendererSink` 一次一帧，所以「多路独立解码 →
+多图层」要么用本轮的「第二路 Player + 邮箱」绕过去，要么改造播放器让一条管线能出多腿。后者
+才是 MediaComponent 那种形状的真多源。
+
