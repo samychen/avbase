@@ -3261,3 +3261,105 @@ L5 之后剩下的差距**全在播放器层**：`VideoRendererSink` 一次一�
 多图层」要么用本轮的「第二路 Player + 邮箱」绕过去，要么改造播放器让一条管线能出多腿。后者
 才是 MediaComponent 那种形状的真多源。
 
+---
+
+## 第六十六轮：渲染侧消费 rotation —— 把丢在半路的元数据接上
+
+**起点是一个问题**：「和 MediaComponent 现在相比还差哪些」。做完全仓盘点后，结论是
+差距已经从渲染层搬到播放器层与 SDK 层（新开 `docs/TODO.md` 登记）。但盘点过程里
+翻出一条比「缺功能」更糟的东西：
+
+```
+media/ffmpeg/ffmpeg_demuxer_configs.cc:67    config.rotation = degrees;   ← 解析
+media/ffmpeg/ffmpeg_demuxer.cc:545           info.rotation = ...;          ← 上报
+player/player_impl.cc:362                     video_rotation_ = ...;       ← SDK 暴露
+media/gl/ render/gl/ platform/ 里 grep rotation                            ← 零命中
+```
+
+**`VideoFrame::rotation()` 全仓没有任何写入者。** 它有 getter、有默认值 0、被
+demuxer 解析、被 `Player::video_rotation()` 报给宿主，但从来没有一帧真正带上它。
+于是「渲染看 rotation」和「渲染忽略 rotation」是同一份代码 —— 这条性质无论怎么写
+测试都过，因为它测的是一个常量。
+
+后果很具体：**手机竖拍素材（横向像素 + rotation=90 标记）会横着显示。**
+
+### 为什么这个 bug 能活这么多轮
+
+它有三个特点，每个都让常规检查失效：
+
+1. **元数据链路是通的。** 你 grep `rotation` 能看到解析、看到上报、看到 SDK 接口，
+   看起来像做完了。断点也断得到值。
+2. **缺的是链路末端的一个赋值**，而末端（帧）恰好是「谁都能造」的对象 —— 测试帧、
+   解码帧、转换帧各有各的构造路径，没有单一收口。
+3. **没有返回值也没有 GL 错误。** 图像照常出画，只是方向不对。这跟「翻转写反」
+   是同一类静默失败，也是项目里被独立写反过两次的那类。
+
+### 改动
+
+| 层 | 文件 | 做什么 |
+| --- | --- | --- |
+| base | `media/base/video_frame.h/.cc` | `set_rotation()` + `NaturalSizeForRotation()` |
+| ffmpeg | `ffmpeg_video_decoder.cc`、`ffmpeg_hw_video_decoder.cc` | 出帧时 `out->set_rotation(config_.rotation)` —— **软硬两条路都要** |
+| gl | `render/gl/gl_shaders.{h,cc}` | `kQuadVertexShaderWithRectBody` 加 `#ifdef ROTATE`；`kVertexRotationDefine` |
+| gl | `media/gl/gl_video_layer.{h,cc}` | `CreateLayerProgram` 拼 define；把新 program 留在「不旋转」状态；`SnapLayerRotation()` / `LayerRotationToCosSin()` |
+| gl | `media/gl/gl_scene.{h,cc}` | `SetLayerRotation()` / `LayerRotation()`；`Upload()` 时捕获帧的旋转 |
+| gl | `media/gl/gl_present.cc` | 单帧路径按帧的旋转设 uniform |
+
+`set_rotation()` 的风格对齐既有 `set_color_space()`：都是 producer 在帧首次
+发布前写入的一次性元数据。
+
+### 两个不显然的决定
+
+**一、旋转纹理坐标，不是旋转 quad。**
+
+两者只在 rect 为正方形时等价。动 quad 的话，图层的矩形会从它本该框住的那张画面
+底下转走 —— 于是「图层相对自己的 rect 转了」，而不是「画面转了」。而 rect 是
+宿主用来布局的，不该被渲染内部的朝向决定。
+
+**二、`uRotation` 必须在建 program 时设成 (1, 0)。**
+
+没人设过的 `vec2` uniform 读回 (0, 0)，而 (0, 0) **不是单位元** —— 它把四个
+顶点全送去中心。结果是一帧全黑：没有错误，没有日志，每一次调用都成功。这类失败
+只有像素断言抓得到，所以在建 program 时就把它留在安全值上，而不是靠每个 draw
+路径记得设。
+
+### 反证
+
+| 突变 | 结果 |
+| --- | --- |
+| 单帧路径忽略帧的旋转 | 只红 `TheSingleFramePathHonoursTheFramesRotation`，其余 5 绿 |
+| `Upload()` 不捕获帧的旋转 | 红 3 条（跟随、覆盖、四朝向），其余 3 绿 |
+| `SnapLayerRotation` 退化成截断 | 红 2 条（snap、覆盖），其余 4 绿 |
+
+每条都是「只红该红的」，说明测试是定向的而不是相关的。
+
+### 一个当面打脸的时刻
+
+写完 shader 后第一次跑测试：rotation=90 时白色半边落在**左边**，我推导的是**右边**。
+
+我把旋转矩阵手推了一遍（顺时针 θ 在 y 轴向上的 NDC 里是 (x,y)→(x cosθ + y sinθ, −x sinθ + y cosθ)），
+推完觉得对，写出来还是反了 —— 错在「纹理坐标转」和「几何转」的方向是互逆的，
+而我推导时用的是几何。
+
+**这条正好印证了项目里那条约定：「有朝向的代码必须配像素断言」。** 手推一遍不
+算数，机器读回来的才算。
+
+### 已知限制（诚实写明）
+
+旋转后的画面仍按 **stretch-to-fill** 铺进 rect，所以竖拍素材转正后会被横向拉伸。
+
+要真正正确显示还需要 **aspect-fit**：渲染层目前**完全不读 `natural_size()`**
+（`media/gl/`、`render/gl/` 里零命中），所以 4:3 素材在 16:9 窗口里本来就是拉伸的
+—— 这是旋转之前就存在的、独立的一项。已登记为 TODO §4，本轮不动，避免把两个
+行为变更缠在一起。
+
+### 门禁
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（445 文件） |
+| `clang-format` 全树 | 0 偏离 |
+| no-ffmpeg + `-Werror` | ctest 504/504 |
+| macos-sdl2 + `-Werror` | ctest 625/625 |
+| GLFW + `-Werror` | ctest **673/673**（新增 6 条旋转测试） |
+
