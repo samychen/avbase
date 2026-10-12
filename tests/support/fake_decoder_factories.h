@@ -57,6 +57,19 @@ struct FakeDecoderBehaviour {
   bool defer_decode{false};
   // AudioBuffers (audio) or VideoFrames (video) emitted per input buffer.
   int outputs_per_buffer{2};
+  // Video only: emit unmappable native frames (VideoFrame::WrapNativeBuffer)
+  // instead of owned I420, which is what a hardware decoder produces. Set it to
+  // exercise the paths that must NOT touch the pixels -- a CPU filter graph
+  // cannot run on these, and a layer that imports one has to keep the frame
+  // alive for exactly as long as it shows it.
+  bool hardware_frames{false};
+  // Video only: after this many output frames, start emitting
+  // |second_coded_size| instead of 320x240. A mid-stream resolution change is
+  // the one input a filter stage cannot absorb in place -- the graph is built
+  // against fixed geometry -- so a stage owner has to notice and rebuild.
+  // Negative means never change, which is every existing suite's assumption.
+  int geometry_change_after{-1};
+  Size second_coded_size{640, 480};
 };
 
 class FakeAudioDecoder final : public AudioDecoder {
@@ -136,6 +149,10 @@ class FakeVideoDecoder final : public VideoDecoder {
   FakeDecoderCounters* const counters_;
   OutputCB output_cb_;
   std::vector<DecodeCB> deferred_;
+  // Frames handed to the output callback so far, which is the clock
+  // |geometry_change_after| counts against. Per-decoder rather than per-factory
+  // because a resolution change arrives on the decoder that is running.
+  int frames_out_{0};
 };
 
 class FakeVideoDecoderFactory final : public VideoDecoderFactory {

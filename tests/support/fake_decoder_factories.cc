@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/functional/bind.h"
 #include "media/base/audio_buffer.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/waiting.h"
@@ -19,6 +20,19 @@ namespace {
 constexpr int kFramesPerBuffer = 1024;
 constexpr int kSampleRate = 48000;
 constexpr int kChannels = 2;
+
+// Stand-in for a decoder-owned GPU surface. The frame only ever carries the
+// pointer; nothing here is readable or writable, which is the whole point --
+// it is what makes IsMappable() false and forces the code under test down the
+// no-pixels-available path. Static so the address stays valid for the lifetime
+// of any frame wrapping it.
+int fake_native_payload = 0;
+
+// The geometry every scripted frame carries until |geometry_change_after|
+// says otherwise. Named so the change has something to change FROM: a test
+// asserting "the stage was built twice" is only meaningful if the two builds
+// differ.
+constexpr Size kFakeCodedSize{320, 240};
 
 }  // namespace
 
@@ -132,9 +146,32 @@ void FakeVideoDecoder::Decode(base::scoped_refptr<DecoderBuffer> buffer,
   }
   const int32_t serial = buffer->serial();
   for (int i = 0; i < behaviour_.outputs_per_buffer; ++i) {
-    output_cb_.Run(VideoFrame::CreateBlackFrame(
-        VideoFormat::kI420, Size{320, 240}, Size{320, 240}, Rational{1, 1},
-        base::Milliseconds(i), base::Microseconds(33333), serial));
+    const base::TimeDelta timestamp = base::Milliseconds(i);
+    const base::TimeDelta duration = base::Microseconds(33333);
+    // Geometry is chosen per frame from the count so far, which is what a
+    // resolution change looks like from downstream: the same decoder, a
+    // different coded_size, and no warning.
+    const bool moved = behaviour_.geometry_change_after >= 0 &&
+                       frames_out_ >= behaviour_.geometry_change_after;
+    const Size coded = moved ? behaviour_.second_coded_size : kFakeCodedSize;
+    ++frames_out_;
+    if (behaviour_.hardware_frames) {
+      NativeHandle handle;
+      handle.kind = NativeHandleKind::kVaapiSurface;
+      handle.id = &fake_native_payload;
+      // A payload address is all the identity this needs: nothing dereferences
+      // it, and the release callback is empty because the bytes it stands for
+      // belong to nobody in a test.
+      output_cb_.Run(VideoFrame::WrapNativeBuffer(
+          handle, VideoFormat::kNV12, coded, coded, Rational{1, 1}, timestamp,
+          duration, serial, base::BindOnce([] {}), base::BindRepeating([] {
+            return base::scoped_refptr<VideoFrame>();
+          })));
+      continue;
+    }
+    output_cb_.Run(VideoFrame::CreateBlackFrame(VideoFormat::kI420, coded,
+                                                coded, Rational{1, 1},
+                                                timestamp, duration, serial));
   }
   std::move(decode_cb).Run(DecoderStatus());
 }
