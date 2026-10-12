@@ -94,9 +94,9 @@ class FixedFrameRenderer final : public VideoRendererSink::RenderCallback {
   explicit FixedFrameRenderer(base::scoped_refptr<VideoFrame> frame)
       : frame_(std::move(frame)) {}
 
-  base::scoped_refptr<VideoFrame> Render(base::TimeTicks /*deadline_min*/,
-                                         base::TimeTicks /*deadline_max*/)
-      override {
+  base::scoped_refptr<VideoFrame>
+  Render(base::TimeTicks /*deadline_min*/,
+         base::TimeTicks /*deadline_max*/) override {
     return frame_;
   }
   void OnFrameSubmitFailure() override { failures_.fetch_add(1); }
@@ -143,8 +143,8 @@ base::scoped_refptr<VideoFrame> MakeGpuFrame() {
   handle.id = &payload;
   const Size size{64, 64};
   return VideoFrame::WrapNativeBuffer(
-      handle, VideoFormat::kNV12, size, size, Rational{1, 1},
-      base::TimeDelta(), base::TimeDelta(), 0, base::BindOnce([] {}),
+      handle, VideoFormat::kNV12, size, size, Rational{1, 1}, base::TimeDelta(),
+      base::TimeDelta(), 0, base::BindOnce([] {}),
       base::BindRepeating(&MakeCpuFrame));
 }
 
