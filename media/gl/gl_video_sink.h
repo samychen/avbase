@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <memory>
+#include <string>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
@@ -21,7 +22,7 @@
 #include "media/base/video_renderer_sink.h"
 #include "media/gl/gl_hw_texture_importer.h"
 #include "media/gl/gl_output_target.h"
-#include "media/gl/gl_scene_driver.h"
+#include "media/gl/gl_scene_engine.h"
 #include "media/media_export.h"
 #include "render/gl/overlay.h"
 
@@ -76,12 +77,23 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
 
   // Optional multi-source composition: installs a hook that is handed the
   // scene once per present, so the host can add or update layers around the
-  // frame the stream delivered. See GlSceneDriver.
+  // frame the stream delivered. See GlSceneEngine.
   //
   // Set it BEFORE Start(), like VideoRendererSink::Initialize(): the render
   // thread reads it without a lock, and this sink has no way to interrupt a
   // present that is already in flight.
-  void SetSceneUpdate(GlSceneDriver::UpdateCallback callback);
+  void SetSceneUpdate(GlSceneEngine::UpdateCallback callback);
+
+  // Adds a second (third, ...) source to the composition and returns what its
+  // producer publishes into. The engine owns it; the handle stays valid as
+  // long as this sink or the caller holds it. See GlSceneEngine::AddSource --
+  // in particular that the layer is created on the GL thread, so a host that
+  // wants to place it does that with an update callback, not here.
+  //
+  // This is the whole of what a host has to do to composite a stream avbase is
+  // not playing: decode it however it likes, Publish() the frames, and the
+  // sink picks them up at the next present.
+  std::shared_ptr<GlLayerSource> AddSceneSource(std::string name, int z);
 
   // Installs the host's hardware-import backend (platform/hwimport), and the
   // whole of what a backend has to do to get zero-copy playback: a null
@@ -111,7 +123,7 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
   base::scoped_refptr<NativeDisplay> display_;
   NativeDisplayKind expected_kind_;
   const char* name_;
-  // Declared before presenter_ and scene_: those hold GL objects borrowed from
+  // Declared before presenter_ and engine_: those hold GL objects borrowed from
   // a context the target handed over, so the target has to outlive them.
   std::unique_ptr<GlOutputTarget> output_;
   base::raw_ptr<RenderCallback> callback_{nullptr};
@@ -128,10 +140,10 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
   // Owns the GL objects (they belong to the render thread's context).
   std::unique_ptr<GlPresenter> presenter_;
   gl::TextOverlaySlot* overlay_slot_{nullptr};
-  // Keeps a scene in step with the frames when the host installed a hook;
-  // unused (and allocates nothing) otherwise. Declared after presenter_ so it
-  // dies first -- its scene holds GL objects from that context.
-  GlSceneDriver scene_;
+  // Orchestrates the scene: the sink's own frame plus every source the host
+  // added. Declared after presenter_ so it dies first -- the scene it borrows
+  // holds GL objects from that context.
+  GlSceneEngine engine_;
 
   // Cross-thread flags: written from any thread (Pause/Play/SetOutputTarget
   // are callable anywhere), read on the render thread.

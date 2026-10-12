@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -75,7 +76,7 @@ void GlVideoSink::Stop() {
   // belong to that thread's context) but before the host may destroy the
   // context it lent us. The scene driver goes first: it only drops a borrow,
   // and the presenter is what actually deletes the scene.
-  scene_.Shutdown();
+  engine_.Shutdown();
   presenter_.reset();
   overlay_slot_ = nullptr;
   // After the render thread is gone: whatever the target owns (an SDL texture,
@@ -104,7 +105,7 @@ void GlVideoSink::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
   // overlay_slot_ is re-fetched from BindSurface() together with the context.
   // The scene goes with it: its GL objects belong to the context being
   // abandoned, so keeping it would mean drawing through a dead context.
-  scene_.Shutdown();
+  engine_.Shutdown();
   presenter_.reset();
   overlay_slot_ = nullptr;
   output_->SetSurface(discard_.load() ? nullptr : display_->raw());
@@ -193,8 +194,13 @@ void GlVideoSink::PresentOne() {
   }
 }
 
-void GlVideoSink::SetSceneUpdate(GlSceneDriver::UpdateCallback callback) {
-  scene_.SetUpdateCallback(std::move(callback));
+void GlVideoSink::SetSceneUpdate(GlSceneEngine::UpdateCallback callback) {
+  engine_.SetUpdateCallback(std::move(callback));
+}
+
+std::shared_ptr<GlLayerSource> GlVideoSink::AddSceneSource(std::string name,
+                                                           int z) {
+  return engine_.AddSource(std::move(name), z);
 }
 
 void GlVideoSink::SetHwTextureImporter(
@@ -247,7 +253,7 @@ bool GlVideoSink::UploadAndPresent(
   // One call either way: the driver forwards to Present() when the host
   // installed no scene hook, so the single-frame path is not a second branch
   // here that could drift from the scene one.
-  if (scene_.Present(*presenter_, frame, &timing)) {
+  if (engine_.Present(*presenter_, frame, &timing)) {
     NotePresentTiming(timing);
     return true;
   }
