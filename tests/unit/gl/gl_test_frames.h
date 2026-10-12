@@ -176,6 +176,22 @@ MakeTopHalfFrame(media::VideoFormat format, int width, int height,
   return frame;
 }
 
+// The same shape carrying a display rotation, so a renderer that honours
+// `VideoFrame::rotation()` can be told apart from one that ignores it: with an
+// upright picture the white half stays at the top, and with a quarter turn it
+// moves to a side. A frame with no rotation cannot distinguish the two, which
+// is exactly how this gap stayed invisible.
+inline base::scoped_refptr<media::VideoFrame>
+MakeTopHalfFrameRotated(media::VideoFormat format, int width, int height,
+                        uint8_t top_luma, uint8_t bottom_luma, int rotation) {
+  base::scoped_refptr<media::VideoFrame> frame =
+      MakeTopHalfFrame(format, width, height, top_luma, bottom_luma);
+  if (frame) {
+    frame->set_rotation(rotation);
+  }
+  return frame;
+}
+
 // One RGBA pixel out of the CURRENTLY BOUND framebuffer.
 //
 // glReadPixels counts y from the BOTTOM of the target, so y = height - 1 is
