@@ -131,12 +131,25 @@ bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
   if (!ctx_ || !out) {
     return false;
   }
+  last_rejection_ = std::nullopt;
   *out = nullptr;
   if (!in) {
     return true;
   }
   if (in->format() != ctx_->format || in->coded_size() != ctx_->coded_size) {
     LOG(ERROR) << "video filter: frame geometry moved under the filter";
+    last_rejection_ = VideoFilterState::kRefusedGraphFailed;
+    return false;
+  }
+  // Refused rather than fed. A hardware frame carries no CPU planes, so
+  // every pointer handed to the graph below would be null, avfilter would
+  // reject the frame, and the only trace would be a "buffersrc rejected a
+  // frame" line that reads like an FFmpeg fault. Returning false lets the
+  // caller show the frame unfiltered -- which is the only option left that
+  // does not drag the pixels back to the CPU and undo zero-copy.
+  if (!in->IsMappable()) {
+    LOG(ERROR) << "video filter: hardware frame has no CPU planes to filter";
+    last_rejection_ = VideoFilterState::kRefusedHardwareFrame;
     return false;
   }
 
@@ -166,6 +179,7 @@ bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
   if (av_buffersrc_add_frame_flags(ctx_->src, frame.get(),
                                    AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
     LOG(ERROR) << "video filter: buffersrc rejected a frame";
+    last_rejection_ = VideoFilterState::kRefusedGraphFailed;
     return false;
   }
 
