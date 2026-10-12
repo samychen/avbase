@@ -40,6 +40,20 @@ extern const char* const kQuadVertexShaderBody;
 // the centre -- i.e. the destination rect the overlay pass composites into.
 extern const char* const kQuadVertexShaderWithRectBody;
 
+// Concatenate before kQuadVertexShaderWithRectBody to make that stage rotate
+// the quad about its own centre before placing it; it then also takes a
+// `uniform vec2 uRotation` = (cos, sin) of the turn.
+//
+// A define rather than a second body, and rather than an unguarded uniform, for
+// two reasons. The uniform is the dangerous part: a `vec2` nobody has set reads
+// back as (0, 0), and (0, 0) is not the identity -- it sends every vertex to
+// the centre, so a program that simply forgot to set it draws a blank frame
+// with no error and no log line. Guarding it means the stage has no such
+// uniform unless the caller opted in. And a define rather than a second copy of
+// the text keeps the two spellings from drifting, which is the same reason the
+// sampler type is a define above.
+extern const char* const kVertexRotationDefine;
+
 // Fragment stage: samples uTex with whatever texture unit the caller bound.
 extern const char* const kTextureFragmentShaderBody;
 
