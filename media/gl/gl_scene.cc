@@ -65,6 +65,18 @@ GlScene::Layer* GlScene::Find(LayerId id) {
   return nullptr;
 }
 
+const GlScene::Layer* GlScene::Find(LayerId id) const {
+  if (id == kNoLayer) {
+    return nullptr;
+  }
+  for (const Layer& layer : layers_) {
+    if (layer.id == id) {
+      return &layer;
+    }
+  }
+  return nullptr;
+}
+
 GlScene::LayerId GlScene::AddVideoLayer(int z) {
   auto video = GlVideoLayer::Create(*gl_);
   if (!video) {
@@ -134,12 +146,39 @@ bool GlScene::SetLayerRect(LayerId id, float x, float y, float w, float h) {
   return true;
 }
 
+bool GlScene::SetLayerRotation(LayerId id, std::optional<int> degrees) {
+  Layer* layer = Find(id);
+  if (!layer) {
+    return false;
+  }
+  // Snap at the setter so LayerRotation() reports the angle the layer is
+  // ACTUALLY drawn at: a caller that asks must not be told 0 when the picture
+  // is turned 90 and the value it passed was 89.
+  if (degrees) {
+    layer->rotation_override = SnapLayerRotation(*degrees);
+  } else {
+    layer->rotation_override = std::nullopt;
+  }
+  return true;
+}
+
+int GlScene::LayerRotation(LayerId id) const {
+  const Layer* layer = Find(id);
+  if (!layer) {
+    return 0;
+  }
+  return layer->rotation_override.value_or(layer->frame_rotation);
+}
+
 bool GlScene::Upload(LayerId id, const VideoFrame& frame,
                      GlHwTextureImporter* importer) {
   Layer* layer = Find(id);
   if (!layer) {
     return false;
   }
+  // Captured here, not in Compose(): the frame is the only witness to its own
+  // rotation, and the caller is free to release it the moment this returns.
+  layer->frame_rotation = frame.rotation();
   return layer->video->Upload(frame, importer);
 }
 
@@ -215,6 +254,12 @@ void GlScene::Compose() {
     NormalisedRectToUvRect(layer.rect[0], layer.rect[1], layer.rect[2],
                            layer.rect[3], uv_rect);
     program->SetVec4("uRect", uv_rect[0], uv_rect[1], uv_rect[2], uv_rect[3]);
+    // Set after the bind, for the same reason as uRect: uniform state belongs
+    // to the program, and the two layer variants share this one.
+    float cos_sin[2];
+    LayerRotationToCosSin(
+        layer.rotation_override.value_or(layer.frame_rotation), cos_sin);
+    program->SetVec2("uRotation", cos_sin[0], cos_sin[1]);
     layer.video->Bind(*program, layer.opacity);
     quad_->Draw();
   }

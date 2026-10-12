@@ -90,6 +90,24 @@ AVBASE_MEDIA_EXPORT bool IsPlanarYuv(VideoFormat format);
 AVBASE_MEDIA_EXPORT void NormalisedRectToUvRect(float x, float y, float w,
                                                 float h, float* out_rect);
 
+// (cos, sin) of a CLOCKWISE turn of |degrees| about a layer's own centre, for
+// the uRotation uniform. Four values are possible because a container's display
+// rotation is a quarter-turn count and nothing downstream can honour an
+// arbitrary angle -- so the input is snapped rather than rejected and then
+// silently mishandled.
+//
+// A table and not std::cos/std::sin: the four answers a caller can reach are
+// exactly representable, and the library's are not. Computing cos(90 degrees)
+// yields ~6e-17, which is a sub-pixel sampling offset -- invisible in a still
+// and wrong in a rotation test that compares two orientations of one picture.
+AVBASE_MEDIA_EXPORT void LayerRotationToCosSin(int degrees, float* out_cos_sin);
+
+// Snaps |degrees| to the nearest quarter turn and normalises it into 0, 90,
+// 180, 270. Exported because both the setter that records an angle and the
+// shader-facing conversion need the same answer, and "what did that 89 become"
+// is a question with exactly one right reply.
+AVBASE_MEDIA_EXPORT int SnapLayerRotation(int degrees);
+
 // One video source: three plane textures plus the colour conversion that turns
 // them back into RGB.
 //

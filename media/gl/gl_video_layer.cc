@@ -430,8 +430,11 @@ std::unique_ptr<gl::GlProgram> CreateLayerProgram(const gl::GlApi& gl,
                                                   const char* sampler_defines,
                                                   std::string* error) {
   const std::string prologue = gl::ShaderPrologue(gl);
+  // The define first: it must precede every non-preprocessor line.
   auto program = gl::GlProgram::Create(
-      gl, (prologue + gl::kQuadVertexShaderWithRectBody).c_str(),
+      gl,
+      (prologue + gl::kVertexRotationDefine + gl::kQuadVertexShaderWithRectBody)
+          .c_str(),
       (prologue + sampler_defines + kYuvFragmentShaderBody).c_str(), error);
   if (!program) {
     return nullptr;
@@ -445,6 +448,10 @@ std::unique_ptr<gl::GlProgram> CreateLayerProgram(const gl::GlApi& gl,
   program->SetInt("uTexY", 0);
   program->SetInt("uTexU", 1);
   program->SetInt("uTexV", 2);
+  // Leave a fresh program UPRIGHT rather than merely unset: an unset vec2 reads
+  // back as (0, 0), which is not the identity but a collapse onto the centre
+  // -- a blank frame, with no error and no log line to explain it.
+  program->SetVec2("uRotation", 1.0f, 0.0f);
   return program;
 }
 
@@ -469,6 +476,25 @@ void NormalisedRectToUvRect(float x, float y, float w, float h,
   out_rect[1] = 1.0f - 2.0f * (y + h * 0.5f);
   out_rect[2] = w;
   out_rect[3] = h;
+}
+
+int SnapLayerRotation(int degrees) {
+  // Normalise to 0..359 first (C++ % truncates toward zero), then snap.
+  int quarters = degrees % 360;
+  if (quarters < 0) {
+    quarters += 360;
+  }
+  return ((quarters + 45) / 90 % 4) * 90;
+}
+
+void LayerRotationToCosSin(int degrees, float* out_cos_sin) {
+  // (cos, sin) of a CLOCKWISE quarter turn. A table, not std::cos/std::sin:
+  // these four answers are exact and the library's are not.
+  constexpr float kCosSin[8] = {1.0f,  0.0f, 0.0f, 1.0f,
+                                 -1.0f, 0.0f, 0.0f, -1.0f};
+  const int quarter = SnapLayerRotation(degrees) / 90;
+  out_cos_sin[0] = kCosSin[2 * quarter];
+  out_cos_sin[1] = kCosSin[2 * quarter + 1];
 }
 
 }  // namespace avbase::media

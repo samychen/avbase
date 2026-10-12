@@ -269,6 +269,13 @@ bool GlPresenter::Compose(const VideoFrame& frame, PresentTiming* timing) {
   // the program, so a path that shares one has to set what it depends on --
   // and this is the only one Bind() does not cover.
   video->SetVec4("uRect", 0.0f, 0.0f, 1.0f, 1.0f);
+  // The frame's display rotation, which containers carry for phone-shot
+  // material: the pixels are stored sideways and the metadata says how far to
+  // turn them. Honoured here because the single-frame path is the one a player
+  // uses, and a player that ignores it shows a portrait clip on its side.
+  float cos_sin[2];
+  LayerRotationToCosSin(frame.rotation(), cos_sin);
+  video->SetVec2("uRotation", cos_sin[0], cos_sin[1]);
   layer_->Bind(*video);
   quad_->Draw();
   DrawOverlay();

@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -113,6 +114,27 @@ class AVBASE_MEDIA_EXPORT GlScene {
   // NaN rect has a bug upstream that clamping would hide.
   bool SetLayerRect(LayerId id, float x, float y, float w, float h);
 
+  // Turns a layer's picture about its own centre, clockwise, in degrees.
+  //
+  // nullopt -- the default, and what a player wants -- means "follow the
+  // frame": the rotation is taken from the last frame uploaded into this layer,
+  // which is where a container's display matrix ends up. Passing a value pins
+  // the angle and stops it following, which is what a host that is rotating a
+  // layer on purpose (a picture-in-picture it wants sideways, say) needs.
+  //
+  // The angle is SNAPPED to a quarter turn rather than rejected when it is not
+  // a multiple of 90, because that is the only set any stage can carry: no
+  // sampler or rect here can express a source region at any other angle, so
+  // the alternative to snapping is a picture that is quietly not rotated.
+  bool SetLayerRotation(LayerId id, std::optional<int> degrees);
+
+  // The angle a layer is drawn at, in degrees, after the frame's own rotation
+  // and any override have been combined. Exposed because "which way is this
+  // layer" is a rendering fact the caller cannot otherwise observe, and
+  // because a test that wants to assert it should not have to read pixels to
+  // find out.
+  int LayerRotation(LayerId id) const;
+
   // Uploads |frame| into a layer, creating or resizing its textures as needed.
   // False for an unknown handle, a format the shader cannot read, or a layer
   // that was already removed.
@@ -147,12 +169,20 @@ class AVBASE_MEDIA_EXPORT GlScene {
     float opacity{1.0f};
     // (x, y, w, h) normalised; the full target by default.
     std::array<float, 4> rect{0.0f, 0.0f, 1.0f, 1.0f};
+    // nullopt follows the frame's own rotation; see SetLayerRotation.
+    std::optional<int> rotation_override;
+    // The rotation the last frame uploaded here carried. It has to be captured
+    // during Upload() rather than at draw time: the caller releases the frame
+    // as soon as Publish() returns, so by the time Compose() runs there is no
+    // frame left to ask.
+    int frame_rotation{0};
     std::unique_ptr<GlVideoLayer> video;
   };
 
   GlScene(const gl::GlApi& gl, std::shared_ptr<gl::GlProgram> program,
           std::shared_ptr<gl::GlProgram> rect_program);
   Layer* Find(LayerId id);
+  const Layer* Find(LayerId id) const;
 
   const gl::GlApi* gl_;
   // Two programs, chosen per layer by GlVideoLayer::texture_target(): an owned
