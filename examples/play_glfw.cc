@@ -9,7 +9,7 @@
 // ships no audio API of its own.
 //
 //   ./play_glfw --url video.mp4 [--max-seconds n] [--stats] [--canvas WxH]
-//                [--scene pip|fade]
+//                [--scene pip|fade] [--second video2.mp4]
 //
 // Exit codes: 0 played to completion (or the --max-seconds cap), 1 error.
 
@@ -35,10 +35,12 @@
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
+#include "examples/publisher_sink.h"
 #include "examples/scene_demo.h"
 #include "media/filters/null_audio_sink.h"
 #include "platform/glfw/glfw_surface.h"
 #include "platform/glfw/glfw_video_sink.h"
+#include "player/public/deps.h"
 #include "player/public/player.h"
 
 namespace {
@@ -63,6 +65,17 @@ avbase::Player* g_player{nullptr};  // Set in main; outlives the event loop.
 // inside the player, well after the value would have gone out of scope.
 std::unique_ptr<avbase::examples::SceneDemo> g_scene;
 
+// --second <url>, when given: where the second layer's frames come from. It
+// gets its own Player, demuxer and decoder; see examples/publisher_sink.h.
+std::string g_second_url;
+// The mailbox that second Player publishes into. Filled in by the sink factory
+// when the first player builds its renderer, and read by main() once
+// preparation has finished.
+std::shared_ptr<avbase::media::GlLayerSource> g_second_source;
+// The second pipeline itself, torn down before the first player's sink so the
+// mailbox outlives its producer.
+std::unique_ptr<avbase::Player> g_second_player;
+
 struct Options {
   std::string url;
   int max_seconds{0};
@@ -75,6 +88,9 @@ struct Options {
   // scene path runs on a real window. Empty means the plain single-source
   // path. See examples/scene_demo.h.
   std::string scene;
+  // --second <url>: where the second layer's frames come from. Empty means
+  // the delayed-copy fallback in SceneDemo.
+  std::string second;
 };
 
 bool ParseOptions(int argc, char** argv, Options* out) {
@@ -98,6 +114,8 @@ bool ParseOptions(int argc, char** argv, Options* out) {
         std::fprintf(stderr, "--scene wants pip or fade\n");
         return false;
       }
+    } else if (arg == "--second" && i + 1 < argc) {
+      out->second = argv[++i];
     } else if (arg == "--stats") {
       out->stats = true;
     }
@@ -105,7 +123,7 @@ bool ParseOptions(int argc, char** argv, Options* out) {
   if (out->url.empty()) {
     std::fprintf(stderr,
                  "usage: %s --url <file-or-url> [--max-seconds n] [--stats]\n"
-                 "       [--canvas WxH] [--scene pip|fade]\n",
+                 "       [--canvas WxH] [--scene pip|fade] [--second <url>]\n",
                  argv[0]);
     return false;
   }
@@ -120,6 +138,16 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
     g_error.store(true);
   } else if (e.type == avbase::EventType::kCompleted) {
     g_completed.store(true);
+  } else if (e.type == avbase::EventType::kPrepared) {
+    // The first player's sink -- and therefore its engine -- exists now, so a
+    // second Player can be started into the mailbox it handed back.
+    if (!g_second_url.empty() && g_second_source) {
+      g_second_player =
+          avbase::examples::StartSecondSource(g_second_url, g_second_source);
+      if (!g_second_player) {
+        g_error.store(true);
+      }
+    }
   } else if (e.type == avbase::EventType::kStats) {
     if (g_print_stats.load()) {
       if (const auto* payload = avbase::AsStats(e)) {
@@ -262,7 +290,7 @@ int main(int argc, char** argv) {
   deps->video_sink_factory =
       std::make_shared<avbase::examples::SceneSinkFactory<
           avbase::media::GlfwVideoSinkFactory, avbase::media::GlfwVideoSink>>(
-          g_scene.get(), "glfw-demo");
+          g_scene.get(), "glfw-demo", &g_second_source, /*second_z=*/10);
   deps->audio_sink_factory =
       std::make_shared<avbase::media::NullAudioSinkFactory>();
 
@@ -271,6 +299,7 @@ int main(int argc, char** argv) {
   g_print_stats.store(options.stats);
   player.SetEventHandler(avbase::base::BindRepeating(&OnPlayerEvent));
   player.SetVideoSurface(display);
+  g_second_url = options.second;
   if (const avbase::Status s = player.SetDataSource(options.url); !s) {
     std::fprintf(stderr, "SetDataSource failed: %s\n",
                  s.error().ToString().c_str());
@@ -289,6 +318,11 @@ int main(int argc, char** argv) {
   }
 
   const int exit_code = PumpEventsUntilDone(window, options.max_seconds);
+  // The second pipeline first: it publishes into a mailbox the first player's
+  // sink owns, so it has to be quiet before that sink is destroyed.
+  avbase::examples::StopSecondSource(std::move(g_second_player),
+                                     g_second_source);
+  g_second_source.reset();
   // StopSync() blocks until the pipeline actually finished stopping, so the
   // sink's render thread (and its GL context) is gone before we destroy the
   // window here.

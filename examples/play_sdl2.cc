@@ -67,6 +67,17 @@ avbase::Player* g_player{nullptr};  // Set in main; outlives the event loop.
 // inside the player, well after the value would have gone out of scope.
 std::unique_ptr<avbase::examples::SceneDemo> g_scene;
 
+// --second <url>: where the second layer's frames come from. Empty means the
+// delayed-copy fallback in SceneDemo. |g_second_source| is the mailbox a
+// second, independent Player publishes into; the sink factory fills it in
+// when the first player builds its renderer, and main() reads it once
+// prepared.
+std::string g_second_url;
+std::shared_ptr<avbase::media::GlLayerSource> g_second_source;
+// The second pipeline, torn down before the first player's sink so the mailbox
+// outlives its producer.
+std::unique_ptr<avbase::Player> g_second_player;
+
 // A first-cut font resolution: the demo is not the SDK. A real host points
 // at the user's configured font; these cover this machine's defaults.
 std::string FindDemoFont() {
@@ -146,6 +157,9 @@ struct Options {
   // --scene pip|fade: add a second layer to the GL path's composition. Needs
   // --gl for the same reason --canvas does. See examples/scene_demo.h.
   std::string scene;
+  // --second <url>: where the second layer's frames come from. Empty means
+  // the delayed-copy fallback in SceneDemo. Needs --gl.
+  std::string second;
 };
 
 bool ParseOptions(int argc, char** argv, Options* out) {
@@ -169,6 +183,8 @@ bool ParseOptions(int argc, char** argv, Options* out) {
         std::fprintf(stderr, "--scene wants pip or fade\n");
         return false;
       }
+    } else if (arg == "--second" && i + 1 < argc) {
+      out->second = argv[++i];
     } else if (arg == "--gl") {
       out->gl = true;
     } else if (arg == "--stats") {
@@ -179,7 +195,7 @@ bool ParseOptions(int argc, char** argv, Options* out) {
     std::fprintf(stderr,
                  "usage: %s --url <file-or-url> "
                  "[--max-seconds n] [--gl] [--stats] [--canvas WxH]\n"
-                 "       [--scene pip|fade]\n",
+                 "       [--scene pip|fade] [--second <url>]\n",
                  argv[0]);
     return false;
   }
@@ -195,6 +211,16 @@ bool ParseOptions(int argc, char** argv, Options* out) {
                  "to the window and has nowhere to compose a second layer\n");
     return false;
   }
+  // Same reason, and a stronger one: a second layer needs somewhere to BE,
+  // and the SDL_Renderer path has no composition surface -- every frame it
+  // draws goes straight to the window.
+  if (!out->second.empty() && !out->gl) {
+    std::fprintf(stderr,
+                 "--second needs --gl for the same reason --scene "
+                 "does: the SDL_Renderer path has no composition "
+                 "surface to put a second layer on\n");
+    return false;
+  }
   return true;
 }
 
@@ -206,6 +232,16 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
     g_error.store(true);
   } else if (e.type == avbase::EventType::kCompleted) {
     g_completed.store(true);
+  } else if (e.type == avbase::EventType::kPrepared) {
+    // The first player's sink -- and therefore its engine -- exists now, so
+    // the second pipeline can be started into the mailbox it handed back.
+    if (!g_second_url.empty() && g_second_source) {
+      g_second_player =
+          avbase::examples::StartSecondSource(g_second_url, g_second_source);
+      if (!g_second_player) {
+        g_error.store(true);
+      }
+    }
   } else if (e.type == avbase::EventType::kStateChanged) {
     // One-shot: auto-select the first text track once the pipeline is
     // prepared, so the demo shows subtitles without extra flags. A real
@@ -218,11 +254,8 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
         const int text_index =
             info->FirstStreamOfKind(avbase::media::StreamKind::kText);
         if (text_index >= 0) {
-          const auto st = g_player->SelectTrack(
-              avbase::media::DemuxerStreamType::kText, text_index);
-          std::fprintf(stderr, "DBG select(%d)=%d %s\n", text_index,
-                       st.has_value() ? 1 : 0,
-                       st.has_value() ? "" : st.error().ToString().c_str());
+          g_player->SelectTrack(avbase::media::DemuxerStreamType::kText,
+                                text_index);
         }
       }
     }
@@ -263,19 +296,15 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
 // against whichever context is current, which is the one SDL_GL_CreateContext
 // just installed. A parameter would only imply the probe can choose one.
 bool GlRuntimeWorks() {
-  using GlCreateShader = unsigned int (*)(unsigned int);
-  using GlShaderSource =
-      void (*)(unsigned int, int, const char* const*, const int*);
-  using GlCompileShader = void (*)(unsigned int);
-  using GlGetShaderiv = void (*)(unsigned int, unsigned int, int*);
-  auto create =
-      reinterpret_cast<GlCreateShader>(SDL_GL_GetProcAddress("glCreateShader"));
-  auto source =
-      reinterpret_cast<GlShaderSource>(SDL_GL_GetProcAddress("glShaderSource"));
-  auto compile = reinterpret_cast<GlCompileShader>(
+  auto create = reinterpret_cast<unsigned int (*)(unsigned int)>(
+      SDL_GL_GetProcAddress("glCreateShader"));
+  auto source = reinterpret_cast<void (*)(unsigned int, int, const char* const*,
+                                          const int*)>(
+      SDL_GL_GetProcAddress("glShaderSource"));
+  auto compile = reinterpret_cast<void (*)(unsigned int)>(
       SDL_GL_GetProcAddress("glCompileShader"));
-  auto getiv =
-      reinterpret_cast<GlGetShaderiv>(SDL_GL_GetProcAddress("glGetShaderiv"));
+  auto getiv = reinterpret_cast<void (*)(unsigned int, unsigned int, int*)>(
+      SDL_GL_GetProcAddress("glGetShaderiv"));
   if (!create || !source || !compile || !getiv) {
     return false;
   }
@@ -419,9 +448,10 @@ int main(int argc, char** argv) {
   deps->video_sink_factory =
       std::make_shared<avbase::examples::SceneSinkFactory<
           avbase::media::Sdl2VideoSinkFactory, avbase::media::Sdl2VideoSink>>(
-          g_scene.get(), "sdl2-demo");
+          g_scene.get(), "sdl2-demo", &g_second_source, /*second_z=*/10);
   deps->audio_sink_factory =
       std::make_shared<avbase::media::Sdl2AudioSinkFactory>();
+  g_second_url = options.second;
 
   avbase::Player player(avbase::PlayerConfig(), std::move(deps));
   g_player = &player;
@@ -445,6 +475,13 @@ int main(int argc, char** argv) {
   // until the pipeline actually finished stopping (see player.h for the
   // Stop/StopSync contract).
   player.StopSync(avbase::base::Seconds(5));
+  // The second pipeline publishes into a mailbox the first player's sink owns,
+  // so it has to be quiet before that sink is destroyed.
+  if (g_second_player) {
+    g_second_player->StopSync(avbase::base::Seconds(5));
+    g_second_player.reset();
+  }
+  g_second_source.reset();
 
   if (gl_context) {
     // The sink released the context in Stop(); destroying it here is the
