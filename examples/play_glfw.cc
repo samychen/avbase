@@ -91,6 +91,10 @@ struct Options {
   // --second <url>: where the second layer's frames come from. Empty means
   // the delayed-copy fallback in SceneDemo.
   std::string second;
+  // --vf0 <graph>: a CPU avfilter graph applied to every decoded frame, e.g.
+  // hflip. Empty (the default) means unfiltered. It cannot run on a
+  // hardware-decoded frame -- see the note in video_renderer_impl.cc.
+  std::string vf0;
 };
 
 bool ParseOptions(int argc, char** argv, Options* out) {
@@ -116,6 +120,8 @@ bool ParseOptions(int argc, char** argv, Options* out) {
       }
     } else if (arg == "--second" && i + 1 < argc) {
       out->second = argv[++i];
+    } else if (arg == "--vf0" && i + 1 < argc) {
+      out->vf0 = argv[++i];
     } else if (arg == "--stats") {
       out->stats = true;
     }
@@ -123,7 +129,8 @@ bool ParseOptions(int argc, char** argv, Options* out) {
   if (out->url.empty()) {
     std::fprintf(stderr,
                  "usage: %s --url <file-or-url> [--max-seconds n] [--stats]\n"
-                 "       [--canvas WxH] [--scene pip|fade] [--second <url>]\n",
+                 "       [--canvas WxH] [--scene pip|fade] [--second <url>]\n"
+                 "       [--vf0 <graph>]\n",
                  argv[0]);
     return false;
   }
@@ -294,7 +301,11 @@ int main(int argc, char** argv) {
   deps->audio_sink_factory =
       std::make_shared<avbase::media::NullAudioSinkFactory>();
 
-  avbase::Player player(avbase::PlayerConfig(), std::move(deps));
+  // --vf0 is the only way in from the command line; PlayerConfig is the same
+  // field a host or an SDK caller sets directly.
+  avbase::PlayerConfig config;
+  config.video.filter_graph = options.vf0;
+  avbase::Player player(config, std::move(deps));
   g_player = &player;
   g_print_stats.store(options.stats);
   player.SetEventHandler(avbase::base::BindRepeating(&OnPlayerEvent));
