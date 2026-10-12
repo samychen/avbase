@@ -34,6 +34,29 @@ enum class UploadPath {
 
 AVBASE_MEDIA_EXPORT const char* UploadPathName(UploadPath path);
 
+// Whether a requested "vf" filter graph is reaching the pixels, and when it is
+// not, why. A graph that quietly does nothing is indistinguishable from one
+// that works until somebody reads this: the symptom is a picture carrying none
+// of the requested processing, which looks exactly like a picture that never
+// asked for any.
+//
+// It sits beside UploadPath because the two are one decision seen from both
+// ends: a CPU filter graph needs mappable planes, so asking for the graph is
+// also asking to give up the hardware import. Naming the refusal is what keeps
+// that trade from being invisible -- and "refused", not "failed", because a
+// configuration that cannot work is not a runtime fault to be retried.
+enum class VideoFilterState {
+  kOff = 0,               // No graph was requested.
+  kRunning,               // Requested, and applied to every frame shown.
+  kRefusedHardwareFrame,  // Requested, but the decoder produces unmappable
+                          // frames (zero-copy); shown unfiltered.
+  kRefusedNoFactory,      // Requested, but no stage factory was injected
+                          // (no-ffmpeg build).
+  kRefusedGraphFailed,    // Requested, but the graph would not start.
+};
+
+AVBASE_MEDIA_EXPORT const char* VideoFilterStateName(VideoFilterState state);
+
 // Per-frame breakdown of one present, in milliseconds. The four fields are
 // kept apart because they are separated by a real cost boundary -- each can
 // regress on its own, and merging them turns "rendering got slower" into a
@@ -110,6 +133,11 @@ struct AVBASE_MEDIA_EXPORT RenderPerfStats {
   DurationEwma blit;
   DurationEwma present;
   UploadPath upload_path{UploadPath::kNone};
+  // Whether the "vf" graph is running; see the enum above. Carried with the
+  // timings rather than with the configuration that asked for it, because what
+  // a reader needs is not "was a graph requested" but "is one applied" -- the
+  // two differ exactly when something went wrong.
+  VideoFilterState filter_state{VideoFilterState::kOff};
 
   std::string ToJson() const;
 };

@@ -36,6 +36,22 @@ const char* UploadPathName(UploadPath path) {
   return "unknown";
 }
 
+const char* VideoFilterStateName(VideoFilterState state) {
+  switch (state) {
+  case VideoFilterState::kOff:
+    return "off";
+  case VideoFilterState::kRunning:
+    return "running";
+  case VideoFilterState::kRefusedHardwareFrame:
+    return "refused_hardware_frame";
+  case VideoFilterState::kRefusedNoFactory:
+    return "refused_no_factory";
+  case VideoFilterState::kRefusedGraphFailed:
+    return "refused_graph_failed";
+  }
+  return "unknown";
+}
+
 void DurationEwma::Add(double ms) {
   ++samples_;
   if (ms > max_ms_) {
@@ -62,7 +78,10 @@ std::string RenderPerfStats::ToJson() const {
   out += "\"blit_ms\":" + Ms(blit.average_ms()) + ",";
   out += "\"present_ms\":" + Ms(present.average_ms()) + ",";
   out += "\"max_present_ms\":" + Ms(present.max_ms()) + ",";
-  out += "\"upload_path\":\"" + std::string(UploadPathName(upload_path)) + "\"";
+  out +=
+      "\"upload_path\":\"" + std::string(UploadPathName(upload_path)) + "\",";
+  out += "\"filter_state\":\"" +
+         std::string(VideoFilterStateName(filter_state)) + "\"";
   out += "}";
   return out;
 }
