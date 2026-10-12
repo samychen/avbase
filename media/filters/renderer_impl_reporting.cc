@@ -96,7 +96,14 @@ PipelineStatistics RendererImpl::GetStatistics() const {
     // COST comes from the sink, which is the only object that runs the GL
     // calls. Sampling it here is what turns sink telemetry into something a
     // PlaybackStats reader can see, instead of a struct nobody calls.
-    stats.render = video_->sink_stats().render;
+    //
+    // filter_state is the one field the sink cannot supply. It sees only the
+    // frames that came out the far end of the graph, so an unfiltered frame
+    // and a frame the graph refused are the same thing to it; only the
+    // renderer, which decided, can tell them apart.
+    RenderPerfStats render = video_->sink_stats().render;
+    render.filter_state = video_->filter_state();
+    stats.render = render;
   }
   if (audio_) {
     stats.audio_underruns = audio_->underruns();

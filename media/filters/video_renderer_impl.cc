@@ -35,6 +35,7 @@ VideoRendererImpl::VideoRendererImpl(
       factories_(std::move(factories)),
       decoder_stream_(task_runner_),
       compositor_(thresholds, tick_clock),
+      filter_runner_(std::string(), nullptr),
       max_pending_frames_(static_cast<size_t>(kVideoFrameQueueSizeMax)) {
   CHECK(task_runner_);
 }
@@ -160,7 +161,7 @@ void VideoRendererImpl::StartPlayingFrom(base::TimeDelta time) {
   }
   decoder_stream_.HoldReads(false);
   compositor_.Flush();
-  filter_.reset();
+  filter_runner_.Reset();
   ended_ = false;
   paused_ = false;
   compositor_.SetPaused(false);
@@ -182,7 +183,7 @@ void VideoRendererImpl::Flush(int32_t serial, base::OnceClosure closure) {
     sink_->Flush();
   }
   compositor_.Flush();
-  filter_.reset();
+  filter_runner_.Reset();
   ended_ = false;
   serial_ = serial;
   // Hold reads until StartPlayingFrom adopts the new generation: the pump is
@@ -368,41 +369,16 @@ void VideoRendererImpl::OnDecoderOutput(base::OnceClosure pump_again,
     return;
   }
   if (frame) {
-    // The "vf" stage: created on the first frame (real coded geometry), and
-    // rebuilt whenever the geometry moves (Δ3 resolution change). A filter
-    // that fails to start is a config bug -- fall back to unfiltered and
-    // say so once.
-    if (!filter_graph_.empty()) {
-      if (filter_ && filter_->CodedSize() != frame->coded_size()) {
-        filter_.reset();
-      }
-      if (!filter_) {
-        if (!filter_factory_) {
-          LOG(ERROR) << "avbase.vfilter: filter_graph set but no stage "
-                        "factory was injected (no-ffmpeg build?); playing "
-                        "unfiltered";
-          filter_graph_.clear();
-        } else {
-          filter_ = filter_factory_();
-          if (!filter_->Initialize(filter_graph_, frame->format(),
-                                   frame->coded_size())) {
-            LOG(ERROR) << "avbase.vfilter: graph \"" << filter_graph_
-                       << "\" failed to start; playing unfiltered";
-            filter_.reset();
-            filter_graph_.clear();
-          }
-        }
-      }
-    }
-    if (filter_) {
-      base::scoped_refptr<VideoFrame> filtered;
-      if (!filter_->Process(std::move(frame), &filtered)) {
-        return;
-      }
-      frame = std::move(filtered);
-    }
-    if (!frame) {
-      // The graph buffered the frame (EAGAIN); nothing to present now.
+    // The "vf" stage: VideoFilterStageRunner owns the stage and decides
+    // whether the frames being decoded can feed it at all. See that class
+    // for why an unmappable frame is refused rather than copied back to
+    // the CPU.
+    if (!filter_runner_.Filter(&frame)) {
+      // The graph kept the frame to buffer it (EAGAIN), so there is genuinely
+      // nothing to present this pass -- and |frame| has been emptied. False
+      // is the ONLY case the runner declines; every refusal still hands a
+      // picture back, because "would not filter" must never read as
+      // "would not show".
       task_runner_->PostTask(FROM_HERE, std::move(pump_again));
       return;
     }

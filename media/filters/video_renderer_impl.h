@@ -85,6 +85,7 @@
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "media/base/pipeline_status.h"
+#include "media/base/render_perf_stats.h"
 #include "media/base/renderer.h"
 #include "media/base/video_decoder_factory.h"
 #include "media/base/video_frame.h"
@@ -136,9 +137,18 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   // Initialize(). Empty (default) means decoded frames feed the compositor
   // directly.
   void set_filter_graph(std::string graph, VideoFilterStageFactory factory) {
-    filter_graph_ = std::move(graph);
-    filter_factory_ = std::move(factory);
+    // Replacing the whole runner rather than poking fields into it: the two
+    // settings are one decision (see the runner's constructor), and a
+    // half-updated pair would be a graph built against the wrong factory.
+    filter_runner_ =
+        VideoFilterStageRunner(std::move(graph), std::move(factory));
   }
+
+  // Whether the requested "vf" graph is being applied to the frames being
+  // shown, and if not, why -- see VideoFilterState. Sampled by the statistics
+  // tick into PipelineStatistics::render, so a host can tell "no filter" from
+  // "a filter that is silently not running".
+  VideoFilterState filter_state() const { return filter_runner_.state(); }
 
   // Which decoder kind to prefer, and which codecs a hardware path may take.
   // Must be called before Initialize(); it is what makes
@@ -289,12 +299,9 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   bool preference_set_{false};
   DecoderStream<VideoDecoderStreamTraits> decoder_stream_;
   VideoFrameCompositor compositor_;
-  // The "vf" filter stage, created lazily on the first decoded frame (the
-  // graph needs the real coded geometry). A resolution change (Δ3) rebuilds
-  // it; a seek flush discards it.
-  std::string filter_graph_;
-  VideoFilterStageFactory filter_factory_;
-  std::unique_ptr<VideoFilterStage> filter_;
+  // The "vf" stage and its whole lifecycle: when it is built, when it is torn
+  // down, and whether the frames being decoded can feed it at all.
+  VideoFilterStageRunner filter_runner_;
   std::unique_ptr<VideoRendererSink> sink_;
   base::RepeatingClosure ended_cb_;
   FramePresentedCB frame_presented_cb_;
