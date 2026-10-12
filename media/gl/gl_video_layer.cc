@@ -491,7 +491,7 @@ void LayerRotationToCosSin(int degrees, float* out_cos_sin) {
   // (cos, sin) of a CLOCKWISE quarter turn. A table, not std::cos/std::sin:
   // these four answers are exact and the library's are not.
   constexpr float kCosSin[8] = {1.0f,  0.0f, 0.0f, 1.0f,
-                                 -1.0f, 0.0f, 0.0f, -1.0f};
+                                -1.0f, 0.0f, 0.0f, -1.0f};
   const int quarter = SnapLayerRotation(degrees) / 90;
   out_cos_sin[0] = kCosSin[2 * quarter];
   out_cos_sin[1] = kCosSin[2 * quarter + 1];
