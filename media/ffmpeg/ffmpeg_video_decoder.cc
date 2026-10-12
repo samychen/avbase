@@ -245,6 +245,10 @@ bool FFmpegVideoDecoder::DecodeAvailableFrames() {
       return false;
     }
     out->set_color_space(ff::ColorSpaceFromAvFrame(frame, config_));
+    // Carry the stream's display rotation onto the frame: it lives on the
+    // config because that is what the container filled in, and it belongs on
+    // the frame because the renderer is the only thing that can act on it.
+    out->set_rotation(config_.rotation);
 
     if (ctx_->converter.Configured()) {
       uint8_t* dst[4] = {nullptr, nullptr, nullptr, nullptr};

@@ -371,6 +371,9 @@ bool FFmpegHwVideoDecoder::DecodeAvailableFrames() {
       return false;
     }
     out->set_color_space(cs);
+    // Same hand-off as the software path: hardware decode changes where the
+    // pixels live, not what the display matrix said about them.
+    out->set_rotation(config_.rotation);
 
     ++frames_decoded_;
     if (output_cb_) {
