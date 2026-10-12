@@ -3363,3 +3363,108 @@ demuxer 解析、被 `Player::video_rotation()` 报给宿主，但从来没有�
 | macos-sdl2 + `-Werror` | ctest 625/625 |
 | GLFW + `-Werror` | ctest **673/673**（新增 6 条旋转测试） |
 
+
+---
+
+## 第六十七轮：CPU 滤镜 × 硬件零拷贝 —— 把静默退化变成点名的拒绝
+
+TODO §3。第六十五轮盘点时发现的内部矛盾：两个功能各自都对，合起来互相拆台，
+而拆台的方式是**静默**的。
+
+### 原状（`video_renderer_impl.cc:370-403`）
+
+```
+if (filter_graph_.empty()) { ...懒建 stage... }
+if (filter_) {
+  if (!filter_->Process(std::move(frame), &filtered)) {
+    return;                      // ← 没有重投 pump
+  }
+  frame = std::move(filtered);
+}
+```
+
+三件事叠在一起，每一件单独看都不算错：
+
+1. **CPU 图与硬件帧互斥，但没人说。** `FFmpegVideoFilter` 要求帧格式与 ctx 匹配，
+   而 `visible_data()` 对 `kStorageOpaque` 返回**空 span**，于是喂给 avfilter 的
+   是**空 plane 指针**。
+2. **失败返回值被当成「不显示」。** `Process()` 返回 false 时直接 `return`，
+   **没有重投 pump** —— video 腿就此停死，画面冻结。
+3. **日志把锅甩给 FFmpeg。** 唯一痕迹是 "buffersrc rejected a frame"，
+   读起来像 FFmpeg 的错，实际是配置冲突。
+
+后果：开了 `filter_graph` + 硬解 ⇒ **画面冻住且什么都不报**。
+
+### 落地：把「能不能滤」这个决定从渲染器搬进一个自己的类
+
+新增 `media/filters/video_filter_stage.{h,cc}`：
+
+| 成员 | 职责 |
+| --- | --- |
+| `VideoFilterStage` | 原有纯接口（G2），FFmpeg 实现由宿主注入，与 `AudioFilterStage` 同形 |
+| `VideoFilterStageRunner` | 拥有 stage 的**整个生命周期**：何时建、何时拆、以及这个流到底能不能喂它 |
+
+`VideoRendererImpl` 只剩一行 `filter_runner_.Filter(&frame)`；三条 `filter_*` 成员
+缩成一个 `filter_runner_`。
+
+**关键设计：拒绝放在建图之前，并且给它名字。**
+
+```cpp
+enum class VideoFilterState {
+  kOff,                    // 没请求
+  kRunning,                // 请求了，且每一帧都过了图
+  kRefusedHardwareFrame,   // 请求了，但解码器出的是不可映射帧（零拷贝）
+  kRefusedNoFactory,       // 请求了，但没注入 stage 工厂（no-ffmpeg 构建）
+  kRefusedGraphFailed,     // 请求了，但图起不来
+};
+```
+
+放在 `render_perf_stats.h` 里 `UploadPath` 旁边，因为它俩是**同一个决定从两头看**：
+CPU 滤镜要能读的 plane，所以「要滤镜」同时就是「放弃硬件导入」。命了名的拒绝
+就是这个取舍不再隐身的理由。叫 *refused* 不叫 *failed* —— 一个不可能成立的配置
+不是要重试的运行时故障。
+
+**为什么不在 runner 里 `ToI420()` 兜底。** 那会把每一帧拖回系统内存、悄悄撤销零
+拷贝 —— 用最贵的方式搬一张本来就不需要动的图。
+
+**拒绝的代价是图，不是画面。** 所有 refusal 分支都 `return true` 并把原帧放回去；
+只有 EAGAIN（图把帧吞去缓冲）才返回 false，此时帧已被清空，渲染器重投 pump。
+
+### 反证（6 条突变）
+
+| 突变 | 结果 |
+| --- | --- |
+| runner 对不可映射帧也建 stage（去掉拒绝） | 只红 `HardwareFramesRefuseTheGraphButStillShow` |
+| 拒绝时返回 false（老 bug） | 只红同一条 |
+| 几何变了不重建（Δ3） | 只红 `GeometryChangeRebuildsTheStage` |
+| stage 不清空拒绝理由 | 只红 `SuccessClearsTheRejectionReason` |
+| FFmpeg stage 去掉硬件帧拒绝 | 只红 `RefusesAHardwareFrame` |
+| 失败的 stage 保留而非丢弃 | 只红 `AStageThatFailsOnceIsNeverRetried` |
+
+### 两处「测试其实没钉住」——都是自己查出来的
+
+**一、假反证。** `SuccessClearsTheRejectionReason` 原本用的是**全新 stage**，
+而新 stage 的理由本来就是空的 —— 去掉「清空」那行它照样绿，等于在断言构造函数。
+改成先喂一帧几何不匹配的帧**攒出一个理由**，再喂好帧验证它被清掉。
+
+**二、观测不到。** 「失败后丢掉 stage」用**永远失败**的 stage 是钉不住的：
+无论丢不丢，输入帧都被照常显示，两条路**逐像素输出相同**。加了一个「只失败第
+一次、之后能恢复」的 stage —— 保留这个 stage 的话下一帧就会被滤掉，
+于是「从没有一帧被滤过」成了「它被丢掉了」的可见形式。
+
+这跟第六十五轮记下的「引擎早退没有反证」是同一类：**从公开 API 观测不到的性质，
+写多少测试都只是重复代码的行为。** 发现它的唯一办法是把突变跑一遍看有没有红的。
+
+### 门禁
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（447 文件） |
+| `clang-format`（CI 口径，排除 legacy/optreg/third_party） | 439 文件 0 偏离 |
+| no-ffmpeg + `-Werror` | ctest **511/511** |
+| macos-sdl2 + `-Werror`（含 GLFW） | ctest **688/688** |
+| `glfw-check`（GLFW=ON, FFMPEG=OFF, TESTS=OFF） | 构建通过 |
+
+**一处需要更正上一轮的记录**：第六十六轮门禁表里 no-ffmpeg 504 / macos-sdl2 625
+是从第六十五轮**抄下来的，没有重跑**（第 65 轮记的是 504/625/672）。本轮实测
+当前基线是 **511 / 688**。以后门禁表的数字必须当场跑出来，不能沿用上一轮。

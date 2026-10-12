@@ -88,7 +88,7 @@ grep `scene|layer|pip` **零命中**。`GlScene` / `GlSceneEngine` / `GlLayerSou
 
 ---
 
-## 3. 【P3】CPU 滤镜与硬件零拷贝互斥，且是静默退化 —— 内部矛盾
+## 3. 【P3】✅ 已完成（第六十七轮）CPU 滤镜与硬件零拷贝互斥，且是静默退化 —— 内部矛盾
 
 **现状**：滤镜挂在 `media/filters/video_renderer_impl.cc:370-403`，位置是
 **解码之后、`compositor_.PutCurrentFrame()` 之前**。
@@ -103,8 +103,34 @@ grep `scene|layer|pip` **零命中**。`GlScene` / `GlSceneEngine` / `GlLayerSou
 `upload_path` 从 `hw_zero_copy` 落到 `cpu_sync` —— **没有任何日志说明这不是配置错误，
 也没有测试钉住这条退化**。这是「两个功能各自都对、合起来互相拆台」的形状。
 
-**验收**：至少改成**明确拒绝并说明**（日志/统计里可见），而不是静默退回 CPU；
-更好的做法是让统计里能看出「本帧因为滤镜而失去了零拷贝」。
+最坏的一种表现：`Process()` 返回 false 时老代码**直接 return 而不重投 pump**，
+于是 video 腿停死、**画面冻结且什么都不报**。
+
+**验收**（已完成）：
+
+- ✅ **拒绝发生在建图之前**，而不是把空 plane 指针喂给 avfilter 再等它失败。
+- ✅ 拒绝**有名字**：新增 `VideoFilterState`（`kOff` / `kRunning` /
+  `kRefusedHardwareFrame` / `kRefusedNoFactory` / `kRefusedGraphFailed`），
+  五个取值一眼分得清「没要滤镜」和「要了但静默没跑」。
+- ✅ **统计里可见**：`RenderPerfStats::filter_state` 进 `ToJson()`
+  （`"filter_state":"refused_hardware_frame"`），而 `playback_stats.cc:31`
+  正是用 `render.ToJson()` 出 JSON —— 宿主不用改代码就能看到。
+- ✅ **日志说清怎么修**："the decoder is producing hardware frames
+  (zero-copy); showing the picture unfiltered. Disable hwaccel to apply the
+  graph."，且**每流一代只说一次**（按帧率重复打的日志没人读）。
+
+| 层 | 改动 |
+| --- | --- |
+| `media/filters/video_filter_stage.{h,cc}`（新） | `VideoFilterStageRunner` 拥有 stage 的整个生命周期 |
+| `media/base/render_perf_stats.{h,cc}` | `VideoFilterState` + `VideoFilterStateName()` + `RenderPerfStats::filter_state` 进 JSON |
+| `media/filters/video_renderer_impl.{h,cc}` | 三条 `filter_*` 成员 → 一个 `filter_runner_`；返回值不再被丢弃 |
+| `media/filters/renderer_impl_reporting.cc` | 统计采样时把 `filter_state` 补进去（sink 看不到这个字段） |
+| `media/ffmpeg/ffmpeg_video_filter.{h,cc}` | 拒绝不可映射帧；`last_rejection()` 给出理由 |
+| `examples/play_glfw.cc` | `--vf0 <graph>` 命令行入口 |
+
+**仍保留的行为**：拒绝的代价是**滤镜图**，不是画面 —— 所有 refusal 分支都把
+解码帧原样送去显示。刻意**不**在 runner 里 `ToI420()` 兜底：那会把每一帧拖回系统
+内存、悄悄撤销零拷贝，是用最贵的方式搬一张本来就不需要动的图。
 
 ---
 
@@ -168,5 +194,15 @@ grep `scene|layer|pip` **零命中**。`GlScene` / `GlSceneEngine` / `GlLayerSou
 |---|---|---|
 | §1 旋转（渲染侧消费 rotation） | ✅ 完成 | 第六十六轮 |
 | §2 SDK 暴露场景 API | ⬜ 待办 | — |
-| §3 滤镜 × 零拷贝（改明确拒绝） | ⬜ 待办 | — |
+| §3 滤镜 × 零拷贝（改明确拒绝） | ✅ 完成 | 第六十七轮 |
 | §4 图层属性（背景色 / crop / aspect-fit）与多转场 | ⬜ 等需求 | — |
+
+---
+
+## 8. 记录更正
+
+- **第六十六轮的门禁数字是抄的、没重跑**（沿用第六十五轮的 504/625/672）。
+  第六十七轮当场实测当前基线是 **511 / 688**。门禁表的数字必须当场跑出来。
+- **「测试写了」不等于「性质被钉住」。** 第六十七轮的两条测试在加强之前都是空转：
+  一条在断言构造函数（新对象本来就没有理由），一条断言的性质从公开 API
+  根本观测不到。项目约定因此补一条：**反证必须真跑一遍，看有没有红的。**
