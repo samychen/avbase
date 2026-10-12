@@ -167,3 +167,6 @@ grep `scene|layer|pip` **零命中**。`GlScene` / `GlSceneEngine` / `GlLayerSou
 | 项 | 状态 | 落地 |
 |---|---|---|
 | §1 旋转（渲染侧消费 rotation） | ✅ 完成 | 第六十六轮 |
+| §2 SDK 暴露场景 API | ⬜ 待办 | — |
+| §3 滤镜 × 零拷贝（改明确拒绝） | ⬜ 待办 | — |
+| §4 图层属性（背景色 / crop / aspect-fit）与多转场 | ⬜ 等需求 | — |
