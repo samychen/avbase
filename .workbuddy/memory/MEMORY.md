@@ -51,6 +51,22 @@ GL→`render/gl/`）。**图形 API 轴 × 窗口系统轴**别压平，否则�
 API 观测不到 —— 两条路径逐像素输出相同，差别只在「有没有分配一个场景」。钉住它要加
 `scene()` 查询 = 扩大导出类接口，第六十五轮没擅自做。
 
+## 旋转（第六十六轮补齐）
+
+`VideoFrame::rotation()` **曾全仓无写入者** —— 有 getter、被 demuxer 从 display
+matrix 解析、被 `Player::video_rotation()` 上报，但**没有一帧真正带上它**。
+于是「渲染看 rotation」与「渲染忽略 rotation」是同一份代码。
+**修消费端之前先确认这个值真的有人在写**，否则再正确的渲染也是在消费一个常量。
+
+- 写入点：`FFmpegVideoDecoder` / `FFmpegHwVideoDecoder` 出帧时
+  `set_rotation(config_.rotation)` —— **软硬两条路都要**，只补一条 = 硬解素材静默丢旋转。
+- **旋转纹理坐标，不是旋转 quad。** 两者只在 rect 为正方形时等价；动 quad 会把图层的
+  矩形从它本该框住的那张画面底下转走，于是「图层相对自己的 rect 转了」而不是「画面转了」。
+- **`uRotation` 建 program 时就要设成 (1, 0)。** 未设过的 `vec2` 读回 (0, 0)，
+  那不是单位元而是把四顶点塌缩到中心 —— 一帧全黑，无错误无日志。
+- 旋转后仍按 stretch-to-fill 铺进 rect，所以竖拍转正会被横向拉伸；
+  **aspect-fit 是独立项**：渲染层完全不读 `natural_size()`（零命中）。
+
 ## 性能数据唯一入口
 三宿主示例均支持 `--stats`；`tools/bench_render.sh`，`SCENE=pip|fade` 测双层，
 `SECOND=<url>` 测真第二路解码。
