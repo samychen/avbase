@@ -19,6 +19,13 @@
 # than a positional because passing a scene without a canvas would otherwise
 # mean an empty argument.
 #
+# Set SECOND=<url> to feed the second layer from a SECOND Player -- its own
+# demuxer, decoder and clock, publishing into a GlLayerSource through
+# examples::PublisherSink -- instead of the delayed copy of the same stream
+# that SCENE alone uses. That is the path "N independent decoders" has to take
+# in a renderer that is single-source, so it is the one worth measuring: it
+# costs an extra decode, not just an extra upload.
+#
 # Requires: ffmpeg on PATH (to build the clips), python3, and a build that
 # includes play_glfw (AVBASE_ENABLE_GLFW=ON with glfw3 found) as well as a
 # display to present to -- this measures the real swap path, so a headless run
@@ -60,6 +67,7 @@ BUILD_DIR="${1:-$ROOT/build/macos-sdl2-werror}"
 SECONDS_PER_CLIP="${2:-12}"
 CANVAS="${3:-}"
 SCENE="${SCENE:-}"
+SECOND="${SECOND:-}"
 PLAYER="$BUILD_DIR/bin/play_glfw"
 CLIP_DIR="${TMPDIR:-/tmp}/avbase-bench"
 
@@ -83,8 +91,19 @@ fi
 if [ -n "$SCENE" ]; then
   PLAYER_ARGS+=(--scene "$SCENE")
 fi
+if [ -n "$SECOND" ]; then
+  PLAYER_ARGS+=(--second "$SECOND")
+fi
 
 mkdir -p "$CLIP_DIR"
+
+# --second needs --scene: the second layer IS a scene layer, so without a mode
+# the host has nothing to place it in and the flag would be silently ignored --
+# which is the failure mode this check exists to prevent.
+if [ -n "$SECOND" ] && [ -z "$SCENE" ]; then
+  echo "SECOND needs SCENE (the second layer is a scene layer)" >&2
+  exit 1
+fi
 
 # name:size:rate:bitrate. The spread is deliberate: 720p catches the CPU-bound
 # small case, 1080p60 is the common target, 4K is where upload stops being
@@ -100,6 +119,7 @@ echo "build:   $BUILD_DIR"
 echo "clips:   $CLIP_DIR (${SECONDS_PER_CLIP}s each)"
 echo "canvas:  ${CANVAS:-(follows the window)}"
 echo "scene:   ${SCENE:-(single source)}"
+echo "second:  ${SECOND:-(same stream, delayed)}"
 echo
 
 printf '%-9s %8s %8s %9s %9s %9s %9s %9s  %s\n' \
@@ -186,5 +206,9 @@ echo "only on a path that composes nothing (the SDL_Renderer back end draws"
 echo "straight to the window)."
 echo "max* is the worst present since the process started, so on a fresh run it"
 echo "is the start-up spike rather than a steady-state worst case."
-echo "upload_ms covers every layer the frame reached: with SCENE set, expect it"
-echo "to roughly double, because a second layer is a second full upload."
+echo "upload_ms covers every layer the frame reached, so a second layer adds a"
+echo "second upload to the same frame's figure. How much that costs depends on"
+echo "the route: a hardware import re-points a pointer (measured here at a few"
+echo "hundredths of a millisecond at 1080p60 -- below this machine's run-to-run"
+echo "noise), a CPU copy moves a whole frame of pixels and really does read as"
+echo "roughly double. Read upload_path first: that is what tells them apart."
