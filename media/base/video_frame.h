@@ -126,6 +126,15 @@ class AVBASE_MEDIA_EXPORT VideoFrame
   Size natural_size() const { return natural_size_; }
   Rational sar() const { return sar_; }
   int rotation() const { return rotation_; }
+
+  // The size the picture covers once |rotation| has been applied: a quarter
+  // turn lays the frame on its side, so the two axes swap, and 0 or 180 leaves
+  // them alone. Layout code has to ask for THIS rather than `natural_size()`
+  // -- fitting a rect against the undecorated size and then rotating squeezes
+  // a landscape picture back into a landscape box, which is the one failure
+  // here that looks like a rotation bug and is not.
+  Size NaturalSizeForRotation() const;
+
   VideoColorSpace color_space() const { return color_space_; }
 
   base::TimeDelta timestamp() const { return timestamp_; }
@@ -147,6 +156,14 @@ class AVBASE_MEDIA_EXPORT VideoFrame
   // Producer-side colour tagging, same window of validity as mutable_data():
   // the decoder sets it before the frame is first published.
   void set_color_space(VideoColorSpace cs) { color_space_ = cs; }
+
+  // Producer-side display rotation, same window: the decoder copies it out of
+  // the stream's VideoDecoderConfig, which is where the container's display
+  // matrix ends up. A frame built by CreateBlackFrame() carries 0, so a path
+  // that never sets this shows phone-shot material on its side -- the metadata
+  // was parsed, reported to the host, and then dropped on the way to the
+  // pixels.
+  void set_rotation(int degrees) { rotation_ = degrees; }
 
   bool IsMappable() const {
     return storage_type_ == StorageType::kStorageOwned;

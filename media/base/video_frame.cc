@@ -161,6 +161,22 @@ std::span<uint8_t> VideoFrame::mutable_data(Plane plane) {
   return {planes_[plane], allocated_sizes_[plane]};
 }
 
+Size VideoFrame::NaturalSizeForRotation() const {
+  // Only the four quarter turns are distinguished, and only the two odd ones
+  // transpose: a container's display rotation is always a quarter-turn count,
+  // so anything else here would be a caller passing a raw angle that no
+  // downstream stage can honour.
+  int quarters = rotation_ / 90;
+  quarters %= 4;
+  if (quarters < 0) {
+    quarters += 4;
+  }
+  if (quarters == 1 || quarters == 3) {
+    return Size(natural_size_.height, natural_size_.width);
+  }
+  return natural_size_;
+}
+
 std::string VideoFrame::AsDebugString() const {
   std::string out = GetVideoFormatName(format_);
   out += " " + std::to_string(coded_size_.width) + "x" +
