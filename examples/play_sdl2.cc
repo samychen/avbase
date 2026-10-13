@@ -63,19 +63,15 @@ int g_video_height{0};
 avbase::Player* g_player{nullptr};  // Set in main; outlives the event loop.
 
 // --scene: the multi-source demo. Held by the process rather than by main
-// because the sink's callback outlives main's locals -- the sink is destroyed
-// inside the player, well after the value would have gone out of scope.
+// because the scene outlives main's locals -- the player owns the scene.
 std::unique_ptr<avbase::examples::SceneDemo> g_scene;
 
 // --second <url>: where the second layer's frames come from. Empty means the
-// delayed-copy fallback in SceneDemo. |g_second_source| is the mailbox a
-// second, independent Player publishes into; the sink factory fills it in
-// when the first player builds its renderer, and main() reads it once
-// prepared.
+// delayed-copy fallback in SceneDemo. |g_second_source| is what a second,
+// independent Player publishes into; the scene registers it up front.
 std::string g_second_url;
-std::shared_ptr<avbase::media::GlLayerSource> g_second_source;
-// The second pipeline, torn down before the first player's sink so the mailbox
-// outlives its producer.
+std::shared_ptr<avbase::SceneSource> g_second_source;
+// Torn down before the first player's sink: the mailbox must outlive it.
 std::unique_ptr<avbase::Player> g_second_player;
 
 // A first-cut font resolution: the demo is not the SDK. A real host points
@@ -233,9 +229,9 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
   } else if (e.type == avbase::EventType::kCompleted) {
     g_completed.store(true);
   } else if (e.type == avbase::EventType::kPrepared) {
-    // The first player's sink -- and therefore its engine -- exists now, so
-    // the second pipeline can be started into the mailbox it handed back.
-    if (!g_second_url.empty() && g_second_source) {
+    // The source was registered before Prepare; what this waits for is the
+    // first stream running, not anything existing.
+    if (g_second_source) {
       g_second_player =
           avbase::examples::StartSecondSource(g_second_url, g_second_source);
       if (!g_second_player) {
@@ -445,16 +441,21 @@ int main(int argc, char** argv) {
   if (!options.scene.empty()) {
     g_scene = std::make_unique<avbase::examples::SceneDemo>(options.scene);
   }
+  // The backend is all this host has to name: the scene is on the Player, so
+  // the demo does not have to unwrap the sink this factory produces.
   deps->video_sink_factory =
-      std::make_shared<avbase::examples::SceneSinkFactory<
-          avbase::media::Sdl2VideoSinkFactory, avbase::media::Sdl2VideoSink>>(
-          g_scene.get(), "sdl2-demo", &g_second_source, /*second_z=*/10);
+      std::make_shared<avbase::media::Sdl2VideoSinkFactory>();
   deps->audio_sink_factory =
       std::make_shared<avbase::media::Sdl2AudioSinkFactory>();
   g_second_url = options.second;
 
   avbase::Player player(avbase::PlayerConfig(), std::move(deps));
   g_player = &player;
+  if (g_scene != nullptr) {
+    g_scene->set_second_url(options.second);
+    g_scene->Install(player);
+    g_second_source = g_scene->second_source();
+  }
   player.SetEventHandler(avbase::base::BindRepeating(&OnPlayerEvent));
   g_print_stats.store(options.stats);
   player.SetVideoSurface(display);

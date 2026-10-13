@@ -20,8 +20,9 @@
 # mean an empty argument.
 #
 # Set SECOND=<url> to feed the second layer from a SECOND Player -- its own
-# demuxer, decoder and clock, publishing into a GlLayerSource through
-# examples::PublisherSink -- instead of the delayed copy of the same stream
+# demuxer, decoder and clock, publishing into the scene through the publisher
+# sink factory that SceneSource::MakePublisherFactory() hands out -- instead of
+# the delayed copy of the same stream
 # that SCENE alone uses. That is the path "N independent decoders" has to take
 # in a renderer that is single-source, so it is the one worth measuring: it
 # costs an extra decode, not just an extra upload.

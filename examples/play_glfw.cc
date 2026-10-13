@@ -35,7 +35,6 @@
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
-#include "examples/publisher_sink.h"
 #include "examples/scene_demo.h"
 #include "media/filters/null_audio_sink.h"
 #include "platform/glfw/glfw_surface.h"
@@ -61,17 +60,16 @@ std::atomic<bool> g_print_stats{false};
 avbase::Player* g_player{nullptr};  // Set in main; outlives the event loop.
 
 // --scene: the multi-source demo. Held by the process rather than by main
-// because the sink's callback outlives main's locals -- the sink is destroyed
-// inside the player, well after the value would have gone out of scope.
+// because the scene's callback outlives main's locals -- the player owns the
+// scene, and it outlives the frame it was configured on.
 std::unique_ptr<avbase::examples::SceneDemo> g_scene;
 
-// --second <url>, when given: where the second layer's frames come from. It
-// gets its own Player, demuxer and decoder; see examples/publisher_sink.h.
+// The source the second layer's frames arrive in, when --second was given.
+// Registered straight away on the player's scene rather than smuggled out of a
+// sink factory; see examples/scene_demo.h on why neither is hard any more.
+std::shared_ptr<avbase::SceneSource> g_second_source;
+// Its URL, kept next to it so the kPrepared handler can act on it.
 std::string g_second_url;
-// The mailbox that second Player publishes into. Filled in by the sink factory
-// when the first player builds its renderer, and read by main() once
-// preparation has finished.
-std::shared_ptr<avbase::media::GlLayerSource> g_second_source;
 // The second pipeline itself, torn down before the first player's sink so the
 // mailbox outlives its producer.
 std::unique_ptr<avbase::Player> g_second_player;
@@ -146,9 +144,10 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
   } else if (e.type == avbase::EventType::kCompleted) {
     g_completed.store(true);
   } else if (e.type == avbase::EventType::kPrepared) {
-    // The first player's sink -- and therefore its engine -- exists now, so a
-    // second Player can be started into the mailbox it handed back.
-    if (!g_second_url.empty() && g_second_source) {
+    // Not because the source only exists now -- it was registered before
+    // Prepare -- but because the first stream has to be running before a
+    // second decoder is worth the CPU.
+    if (g_second_source) {
       g_second_player =
           avbase::examples::StartSecondSource(g_second_url, g_second_source);
       if (!g_second_player) {
@@ -294,10 +293,12 @@ int main(int argc, char** argv) {
   if (!options.scene.empty()) {
     g_scene = std::make_unique<avbase::examples::SceneDemo>(options.scene);
   }
+  // The GL backend is all this host needs to name; nothing here reaches for the
+  // SINK the way it used to. The scene is on the Player, so the demo installs
+  // its hook and registers its source directly, and gets a real answer instead
+  // of a cast when this player's sink cannot composite.
   deps->video_sink_factory =
-      std::make_shared<avbase::examples::SceneSinkFactory<
-          avbase::media::GlfwVideoSinkFactory, avbase::media::GlfwVideoSink>>(
-          g_scene.get(), "glfw-demo", &g_second_source, /*second_z=*/10);
+      std::make_shared<avbase::media::GlfwVideoSinkFactory>();
   deps->audio_sink_factory =
       std::make_shared<avbase::media::NullAudioSinkFactory>();
 
@@ -311,6 +312,13 @@ int main(int argc, char** argv) {
   player.SetEventHandler(avbase::base::BindRepeating(&OnPlayerEvent));
   player.SetVideoSurface(display);
   g_second_url = options.second;
+  if (g_scene != nullptr) {
+    // Any time, including before SetDataSource: neither the hook nor the
+    // source is a pipeline object, so there is nothing to wait for.
+    g_scene->set_second_url(options.second);
+    g_scene->Install(player);
+    g_second_source = g_scene->second_source();
+  }
   if (const avbase::Status s = player.SetDataSource(options.url); !s) {
     std::fprintf(stderr, "SetDataSource failed: %s\n",
                  s.error().ToString().c_str());
@@ -327,8 +335,19 @@ int main(int argc, char** argv) {
     glfwTerminate();
     return 1;
   }
+  if (options.stats) {
+    // AFTER prepare, so it says whether the hook and the source were actually
+    // plumbed into the renderer that got built -- the one number that
+    // separates "the PiP is misconfigured" from "there is no PiP at all".
+    std::fprintf(stderr, "scene: %s\n", player.scene()->Describe().c_str());
+  }
 
   const int exit_code = PumpEventsUntilDone(window, options.max_seconds);
+  if (options.stats && g_scene != nullptr) {
+    std::fprintf(stderr, "scene: hook placed %llu frame(s), scene now %s\n",
+                 static_cast<unsigned long long>(g_scene->frames_placed()),
+                 player.scene()->Describe().c_str());
+  }
   // The second pipeline first: it publishes into a mailbox the first player's
   // sink owns, so it has to be quiet before that sink is destroyed.
   avbase::examples::StopSecondSource(std::move(g_second_player),

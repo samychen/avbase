@@ -5,7 +5,7 @@
 // The --scene demo shared by the GL host examples.
 //
 // This is HOST POLICY, not library code, which is why it lives in examples/
-// rather than in media/gl: the library hands a host a GlScene and a per-frame
+// rather than in the library: the SDK hands a host a Scene and a per-frame
 // callback, and what goes into that scene is the application's decision. Two
 // layouts are enough to exercise everything a scene does -- a second layer, a
 // place on the canvas, a place in the z order, and a blend weight.
@@ -20,18 +20,26 @@
 //     delayed copy of the same stream is a genuinely independent texture with
 //     its own upload, which is the property on trial;
 //   * with --second <url>, a SECOND Player: its own demuxer, its own decoder,
-//     its own clock, publishing into a GlLayerSource through
-//     examples::PublisherSink.
+//     its own clock, publishing into a SceneSource through the publisher sink
+//     factory that source hands out.
 //
-// The second one is the real thing, and it is the reason GlLayerSource is a
-// mailbox rather than a layer: two pipelines never agree on a clock, and the
-// only clock here that decides what is shown is the display's.
+// The second one is the real thing, and it is the reason a source is a mailbox
+// rather than a layer: two pipelines never agree on a clock, and the only clock
+// here that decides what is shown is the display's.
+//
+// EVERYTHING HERE GOES THROUGH Player::scene(). It used to need a bespoke
+// VideoRendererSinkFactory that static_cast the sink it was handed down to
+// GlVideoSink -- which worked only because the author of that cast also wrote
+// the factory it was aiming at (RTTI is off, so nothing checked it), and which
+// is undefined behaviour the moment the default nodeps player gets its
+// NullVideoSink instead. See docs/TODO.md §2.
 
 #ifndef AVBASE_EXAMPLES_SCENE_DEMO_H_
 #define AVBASE_EXAMPLES_SCENE_DEMO_H_
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <numbers>
@@ -41,19 +49,11 @@
 #include "base/functional/bind.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
-#include "examples/publisher_sink.h"
-#include "media/base/native_display.h"
-#include "media/base/render_perf_stats.h"
 #include "media/base/video_frame.h"
-#include "media/base/video_renderer_sink.h"
 #include "media/filters/null_audio_sink.h"
-#include "media/filters/null_video_sink.h"
-#include "media/gl/gl_layer_source.h"
-#include "media/gl/gl_present.h"
-#include "media/gl/gl_scene.h"
-#include "media/gl/gl_video_sink.h"
 #include "player/public/deps.h"
 #include "player/public/player.h"
+#include "player/public/scene.h"
 
 namespace avbase::examples {
 
@@ -66,6 +66,8 @@ class SceneDemo {
   // One full opacity cycle for the fade layout, in seconds. Long enough to
   // read as a dissolve rather than a flicker.
   static constexpr double kFadePeriodSeconds = 4.0;
+  // Above the player's own layer (z = 0), so the inset draws last.
+  static constexpr int kSecondZ = 10;
 
   explicit SceneDemo(std::string mode) : mode_(std::move(mode)) {}
   SceneDemo(const SceneDemo&) = delete;
@@ -77,33 +79,50 @@ class SceneDemo {
   }
   bool enabled() const { return !mode_.empty(); }
 
-  // The mailbox the second layer's frames arrive in, when the host wired a
-  // second Player into it (--second). Null means the delayed-copy fallback
-  // below is what feeds the layer.
-  void set_second_source(std::shared_ptr<media::GlLayerSource> source) {
-    second_source_ = std::move(source);
-  }
-
-  // The GlSceneEngine hook. Runs on the sink's render thread.
+  // The whole of what wiring this demo up used to be.
   //
-  // Note what it does NOT do: upload. A registered source is synced by the
-  // engine, which is the whole point of registering one -- the hook's job is
-  // placement, and the only upload here is the fallback path that feeds the
-  // layer from the ring when no second source was wired up.
-  void OnFrame(media::GlPresenter& presenter, media::GlScene& scene,
-               media::GlScene::LayerId main_layer,
-               const base::scoped_refptr<media::VideoFrame>& frame,
-               media::PresentTiming* timing) {
+  // Note WHEN this can be called: any time, including before SetDataSource,
+  // because neither the scene nor anything on it belongs to a pipeline. The
+  // callback and the source below are plumbed into whichever renderer gets
+  // built later, and into the next one if the player is reset.
+  void Install(avbase::Player& player) {
     if (!enabled()) {
       return;
     }
-    media::GlScene::LayerId second = media::GlScene::kNoLayer;
-    if (second_source_ != nullptr) {
-      second = second_source_->has_layer() ? second_source_->layer()
-                                           : media::GlScene::kNoLayer;
-      if (second == media::GlScene::kNoLayer) {
-        // The engine has not synced this source yet, so there is no layer to
-        // place. It will have one from the next frame on.
+    player.scene()->SetUpdateCallback(
+        base::BindRepeating(&SceneDemo::OnFrame, base::Unretained(this)));
+    if (!second_url_.empty()) {
+      second_ = player.scene()->AddSource("second", kSecondZ);
+    }
+  }
+
+  void set_second_url(std::string url) { second_url_ = std::move(url); }
+  std::shared_ptr<avbase::SceneSource> second_source() const { return second_; }
+  // How many frames the hook actually placed a second layer on. The number
+  // that tells a host "the scene ran" from "the scene was configured and
+  // nothing happened": 0 with a bound scene means the hook never fired.
+  uint64_t frames_placed() const { return frames_placed_; }
+
+  // The per-frame hook. Runs on the sink's render thread.
+  //
+  // Note what it does NOT do: upload, in the --second case. A registered source
+  // is synced by the scene, which is the whole point of registering one -- the
+  // hook's job is placement, and the only upload here is the fallback path that
+  // feeds the layer from the ring when no second source was wired up.
+  void OnFrame(avbase::SceneFrame& frame,
+               const base::scoped_refptr<media::VideoFrame>& main_frame) {
+    if (!enabled()) {
+      return;
+    }
+    avbase::SceneLayer second;
+    if (second_ != nullptr) {
+      second = frame.layer_of(*second_);
+      if (!second) {
+        // The scene has not synced this source yet, so there is no layer to
+        // place. It will have one from the next frame on. This is what the
+        // old code needed has_layer() for, and it is still a real case: the
+        // layer is made on the GL thread, so it cannot exist before the first
+        // frame that draws it.
         return;
       }
     } else {
@@ -111,23 +130,19 @@ class SceneDemo {
       // the one entering it, so the offset is exactly kDelayFrames once the
       // ring has filled.
       base::scoped_refptr<media::VideoFrame> delayed =
-          ring_.size() >= kDelayFrames ? ring_.front() : frame;
-      ring_.push_back(frame);
+          ring_.size() >= kDelayFrames ? ring_.front() : main_frame;
+      ring_.push_back(main_frame);
       while (ring_.size() > kDelayFrames) {
         ring_.pop_front();
       }
-      if (second_layer_ == media::GlScene::kNoLayer) {
-        // z above the stream's layer (0), so the inset draws last.
-        second_layer_ = scene.AddVideoLayer(10);
-        if (second_layer_ == media::GlScene::kNoLayer) {
+      if (second_layer_ == 0) {
+        second_layer_ = frame.AddLayer(kSecondZ).id();
+        if (second_layer_ == 0) {
           return;
         }
       }
-      second = second_layer_;
-      // Through the presenter, so this upload lands in the frame's upload_ms
-      // alongside the main layer's: a second source that cost nothing would be
-      // the one number the demo exists to show.
-      presenter.UploadLayer(scene, second, *delayed, timing);
+      second = frame.layer_with_id(second_layer_);
+      second.Upload(*delayed);
     }
 
     // Placement is host policy either way, and it is the only thing a
@@ -135,9 +150,12 @@ class SceneDemo {
     if (mode_ == "pip") {
       // Lower right, leaving a margin: the numbers are fractions of the
       // canvas, so the inset keeps its proportions when --canvas changes.
-      scene.SetLayerRect(second, 0.62f, 0.54f, 0.34f, 0.42f);
+      second.SetRect(0.62f, 0.54f, 0.34f, 0.42f);
+      // Fit rather than stretch: the inset is not the canvas's shape, and
+      // the demo exists partly to show that the choice is visible.
+      second.SetContentMode(avbase::SceneContentMode::kFit);
     } else {
-      scene.SetLayerRect(second, 0.0f, 0.0f, 1.0f, 1.0f);
+      second.SetRect(0.0f, 0.0f, 1.0f, 1.0f);
       if (start_.is_null()) {
         start_ = base::TimeTicks::Now();
       }
@@ -153,35 +171,37 @@ class SceneDemo {
       // example reaching into media::internal would be worse than <numbers>.
       const double phase =
           2.0 * std::numbers::pi_v<double> * seconds / kFadePeriodSeconds;
-      scene.SetLayerOpacity(second,
-                            static_cast<float>(0.5 - 0.5 * std::cos(phase)));
+      second.SetOpacity(static_cast<float>(0.5 - 0.5 * std::cos(phase)));
     }
-    (void)main_layer;
+    ++frames_placed_;
   }
 
  private:
   std::string mode_;
+  std::string second_url_;
   std::deque<base::scoped_refptr<media::VideoFrame>> ring_;
-  media::GlScene::LayerId second_layer_{media::GlScene::kNoLayer};
-  std::shared_ptr<media::GlLayerSource> second_source_;
+  // A layer id rather than a SceneLayer: the frame object differs every frame,
+  // so only the id carries across.
+  uint64_t second_layer_{0};
+  std::shared_ptr<avbase::SceneSource> second_;
+  uint64_t frames_placed_{0};
   base::TimeTicks start_;  // Set on the first frame; the fade's phase zero.
 };
 
 // Builds the SECOND pipeline: its own Player, decoding |url| independently of
-// the first, presenting into |source| through a PublisherSink instead of a
-// window. Audio goes to the null sink -- one master clock per process, and the
-// first player's is it.
+// the first, presenting into |source| through that source's own publisher sink
+// factory instead of a window. Audio goes to the null sink -- one master clock
+// per process, and the first player's is it.
 //
 // Returns null when the URL cannot be opened. The caller owns the result and
 // must StopSync() it before the first player's sink goes away, because the
-// source it publishes into belongs to that sink's engine.
+// source it publishes into belongs to that sink's renderer.
 inline std::unique_ptr<avbase::Player>
 StartSecondSource(std::string url,
-                  std::shared_ptr<media::GlLayerSource> source) {
+                  std::shared_ptr<avbase::SceneSource> source) {
   DCHECK(source);
   auto deps = std::make_unique<avbase::Deps>();
-  deps->video_sink_factory =
-      std::make_shared<PublisherSinkFactory>(std::move(source));
+  deps->video_sink_factory = source->MakePublisherFactory();
   deps->audio_sink_factory =
       std::make_shared<avbase::media::NullAudioSinkFactory>();
 
@@ -207,11 +227,11 @@ StartSecondSource(std::string url,
 // Tears the second pipeline down and reports what the mailbox saw.
 //
 // MUST run before the first player's sink is destroyed: the source belongs to
-// that sink's engine, and the producer has to be quiet first -- the same
+// that sink's renderer, and the producer has to be quiet first -- the same
 // "stop the producer, then the consumer" order the sinks rely on for the
 // presenter.
 inline void StopSecondSource(std::unique_ptr<avbase::Player> player,
-                             std::shared_ptr<media::GlLayerSource> source) {
+                             std::shared_ptr<avbase::SceneSource> source) {
   if (player) {
     player->StopSync(avbase::base::Seconds(5));
   }
@@ -223,70 +243,17 @@ inline void StopSecondSource(std::unique_ptr<avbase::Player> player,
   // decoder really fed the second layer: a source that produced N frames and
   // had all N superseded was being polled faster than it could decode, which
   // is fine, and one that produced 0 was never wired up at all.
+  //
+  // These counters now come from the SceneSource rather than from the engine's
+  // mailbox, so they still add up after the first player has been stopped and
+  // its sink with it.
   std::fprintf(stderr,
                "--second: published=%llu consumed=%llu superseded=%llu\n",
                static_cast<unsigned long long>(source->frames_published()),
                static_cast<unsigned long long>(source->frames_consumed()),
                static_cast<unsigned long long>(source->frames_superseded()));
-  player.reset();
-  source->Detach(nullptr);
+  source.reset();
 }
-
-// Wraps a host's sink factory so the demo's hook reaches the sink it creates.
-//
-// The sink is created INSIDE the player, so a factory is the only place a host
-// can get at it between construction and the player taking it over -- and
-// SetSceneUpdate()'s contract is exactly "before Start()".
-//
-// A template because the two hosts that needed it wrote it identically apart
-// from the two types and the name string; a third should not add a third
-// copy. |demo| doubles as the on/off switch: a null demo means no hook, which
-// is the same thing the separate bool used to say with one more field to keep
-// in agreement.
-template <typename SinkFactory, typename Sink>
-class SceneSinkFactory final : public media::VideoRendererSinkFactory {
- public:
-  // |demo| is the layout hook; null means none. |second_source|, when non-null,
-  // receives a source freshly registered with the sink's engine -- the handle a
-  // second Player's PublisherSink then publishes into.
-  SceneSinkFactory(
-      SceneDemo* demo, const char* name,
-      std::shared_ptr<media::GlLayerSource>* second_source = nullptr,
-      int second_z = 10)
-      : demo_(demo),
-        name_(name),
-        second_source_(second_source),
-        second_z_(second_z) {}
-
-  std::unique_ptr<media::VideoRendererSink>
-  Create(base::scoped_refptr<media::NativeDisplay> display) override {
-    std::unique_ptr<media::VideoRendererSink> sink =
-        SinkFactory().Create(std::move(display));
-    if (demo_ == nullptr || !demo_->enabled()) {
-      return sink;
-    }
-    // static_cast, not dynamic_cast: RTTI is off project-wide, and the
-    // factory's contract is that it hands back a |Sink|.
-    Sink& typed = static_cast<Sink&>(*sink);
-    if (second_source_ != nullptr) {
-      // The source has to be registered with the engine the SINK owns, so this
-      // is the only moment it can be created: the player takes the sink over
-      // as soon as Create() returns.
-      *second_source_ = typed.AddSceneSource("second", second_z_);
-    }
-    typed.SetSceneUpdate(
-        base::BindRepeating(&SceneDemo::OnFrame, base::Unretained(demo_)));
-    return sink;
-  }
-
-  const char* name() const override { return name_; }
-
- private:
-  SceneDemo* demo_;  // Borrowed; owned by the example's main().
-  const char* name_;
-  std::shared_ptr<media::GlLayerSource>* second_source_;
-  int second_z_;
-};
 
 }  // namespace avbase::examples
 
