@@ -13,9 +13,9 @@
 // would have
 // marked every video frame as infinitely late and dropped the entire stream.
 
-#include <stdio.h>
-
+#include <cinttypes>
 #include <cstddef>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <utility>
@@ -97,7 +97,8 @@ size_t SyncFromAudio(DemuxerStream* stream, AvSyncController* controller,
   std::vector<base::scoped_refptr<AudioBuffer>> out;
   DecoderStatus init_status;
   bool init_done = false;
-  decoder.Initialize(config, /*has_pending_clear=*/false, /*serial=*/0,
+  decoder.Initialize(config, /*has_pending_clear=*/false,
+                     /*current_serial=*/0,
                      base::BindOnce(
                          [](bool* flag, DecoderStatus* o, DecoderStatus s) {
                            *flag = true;

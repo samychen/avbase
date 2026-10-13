@@ -10,10 +10,9 @@
 // the signature of a missing time base (bug #26), and it is invisible in the
 // frame count: the right number of frames arrives, all of them stamped zero.
 
-#include <inttypes.h>
-#include <stdio.h>
-
+#include <cinttypes>
 #include <cstddef>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <utility>
@@ -122,7 +121,7 @@ int DecodeVideo(DemuxerStream* stream, Pump* pump,
   std::vector<base::scoped_refptr<VideoFrame>> frames;
   DecoderStatus init_status;
   bool init_done = false;
-  decoder.Initialize(config, /*low_delay=*/false, /*cdm=*/nullptr,
+  decoder.Initialize(config, /*low_delay=*/false, /*cdm_context=*/nullptr,
                      base::BindOnce(
                          [](bool* flag, DecoderStatus* out, DecoderStatus s) {
                            *flag = true;
@@ -179,7 +178,8 @@ int DecodeAudio(DemuxerStream* stream, Pump* pump, size_t limit) {
   std::vector<base::scoped_refptr<AudioBuffer>> buffers;
   DecoderStatus init_status;
   bool init_done = false;
-  decoder.Initialize(config, /*has_pending_clear=*/false, /*serial=*/0,
+  decoder.Initialize(config, /*has_pending_clear=*/false,
+                     /*current_serial=*/0,
                      base::BindOnce(
                          [](bool* flag, DecoderStatus* out, DecoderStatus s) {
                            *flag = true;

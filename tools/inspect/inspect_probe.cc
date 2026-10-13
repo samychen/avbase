@@ -4,9 +4,8 @@
 //
 // `avbase-inspect probe`: container and per-stream information.
 
-#include <inttypes.h>
-#include <stdio.h>
-
+#include <cinttypes>
+#include <cstdio>
 #include <string>
 
 #include "base/test/task_environment.h"

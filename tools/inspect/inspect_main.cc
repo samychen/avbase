@@ -14,8 +14,7 @@
 // Bug #32 (a master clock offset by negative uptime) was found by `sync` on its
 // first run against a real file, after 300+ unit tests had passed.
 
-#include <stdio.h>
-
+#include <cstdio>
 #include <string>
 
 #include "media/ffmpeg/log_bridge.h"

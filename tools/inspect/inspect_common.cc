@@ -4,10 +4,9 @@
 
 #include "tools/inspect/inspect_common.h"
 
-#include <stdlib.h>
-
 #include <cerrno>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <utility>
 
@@ -82,9 +81,9 @@ bool ParseArgs(int argc, char** argv, Options* out) {
         fprintf(stderr, "error: --limit '%s' is not a valid count\n", value);
         return false;
       }
-      // LP64: unsigned long long and size_t are both 64-bit, so ERANGE is the
-      // only overflow signal; the cast below cannot truncate.
-      const unsigned long long parsed = strtoull(value, &end, 10);
+      // LP64: uint64_t and size_t are both 64-bit, so ERANGE is the only
+      // overflow signal; the cast below cannot truncate.
+      const uint64_t parsed = strtoull(value, &end, 10);
       if (end == value || *end != '\0' || errno == ERANGE) {
         fprintf(stderr, "error: --limit '%s' is not a valid count\n", value);
         return false;
