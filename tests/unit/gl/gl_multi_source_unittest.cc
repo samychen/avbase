@@ -276,5 +276,75 @@ TEST_F(MultiSourceTest, AFramePublishedBetweenPresentsShowsAtTheNextOne) {
   EXPECT_EQ(source->frames_consumed(), 1u);
 }
 
+// Parks a source's layer on the LEFT half, so a hook can be told apart from
+// the one above by where the second picture ends up.
+void PlaceOnTheLeftHalf(GlLayerSource* source, GlPresenter&, GlScene& scene,
+                        GlScene::LayerId,
+                        const base::scoped_refptr<VideoFrame>&,
+                        PresentTiming*) {
+  if (source->has_layer()) {
+    scene.SetLayerRect(source->layer(), 0.0f, 0.0f, 0.5f, 1.0f);
+  }
+}
+
+// Replacing the hook BETWEEN two presents, which is the property that used to
+// be a data race.
+//
+// GlSceneEngine::SetUpdateCallback() wrote the callback from the caller's
+// thread while Sync() read it from the render thread with no synchronisation,
+// so the documented rule was "before Start()" -- and breaking that rule was
+// undefined behaviour on a refcounted BindState, not a polite failure. The fix
+// is that the callback lives under the engine's lock and each frame runs the
+// snapshot it started with. This test is what "callable at any time" means.
+TEST_F(MultiSourceTest, TheHookCanBeReplacedWhileTheEngineIsRunning) {
+  GlSceneEngine engine;
+  std::shared_ptr<GlLayerSource> source = engine.AddSource("second", /*z=*/10);
+  ASSERT_TRUE(source);
+  source->Publish(SolidFrame(test::kBlackLuma));
+  base::scoped_refptr<VideoFrame> main_frame = SolidFrame(test::kWhiteLuma);
+
+  engine.SetUpdateCallback(base::BindRepeating(&PlaceOnTheRightHalf,
+                                               base::Unretained(source.get())));
+  ASSERT_TRUE(engine.Compose(*presenter_, main_frame));
+  presenter_->PresentComposed();
+  EXPECT_GT(LeftRed(), test::kBrightThreshold);
+  EXPECT_LT(RightRed(), test::kDarkThreshold) << "the first hook ran";
+
+  // Swap it for one that puts the same picture on the other side. Before the
+  // fix this was a race and would have shown up, if at all, as a crash -- not
+  // as a wrong half.
+  engine.SetUpdateCallback(
+      base::BindRepeating(&PlaceOnTheLeftHalf, base::Unretained(source.get())));
+  ASSERT_TRUE(engine.Compose(*presenter_, main_frame));
+  presenter_->PresentComposed();
+  EXPECT_LT(LeftRed(), test::kDarkThreshold) << "the second hook ran instead";
+  EXPECT_GT(RightRed(), test::kBrightThreshold)
+      << "and the first one stopped running";
+}
+
+// Clearing the hook is legal too and does not leave a stale placement behind:
+// what a layer did last is a scene fact, and the hook only ever changes it.
+TEST_F(MultiSourceTest, ClearingTheHookLeavesTheLastPlacementStanding) {
+  GlSceneEngine engine;
+  std::shared_ptr<GlLayerSource> source = engine.AddSource("second", /*z=*/10);
+  ASSERT_TRUE(source);
+  source->Publish(SolidFrame(test::kBlackLuma));
+  base::scoped_refptr<VideoFrame> main_frame = SolidFrame(test::kWhiteLuma);
+
+  engine.SetUpdateCallback(base::BindRepeating(&PlaceOnTheRightHalf,
+                                               base::Unretained(source.get())));
+  ASSERT_TRUE(engine.Compose(*presenter_, main_frame));
+  presenter_->PresentComposed();
+  EXPECT_LT(RightRed(), test::kDarkThreshold);
+
+  engine.SetUpdateCallback(GlSceneEngine::UpdateCallback());
+  ASSERT_TRUE(engine.Compose(*presenter_, main_frame));
+  presenter_->PresentComposed();
+  // Still on the right: the layer keeps its rect, and the source keeps being
+  // synced -- only the host's per-frame placement has stopped.
+  EXPECT_LT(RightRed(), test::kDarkThreshold);
+  EXPECT_GT(LeftRed(), test::kBrightThreshold);
+}
+
 }  // namespace
 }  // namespace avbase::media
