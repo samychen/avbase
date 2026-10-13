@@ -48,7 +48,9 @@ struct TextRasterStyle {
 class TextRaster {
  public:
   TextRaster();
-  ~TextRaster();
+  // Defaulted here rather than out-of-line: the class owns nothing, so this
+  // keeps it trivially destructible.
+  ~TextRaster() = default;
   TextRaster(const TextRaster&) = delete;
   TextRaster& operator=(const TextRaster&) = delete;
 

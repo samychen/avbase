@@ -55,7 +55,14 @@ CVPixelBufferRef PixelBufferOf(const media::VideoFrame& frame) {
   // immutable once published, and this only reads the buffer's identity. The
   // pointer is owned by the frame's producer-side backing and is valid for as
   // long as the frame is (see VideoFrame::WrapNativeBuffer).
+  // Going through void* is unavoidable here: the frame hands out `const void*`
+  // and CVPixelBufferRef is `__CVBuffer*` -- a pointer to MUTABLE, and
+  // `__CVBuffer` is a private CoreVideo type that cannot be named to write
+  // `const __CVBuffer*` instead. So the const has to be dropped on the void*
+  // before the static_cast, which is exactly the shape
+  // bugprone-casting-through-void flags.
   return static_cast<CVPixelBufferRef>(
+      // NOLINTNEXTLINE
       const_cast<void*>(frame.native_handle().id));
 }
 

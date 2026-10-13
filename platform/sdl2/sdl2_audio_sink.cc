@@ -68,6 +68,11 @@ void Sdl2AudioSink::Start() {
     started_.store(false);
     return;
   }
+  // SDL's audio callback hands the device id back as void*, and an id is an
+  // integer. Rounded through uintptr_t rather than int so a 64-bit id is
+  // not truncated; the cast itself is unavoidable (performance-no-int-to-
+  // ptr).
+  // NOLINTNEXTLINE
   device_ = reinterpret_cast<void*>(static_cast<uintptr_t>(device));
 }
 

@@ -19,7 +19,7 @@ namespace avbase::media {
 namespace {
 
 int ToU8(float v) {
-  return static_cast<int>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f);
+  return static_cast<int>(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f));
 }
 
 #if defined(AVBASE_HAVE_FREETYPE)
@@ -42,12 +42,15 @@ void BlitGlyphMax(RgbaBitmap* out, int dst_x, int dst_y, const FT_Bitmap& bmp,
       if (x < 0 || x >= out->width) {
         continue;
       }
-      const unsigned char cover =
+      // std::lround, not the `(int)(x + 0.5f)` idiom, which rounds towards
+      // zero for negative operands. Coverage is carried as float so the
+      // int->float widening is written down instead of implied.
+      const float coverage =
           bmp.pixel_mode == FT_PIXEL_MODE_MONO
-              ? static_cast<unsigned char>(
-                    (((src[col >> 3] >> (7 - (col & 7))) & 1) ? 255 : 0) * a +
-                    0.5f)
-              : static_cast<unsigned char>(src[col] * a + 0.5f);
+              ? (((src[col >> 3] >> (7 - (col & 7))) & 1) ? 255.0f : 0.0f)
+              : static_cast<float>(src[col]);
+      const unsigned char cover =
+          static_cast<unsigned char>(std::lround(coverage * a));
       if (cover == 0) {
         continue;
       }
@@ -81,12 +84,15 @@ void BlitGlyphReplace(RgbaBitmap* out, int dst_x, int dst_y,
       if (x < 0 || x >= out->width) {
         continue;
       }
-      const unsigned char cover =
+      // std::lround, not the `(int)(x + 0.5f)` idiom, which rounds towards
+      // zero for negative operands. Coverage is carried as float so the
+      // int->float widening is written down instead of implied.
+      const float coverage =
           bmp.pixel_mode == FT_PIXEL_MODE_MONO
-              ? static_cast<unsigned char>(
-                    (((src[col >> 3] >> (7 - (col & 7))) & 1) ? 255 : 0) * a +
-                    0.5f)
-              : static_cast<unsigned char>(src[col] * a + 0.5f);
+              ? (((src[col >> 3] >> (7 - (col & 7))) & 1) ? 255.0f : 0.0f)
+              : static_cast<float>(src[col]);
+      const unsigned char cover =
+          static_cast<unsigned char>(std::lround(coverage * a));
       if (cover == 0) {
         continue;
       }
@@ -168,8 +174,6 @@ std::vector<std::string> SplitLines(const std::string& utf8) {
 
 TextRaster::TextRaster() = default;
 
-TextRaster::~TextRaster() = default;
-
 bool TextRaster::Rasterize(const std::string& font_path, int pixel_size,
                            const TextRasterStyle& style,
                            const std::string& utf8, RgbaBitmap* out) {
@@ -227,7 +231,7 @@ bool TextRaster::Rasterize(const std::string& font_path, int pixel_size,
                                        face->glyph->bitmap_top);
       layout.glyph_indices.push_back(index);
       layout.offsets.push_back(pen_x);
-      pen_x += face->glyph->advance.x >> 6;
+      pen_x += static_cast<int>(face->glyph->advance.x >> 6);
     }
     layouts.push_back(std::move(layout));
   }

@@ -7,7 +7,7 @@
 
 #include "render/gl/native_gl_context.h"
 
-typedef struct GLFWwindow GLFWwindow;
+struct GLFWwindow;
 
 namespace avbase::media {
 

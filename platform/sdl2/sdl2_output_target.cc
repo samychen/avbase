@@ -4,6 +4,7 @@
 
 #include "platform/sdl2/sdl2_output_target.h"
 
+#include <memory>
 #include <utility>
 
 #include "SDL.h"
@@ -229,9 +230,14 @@ void Sdl2OutputTarget::PresentOverlay(void* renderer) {
   int out_w = 0;
   int out_h = 0;
   SDL_GetRendererOutputSize(sdl_renderer, &out_w, &out_h);
-  const SDL_Rect dest{
-      static_cast<int>(overlay.x * out_w), static_cast<int>(overlay.y * out_h),
-      static_cast<int>(overlay.w * out_w), static_cast<int>(overlay.h * out_h)};
+  // out_w/out_h are int and the rect fields are float, so the products below
+  // were int-to-float conversions the compiler inserts silently; spelled out.
+  const float out_wf = static_cast<float>(out_w);
+  const float out_hf = static_cast<float>(out_h);
+  const SDL_Rect dest{static_cast<int>(overlay.x * out_wf),
+                      static_cast<int>(overlay.y * out_hf),
+                      static_cast<int>(overlay.w * out_wf),
+                      static_cast<int>(overlay.h * out_hf)};
   SDL_RenderCopy(sdl_renderer, static_cast<SDL_Texture*>(overlay_texture_),
                  nullptr, &dest);
 }
