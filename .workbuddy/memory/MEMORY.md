@@ -19,7 +19,7 @@ GL→`render/gl/`）。**图形 API 轴 × 窗口系统轴**别压平，否则�
 `#define` int → 三元窄化进 GLenum 要 `static_cast`。隐患：`GLAPIENTRY` 为空，
 32 位 Win 会崩。
 
-## 三条「写下来会静默失效」的约定（都真踩过）
+## 四条「写下来会静默失效」的约定（都真踩过）
 
 **朝向。** 图像第 0 行落在视口顶 = framebuffer 最后一行 → 纹理第 0 行装的是图像底 →
 **凡从渲染目标采样回来的 pass 都要 `flip_vertical=true`**（管 `GlBlitter` 与
@@ -32,6 +32,14 @@ GL→`render/gl/`）。**图形 API 轴 × 窗口系统轴**别压平，否则�
 
 **GL 常量。** 一个常量别在两个头世界里各写一遍（`GL_TEXTURE_RECTANGLE` 不在 Apple 的
 `gl.h`）→ 后端用 `target()` 说出来。
+
+**变换顺序（第六十八轮第三次栽在同一类上）。** 顶点 shader 做的是
+**screen → source 的反向映射**，所以**观众最后看到的那一步在计算上是最先做的**。
+于是 CROP 必须写在 ROTATE **之后**（算术上），`uSrcRect` 才落在「解码器存下来的
+那张图」的坐标系里。写成先 crop 再 rotate = 把裁剪框**绕整幅图的中心**又转一次；
+且**只在四分之一转素材上分得开**（不旋转时两种顺序逐像素相同）。
+**别用算术顺序去描述视觉顺序** —— 反向映射里两者天然相反，`gl_scene.h` 里那句
+"Applied BEFORE the display rotation" 就是这么埋的雷。
 
 ## 多源编排（L5）
 `media/base/latest_frame_queue` → `media/gl/gl_layer_source` →
@@ -69,6 +77,31 @@ matrix 解析、被 `Player::video_rotation()` 上报，但**没有一帧真正�
   那不是单位元而是把四顶点塌缩到中心 —— 一帧全黑，无错误无日志。
 - 旋转后仍按 stretch-to-fill 铺进 rect，所以竖拍转正会被横向拉伸；
   **aspect-fit 是独立项**：渲染层完全不读 `natural_size()`（零命中）。
+
+## 图层属性与转场（第六十八轮补齐，TODO §4）
+
+`GlScene` 现在有：背景色（**场景级** `SetBackgroundColor`）、源矩形裁剪
+（`SetLayerSourceRect`，越界/非有限/零尺寸**拒绝而非 clamp**）、
+`LayerContentMode{kStretch,kFit}`。转场五种（`TransitionKind`：cross-fade +
+四向 wipe）。
+
+- **`Compose(int dst_width, int dst_height)`**：aspect-fit 是**像素网格**上的
+  关系，纯归一化坐标表达不了（1920 的一半 ≠ 1080 的一半）。传尺寸不是传 canvas
+  —— 尺寸不是 canvas，同一调用照样能合成进导出目标。
+- **`source_aspect()` = `NaturalSizeForRotation()` × `frame.sar()`。** sar 属于
+  **存储下来的**采样网格、沿它的宽度缩放，所以四分之一转不抵消它、只把它挪到
+  另一根轴：720x576 PAL 横放竖放每采样都宽 16/15。
+- **`uSrcRect` 同样要设单位元 `(0,0,1,1)`**，理由同 `uRotation`。单帧路径不裁剪
+  但**跟场景共用同一个 program**，uniform 属于 program 不属于调用它的路径。
+- **转场刻意只要五种，不移植 FFmpeg 那 36 个**：那是视频编辑器的产品功能，这里
+  是渲染原语。要的是能证明管线可推广的最小集（一个空间恒定的权重 + 一个不恒定
+  的），不是目录。方向命名的**边缘行进方向**，不是 `to` 在哪一侧。
+- `SetTransitionKind()` 只记录，`EnsureTransition()` 在渲染路径懒重建 program：
+  编译着色器需要当前 context，setter 没资格假定自己有（调用方可能在 UI 线程）。
+
+**仍未做**：混合模式（`GL_SRC_ALPHA` 固定）、镜像、色彩调整、图层名。
+**§2 SDK 暴露场景 API 待办**：新属性与转场目前只有 `media/gl` 入口，
+`player/public/` 与示例里没有。
 
 ## 性能数据唯一入口
 三宿主示例均支持 `--stats`；`tools/bench_render.sh`，`SCENE=pip|fade` 测双层，

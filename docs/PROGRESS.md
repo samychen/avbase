@@ -3468,3 +3468,152 @@ CPU 滤镜要能读的 plane，所以「要滤镜」同时就是「放弃硬件�
 **一处需要更正上一轮的记录**：第六十六轮门禁表里 no-ffmpeg 504 / macos-sdl2 625
 是从第六十五轮**抄下来的，没有重跑**（第 65 轮记的是 504/625/672）。本轮实测
 当前基线是 **511 / 688**。以后门禁表的数字必须当场跑出来，不能沿用上一轮。
+
+---
+
+## 第六十八轮 —— §4：图层属性（背景色 / crop / aspect-fit）与多转场
+
+### 起点
+
+第六十七轮收尾时工作区干净，`965ab50..e653bc3`。TODO §4 原写的是
+「等需求出现再启动」，本轮用户点了名，于是正式开工。
+
+`GlScene::Layer` 当时有 5 个属性（`rect` / `z` / `opacity` / `visible` / `id`），
+加第六十六轮补的 `rotation_override` / `frame_rotation`。
+
+### 一、先修的那个 bug：裁剪框绕图片中心转
+
+第一版 `kQuadVertexShaderWithRectBody` 写成**先 crop、再 rotate**：
+
+```glsl
+t = t * uSrcRect.zw + uSrcRect.xy;        // CROP
+t = rotate(t);                             // ROTATE
+```
+
+看起来是对的 —— 「先框出一块，再把这块转过去」。但它做的是 **screen → source
+的反向映射**，所以**观众最后看到的那一步在计算上是最先做的**：旋转（视觉上在后）
+必须先撤销，crop 的四个数字才落在「解码器存下来的那张图」的坐标系里。
+
+写成先 crop 再 rotate，等于把裁剪框绕**整幅图的中心**又转了一次。用例
+`CroppingNamesTheStoredPictureNotTheTurnedOne` 当场红了：期望的横条出现在
+左侧竖着的一条上。而且这种错**只在四分之一转素材上分得开** —— 不旋转的时候
+两种顺序逐像素相同。
+
+这也是项目里第三次在「顺序」上栽跟头（前两次是朝向、stride）。这次留了个更
+结实的说法在注释里：**别用算术顺序去描述视觉顺序**，因为 shader 是反向映射，
+两者天然相反。
+
+顺带把 `gl_scene.h` 里那句 "Applied BEFORE the display rotation" 也改了 ——
+语义没错，但正是这种写法埋下了这个 bug。
+
+### 二、aspect-fit 逼出来的签名改动
+
+`Compose()` 原本无参。aspect-fit 是**像素网格**上的关系，纯归一化坐标表达
+不了：1920 的一半和 1080 的一半不是同一件事。所以：
+
+```cpp
+void Compose(int dst_width, int dst_height);
+```
+
+传尺寸而不是传 canvas，是因为**尺寸不是 canvas** —— 同一个调用照样能合成进
+导出目标。
+
+`source_aspect()` 从 `NaturalSizeForRotation()`（90/270 换轴）再乘 `frame.sar()`。
+sar 属于**存储下来的**采样网格、沿它的宽度缩放，所以四分之一转不会抵消它、
+只会把它挪到另一根轴上：720x576 PAL 无论横放竖放，每个采样都宽 16/15。
+
+### 三、一个 uniform 单位元的坑
+
+新 program 必须把 `uSrcRect` 设成 `(0,0,1,1)`、`uRotation` 设成 `(1,0)`。
+没设过的 `vec2` 读回 `(0,0)` —— **那不是单位元，是把四个顶点塌缩到中心**：
+一帧全黑，无 GL 错误、无日志。
+
+单帧路径（`GlPresenter::Compose`）不裁剪，但它跟场景**共用同一个 program**，
+而 uniform 属于 program 不属于调用它的路径，所以那条路也得明确设成整幅图。
+
+### 四、转场：五种，而不是三十六种
+
+`TransitionKind`：`kCrossFade` / `kWipeRight` / `kWipeLeft` / `kWipeDown` /
+`kWipeUp`。一种类 = 一份编译好的 program，**只有被用到才付代价** ——
+`SetTransitionKind()` 只记录，program 由 `EnsureTransition()` 在渲染路径上
+懒重建。原因是编译着色器需要当前 context，而一个 setter 没资格假定自己有：
+调用方完全可能在 UI 线程上决定用哪种。换种类时在渲染路径丢弃旧 program，
+因为这时编译失败能被报成一次失败的 compose，而不是一个被忽略的 setter。
+
+**刻意不移植** FFmpeg 那 36 个转场：那是视频编辑器的产品功能，这里是渲染
+原语。要的是能证明管线可推广的最小集 —— 一个空间上恒定的权重，和一个不恒定
+的 —— 不是一份目录。
+
+方向命名的是**边缘行进的方向**，不是 `to` 出现在哪一侧：`kWipeRight` 边缘向右
+走，于是 `to` 从左边进来。
+
+### 五、13 条突变反证，全红
+
+分两批跑，每批都真构建、真跑、真记录：
+
+**批次 A（图层属性，8 条）**：背景色改回硬编码 / crop 不做校验 / crop 坐标
+系写反 / fit 不算 crop 后的宽高比 / `source_aspect_` 恒 0 / 拒绝路径删掉 /
+尺寸非正不告警 / 以及 **P3 —— 整块交换 CROP 与 ROTATE 的顺序**，复现的正是
+第一节那个 bug。
+
+**批次 B（转场，5 条）**：wipe 方向反 / wipe 做成软边 / 换种类不重建 program /
+`uDirection` 只在 Create 时设 / 四向 wipe 复用同一方向。
+
+第一次跑完只有 **5/8**。三条绿的**不是性质被钉住，是探针自己坏了**：两个突变
+触发 `-Werror`（unused parameter / unused variable），一个模式根本没匹配上。
+这正好是手册里那条警告的现场 —— 不查就会把「编译失败」误读成「性质被钉住」。
+修完探针重跑，**8/8**。
+
+### 六、行宽约束逼出的两个新模块
+
+`gl_video_layer.cc` 在 HEAD 已经是 **500 行**（C1 上限的临界值），加任何东西
+都撞线。拆出两个本来就存在的接缝：
+
+- **`gl_layer_geometry`** —— `NormalisedRectToUvRect` / `SnapLayerRotation` /
+  `LayerRotationToCosSin` / `SourceAspectOf`。这四个函数此前住在
+  `gl_video_layer`，但被 `gl_scene`、`gl_present` 和三个测试共用：一个「图层
+  几何」的函数住在「视频图层」里，只是因为后者先写。
+- **`gl_yuv_colour`** —— 六张 YUV→RGB 矩阵表加 `SelectMatrix`。纯数据。
+
+搬的时候顺手修掉一个隐患：`source_aspect_` 曾有三个写入者（CPU 路线、GPU
+路线、外层 `Upload()`）。三条路写同一个值，所以今天是对的；但下一次有人只改
+其中一条，就会造出「硬件帧和软件帧形状不一样」这种只在某些机器上出现的 bug。
+收敛成外层唯一写入者。
+
+### 七、操作事故：clang-format 过滤器锚定错了
+
+本轮格式化用的排除写法是 `grep -v '^third_party/'`（行首锚定），而 CI 用的是
+非锚定的 `grep -v 'third_party/'`。结果 `render/gl/third_party/glad/` 的两个
+vendored 头文件被就地重写了 **1413 行**。
+
+发现后 `git checkout --` 还原，并核对 `git status` 确认没有夹带其它未提交内容。
+**教训已进 `operations.md`**：过滤清单必须照抄 CI 口径，且格式化前先确认
+`git status` 干净。
+
+### 门禁（全部当场跑出）
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（453 文件） |
+| `clang-format`（CI 口径，排除 legacy / option_registry / third_party） | 447 文件 0 偏离 |
+| no-ffmpeg + `-Werror` | ctest **511/511** |
+| macos-sdl2 + `-Werror`（含 GLFW） | ctest **703/703**（第六十七轮基线 688，+15） |
+| `glfw-check`（GLFW=ON, FFMPEG=OFF, TESTS=OFF） | 构建通过 |
+
+### 提交（按依赖层次切 4 片）
+
+| 提交 | 内容 |
+| --- | --- |
+| `0f33e82` | `render/gl`：CROP 顶点宏 + wipe 片元 + `TransitionKind` |
+| `f73f961` | `media/gl`：拆出 `gl_layer_geometry` / `gl_yuv_colour`（纯搬移） |
+| `ce83d5c` | `media/gl`：三个图层属性 + 转场接入 presenter |
+| （本条） | 文档 + memory |
+
+中间切片都单独跑过 `check_invariants`，且各自构建过一遍确认不是「只过检查
+不编译」。
+
+### 留下的问题
+
+- **§2 SDK 暴露场景 API 仍待办。** 新加的三个属性和五种转场目前只有
+  `media/gl` 这一层的入口，`player/public/` 和示例里没有（转场此前全仓只有
+  `gl_present.cc` 和测试在用）。要用起来得走 §2。

@@ -134,25 +134,40 @@ grep `scene|layer|pip` **零命中**。`GlScene` / `GlSceneEngine` / `GlLayerSou
 
 ---
 
-## 4. 【P4】图层级属性与多转场 —— 等需求出现再启动
+## 4. 【P4】图层级属性与多转场 —— ✅ 完成（第六十八轮）
 
-**现状**：`GlScene::Layer` 只有 5 个属性（`gl_scene.h:143-151`）：
-`rect` / `z` / `opacity` / `visible` / `id`。
+**原状**：`GlScene::Layer` 只有 5 个属性：`rect` / `z` / `opacity` /
+`visible` / `id`。`rotation` 由 §1 单独处理（第六十六轮完成）。
 
-确认缺失（全目录 grep 零命中）：
+### 已落地
 
-| 缺失项 | 备注 |
-|---|---|
-| 旋转 rotation | 见 §1，单独处理 |
-| 背景色 | 硬编码 `ClearColor(0,0,0,1)`（`gl_scene.cc:186`） |
-| 混合模式 blend mode | 固定 `GL_SRC_ALPHA`（`gl_scene.cc:194`） |
-| 源矩形裁剪 crop | shader 只有 `vTexCoord` 直通，无 uv 变换 uniform |
-| aspect-fit 模式 | 渲染层不读 `natural_size`，当前是 stretch-to-fill |
-| 镜像 / 色彩调整 / 图层名 | 均无 |
+| 项 | 接口 | 备注 |
+|---|---|---|
+| 背景色 | `GlScene::SetBackgroundColor(r,g,b,a)` | **场景级**，取代硬编码 `ClearColor(0,0,0,1)`；非有限值拒绝 |
+| 源矩形裁剪 crop | `GlScene::SetLayerSourceRect(id,x,y,w,h)` | 归一化源矩形；越界 / 非有限 / 零尺寸一律**拒绝而非 clamp** |
+| aspect-fit | `SetLayerContentMode(id, kFit\|kStretch)` | 此前渲染层完全不读 `natural_size()`（零命中），一律拉满铺 |
+| 多转场 | `TransitionKind` × 5 + `GlPresenter::SetTransitionKind()` | cross-fade + 四向 wipe |
 
-**转场**：只有 cross-fade 一种（`render/gl/gl_transition.h:19` 原文
-"the only transition the module ships"）。36 个转场 GLSL 属**刻意不移植**
+**没做的**（仍属未要）：混合模式（`GL_SRC_ALPHA` 固定）、镜像、色彩调整、
+图层名。36 个转场 GLSL 依旧**刻意不移植**
 （[12 §4 5.5](12-剩余工作清单.md) 决策：avbase 无此产品形态），不算欠账。
+
+### 两处会咬人的约束（写进代码注释了）
+
+- **`Compose(int dst_width, int dst_height)`。** aspect-fit 是**像素网格**
+  上的关系，纯归一化坐标表达不了（1920 的一半 ≠ 1080 的一半）。传尺寸不是
+  传 canvas，所以同一个调用照样能合成进导出目标。
+- **`uSrcRect` / `uRotation` 建 program 时必须设成单位元** `(0,0,1,1)` /
+  `(1,0)`。没设过的 `vec2` 读回 `(0,0)` —— 那不是单位元，是把四顶点塌缩到
+  中心：一帧全黑，无错误无日志。单帧路径不裁剪，但跟场景共用同一个 program，
+  uniform 属于 program，所以也得明确设。
+
+### 验收
+
+`tests/unit/gl/gl_layer_attributes_unittest.cc`（8 条）+ `gl_scene_present_unittest.cc`
+补 7 条 wipe 用例；几何与朝向一律像素断言。**13 条突变反证全部真跑过、全红**，
+其中一条复现的正是本轮自己写反的 bug（裁剪框绕图片中心转，只在四分之一转
+素材上分得开）。
 
 ---
 
@@ -195,7 +210,7 @@ grep `scene|layer|pip` **零命中**。`GlScene` / `GlSceneEngine` / `GlLayerSou
 | §1 旋转（渲染侧消费 rotation） | ✅ 完成 | 第六十六轮 |
 | §2 SDK 暴露场景 API | ⬜ 待办 | — |
 | §3 滤镜 × 零拷贝（改明确拒绝） | ✅ 完成 | 第六十七轮 |
-| §4 图层属性（背景色 / crop / aspect-fit）与多转场 | ⬜ 等需求 | — |
+| §4 图层属性（背景色 / crop / aspect-fit）与多转场 | ✅ 完成 | 第六十八轮 |
 
 ---
 
