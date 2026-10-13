@@ -16,8 +16,32 @@ L1–L5（可观测性 / FBO 合成地基 / 多源场景层 / 硬件零拷贝 / 
 |---|---|
 | `render/gl/`（零依赖 GL） | ✅ 已闭合 |
 | `media/gl/`（渲染编排） | ✅ 已闭合（第六十八轮 §4：属性 + 转场）。未做的四项（混合模式 / 镜像 / 色彩调整 / 图层名）属「未要」，见 §4 末尾 |
-| `media/filters/`（播放器管线） | 🔶 单源硬限制 |
+| `media/filters/`（播放器管线） | ✅ 已闭合（第七十轮）：**「单源」不是缺陷，是抽象的边界** —— 见下方说明 |
 | `player/public/`（SDK 门面） | ✅ 已闭合（第六十九轮，§2） |
+
+### 为什么「单源」不算缺口（第七十轮的判定）
+
+表里这一格一直是 🔶「单源硬限制」，第六十九轮 §2 又用「第二路完整 Player +
+邮箱」绕过去，读起来像是两轮都在回避。**查证之后结论相反：那条边界是真的，
+绕过去的姿势是对的。**
+
+1. **根因比管线更低一层。** `media/base/demuxer.h` 的
+   `DemuxerStream* GetStream(DemuxerStreamType)` **按类型返回单个流**，没有
+   index、没有 `GetAllStreams`。一个 demuxer 在抽象上就是每类型一路。
+2. **PiP 要的根本不是「同一 demuxer 的两路流」。** 两路画面是两个 URL，也就是
+   两个 Demuxer 实例。所以「给管线加多路支持」这个说法本身指错了地方。
+3. **`Add/Remove{Video,Audio,Text}Stream(int id)` 是死接口。** 它们照抄
+   Chromium `MediaResource` 的「第 id 路」语义，而 avbase 没有这个 axis；
+   轨切换走 `SelectXxxTrack(stream_index)`。全树**零调用者**，原实现是
+   no-op + `LOG(WARNING)`，且注释里「facade 会先拒绝」的说法是假的。
+
+所以闭合方式是**点名**而不是实现（与第六十七轮「静默退化改成点名拒绝」同一
+手法）：接口与实现写清它为什么不可能存在、6 条 no-op 改成明确 rejected 措辞、
+3 条测试钉住「调用后零副作用」（突变反证 3/3 红）、`docs/05` 里两条把落点写成
+`AddVideoStream` / `AddTextStream` 的迁移对照（后者还标了 ✅）已更正。
+
+**多画面的正解是 §2 那条**：N 个 Player + `GlSceneEngine` 邮箱，第六十九轮实测
+可用（224 帧发布 / 113 消费 / 111 取代）。
 
 ---
 

@@ -3898,3 +3898,56 @@ clang-tidy 版本是特意对齐的：本机 20.1.7 与 CI 的 18 的 check 集�
   宁可红得指名道姓，也不要静默少查 27 个文件。
 - **`media/filters/` 单源限制未动**（TODO §0 表里仍是 🔶）。本轮是门禁，不是
   管线。
+
+### 同一轮第三项：§0 的最后一格 —— `media/filters/`「单源限制」
+
+上一节是门禁。这一节是 TODO §0 层状态表里唯一还亮着的格子。原计划是「动管线」，
+查证之后结论相反：**那条边界是真的，第六十九轮绕过去的姿势是对的。**
+
+#### 根因比管线更低一层
+
+`media/base/demuxer.h` 是 `DemuxerStream* GetStream(DemuxerStreamType type)`
+—— **按类型返回单个流**，没有 index、没有 `GetAllStreams`。一个 demuxer 在抽象
+上就是每类型一路。所以：
+
+- **「给管线加多路支持」这个说法本身指错了地方。** PiP 的两路画面是两个 URL，
+  也就是两个 Demuxer 实例 —— 它从来不是「同一个 demuxer 的第二路流」。
+- **`Add/Remove{Video,Audio,Text}Stream(int id)` 是死接口。** 它们照抄的是
+  Chromium `MediaResource` 的「第 id 路流」语义，而 avbase 没有这个 axis。
+  `pipeline.h` 顶部的 gap 4 说它们是为 `Player::SelectTrack` 声明的「M8 接线」，
+  但轨切换最终走了 `SelectXxxTrack(stream_index)`，这 6 个**从未被接线**。
+
+#### 三条「以为是这样」其实是假的
+
+| 以为 | 实际 |
+| --- | --- |
+| 「until M9」会实现 | M9 早已过去；全树 grep 这 6 个名字，**除声明与 no-op 覆写外零命中** |
+| 「facade 会先以 kNotImplemented 拒绝」 | `player/` 里 grep 它们的名字**一个命中都没有** —— facade 既没拒绝也没调用，它们只是不可达 |
+| `docs/05` 里 `subtitle` → `Pipeline::AddTextStream` ✅ | 字幕开关走 `subtitle.enabled` 配置，与 `AddTextStream` 无关；那条 ✅ 是**假的迁移对照** |
+
+第三条是这次最有价值的副产品：一张迁移对照表如果把一个 no-op 标成 ✅，读表的
+人会以为字幕已经通了。
+
+#### 闭合方式：点名，不是实现
+
+与第六十七轮「静默退化改成点名拒绝」同一手法 —— 但这里更进一步，因为要拒绝的
+不是「现在做不到」而是「这个 axis 不存在」：
+
+- `media/base/pipeline.h`：6 个声明上方写清语义错配（每类型单流 vs `id` 轴）、
+  以及为什么仍然保留声明（接口在 M8 冻结；void 返回下 WARNING 比 DCHECK 好，
+  因为 facade 可能在管线就绪前调用）。
+- `media/filters/pipeline_impl_host.cc`：措辞从「not supported until M9」改成
+  「rejected: avbase has one stream per type, not an id axis」，并把上面两条
+  假注释更正掉。
+- `tests/unit/media_filters/pipeline_stream_axis_unittest.cc`（新）：3 条测试钉
+  住「调用后零副作用」—— stream id 不变、`IsRunning()` 不变，含一个越界 id。
+
+**反证真跑过：** 让 `AddVideoStream` 半工作（改 `GetVideoStreamId()` 但不重新
+初始化 renderer —— 正是「看起来像进展」的那种坏实现），3 条里 2 条红；再给
+`RemoveVideoStream` 同一个突变，3 条全红。恢复后重建复跑 3/3 绿（`cp` 恢复
+后 `touch` 过，见 operations.md 那条 mtime 教训）。
+
+#### 门禁（当场跑出）
+
+不变量 **457** 文件 all pass（+1 新测试文件）· no-ffmpeg-werror **524/524**
+（521 + 3 条新用例）· macos-sdl2-werror **718/718**（715 + 3）· clang-format 干净。
