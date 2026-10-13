@@ -18,8 +18,15 @@ namespace avbase::base {
 // Declaring this inside a class forbids accidental construction on the stack
 // or via `new T` without adoption by a scoped_refptr. Mirrors Chromium's
 // REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE().
-#define REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE()                           \
-  static_assert(sizeof(::avbase::base::subtle::AdoptionHelper) > 0, ""); \
+// The check is the point, not the number: naming AdoptionHelper where it must
+// be a COMPLETE type is what makes an un-adopted `new T` fail to compile.
+// alignof is used rather than the more usual `sizeof(x) > 0` because
+// bugprone-sizeof-expression reads that shape as a suspicious comparison of a
+// size to a constant, and it reports it at every EXPANSION site -- so a
+// NOLINT on the definition does not suppress it and all 11 users would have
+// to carry one. alignof requires completeness just as sizeof does.
+#define REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE()                            \
+  static_assert(alignof(::avbase::base::subtle::AdoptionHelper) > 0, ""); \
   friend class ::avbase::base::subtle::AdoptionHelper
 
 namespace subtle {

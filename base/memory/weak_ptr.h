@@ -74,6 +74,9 @@ template <typename T>
 class WeakPtr {
  public:
   WeakPtr() = default;
+  // Same contract as scoped_refptr: nullptr and the converting copy are how
+  // WeakPtr is written at call sites.
+  // NOLINTNEXTLINE
   WeakPtr(std::nullptr_t) {}
 
   WeakPtr(const WeakPtr& other) = default;
@@ -82,6 +85,7 @@ class WeakPtr {
   WeakPtr& operator=(WeakPtr&& other) noexcept = default;
 
   template <typename U>
+  // NOLINTNEXTLINE
   WeakPtr(const WeakPtr<U>& other) noexcept
     requires(std::is_convertible_v<U*, T*>)
       : flag_(other.flag_), ptr_(other.ptr_) {}

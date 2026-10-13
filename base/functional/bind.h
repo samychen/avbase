@@ -165,7 +165,10 @@ decltype(auto) ForwardBoundArg(B& bound) {
   if constexpr (kIsOnce) {
     return static_cast<B&&>(bound);
   } else {
-    return static_cast<B&>(bound);
+    // No cast: `bound` is already B&, so `static_cast<B&>(bound)` was a no-op
+    // that only obscured which branch returns a reference (readability-
+    // redundant-casting).
+    return bound;
   }
 }
 

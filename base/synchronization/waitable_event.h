@@ -27,6 +27,9 @@ class WaitableEvent {
   // WaitableEvent also defaults to manual reset). This is deliberate and
   // matches every existing call site; pass kAutomaticReset explicitly when
   // each Signal() should release exactly one waiter.
+  // The trailing default arguments make this constructible from one argument
+  // on purpose -- that is the API, not an oversight.
+  // NOLINTNEXTLINE
   WaitableEvent(ResetPolicy reset_policy = ResetPolicy::kManualReset,
                 InitialState initial_state = InitialState::kNotSignaled)
       : manual_reset_(reset_policy == ResetPolicy::kManualReset),

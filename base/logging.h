@@ -19,6 +19,15 @@ namespace avbase {
 namespace base {
 namespace logging {
 
+// LOG_VERBOSE..LOG_FATAL are macro-level names: LOG(INFO) expands to
+// LOG_INFO, so they are UPPER_CASE like macros instead of k-prefixed like
+// every other enum constant in the tree -- and renaming them would rename
+// the public logging API.
+// Suppressed as a block, and in the bare form: cpplint does not know
+// clang-tidy's check names and reports every one of them as "Unknown NOLINT
+// error category". The block is 5 lines, all of them the deliberate
+// UPPER_CASE spellings described above.
+// NOLINTBEGIN
 enum LogSeverity : int {
   LOG_VERBOSE = -1,  // Used by VLOG(n); n maps to -n.
   LOG_INFO = 0,
@@ -26,6 +35,7 @@ enum LogSeverity : int {
   LOG_ERROR = 2,
   LOG_FATAL = 3,  // Logs, then aborts.
 };
+// NOLINTEND
 
 // Embedders install a delegate to route avbase logs into their own logging
 // system (Android logcat, spdlog, journald, ...). See docs/10 §11.1.
@@ -89,9 +99,20 @@ class LogMessageVoidify {
   ::avbase::base::logging::ShouldCreateLogMessage( \
       ::avbase::base::logging::LOG_##severity)
 
+// Deliberately NOT parenthesised as a whole, even though the replacement list
+// is one ternary. Callers write the `<<` OUTSIDE the macro (`LOG(INFO) << x`),
+// and `&` binds looser than `<<`, so the open form parses as
+// `voidify & (stream << x)`. Parenthesised, the `<<` instead applies to the
+// whole ternary -- whose type is void, because one arm is `(void)0` -- which
+// does not compile. bugprone-macro-parentheses cannot see the caller, and its
+// diagnostic lands on the macro's LAST line, so the whole definition is
+// suppressed as a block: a next-line suppression would have to sit inside
+// the backslash continuation to reach that line.
+// NOLINTBEGIN
 #define AVBASE_LAZY_STREAM(stream, condition) \
   !(condition) ? (void)0                      \
                : ::avbase::base::logging::LogMessageVoidify() & (stream)
+// NOLINTEND
 
 #define LOG(severity)                                             \
   AVBASE_LAZY_STREAM(                                             \

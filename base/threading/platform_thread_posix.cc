@@ -11,7 +11,7 @@
 #include <pthread.h>
 #endif
 
-namespace avbase::base::PlatformThread {
+namespace avbase::base::platform_thread {
 namespace {
 
 // Truncate to the lowest common denominator across the POSIX targets: Linux's
@@ -71,4 +71,4 @@ void SetCurrentThreadPriority(ThreadPriority priority) {
 #endif
 }
 
-}  // namespace avbase::base::PlatformThread
+}  // namespace avbase::base::platform_thread

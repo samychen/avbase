@@ -19,7 +19,7 @@ enum class ThreadPriority {
   kDisplayCritical,  // Audio and video render threads.
 };
 
-namespace PlatformThread {
+namespace platform_thread {
 
 // Sets the OS-visible name of the calling thread. Linux truncates to 15
 // characters, so avbase names stay short: "avbase-media", "avbase-demux",
@@ -28,7 +28,7 @@ AVBASE_BASE_EXPORT void SetName(const std::string& name);
 AVBASE_BASE_EXPORT std::string GetName();
 AVBASE_BASE_EXPORT void SetCurrentThreadPriority(ThreadPriority priority);
 
-}  // namespace PlatformThread
+}  // namespace platform_thread
 }  // namespace avbase::base
 
 #endif  // AVBASE_BASE_THREADING_PLATFORM_THREAD_H_

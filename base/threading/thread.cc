@@ -60,8 +60,8 @@ void Thread::Stop() {
 }
 
 void Thread::ThreadMain() {
-  PlatformThread::SetName(options_.name);
-  PlatformThread::SetCurrentThreadPriority(options_.priority);
+  platform_thread::SetName(options_.name);
+  platform_thread::SetCurrentThreadPriority(options_.priority);
   started_.Signal();
   queue_->Run();  // Returns once Quit() is observed.
 }

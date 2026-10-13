@@ -15,17 +15,29 @@
 
 namespace avbase::base {
 
+// Spelled like an STL adaptor on purpose: this is avbase's stand-in for
+// Chromium's raw_ptr/raw_ref and is written the same way at every call
+// site, so CamelCase would make it the odd one out.
+// The suppression sits on the class line: the diagnostic is reported on the
+// class name, one line below the template head where a next-line suppression
+// would land -- so putting it above `template` misses by exactly one line.
 template <typename T>
-class raw_ptr {
+class raw_ptr {  // NOLINT
  public:
   using element_type = T;
 
   constexpr raw_ptr() noexcept = default;
+  // raw_ptr/raw_ref stand in for T*, so converting FROM T* and nullptr is
+  // the interface rather than an accident -- explicit would break every
+  // `raw_ptr<T> p = some_t_ptr;`.
+  // NOLINTNEXTLINE
   constexpr raw_ptr(std::nullptr_t) noexcept {}
+  // NOLINTNEXTLINE
   constexpr raw_ptr(T* p) noexcept : ptr_(p) {}
   constexpr raw_ptr(const raw_ptr&) noexcept = default;
   constexpr raw_ptr(raw_ptr&&) noexcept = default;
   template <typename U>
+  // NOLINTNEXTLINE
   constexpr raw_ptr(const raw_ptr<U>& o) noexcept
     requires(std::is_convertible_v<U*, T*>)
       : ptr_(o.get()) {}
@@ -45,6 +57,7 @@ class raw_ptr {
   constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }
   constexpr T& operator*() const noexcept { return *ptr_; }
   constexpr T* operator->() const noexcept { return ptr_; }
+  // NOLINTNEXTLINE
   constexpr operator T*() const noexcept { return ptr_; }
 
   constexpr void reset() noexcept { ptr_ = nullptr; }
@@ -66,7 +79,7 @@ class raw_ptr {
 };
 
 template <typename T>
-class raw_ref {
+class raw_ref {  // NOLINT
  public:
   explicit constexpr raw_ref(T& r) noexcept : ptr_(&r) {}
   constexpr T& get() const noexcept { return *ptr_; }

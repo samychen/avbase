@@ -29,19 +29,28 @@
 namespace avbase::base {
 
 template <typename T>
+// Same reason as raw_ptr: the spelling is Chromium's, and it is used often
+// enough that `ScopedRefPtr` would read as a different type.
+// NOLINTNEXTLINE
 class scoped_refptr {
  public:
   using element_type = T;
 
   constexpr scoped_refptr() noexcept = default;
+  // Chromium's scoped_refptr adopts from a bare T* implicitly and every call
+  // site relies on that; adding explicit here would cost more noise than
+  // the conversions it prevents.
+  // NOLINTNEXTLINE
   constexpr scoped_refptr(std::nullptr_t) noexcept {}
 
+  // NOLINTNEXTLINE
   constexpr scoped_refptr(T* p) noexcept : ptr_(p) { AddRef(); }
 
   constexpr scoped_refptr(const scoped_refptr& o) noexcept : ptr_(o.ptr_) {
     AddRef();
   }
   template <typename U>
+  // NOLINTNEXTLINE
   constexpr scoped_refptr(const scoped_refptr<U>& o) noexcept
     requires(std::is_convertible_v<U*, T*>)
       : ptr_(o.get()) {
@@ -52,6 +61,7 @@ class scoped_refptr {
     o.ptr_ = nullptr;
   }
   template <typename U>
+  // NOLINTNEXTLINE
   constexpr scoped_refptr(scoped_refptr<U>&& o) noexcept
     requires(std::is_convertible_v<U*, T*>)
       : ptr_(o.release()) {}
@@ -69,6 +79,10 @@ class scoped_refptr {
     }
     return *this;
   }
+  // Self-assignment is handled: this delegates to operator=(T*) above, which
+  // guards with `if (ptr_ != p)`. bugprone-unhandled-self-assignment cannot
+  // see through the delegation and reports the raw `o.ptr_` read as unguarded.
+  // NOLINTNEXTLINE
   constexpr scoped_refptr& operator=(const scoped_refptr& o) noexcept {
     return *this = o.ptr_;
   }

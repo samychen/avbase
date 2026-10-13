@@ -52,8 +52,11 @@ using std::unexpect_t;
 
 #else  // Fallback implementation.
 
+// `expected` / `unexpected` / `unexpect_t` keep std::expected's spelling
+// exactly. This block is the fallback for a toolchain without <expected>,
+// and its whole value is that callers write the standard names unchanged.
 template <class E>
-class unexpected {
+class unexpected {  // NOLINT
  public:
   unexpected() = delete;
   constexpr explicit unexpected(const E& e) : value_(e) {}
@@ -69,13 +72,14 @@ class unexpected {
 template <class E>
 unexpected(E) -> unexpected<E>;
 
+// NOLINTNEXTLINE
 struct unexpect_t {
   explicit unexpect_t() = default;
 };
 inline constexpr unexpect_t unexpect{};
 
 template <class T, class E>
-class expected {
+class expected {  // NOLINT
  public:
   using value_type = T;
   using error_type = E;
@@ -99,6 +103,10 @@ class expected {
     }
   }
   template <class U>
+  // std::expected's constructors are specified by the standard, including
+  // which ones are implicit. This block is the fallback for a toolchain
+  // without <expected>, so it has to match those semantics exactly.
+  // NOLINTNEXTLINE
   constexpr expected(U&& value)
     requires(!std::is_same_v<std::remove_cvref_t<U>, expected> &&
              !std::is_same_v<std::remove_cvref_t<U>, unexpect_t> &&
@@ -107,10 +115,12 @@ class expected {
     new (&storage_.value) T(std::forward<U>(value));
   }
   template <class G>
+  // NOLINTNEXTLINE
   constexpr expected(const unexpected<G>& e) : has_value_(false) {
     new (&storage_.error) E(e.value());
   }
   template <class G>
+  // NOLINTNEXTLINE
   constexpr expected(unexpected<G>&& e) : has_value_(false) {
     new (&storage_.error) E(std::move(e.value()));
   }
@@ -212,6 +222,7 @@ class expected {
 };
 
 // Specialization for T == void.
+// NOLINTNEXTLINE
 template <class E>
 class expected<void, E> {
  public:
@@ -222,9 +233,11 @@ class expected<void, E> {
   constexpr expected(const expected&) = default;
   constexpr expected(expected&&) = default;
   template <class G>
+  // NOLINTNEXTLINE
   constexpr expected(const unexpected<G>& e)
       : has_value_(false), error_(e.value()) {}
   template <class G>
+  // NOLINTNEXTLINE
   constexpr expected(unexpected<G>&& e)
       : has_value_(false), error_(std::move(e.value())) {}
   constexpr expected& operator=(const expected&) = default;

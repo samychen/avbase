@@ -78,6 +78,9 @@ class OnceCallback<R(Args...)> {
   using Invoker = internal::OnceInvoker<R, Args...>;
 
   OnceCallback() = default;
+  // Implicit from std::nullptr_t on purpose: `callback = nullptr` is how a
+  // callback is cleared, and that spelling is used throughout the tree.
+  // NOLINTNEXTLINE
   OnceCallback(std::nullptr_t) {}
   OnceCallback(OnceCallback&&) noexcept = default;
   OnceCallback& operator=(OnceCallback&&) noexcept = default;
@@ -133,6 +136,7 @@ class RepeatingCallback<R(Args...)> {
   using Invoker = internal::RepeatingInvoker<R, Args...>;
 
   RepeatingCallback() = default;
+  // NOLINTNEXTLINE
   RepeatingCallback(std::nullptr_t) {}
   RepeatingCallback(const RepeatingCallback&) = default;
   RepeatingCallback& operator=(const RepeatingCallback&) = default;
