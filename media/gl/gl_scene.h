@@ -221,6 +221,12 @@ class AVBASE_MEDIA_EXPORT GlScene {
   // Number of layers, including hidden and not-yet-uploaded ones.
   size_t layer_count() const { return layers_.size(); }
 
+  // Whether |id| still names a layer in this scene. Ids are never reused, so
+  // this is "the layer is still there" rather than "some layer is at that
+  // number" -- which is what makes remembering an id across frames safe
+  // instead of merely workable.
+  bool HasLayer(LayerId id) const { return Find(id) != nullptr; }
+
   // Getters for the three attributes above, so a caller (and a test) can read
   // back what it set without having to sample the composed pixels.
   const std::array<float, 4>& source_rect(LayerId id) const;

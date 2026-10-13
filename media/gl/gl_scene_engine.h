@@ -45,9 +45,16 @@ namespace avbase::media {
 // path, unchanged. So the multi-source path is not a mode anybody has to
 // enable, and a host that wants none of this pays one comparison.
 //
-// THREADING: AddSource()/RemoveSource()/FindSource()/source_count() from any
-// thread; Publish() on a GlLayerSource from any thread. Present() and
-// Shutdown() on the thread holding the GL context.
+// THREADING: every method below may be called from any thread at any time.
+// Present() and Shutdown() additionally require the thread holding the GL
+// context, which is where they already run.
+//
+// The update callback used to be settable only before the sink started: it was
+// written from the host's thread and read from the render thread with no
+// synchronisation at all, so setting it later was a data race on a refcounted
+// BindState rather than a documented restriction. It is under |lock_| now and
+// Sync() runs a snapshot of it, so "when may I install it" is no longer a
+// question anybody has to get right.
 class AVBASE_MEDIA_EXPORT GlSceneEngine {
  public:
   // The host hook, run once per displayed frame after every source has synced
@@ -57,6 +64,20 @@ class AVBASE_MEDIA_EXPORT GlSceneEngine {
   using UpdateCallback = base::RepeatingCallback<void(
       GlPresenter& presenter, GlScene& scene, GlScene::LayerId main_layer,
       const base::scoped_refptr<VideoFrame>& frame, PresentTiming* timing)>;
+
+  // Runs once, from this engine's destructor: everything above that holds a
+  // pointer to this object learns it is gone at the moment it goes, instead of
+  // having to be told by whoever owns the pipeline.
+  //
+  // Needed because that owner cannot always be the one to say so. The facade
+  // does unbind when it stops or resets a pipeline on purpose, but a pipeline
+  // is also torn down by its own error handling and by a track switch, and an
+  // observer that waits to be notified by the facade is waiting for something
+  // that may never happen while still believing the pointer is good.
+  //
+  // Must not touch this engine: it is running from inside its destructor.
+  using TeardownCallback = base::OnceClosure;
+  void SetTeardownCallback(TeardownCallback callback);
 
   GlSceneEngine();
   GlSceneEngine(const GlSceneEngine&) = delete;
@@ -143,7 +164,8 @@ class AVBASE_MEDIA_EXPORT GlSceneEngine {
   // Borrowed from GlPresenter::EnsureScene(); the presenter owns it.
   GlScene* scene_{nullptr};
   GlScene::LayerId main_layer_{GlScene::kNoLayer};
-  UpdateCallback update_;
+  UpdateCallback update_ GUARDED_BY(lock_);
+  TeardownCallback teardown_ GUARDED_BY(lock_);
 };
 
 }  // namespace avbase::media

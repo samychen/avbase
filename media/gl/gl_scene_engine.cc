@@ -12,7 +12,20 @@
 namespace avbase::media {
 
 GlSceneEngine::GlSceneEngine() = default;
-GlSceneEngine::~GlSceneEngine() = default;
+
+GlSceneEngine::~GlSceneEngine() {
+  TeardownCallback teardown;
+  {
+    base::AutoLock scoped(lock_);
+    teardown = std::move(teardown_);
+  }
+  // Outside the lock, so a callback that reaches back into whatever owns this
+  // engine does not deadlock against its own member's destructor. The
+  // callback is told not to touch this object: it is already half gone.
+  if (!teardown.is_null()) {
+    std::move(teardown).Run();
+  }
+}
 
 std::shared_ptr<GlLayerSource> GlSceneEngine::AddSource(std::string name,
                                                         int z) {
@@ -53,7 +66,17 @@ size_t GlSceneEngine::source_count() const {
 }
 
 void GlSceneEngine::SetUpdateCallback(UpdateCallback callback) {
+  base::AutoLock scoped(lock_);
+  // Assigning a RepeatingCallback while the render thread may be copying or
+  // running the previous one is why this is under the lock: the callback owns a
+  // refcounted BindState, and "tear the old one down" racing "add a reference"
+  // is a use-after-free that Release builds hide almost all of the time.
   update_ = std::move(callback);
+}
+
+void GlSceneEngine::SetTeardownCallback(TeardownCallback callback) {
+  base::AutoLock scoped(lock_);
+  teardown_ = std::move(callback);
 }
 
 bool GlSceneEngine::Sync(GlPresenter& presenter,
@@ -63,10 +86,16 @@ bool GlSceneEngine::Sync(GlPresenter& presenter,
   // Snapshot under the lock, upload outside it: a source that publishes
   // hundred of frames a second must not be blocked by this frame's uploads,
   // and the snapshot is a handful of shared_ptr copies.
+  UpdateCallback update;
   {
     base::AutoLock scoped(lock_);
     sync_list_.assign(sources_.begin(), sources_.end());
     retire_list_.swap(retiring_);
+    // A snapshot, so the lock does not have to be held across the callback --
+    // which may call back into this object (AddSource from inside a hook is
+    // legal, and would deadlock). Copying a RepeatingCallback bumps a refcount;
+    // it does not allocate.
+    update = update_;
   }
 
   // A source retired since the last frame gives its layer back here, on the
@@ -78,7 +107,7 @@ bool GlSceneEngine::Sync(GlPresenter& presenter,
   }
   retire_list_.clear();
 
-  if (sync_list_.empty() && update_.is_null()) {
+  if (sync_list_.empty() && update.is_null()) {
     // Nothing to orchestrate: the caller takes the single-frame path, which is
     // also the path every measurement of it was taken on.
     *scene = nullptr;
@@ -107,8 +136,11 @@ bool GlSceneEngine::Sync(GlPresenter& presenter,
       return false;
     }
   }
-  if (!update_.is_null()) {
-    update_.Run(presenter, *scene_, main_layer_, main_frame, timing);
+  // The snapshot, not |update_|: the host may replace the hook on another
+  // thread while this one runs, and what a frame draws with is the hook that
+  // was installed when the frame started.
+  if (!update.is_null()) {
+    update.Run(presenter, *scene_, main_layer_, main_frame, timing);
   }
   *scene = scene_;
   return true;
