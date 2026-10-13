@@ -84,6 +84,20 @@ class AVBASE_MEDIA_EXPORT DefaultRendererFactory final
     // (the facade and PipelineImpl::GetMediaTime() both need the same
     // instance to survive renderer teardown).
     std::shared_ptr<AvSyncController> av_sync;
+
+    // Called once per video sink this factory creates, with that sink's scene
+    // engine -- or null when the sink cannot composite, which is every sink
+    // that is not rendering through GL, including the null sink the
+    // zero-configuration host gets. See VideoRendererSink::scene_engine() on
+    // why it is answered rather than inferred.
+    //
+    // An observer rather than a pointer because the sink does not exist when
+    // this factory is built: it is created later, on whatever sequence the
+    // renderer is started from, and this is the only moment anything outside
+    // the pipeline can see it before it starts presenting.
+    //
+    // May be null, meaning nobody is listening.
+    base::RepeatingCallback<void(GlSceneEngine*)> scene_observer;
   };
 
   explicit DefaultRendererFactory(Deps deps);

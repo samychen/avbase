@@ -63,11 +63,20 @@ std::unique_ptr<Renderer> DefaultRendererFactory::CreateRenderer(
 std::unique_ptr<VideoRendererSink>
 DefaultRendererFactory::CreateVideoRendererSink(
     base::scoped_refptr<NativeDisplay> display) {
+  std::unique_ptr<VideoRendererSink> sink;
   if (deps_.video_sink_factory) {
-    return deps_.video_sink_factory->Create(std::move(display));
+    sink = deps_.video_sink_factory->Create(std::move(display));
+  } else {
+    sink = std::make_unique<NullVideoSink>();
+    sink->SetOutputTarget(std::move(display));
   }
-  auto sink = std::make_unique<NullVideoSink>();
-  sink->SetOutputTarget(std::move(display));
+  if (!deps_.scene_observer.is_null()) {
+    // Asked of the SINK, not guessed from which factory we were handed: a null
+    // sink and a frame-capturing one are both VideoRendererSinks and neither
+    // has a scene, and RTTI is off so there is no safe way to find that out
+    // from here.
+    deps_.scene_observer.Run(sink->scene_engine());
+  }
   return sink;
 }
 
