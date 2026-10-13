@@ -8,9 +8,60 @@
 #include <cmath>
 #include <utility>
 
+#include "base/logging.h"
 #include "media/gl/gl_layer_geometry.h"
 
 namespace avbase::media {
+
+namespace {
+
+// The rect a layer is drawn into once its content mode has had its say:
+// |rect| when the mode is stretch, or |rect| narrowed about its centre to the
+// picture's aspect when the mode is fit.
+//
+// It lives here rather than in the shader because fitting is a relationship
+// between the picture and the destination's PIXEL grid, and the shader only
+// ever sees normalised coordinates -- which cannot express "half of 1920 is
+// not the same distance as half of 1080".
+//
+// The crop is folded into the picture's aspect: narrowing the source by
+// (crop_w / crop_h) narrows what is drawn by the same factor. Using the
+// UNCROPPED frame instead would letterbox a region the caller had already cut
+// down, so a square crop of a wide clip would still come out with bars on it.
+std::array<float, 4> FitRectInside(const std::array<float, 4>& rect,
+                                   const std::array<float, 4>& crop,
+                                   float src_aspect, int dst_width,
+                                   int dst_height) {
+  if (!(src_aspect > 0.0f) || dst_width <= 0 || dst_height <= 0) {
+    return rect;
+  }
+  // The crop is part of what is being fitted: cutting the source down to
+  // (crop_w x crop_h) of its stored width and height scales the picture's
+  // aspect by (crop_w / crop_h). Fitting the UNCROPPED frame instead would
+  // put bars around a region the caller had already narrowed.
+  const float aspect = src_aspect * crop[2] / crop[3];
+  // The rect's own shape is a PIXEL question, which is why the destination
+  // size is a parameter: a rect covering half the width and half the height
+  // of a 1920x1080 target is a 16:9 box, not a square.
+  const float rect_aspect = rect[2] * static_cast<float>(dst_width) /
+                            (rect[3] * static_cast<float>(dst_height));
+  if (!(rect_aspect > 0.0f)) {
+    return rect;
+  }
+  // Whichever axis overflows is the one that shrinks. Both branches are the
+  // same expression with the axes exchanged, so the ratio is computed once
+  // and only its meaning differs.
+  const float scale =
+      rect_aspect > aspect ? aspect / rect_aspect : rect_aspect / aspect;
+  if (rect_aspect > aspect) {
+    return {rect[0] + rect[2] * (1.0f - scale) * 0.5f, rect[1], rect[2] * scale,
+            rect[3]};
+  }
+  return {rect[0], rect[1] + rect[3] * (1.0f - scale) * 0.5f, rect[2],
+          rect[3] * scale};
+}
+
+}  // namespace
 
 GlScene::GlScene(const gl::GlApi& gl, std::shared_ptr<gl::GlProgram> program,
                  std::shared_ptr<gl::GlProgram> rect_program)
@@ -172,6 +223,66 @@ int GlScene::LayerRotation(LayerId id) const {
   return layer->rotation_override.value_or(layer->frame_rotation);
 }
 
+bool GlScene::SetLayerSourceRect(LayerId id, float x, float y, float w,
+                                 float h) {
+  Layer* layer = Find(id);
+  if (!layer) {
+    return false;
+  }
+  // Rejected rather than clamped, on the getters' own terms (see gl_scene.h):
+  // a crop is either a region of the picture or it is a mistake, and there is
+  // no third reading in which "partly outside" means something.
+  if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(w) ||
+      !std::isfinite(h) || w <= 0.0f || h <= 0.0f || x < 0.0f || y < 0.0f ||
+      x + w > 1.0f || y + h > 1.0f) {
+    return false;
+  }
+  layer->source_rect = {x, y, w, h};
+  return true;
+}
+
+const std::array<float, 4>& GlScene::source_rect(LayerId id) const {
+  static const std::array<float, 4> kFull = {0.0f, 0.0f, 1.0f, 1.0f};
+  const Layer* layer = Find(id);
+  return layer ? layer->source_rect : kFull;
+}
+
+bool GlScene::SetLayerContentMode(LayerId id, LayerContentMode mode) {
+  Layer* layer = Find(id);
+  if (!layer) {
+    return false;
+  }
+  layer->content_mode = mode;
+  return true;
+}
+
+LayerContentMode GlScene::content_mode(LayerId id) const {
+  const Layer* layer = Find(id);
+  return layer ? layer->content_mode : LayerContentMode::kStretch;
+}
+
+bool GlScene::SetBackgroundColor(float r, float g, float b, float a) {
+  // Rejected rather than clamped; a cleared alpha outside [0,1] would produce
+  // a target nobody can reason about rather than a diagnosable call.
+  if (!std::isfinite(r) || !std::isfinite(g) || !std::isfinite(b) ||
+      !std::isfinite(a)) {
+    return false;
+  }
+  background_ = {r, g, b, a};
+  return true;
+}
+
+std::array<float, 4> GlScene::FittedRect(const Layer& layer, int dst_width,
+                                         int dst_height) const {
+  if (layer.content_mode != LayerContentMode::kFit) {
+    return layer.rect;
+  }
+  // |source_aspect| already has the rotation folded in, so a quarter turn
+  // needs no special case here: it just makes the picture taller than wide.
+  return FitRectInside(layer.rect, layer.source_rect,
+                       layer.video->source_aspect(), dst_width, dst_height);
+}
+
 bool GlScene::Upload(LayerId id, const VideoFrame& frame,
                      GlHwTextureImporter* importer) {
   Layer* layer = Find(id);
@@ -193,7 +304,7 @@ UploadPath GlScene::last_upload_path(LayerId id) const {
   return UploadPath::kNone;
 }
 
-void GlScene::Compose() {
+void GlScene::Compose(int dst_width, int dst_height) {
   // Order once per frame rather than on every SetLayerZ: dragging a layer
   // around issues many moves and presents once.
   //
@@ -221,10 +332,19 @@ void GlScene::Compose() {
     return a < b;
   });
 
-  // Opaque black, the same base the single-video path clears to, so an
-  // uncovered area of a scene looks exactly like the letterboxing around a
-  // video: the composition's own background, not a hole.
-  gl_->context().ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+  // Fitting needs the target's pixel grid, so a caller that binds one has to
+  // say how big it is. Told once per scene rather than once per frame: the
+  // size is a property of the target, not of the moment.
+  if (dst_width <= 0 || dst_height <= 0) {
+    LOG(WARNING) << "avbase.scene: Compose() without a destination size; "
+                    "every layer will stretch to its rect instead of fitting";
+  }
+
+  // Cleared to the scene's own background colour, so an uncovered area of a
+  // composition looks exactly like the letterboxing around a video: the
+  // composition's background, not a hole.
+  gl_->context().ClearColor(background_[0], background_[1], background_[2],
+                            background_[3]);
   gl_->context().Clear(GL_COLOR_BUFFER_BIT);
 
   // Blending on for the whole pass rather than per layer: an opaque layer
@@ -252,9 +372,12 @@ void GlScene::Compose() {
       program->Use();
       bound = program;
     }
+    // The rect the layer is DRAWN into, which is not always the rect it was
+    // GIVEN: a layer asked to fit has its box narrowed to its picture's shape,
+    // and the remainder is left showing the background cleared above.
+    const std::array<float, 4> rect = FittedRect(layer, dst_width, dst_height);
     float uv_rect[4];
-    NormalisedRectToUvRect(layer.rect[0], layer.rect[1], layer.rect[2],
-                           layer.rect[3], uv_rect);
+    NormalisedRectToUvRect(rect[0], rect[1], rect[2], rect[3], uv_rect);
     program->SetVec4("uRect", uv_rect[0], uv_rect[1], uv_rect[2], uv_rect[3]);
     // Set after the bind, for the same reason as uRect: uniform state belongs
     // to the program, and the two layer variants share this one.
@@ -262,6 +385,8 @@ void GlScene::Compose() {
     LayerRotationToCosSin(
         layer.rotation_override.value_or(layer.frame_rotation), cos_sin);
     program->SetVec2("uRotation", cos_sin[0], cos_sin[1]);
+    program->SetVec4("uSrcRect", layer.source_rect[0], layer.source_rect[1],
+                     layer.source_rect[2], layer.source_rect[3]);
     layer.video->Bind(*program, layer.opacity);
     quad_->Draw();
   }

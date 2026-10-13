@@ -87,15 +87,19 @@ bool GlPresenter::Init() {
     LOG(ERROR) << "gl present: " << blit_error;
     return false;
   }
-  // The two cross-fade sides and their mixer. Built here with everything else
-  // that compiles a shader, so a failure to compile is reported at Init()
-  // rather than in the middle of the first transition, when the picture is
-  // already supposed to be fading.
+  // The two transition sides and their mixer. The mixer's program is built
+  // here with everything else that compiles a shader, so a failure to compile
+  // is reported at Init() rather than in the middle of the first transition,
+  // when the picture is already supposed to be changing.
+  //
+  // Only the DEFAULT kind is compiled up front. A kind nobody selects costs
+  // nothing, and a caller that never transitions costs one program instead of
+  // one per kind.
   transition_from_ = gl::GlFramebuffer::Create(*api_);
   transition_to_ = gl::GlFramebuffer::Create(*api_);
   std::string transition_error;
-  transition_ = gl::GlTransition::Create(
-      *api_, gl::TransitionKind::kCrossFade, &transition_error);
+  transition_ =
+      gl::GlTransition::Create(*api_, transition_kind_, &transition_error);
   if (!transition_from_ || !transition_to_ || !transition_) {
     LOG(ERROR) << "gl present: " << transition_error;
     return false;
@@ -212,6 +216,8 @@ void GlPresenter::SetCanvasSize(int width, int height) {
   canvas_height_ = height;
 }
 
+// The transition half lives in gl_present_transition.cc.
+
 bool GlPresenter::EnsureCanvas() {
   // A non-positive request means "follow the drawable", re-read every frame:
   // that is what keeps a window resize working exactly as it did before the
@@ -278,6 +284,11 @@ bool GlPresenter::Compose(const VideoFrame& frame, PresentTiming* timing) {
   float cos_sin[2];
   LayerRotationToCosSin(frame.rotation(), cos_sin);
   video->SetVec2("uRotation", cos_sin[0], cos_sin[1]);
+  // The single-frame path has no crop to apply, but this program is shared
+  // with the scene -- whose layers leave their own source rect in it. A
+  // uniform belongs to the program, so a path that shares one has to set
+  // what it draws from, and here that is the whole picture.
+  video->SetVec4("uSrcRect", 0.0f, 0.0f, 1.0f, 1.0f);
   layer_->Bind(*video);
   quad_->Draw();
   DrawOverlay();
@@ -335,9 +346,10 @@ bool GlPresenter::ComposeScene(GlScene& scene, PresentTiming* timing) {
   // Bind() sets the viewport too, which is what makes the scene's normalised
   // rects land on the composition rather than on the window.
   canvas_->Bind();
-  // The scene clears and draws; it is told nothing about the canvas, so the
-  // same call composes into an export target just as well.
-  scene.Compose();
+  // The scene clears and draws. It is told the canvas's pixel size and
+  // nothing else about it, which is what lets the same call compose into an
+  // export target just as well: a size is not a canvas.
+  scene.Compose(canvas_->width(), canvas_->height());
   DrawOverlay();
   if (timing) {
     timing->compose_ms = (base::TimeTicks::Now() - t_begin).InMillisecondsF();
@@ -347,50 +359,6 @@ bool GlPresenter::ComposeScene(GlScene& scene, PresentTiming* timing) {
 
 bool GlPresenter::PresentScene(GlScene& scene, PresentTiming* timing) {
   if (!ComposeScene(scene, timing)) {
-    return false;
-  }
-  return Swap(timing);
-}
-
-bool GlPresenter::ComposeTransition(GlScene& from, GlScene& to, float progress,
-                                    PresentTiming* timing) {
-  if (!gl_current_) {
-    return false;
-  }
-  const base::TimeTicks t_begin =
-      timing ? base::TimeTicks::Now() : base::TimeTicks();
-  if (!EnsureCanvas()) {
-    return false;
-  }
-  std::string error;
-  if (!transition_from_->Ensure(canvas_->width(), canvas_->height(), &error) ||
-      !transition_to_->Ensure(canvas_->width(), canvas_->height(), &error)) {
-    LOG(ERROR) << "gl present: transition target: " << error;
-    return false;
-  }
-
-  transition_from_->Bind();
-  from.Compose();
-  transition_to_->Bind();
-  to.Compose();
-
-  // Back to the canvas for the mix. Its viewport matches the two sides (see
-  // the header on why they are composed at the output size), so the transition
-  // is a combination rather than a resample.
-  canvas_->Bind();
-  transition_->Draw(transition_from_->color_texture(),
-                    transition_to_->color_texture(), progress, canvas_->width(),
-                    canvas_->height());
-  DrawOverlay();
-  if (timing) {
-    timing->compose_ms = (base::TimeTicks::Now() - t_begin).InMillisecondsF();
-  }
-  return true;
-}
-
-bool GlPresenter::PresentTransition(GlScene& from, GlScene& to, float progress,
-                                    PresentTiming* timing) {
-  if (!ComposeTransition(from, to, progress, timing)) {
     return false;
   }
   return Swap(timing);

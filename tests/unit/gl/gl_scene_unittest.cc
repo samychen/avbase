@@ -88,7 +88,7 @@ class GlSceneTest : public ::testing::Test {
   // y counted from the TOP so the assertions read the way the rects do.
   Rgb ComposeAndRead(int x, int y_from_top) {
     canvas_->Bind();
-    scene_->Compose();
+    scene_->Compose(canvas_->width(), canvas_->height());
     // glReadPixels counts from the bottom.
     return ReadPixel(*api_, x, kCanvasSize - 1 - y_from_top);
   }

@@ -74,6 +74,54 @@ class ScenePresentTest : public ::testing::Test {
   }
   int WindowBottomRed() { return WindowRed(test::kSampleInset); }
 
+  // Red channel of one pixel of the window's back buffer, addressed the way a
+  // wipe's DIRECTION is described: x from the left, y from the TOP.
+  int WindowRedAt(int x, int y_from_top) {
+    return test::ReadPixel(*presenter_->api(), x,
+                           window_->height() - 1 - y_from_top, GL_BACK)
+        .r;
+  }
+
+  // A one-layer scene showing one flat colour, so "which side of a
+  // transition's edge is this pixel on" has a yes/no answer everywhere. Both
+  // frames are neutral in chroma, so the red channel alone carries it.
+  std::unique_ptr<GlScene> FlatScene(uint8_t luma) {
+    std::unique_ptr<GlScene> scene = NewScene();
+    if (!scene) {
+      return scene;
+    }
+    const GlScene::LayerId layer = scene->AddVideoLayer(0);
+    EXPECT_NE(layer, GlScene::kNoLayer);
+    base::scoped_refptr<VideoFrame> frame =
+        test::MakeSolidFrame(VideoFormat::kI420, kWindowSize, kWindowSize, luma,
+                             test::kNeutralChroma, test::kNeutralChroma);
+    EXPECT_TRUE(frame);
+    EXPECT_TRUE(presenter_->UploadLayer(*scene, layer, *frame));
+    return scene;
+  }
+
+  // Transitions a WHITE scene into a BLACK one at |progress| = 1/4 and returns
+  // the red channel at both ends of the axis the wipe travels along: |start|
+  // is the end the edge sets out from, |end| the end it is headed for.
+  //
+  // Sampling both ends is what pins a direction -- at 1/4 progress every wipe
+  // covers a quarter of the picture, and only WHICH quarter differs.
+  std::pair<int, int> WipeEnds(gl::TransitionKind kind, bool horizontal) {
+    std::unique_ptr<GlScene> from = FlatScene(test::kWhiteLuma);
+    std::unique_ptr<GlScene> to = FlatScene(test::kBlackLuma);
+    EXPECT_TRUE(from);
+    EXPECT_TRUE(to);
+    EXPECT_TRUE(presenter_->SetTransitionKind(kind));
+    EXPECT_TRUE(presenter_->ComposeTransition(*from, *to, /*progress=*/0.25f));
+    presenter_->PresentComposed();
+    const int x = window_->width();
+    const int y = window_->height();
+    if (horizontal) {
+      return {WindowRedAt(x / 8, y / 2), WindowRedAt(7 * x / 8, y / 2)};
+    }
+    return {WindowRedAt(x / 2, y / 8), WindowRedAt(x / 2, 7 * y / 8)};
+  }
+
   std::unique_ptr<test::GlTestWindow> window_;
   std::unique_ptr<GlPresenter> presenter_;
 };
@@ -253,6 +301,109 @@ TEST_F(ScenePresentTest, ANonFiniteProgressDegradesToTheFromScene) {
       *from, *to, -std::numeric_limits<float>::infinity()));
   presenter_->PresentComposed();
   EXPECT_GT(WindowTopRed(), test::kBrightThreshold);
+}
+
+// ---- The other kinds -------------------------------------------------------
+//
+// Cross-fade is a weight that is constant in space; a wipe is one that is not.
+// Everything below is about telling the two apart at the SAME progress, because
+// a test that only checks 0 and 1 cannot see the difference: both kinds show
+// exactly one side at the ends.
+
+// The edge is a CUT, not a fade: at half progress a pixel well inside the
+// covered half is still fully |to|, and one well outside is still fully |from|.
+// A cross-fade would put both near the middle.
+TEST_F(ScenePresentTest, AWipeIsAHardEdgeNotABlend) {
+  ASSERT_TRUE(presenter_->SetTransitionKind(gl::TransitionKind::kWipeRight));
+  std::unique_ptr<GlScene> from = FlatScene(test::kWhiteLuma);
+  std::unique_ptr<GlScene> to = FlatScene(test::kBlackLuma);
+  ASSERT_TRUE(from);
+  ASSERT_TRUE(to);
+
+  ASSERT_TRUE(presenter_->ComposeTransition(*from, *to, /*progress=*/0.5f));
+  presenter_->PresentComposed();
+
+  const int mid = window_->height() / 2;
+  EXPECT_LT(WindowRedAt(window_->width() / 8, mid), test::kDarkThreshold)
+      << "left of the edge is the to scene, unblended";
+  EXPECT_GT(WindowRedAt(7 * window_->width() / 8, mid), test::kBrightThreshold)
+      << "right of the edge is still the from scene, unblended";
+}
+
+// The two horizontal directions must land on opposite sides. Each covers a
+// quarter at 1/4 progress, so only the SIDE tells them apart -- which is what
+// makes this a test of the direction and not merely of the wipe.
+TEST_F(ScenePresentTest, AWipeRightCoversFromTheLeft) {
+  const auto [start, end] = WipeEnds(gl::TransitionKind::kWipeRight, true);
+  EXPECT_LT(start, test::kDarkThreshold)
+      << "kWipeRight travels rightwards, so to enters from the left";
+  EXPECT_GT(end, test::kBrightThreshold)
+      << "the edge has not reached the right yet";
+}
+
+TEST_F(ScenePresentTest, AWipeLeftCoversFromTheRight) {
+  const auto [start, end] = WipeEnds(gl::TransitionKind::kWipeLeft, true);
+  EXPECT_LT(end, test::kDarkThreshold)
+      << "kWipeLeft travels leftwards, so to enters from the right";
+  EXPECT_GT(start, test::kBrightThreshold)
+      << "the edge has not reached the left yet";
+}
+
+// Vertical, and the reason y is addressed from the TOP here: "down" on screen
+// is the direction a viewer would name, and the shader's vTexCoord counts y
+// from the bottom because this pass samples framebuffer textures through the
+// flipped quad. The enum takes screen words and the vector below carries the
+// sign, so a mix-up would show up as two tests failing, not none.
+TEST_F(ScenePresentTest, AWipeDownCoversFromTheTop) {
+  const auto [start, end] = WipeEnds(gl::TransitionKind::kWipeDown, false);
+  EXPECT_LT(start, test::kDarkThreshold)
+      << "kWipeDown travels downwards, so to enters from the top";
+  EXPECT_GT(end, test::kBrightThreshold)
+      << "the edge has not reached the bottom yet";
+}
+
+TEST_F(ScenePresentTest, AWipeUpCoversFromTheBottom) {
+  const auto [start, end] = WipeEnds(gl::TransitionKind::kWipeUp, false);
+  EXPECT_LT(end, test::kDarkThreshold)
+      << "kWipeUp travels upwards, so to enters from the bottom";
+  EXPECT_GT(start, test::kBrightThreshold)
+      << "the edge has not reached the top yet";
+}
+
+// The kind has to be able to go BACK, and that is a different property from
+// setting it: the program is compiled once and cached, so a switch that only
+// ever moved forwards would keep the wipe program while reporting a cross-fade.
+// Same progress, two kinds, opposite answers.
+TEST_F(ScenePresentTest, TheKindCanBeHandedBackToACrossFade) {
+  std::unique_ptr<GlScene> from = FlatScene(test::kWhiteLuma);
+  std::unique_ptr<GlScene> to = FlatScene(test::kBlackLuma);
+  ASSERT_TRUE(from);
+  ASSERT_TRUE(to);
+
+  ASSERT_TRUE(presenter_->SetTransitionKind(gl::TransitionKind::kWipeRight));
+  ASSERT_TRUE(presenter_->ComposeTransition(*from, *to, /*progress=*/0.5f));
+  presenter_->PresentComposed();
+  const int mid = window_->height() / 2;
+  ASSERT_LT(WindowRedAt(window_->width() / 8, mid), test::kDarkThreshold)
+      << "a wipe at half progress is unblended on the covered side";
+
+  ASSERT_TRUE(presenter_->SetTransitionKind(gl::TransitionKind::kCrossFade));
+  ASSERT_EQ(gl::TransitionKind::kCrossFade, presenter_->transition_kind());
+  ASSERT_TRUE(presenter_->ComposeTransition(*from, *to, /*progress=*/0.5f));
+  presenter_->PresentComposed();
+  EXPECT_GT(WindowRedAt(window_->width() / 8, mid), kMidLow);
+  EXPECT_LT(WindowRedAt(window_->width() / 8, mid), kMidHigh)
+      << "the same progress is now an even blend of both scenes";
+}
+
+// A kind that is not one of the named values must be refused rather than
+// falling through to the cross-fade: silently showing a different transition
+// than the caller asked for is the exact failure a boolean return prevents.
+TEST_F(ScenePresentTest, AnUnnamedTransitionKindIsRefused) {
+  EXPECT_FALSE(presenter_->SetTransitionKind(
+      static_cast<gl::TransitionKind>(/*not a kind=*/99)));
+  EXPECT_EQ(gl::TransitionKind::kCrossFade, presenter_->transition_kind())
+      << "a refused kind must leave the current one standing";
 }
 
 // The presenter's scene shares its two video programs with the single-video

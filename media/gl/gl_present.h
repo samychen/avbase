@@ -203,9 +203,21 @@ class AVBASE_MEDIA_EXPORT GlPresenter {
   // Stage 1 + 2 + 3 for a scene.
   bool PresentScene(GlScene& scene, PresentTiming* timing = nullptr);
 
-  // Stage 1, cross-fade: composes |from| and |to| into two off-screen targets
+  // Which weight curve ComposeTransition() uses; see gl::TransitionKind.
+  //
+  // A presenter-wide setting rather than an argument to ComposeTransition(),
+  // because the program is a function of it: passed per frame it would invite
+  // a shader compile in the middle of a transition, which is the one place a
+  // hitch is guaranteed to be visible. Changing it between transitions costs
+  // one compile, once.
+  //
+  // Returns false for a value that is not one of the enum's named kinds.
+  bool SetTransitionKind(gl::TransitionKind kind);
+  gl::TransitionKind transition_kind() const { return transition_kind_; }
+
+  // Stage 1, transition: composes |from| and |to| into two off-screen targets
   // AT THE COMPOSITION SIZE, then mixes them onto the canvas at |progress|
-  // (0 = |from|, 1 = |to|).
+  // (0 = |from|, 1 = |to|) by whichever curve is currently selected.
   //
   // Both sides are composed at the output size rather than mixed at differing
   // sizes, so the mix is a combination of two images rather than a resample of
@@ -235,6 +247,10 @@ class AVBASE_MEDIA_EXPORT GlPresenter {
 
  private:
   bool BuildPrograms();
+  // The transition program for the currently selected kind: the one from
+  // Init() while the kind is unchanged, or a freshly compiled one the first
+  // time it is used after a change. Null if the compile failed.
+  gl::GlTransition* EnsureTransition();
   // Resolves the requested composition size -- following the drawable when the
   // request is non-positive -- and makes sure the canvas matches it. Shared by
   // every path that composes, because "how big is the composition" must not
@@ -276,12 +292,15 @@ class AVBASE_MEDIA_EXPORT GlPresenter {
   std::unique_ptr<gl::GlFramebuffer> canvas_;
   std::unique_ptr<gl::GlBlitter> blitter_;
 
-  // The two sides of a cross-fade and the pass that blends them. Allocated in
+  // The two sides of a transition and the pass that blends them. Allocated in
   // Init() with everything else that compiles a shader, sized lazily by the
   // first ComposeTransition() at whatever the composition size then is.
   std::unique_ptr<gl::GlFramebuffer> transition_from_;
   std::unique_ptr<gl::GlFramebuffer> transition_to_;
+  // Rebuilt by EnsureTransition() when |transition_kind_| moves away from the
+  // kind |transition_| was compiled for, so the two never disagree.
   std::unique_ptr<gl::GlTransition> transition_;
+  gl::TransitionKind transition_kind_{gl::TransitionKind::kCrossFade};
 
   // Requested composition size; non-positive in either axis means "follow the
   // drawable". The ALLOCATED size lives in canvas_ -- a second copy here is
