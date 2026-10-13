@@ -88,10 +88,14 @@ class AVBASE_MEDIA_EXPORT LiveDataSource final : public DataSource {
   base::Thread worker_;
   base::Lock job_lock_;
   base::ConditionVariable job_cv_ GUARDED_BY(job_lock_);
+  // Default member initialisers: the struct is always aggregate-initialised
+  // today, but an uninitialised offset/size/data in a queued job is a read of
+  // garbage that only shows up as a wrong range -- give the fields values so
+  // a future default construction is safe too.
   struct AsyncJob {
-    int64_t offset;
-    size_t size;
-    uint8_t* data;
+    int64_t offset{0};
+    size_t size{0};
+    uint8_t* data{nullptr};
     base::scoped_refptr<base::TaskRunner> runner;
     ReadCB cb;
   };

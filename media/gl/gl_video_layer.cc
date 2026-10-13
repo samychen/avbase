@@ -385,8 +385,12 @@ void GlVideoLayer::Bind(gl::GlProgram& program, float opacity) const {
     // rather than by the program.
     program.SetVec2("uTexSize", static_cast<float>(width_),
                     static_cast<float>(height_));
-    program.SetVec2("uChromaSize", static_cast<float>(width_ / 2),
-                    static_cast<float>(height_ / 2));
+    // Divided as a float, not as an int: `width_ / 2` truncates on an odd
+    // width and the shader then samples 0.5 texel off. Video widths are
+    // almost always even so this changes nothing in practice -- it is the
+    // odd frame that would have been silently wrong.
+    program.SetVec2("uChromaSize", static_cast<float>(width_) / 2.0f,
+                    static_cast<float>(height_) / 2.0f);
   }
   planes_[0]->Bind(0);
   planes_[1]->Bind(1);

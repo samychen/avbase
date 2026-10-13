@@ -59,6 +59,11 @@ using HwCodecMask = uint32_t;
 // tested; see decoder_selector_unittest.cc.
 class AVBASE_MEDIA_EXPORT DecoderSelector {
  public:
+  // Deleted here rather than under `private:`: a deleted function is part of
+  // the class's interface -- it is what tells a caller this type is a namespace
+  // with a name -- and a private one only produces a worse diagnostic
+  // ("is private") instead of "call to deleted constructor".
+  DecoderSelector() = delete;
   DecoderSelector(const DecoderSelector&) = delete;
   DecoderSelector& operator=(const DecoderSelector&) = delete;
 
@@ -74,9 +79,6 @@ class AVBASE_MEDIA_EXPORT DecoderSelector {
 
   // True when |codec| is covered by |mask|. kAll covers everything.
   static bool CodecAllowedByMask(VideoCodec codec, HwCodecMask mask);
-
- private:
-  DecoderSelector() = delete;
 };
 
 }  // namespace avbase::media

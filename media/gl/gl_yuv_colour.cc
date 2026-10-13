@@ -45,6 +45,10 @@ YuvMatrix SelectYuvMatrix(const VideoColorSpace& cs) {
   case ColorMatrix::kBT2020Ncl:
   case ColorMatrix::kBT2020Cl:
     return full ? kMatrix2020Full : kMatrix2020Limited;
+  // Same body as `default` below, and deliberately not merged into it: naming
+  // kSMPTE170M here is the documentation that SMPTE 170M maps to BT.601,
+  // which a fallthrough into the unmarked default would not express.
+  // NOLINTNEXTLINE
   case ColorMatrix::kSMPTE170M:
     return full ? kMatrix601Full : kMatrix601Limited;
   default:

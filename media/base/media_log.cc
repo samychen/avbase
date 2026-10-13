@@ -117,7 +117,10 @@ void MediaLog::AddEvent(MediaLogEvent::Level level, MediaLogEvent::Type type,
     line += ": " + event.message;
   }
   for (const auto& [key, value] : event.properties) {
-    line += " " + key + "=" + value;
+    // Appended, not `+`: `line += " " + key + "=" + value` allocates a
+    // temporary for each `+` before the append (performance-inefficient-
+    // string-concatenation).
+    line.append(" ").append(key).append("=").append(value);
   }
   switch (level) {
   case MediaLogEvent::Level::kError:

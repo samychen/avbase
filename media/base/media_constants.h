@@ -30,7 +30,7 @@ inline bool IsNoTimestamp(base::TimeDelta t) {
 
 // ---- Buffer / queue sizing -------------------------------------------------
 // Ported: MAX_QUEUE_SIZE.
-inline constexpr size_t kDefaultMaxBufferBytes = 15 * 1024 * 1024;
+inline constexpr size_t kDefaultMaxBufferBytes = 15ULL * 1024 * 1024;
 // Ported: DEFAULT_MIN_FRAMES / MIN_MIN_FRAMES / MAX_MIN_FRAMES.
 inline constexpr size_t kDefaultMinFrames = 5;
 inline constexpr size_t kMinMinFrames = 2;

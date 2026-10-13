@@ -27,7 +27,7 @@ class FFmpegAudioFilter final : public AudioFilterStage {
   FFmpegAudioFilter();
   FFmpegAudioFilter(const FFmpegAudioFilter&) = delete;
   FFmpegAudioFilter& operator=(const FFmpegAudioFilter&) = delete;
-  ~FFmpegAudioFilter();
+  ~FFmpegAudioFilter() override;
 
   // Builds the graph. |graph| is an avfilter chain without the buffer/sink
   // endpoints ("volume=0.5,aecho=0.8:0.8:60:0.4"). The input format is the

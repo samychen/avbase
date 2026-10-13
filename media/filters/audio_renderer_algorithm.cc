@@ -534,8 +534,10 @@ bool AudioRendererAlgorithm::RunOneWsolaIteration(double playback_rate) {
 void AudioRendererAlgorithm::UpdateOutputTime(double playback_rate,
                                               double time_change) {
   output_time_ += time_change;
+  // std::lround, not `(int)(x + 0.5)`: output_time_ accumulates signed time
+  // changes, and for a negative product the two disagree (-0.6 -> 0 vs -1).
   const int search_block_center_index =
-      static_cast<int>(output_time_ * playback_rate + 0.5);
+      static_cast<int>(std::lround(output_time_ * playback_rate));
   search_block_index_ = search_block_center_index - search_block_center_offset_;
 }
 

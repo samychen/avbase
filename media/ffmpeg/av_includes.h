@@ -98,6 +98,10 @@ extern "C" {
 // version switch stays in this file (rule C8) and callers read the same either
 // way. The modern branch is codecpar's array, which is where FFmpeg 6.1 moved
 // stream side data to.
+// snake_case with an avbase_ prefix on purpose: this is a drop-in stand-in
+// for an FFmpeg function, and the prefix is what marks it as avbase's
+// replacement rather than FFmpeg's own.
+// NOLINTNEXTLINE
 inline const uint8_t* avbase_stream_side_data(const AVStream* stream,
                                               AVPacketSideDataType type,
                                               size_t* size) {

@@ -138,18 +138,25 @@ class AVBASE_MEDIA_EXPORT NullMediaLogRecord {
 
 }  // namespace avbase::media
 
+// Unparenthesised for the same reason AVBASE_LAZY_STREAM is (see
+// base/logging.h): the `<<` is written outside the macro, and parenthesising
+// the ternary makes it apply to a void expression.
+// NOLINTBEGIN
 #define MEDIA_LOG(level, log)                                       \
   !(log) ? (void)0                                                  \
          : ::avbase::base::logging::LogMessageVoidify() &           \
                ::avbase::media::MediaLogRecord(                     \
                    ::avbase::media::MediaLogEvent::Level::k##level, \
                    ::avbase::media::MediaLogEvent::Type::kProperty, (log))
+// NOLINTEND
 
+// NOLINTBEGIN
 #define MEDIA_LOG_EVENT(level, type, log)                           \
   !(log) ? (void)0                                                  \
          : ::avbase::base::logging::LogMessageVoidify() &           \
                ::avbase::media::MediaLogRecord(                     \
                    ::avbase::media::MediaLogEvent::Level::k##level, \
                    ::avbase::media::MediaLogEvent::Type::k##type, (log))
+// NOLINTEND
 
 #endif  // AVBASE_MEDIA_BASE_MEDIA_LOG_H_

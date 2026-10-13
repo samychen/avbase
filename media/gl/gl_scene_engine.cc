@@ -45,7 +45,7 @@ bool GlSceneEngine::RemoveSource(const std::shared_ptr<GlLayerSource>& source) {
     return false;
   }
   sources_.erase(it);
-  retiring_.push_back(std::move(source));
+  retiring_.push_back(source);
   return true;
 }
 

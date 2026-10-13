@@ -52,6 +52,10 @@ NativeDisplay::FromX11Window(X11WindowHandle handle) {
   base::scoped_refptr<NativeDisplay> display(
       new NativeDisplay(NativeDisplayKind::kX11Window));
   display->x11_ = handle;
+  // The int-to-pointer cast is what the window-system API takes: `raw_` is
+  // an opaque handle the host hands back to SDL/EGL/GLFW, not a pointer
+  // this code dereferences (performance-no-int-to-ptr).
+  // NOLINTNEXTLINE
   display->raw_ = reinterpret_cast<void*>(handle.window);
   return display;
 }

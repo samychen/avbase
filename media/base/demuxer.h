@@ -31,7 +31,7 @@ namespace avbase::media {
 // media-layer terms. player::PlayerConfig is mapped into this by PlayerImpl, so
 // media/ never has to know that PlayerConfig exists (invariant C22).
 struct AVBASE_MEDIA_EXPORT DemuxerOptions {
-  int64_t probe_size{5 * 1024 * 1024};
+  int64_t probe_size{5LL * 1024 * 1024};
   base::TimeDelta analyze_duration{base::Seconds(5)};
   bool find_stream_info{true};
   std::string forced_format;
@@ -80,7 +80,7 @@ class AVBASE_MEDIA_EXPORT Demuxer : public MediaResource {
 
   Demuxer(const Demuxer&) = delete;
   Demuxer& operator=(const Demuxer&) = delete;
-  virtual ~Demuxer();
+  ~Demuxer() override;
 
   // Opens the source and probes stream information. |init_cb| runs on
   // |media_task_runner| and is never run inline.

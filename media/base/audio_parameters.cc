@@ -67,11 +67,9 @@ int ChannelLayoutToChannelCount(ChannelLayout layout) {
   case ChannelLayout::kStereo:
     return 2;
   case ChannelLayout::k2_1:
-    return 3;
   case ChannelLayout::kSurround:
     return 3;
   case ChannelLayout::k4_0:
-    return 4;
   case ChannelLayout::kQuad:
     return 4;
   case ChannelLayout::k5_0:

@@ -27,7 +27,10 @@ int SnapLayerRotation(int degrees) {
 }
 
 void LayerRotationToCosSin(int degrees, float* out_cos_sin) {
-  const int quarter = SnapLayerRotation(degrees) / 90;
+  // size_t, not int: the index is `2 * quarter + 1`, and an int multiplication
+  // that is then widened to ptrdiff_t for the subscript is exactly the shape
+  // bugprone-implicit-widening-of-multiplication-result looks for.
+  const size_t quarter = static_cast<size_t>(SnapLayerRotation(degrees) / 90);
   out_cos_sin[0] = kCosSin[2 * quarter];
   out_cos_sin[1] = kCosSin[2 * quarter + 1];
 }

@@ -13,9 +13,9 @@ namespace {
 // bracket contains the coded height wins. 576 is the last row of PAL SD, 600
 // cleanly separates SD from 720p HD. HDR overrides everything (row 0).
 struct FallbackRow {
-  int min_height;  // Inclusive.
-  int max_height;  // Inclusive; INT_MAX means unbounded.
-  bool hdr_only;   // Row only applies when has_hdr_metadata.
+  int min_height{0};     // Inclusive.
+  int max_height{0};     // Inclusive; INT_MAX means unbounded.
+  bool hdr_only{false};  // Row only applies when has_hdr_metadata.
   VideoColorSpace cs;
 };
 
