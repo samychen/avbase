@@ -54,6 +54,16 @@ extern const char* const kQuadVertexShaderWithRectBody;
 // sampler type is a define above.
 extern const char* const kVertexRotationDefine;
 
+// Concatenate before kQuadVertexShaderWithRectBody to make that stage sample a
+// sub-rectangle of the source instead of all of it; it then also takes a
+// `uniform vec4 uSrcRect` = (x, y, w, h) in normalised source coordinates, with
+// (0,0) the first row and column of the picture as stored.
+//
+// Same shape as uRect on purpose -- both are (origin, size) boxes -- but in a
+// different space: uRect is in the DESTINATION and measured from its centre,
+// uSrcRect is in the SOURCE and measured from its corner.
+extern const char* const kVertexCropDefine;
+
 // Fragment stage: samples uTex with whatever texture unit the caller bound.
 extern const char* const kTextureFragmentShaderBody;
 
@@ -61,11 +71,16 @@ extern const char* const kTextureFragmentShaderBody;
 // covers both plain blits and fades.
 extern const char* const kTextureTintFragmentShaderBody;
 
-// Fragment stage: mixes two textures by uProgress (0 = uFrom, 1 = uTo). The
-// cross-fade every transition is built out of; a wipe or a slide is this
-// shader with a different weight expression, so the two-texture plumbing
-// (units, uniforms, geometry, orientation) is worth stating once.
+// Fragment stage: mixes two textures by uProgress (0 = uFrom, 1 = uTo) with the
+// same weight everywhere -- the dissolve.
 extern const char* const kCrossFadeFragmentShaderBody;
+
+// Fragment stage: the same two textures mixed by uProgress, but with the weight
+// a STEP along uDirection instead of a constant, so a hard edge crosses the
+// picture. A separate body rather than a uniform on the cross-fade: the two
+// differ in the WEIGHT EXPRESSION, which is the one thing a uniform cannot
+// select -- only the numbers feeding it.
+extern const char* const kWipeFragmentShaderBody;
 
 }  // namespace avbase::gl
 

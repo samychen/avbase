@@ -15,8 +15,29 @@
 
 namespace avbase::gl {
 
-// Blends two textures over a whole viewport by a progress value: the
-// cross-fade step, and the only transition the module ships.
+// Which weight curve joins the two sides.
+//
+// A closed set rather than an open one, because each entry is a compiled
+// program the caller pays for only when it uses it -- and because naming them
+// is the point: "a wipe" has to mean one thing to the caller and the shader.
+//
+// Deliberately NOT the 36 transitions of the FFmpeg filter: those are a
+// product feature of a video editor, and this is a renderer primitive. What
+// belongs here is the set that proves the plumbing generalises -- one weight
+// that is constant in space and one that is not -- not a catalogue.
+enum class TransitionKind {
+  // Every pixel crosses together, whatever its position: the dissolve.
+  kCrossFade = 0,
+  // A hard edge travels across the picture, and |to| is what it has already
+  // crossed. Named for where the edge is HEADED, not for where |to| sits:
+  // kWipeRight means the edge moves rightwards, so |to| enters from the left.
+  kWipeRight,
+  kWipeLeft,
+  kWipeDown,
+  kWipeUp,
+};
+
+// Blends two textures over a whole viewport by a progress value.
 //
 // A transition is a compositor feature, not a video one: it takes two finished
 // images and produces a third. That is why it lives here next to GlBlitter
@@ -50,10 +71,17 @@ namespace avbase::gl {
 // Borrows the GlApi; both must be destroyed while the context is current.
 class AVBASE_GL_EXPORT GlTransition {
  public:
-  // Compiles the cross-fade program and builds the quad. Returns null on
+  // Compiles the program for |kind| and builds the quad. Returns null on
   // failure and, when |error| is non-null, fills it with the compile log.
-  static std::unique_ptr<GlTransition> Create(const GlApi& gl,
-                                              std::string* error);
+  static std::unique_ptr<GlTransition>
+  Create(const GlApi& gl, TransitionKind kind = TransitionKind::kCrossFade,
+         std::string* error = nullptr);
+
+  // The kind this object was built for. Exposed because the program is a
+  // function of it, so "which transition will run" has to be readable without
+  // inspecting the shader.
+  TransitionKind kind() const { return kind_; }
+
   GlTransition(const GlTransition&) = delete;
   GlTransition& operator=(const GlTransition&) = delete;
   ~GlTransition();
@@ -79,9 +107,11 @@ class AVBASE_GL_EXPORT GlTransition {
             int dst_height) const;
 
  private:
-  explicit GlTransition(const GlApi* gl) : gl_(gl) {}
+  explicit GlTransition(const GlApi* gl, TransitionKind kind)
+      : gl_(gl), kind_(kind) {}
 
   const GlApi* gl_;
+  const TransitionKind kind_;
   std::unique_ptr<GlProgram> program_;
   std::unique_ptr<GlQuad> quad_;
 };
