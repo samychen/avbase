@@ -20,6 +20,12 @@
 
 namespace avbase::media {
 
+// Forward-declared, not included: naming a type is not depending on it, and
+// media/base must not grow an include edge to media/gl. Anybody who wants to
+// USE the returned pointer includes media/gl/gl_scene_engine.h for themselves;
+// everybody else gets an opaque handle they can only compare against null.
+class GlSceneEngine;
+
 struct AVBASE_MEDIA_EXPORT VideoSinkStats {
   uint64_t frames_presented{0};
   uint64_t frames_dropped{0};
@@ -73,6 +79,19 @@ class AVBASE_MEDIA_EXPORT VideoRendererSink {
   virtual bool GetDisplayInterval(base::TimeDelta* interval) const = 0;
   virtual VideoSinkStats GetStats() const = 0;
   virtual const char* name() const = 0;
+
+  // Whether this sink can composite more than one picture, and if so the
+  // engine that does it. Null unless the sink renders through GL: a null sink,
+  // a frame-capture sink and a test fake all inherit this class directly and
+  // have no scene to hand out.
+  //
+  // Asked as a virtual rather than discovered with a dynamic_cast because RTTI
+  // is off project-wide (-fno-rtti), which left sinking to GlVideoSink a
+  // static_cast whose only safeguard was the caller's belief about which
+  // factory it injected -- and the default Deps injects none, so the default
+  // Player gets a NullVideoSink and that belief is wrong. "Can this compositor
+  // composite" is a question the sink can answer and nobody can infer.
+  virtual GlSceneEngine* scene_engine() { return nullptr; }
 
   // PUBLIC, and that is load-bearing. VideoRendererSink is not ref-counted --
   // VideoRendererSinkFactory::Create() hands it back in a std::unique_ptr, and

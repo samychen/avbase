@@ -74,14 +74,17 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
   bool GetDisplayInterval(base::TimeDelta* interval) const override;
   VideoSinkStats GetStats() const override;
   const char* name() const override { return name_; }
+  media::GlSceneEngine* scene_engine() override { return &engine_; }
 
   // Optional multi-source composition: installs a hook that is handed the
   // scene once per present, so the host can add or update layers around the
   // frame the stream delivered. See GlSceneEngine.
   //
-  // Set it BEFORE Start(), like VideoRendererSink::Initialize(): the render
-  // thread reads it without a lock, and this sink has no way to interrupt a
-  // present that is already in flight.
+  // Callable at any time, including while presenting: the engine takes the
+  // hook under a lock and each frame runs the snapshot it started with, so a
+  // hook installed mid-frame simply takes effect from the next one. (It used
+  // to be "before Start()" because nothing was synchronised; that restriction
+  // was a data race wearing a contract's clothes.)
   void SetSceneUpdate(GlSceneEngine::UpdateCallback callback);
 
   // Adds a second (third, ...) source to the composition and returns what its
