@@ -83,3 +83,20 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
   从隐藏基类派生导出类触发 `-Wvisibility` → 共享基类也要导出。
 - 文档：`docs/09-*` 已归档到 `docs/archive/`，注释用短形式 `docs/archive/09 §N`，
   **不要写完整中文文件名**（撑破 80 列）。`docs/13` = avbase_gl 契约。
+- **切片提交：不带路径的 `git commit` 会连索引里别的东西一起提交。** 第六十九轮用
+  `git add <paths>` + `git commit`（无 pathspec），而 `examples/publisher_sink.h`
+  的删除早在 `git rm` 时就进了索引 → 被卷进**第一条**提交，而那时 `scene_demo.h`
+  还在 include 它，中间提交编译不过。正确做法：`git commit -- <paths>`，或提交前
+  `git diff --cached --name-only` 逐一核对。出错后 `git reset --mixed <base>` 重切
+  （工作区不受影响）。
+- **突变探针用正则，不要字面量，并校验命中次数恰好为 1。** 字面量会因为
+  clang-format 的折行方式不同而 PATTERN-MISS 静默失效（第六十九轮 8 条里 2 条）。
+  正则 + `len(findall) == 1` 才能把「没匹配上」变成显式失败。
+- **突变要避开 `-Werror`：优先掏空辅助函数，而不是改调用点。** 改调用点常让某个
+  变量从未被赋值（`-Werror=uninitialized`）或参数不再被使用（`-Wextra` 的
+  `-Wunused-parameter`）；加 `(void)x;` 可以压掉后一类。第六十九轮 P3/P7 都是这么
+  从 BUILD-FAIL 救回来的。
+- **先问「这个性质单线程能观测到吗」再写探针。** 第六十九轮有一条探针要钉
+  「跑的是快照而不是实时成员」，但它唯一的观测手段是单线程测试 —— 两条代码路径
+  逐像素输出相同。换成同一处代码**可观测**的那一半（清掉 hook 后场景必须还在）。
+  这是第六十五轮「引擎早退没有反证」的同形。

@@ -3617,3 +3617,155 @@ vendored 头文件被就地重写了 **1413 行**。
 - **§2 SDK 暴露场景 API 仍待办。** 新加的三个属性和五种转场目前只有
   `media/gl` 这一层的入口，`player/public/` 和示例里没有（转场此前全仓只有
   `gl_present.cc` 和测试在用）。要用起来得走 §2。
+
+---
+
+## 第六十九轮 —— §2：SDK 暴露场景 API
+
+TODO §2。验收判据原文：「`Player` 上能拿到场景句柄、加源、设图层
+rect/opacity/z；示例不用绕过 `Player` 也能出双层画面。」
+
+### 起点
+
+`player/public/player.h`（47 个公开方法）与 `deps.h` 里 grep
+`scene|layer|pip` **零命中**。`GlScene` / `GlSceneEngine` / `GlLayerSource`
+全是 `media/gl/` 内部类型。所以 L3（多源场景层）和 L5（多源编排）做完之后，
+**只有宿主自己绕过播放器才能用** —— 旧 `examples/scene_demo.h` 正是这么绕的。
+
+### 拆开看是三个不同的问题，不是一个
+
+| 问题 | 为什么不能照抄现有做法 |
+| --- | --- |
+| 句柄挂在哪 | sink 每次 `PrepareAsync` 新建一个，引擎跟着 sink 走。挂在 pipeline 上 ⇒ 宿主每个周期重新注册一切 |
+| 这个 sink 能不能合成 | 全仓 `-fno-rtti`，没有 `dynamic_cast`；默认 `Deps` 给 `NullVideoSink`，`static_cast<GlVideoSink&>` 在那里是 **UB**（示例原来就是这么写的） |
+| 它什么时候没了 | 管线还会被自己的错误处理和轨切换拆掉，Player 不一定有机会通知 |
+
+三个都不难，难在**分别**回答：把第一个答成「每次 Prepare 重新 Bind」就是把
+生命周期代码推给了宿主；把第二个答成 `static_cast` 就是在默认配置下踩 UB；
+把第三个答成「Player 会通知」就是留了一条指针悬空的路径。
+
+### 落地
+
+| 层 | 改动 |
+| --- | --- |
+| `media/base/video_renderer_sink.h` | `virtual GlSceneEngine* scene_engine()`（默认 nullptr）。前向声明，不让 `media/base` 长出到 `media/gl` 的边 |
+| `media/gl/gl_video_sink.h` | override 返回自己的引擎；`SetSceneUpdate` 契约从「before Start()」改成「任何时候」 |
+| `media/gl/gl_scene_engine.{h,cc}` | `update_` 加 `GUARDED_BY`；`SetUpdateCallback` 加锁；`Sync()` 锁内取快照、锁外跑；新增 `TeardownCallback` |
+| `media/gl/gl_scene.h` | `HasLayer(id)` |
+| `media/renderers/default_renderer_factory.{h,cc}` | `Deps::scene_observer`，造出 sink 时把它的引擎（或 null）交出去 |
+| `player/public/scene.h`（新） | `Scene` / `SceneSource` / `SceneFrame` / `SceneLayer` + `SceneContentMode` + `SceneUpdateCallback` |
+| `player/scene.cc`、`player/scene_source.cc`（新） | 实现。媒体层类型一律前向声明 |
+| `player/player_impl.{h,cc}`、`player_impl_stop.cc` | `scene_` 成员；`factory_deps.scene_observer`；`Stop()` 里 `Bind(nullptr)` |
+| `player/public/player.h`、`player/player.cc` | `Scene* scene()` |
+| `examples/` | `g_scene->Install(player)`；**删掉** `publisher_sink.h` |
+
+### 顺手修掉的一处数据竞争（不是在 SDK 上照抄它）
+
+`GlSceneEngine::update_` 原本是类里**唯一没有 `GUARDED_BY` 的共享状态**：
+宿主线程写、GL 线程在锁外读（`gl_scene_engine.cc:81`、`:110`）。所以「hook
+必须在 `Start()` 之前设」这个契约只是**给数据竞争穿了件外衣** —— 真正的代价
+是 `RepeatingCallback` 的引用计数：一边拆旧的一边加引用，是 Release 构建下
+几乎永远看不出来的 use-after-free。
+
+如果 SDK 照抄这条契约，宿主就得写「我知道什么时候能装 hook」的生命周期代码，
+而那是 §2 本来要消除的东西。所以先修引擎：`SetUpdateCallback` 加锁，`Sync()`
+**锁内取快照、锁外跑快照**（hook 里回调 `AddSource` 是合法的，持锁会死锁）。
+
+### 验收（实跑，不是推断）
+
+```
+$ play_glfw --url 1080p30-12s.mp4 --scene pip --stats --max-seconds 3
+scene: unbound (the running pipeline's sink cannot composite; 0 source(s)
+       and a hook are waiting to be plumbed in)
+scene: hook placed 85 frame(s), scene now bound, 0 source(s), hook installed
+
+$ play_glfw --url 1080p30-12s.mp4 --scene fade --second 1080p60-12s.mp4 \
+            --stats --max-seconds 4
+scene: unbound (...; 1 source(s) and a hook are waiting to be plumbed in)
+scene: hook placed 112 frame(s), scene now bound, 1 source(s), hook installed
+--second: published=224 consumed=113 superseded=111
+```
+
+第二行是**第一帧之后**的状态：源和 hook 都在 prepare 之前注册好、等在那里，
+prepare 一建好 renderer 就被 plumb 进去。最后一行是 60fps 生产者对着 30fps
+显示：224 帧发布、113 帧被消费、111 帧被取代 —— 取代正是单槽邮箱该做的。
+
+示例里已无 `static_cast` 工厂；`video_sink_factory` 只写
+`std::make_shared<Sdl2VideoSinkFactory>()`。
+
+### 反证：8 条突变，全部真跑过、全红
+
+| # | 突变 | 结果 |
+| --- | --- | --- |
+| P1 | `Describe` 自称已绑定 | RED |
+| P2 | 没 plumbed 的 `Publish` 报成功 | RED |
+| P3 | 背景色不再拒绝 NaN | RED |
+| P4 | 每个图层句柄都自称合法 | RED |
+| P5 | 解绑时计数清零而不是随源走 | RED |
+| P6 | 引擎不再自报死亡 | RED |
+| P7 | `SetUpdateCallback` 只认第一个 hook | RED |
+| P8 | hook 一没，场景跟着没 | RED |
+
+**第一版只有 4/8，四条全是探针自己的问题，不是代码的问题：**
+
+- **P3 的突变触发 `-Werror`。** 把 `if (!AllFinite(...))` 换成 `if (false)`
+  会让 `background_` 从未被赋值 → `-Werror=uninitialized`；改成掏空
+  `AllFinite` 本体（加 `(void)values` 压 `-Wunused-parameter`）才编译得过。
+- **P7 引入函数内 `static` 缓存**带来非平凡析构的静态量；改成
+  `SetUpdateCallback` 里「已有就不接受」—— 说的是同一件事，且能编译。
+- **P4 / P8 是 PATTERN-MISS**：探针用字面量匹配，而源码的折行方式不一样。
+  第二轮起探针全部改用**正则 + 校验命中次数为 1**，这类失效就不会静默了。
+- **P8 原本要钉「跑的是快照不是实时成员」**，但那在单线程下**根本观测不到** ——
+  换成它可观测的那一半：清掉 hook 后场景必须还在，否则源图层会跟着一起没。
+
+C1 拆分之后（见下）又重跑一遍确认仍是 8/8 —— P2/P5 的代码挪了文件，探针路径
+跟着改。
+
+### 操作事故一：C1 逼出的拆分
+
+`player/scene.cc` 写到 522 行，超 C1 的 500 行上限。自然地接缝在中间：
+`SceneSource` 那一半是**生产者面对的一半**（邮箱 + publisher sink），
+`Scene` / `SceneFrame` / `SceneLayer` 是**绘制面对的一半**。挪出
+`player/scene_source.cc`，两个文件 349 / 192 行。
+
+### 操作事故二：提交夹带
+
+切片提交时用的是 `git add <paths>` + `git commit`（不带路径）。而
+`examples/publisher_sink.h` 的删除在更早的 `git rm` 里**已经进了索引** ——
+不带路径的 `git commit` 提交整个索引，于是这个删除被卷进了**第一条**提交，
+而那时 `scene_demo.h` 还在 include 它：**中间提交编译不过**。
+
+`git reset --mixed` 回到本轮起点重切，每片提交前先 `git diff --cached
+--name-only` 核对。教训已进 `operations.md`：**切片提交要么用
+`git commit -- <paths>`，要么提交前逐一核对索引内容；索引里有别的东西时，
+不带路径的 commit 会连它一起提交。**
+
+### 门禁（全部当场跑出）
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（456 文件） |
+| `clang-format`（CI 口径，排除 legacy / option_registry / third_party） | 450 文件 0 偏离 |
+| no-ffmpeg + `-Werror` | ctest **521/521**（第六十八轮基线 511，+10） |
+| macos-sdl2 + `-Werror`（含 GLFW） | ctest **715/715**（基线 703，+12） |
+| `glfw-check`（GLFW=ON, FFMPEG=OFF, TESTS=OFF） | 构建通过 |
+
+### 提交（按依赖层次切 7 片）
+
+| 提交 | 内容 |
+| --- | --- |
+| `219d316` | `media/base` + `media/gl`：sink 自报能不能合成 |
+| `369f3db` | `media/gl`：hook 上锁 + 引擎自报死亡 + `HasLayer` |
+| `8668595` | `media/renderers`：`Deps::scene_observer` |
+| `39f59c0` | `player`：`Player::scene()` 与四个句柄 |
+| `ef26f61` | 示例改用 `scene()`，删 `publisher_sink.h` |
+| `c30dbe1` | 12 条测试 |
+| （本条） | 文档 + memory |
+
+### 留下的问题
+
+- **§0 的表里 `media/filters/` 还是「🔶 单源硬限制」。** §2 没有消除它：
+  播放器管线仍然单源，`SceneSource` 是用「第二路完整 Player + 邮箱」绕过去的。
+  真正消除要动管线本身。
+- **SDL2 示例没有 glfw 那两条 `scene:` 诊断打印。** `play_sdl2.cc` 现在是
+  498 行、C1 上限 500，加进去得先腾地方。不是缺口，是没做。

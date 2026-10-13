@@ -100,8 +100,32 @@ matrix 解析、被 `Player::video_rotation()` 上报，但**没有一帧真正�
   编译着色器需要当前 context，setter 没资格假定自己有（调用方可能在 UI 线程）。
 
 **仍未做**：混合模式（`GL_SRC_ALPHA` 固定）、镜像、色彩调整、图层名。
-**§2 SDK 暴露场景 API 待办**：新属性与转场目前只有 `media/gl` 入口，
-`player/public/` 与示例里没有。
+
+## SDK 场景门面（第六十九轮，TODO §2）
+
+`player/public/scene.h`：`Player::scene()` → `Scene` / `SceneSource` /
+`SceneFrame` / `SceneLayer`。媒体层类型**全部前向声明**，SDK 用户的 include
+路径里不出现 `media/gl`。实现在 `player/scene.cc`（绘制面）+ `player/scene_source.cc`
+（生产者面，C1 逼出的拆分：原 522 行超 500 行上限）。
+
+- **句柄跟着 Player，不跟着 pipeline。** sink 每次 `PrepareAsync` 新建一个、引擎
+  跟着 sink 走；绑在 pipeline 上 = 让宿主每个周期重新注册一切。`Scene` 只记「有哪些
+  源 / 什么 hook / 什么背景色」，Player 在新 sink 造好时 `Bind(engine)`、`Stop()` 时
+  `Bind(nullptr)`。
+- **「能不能合成」由 sink 自己回答**（`VideoRendererSink::scene_engine()` 虚接口，
+  默认 nullptr）。**不能 `static_cast<GlVideoSink&>`**：全仓 `-fno-rtti`，且默认
+  `Deps` 给 `NullVideoSink` —— 在那里是 UB，示例原来就是这么写的。
+- **引擎自报死亡**（`GlSceneEngine::SetTeardownCallback`，析构时**锁外**跑）。不能等
+  Player 通知：管线还被自己的错误处理和轨切换拆掉，那些路径 Player 不一定有机会说话。
+- **`SceneSource::MakePublisherFactory()`** 把一整个 Player 的输出变成场景的输入。
+  第二路管线仍必须 present 到某处（那是它的帧被拉出来的唯一途径）；此前唯一做法是
+  宿主手写 sink（`examples/publisher_sink.h`，本轮删除）。
+- **`update_` 曾是全类唯一没有 `GUARDED_BY` 的共享状态** —— 「hook 必须 before
+  Start()」= 给数据竞争穿的外衣，真代价是 `RepeatingCallback` 的引用计数。
+  SDK **没有**照抄这条契约。
+
+**未消除**：`media/filters/` 仍是「单源硬限制」—— §2 是绕过去（第二路完整 Player +
+邮箱），不是解决。真正解决要动管线本身。
 
 ## 性能数据唯一入口
 三宿主示例均支持 `--stats`；`tools/bench_render.sh`，`SCENE=pip|fade` 测双层，

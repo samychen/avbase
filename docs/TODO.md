@@ -17,7 +17,7 @@ L1–L5（可观测性 / FBO 合成地基 / 多源场景层 / 硬件零拷贝 / 
 | `render/gl/`（零依赖 GL） | ✅ 已闭合 |
 | `media/gl/`（渲染编排） | ✅ 基本闭合，残留图层级属性 |
 | `media/filters/`（播放器管线） | 🔶 单源硬限制 |
-| `player/public/`（SDK 门面） | ❌ 多图层/多源无出口 |
+| `player/public/`（SDK 门面） | ✅ 已闭合（第六十九轮，§2） |
 
 ---
 
@@ -73,18 +73,76 @@ player_event.h:50                   事件 kRotationChanged
 
 ---
 
-## 2. 【P2】SDK 层暴露场景 API —— 库里有，调用方拿不到
+## 2. 【P2】✅ 已完成（第六十九轮）SDK 层暴露场景 API
 
-**现状**：`player/public/player.h`（47 个公开方法）与 `player/public/deps.h` 里
+**原状**：`player/public/player.h`（47 个公开方法）与 `player/public/deps.h` 里
 grep `scene|layer|pip` **零命中**。`GlScene` / `GlSceneEngine` / `GlLayerSource`
 全是 `media/gl/` 内部类型，SDK 用户摸不到。
 
-**后果**：多图层合成与多源编排**只有宿主自己绕过播放器才能用** ——
-`examples/scene_demo.h:178` 的 `--second`（第二个 `Player` + `PublisherSink`）
-正是这么绕的。库有这个能力，SDK 用户没有。
+**后果**：多图层合成与多源编排**只有宿主自己绕过播放器才能用** —— 旧
+`examples/scene_demo.h` 的 `--second` 正是这么绕的：第二个 `Player`，加上一个把
+工厂造出来的 sink `static_cast` 成 `GlVideoSink` 才能拿到引擎。库有这个能力，
+SDK 用户没有。
 
-**验收**：`Player` 上能拿到场景句柄、加源、设图层 rect/opacity/z；
-示例不用绕过 `Player` 也能出双层画面。
+### 已落地
+
+`player/public/scene.h`（新，随 SDK 一起安装）：
+
+| 接口 | 作用 |
+|---|---|
+| `Player::scene()` | 场景句柄。跟随 Player，跨 Prepare 自动重绑 |
+| `Scene::AddSource(name, z)` / `RemoveSource` / `FindSource` | 注册第二个（第 N 个）输入 |
+| `SceneSource::Publish(frame)` | 任何线程推帧；`frames_published/consumed/superseded` 三计数 |
+| `SceneSource::MakePublisherFactory()` | 把一个完整 `Player` 的**输出**变成这个场景的输入 |
+| `Scene::SetUpdateCallback(hook)` | 每显示帧一次的摆放回调 |
+| `SceneFrame::main_layer()` / `AddLayer` / `layer_of` / `layer_with_id` | 回调内取图层句柄 |
+| `SceneLayer::SetRect` / `SetZ` / `SetOpacity` / `SetVisible` / `SetRotation` / `SetSourceRect` / `SetContentMode` | rect / opacity / z 等属性 |
+| `Scene::SetBackgroundColor` / `Describe()` | 背景色，与一行自述诊断 |
+
+### 三个不显然的决定
+
+1. **句柄跟随 Player，不是跟随 pipeline。** sink 是每次 `PrepareAsync` 新建一个，
+   引擎跟着 sink 走；`Scene` 若绑在某个 pipeline 上，宿主就得在每个 Prepare
+   周期重新注册一切 —— 那是它不该写的生命周期代码。所以 `Scene` 只记「有哪些源、
+   有什么 hook、什么背景色」，由 `Player` 在新 sink 造好时 `Bind(engine)`，
+   在 `Stop()` 时 `Bind(nullptr)`。
+
+2. **「这个 sink 能不能合成」由 sink 自己回答。** 全仓 `-fno-rtti`，没有
+   `dynamic_cast`；而默认 `Deps` 不设 `video_sink_factory` 时 fallback 到
+   `NullVideoSink`，在那个对象上 `static_cast<GlVideoSink&>` 是**未定义行为**
+   —— 示例原来就是这么写的。改为 `VideoRendererSink::scene_engine()` 虚接口，
+   不能合成的返回 nullptr，`Scene` 据此进入「未绑定」状态并由 `Describe()`
+   说出来。
+
+3. **引擎自己报死亡，不等 Player 通知。** 管线还会被错误处理、轨切换拆掉，那些
+   路径 Player 不一定有机会说话。所以加 `GlSceneEngine::SetTeardownCallback()`：
+   析构时主动回调，`Scene` 把 `engine_` 置空并 Retire 所有源。析构函数在**锁外**
+   跑它，否则回调撞上自己的成员析构就是死锁。
+
+### 顺手修掉的一处数据竞争
+
+`GlSceneEngine::update_` 原本是类里**唯一没有 `GUARDED_BY` 的共享状态**，GL 线程
+在锁外读它 —— 「hook 必须在 `Start()` 之前设」这个契约只是给数据竞争穿了件外衣。
+现在 `SetUpdateCallback()` 加锁、`Sync()` 在锁内取快照、锁外跑快照（hook 里回调
+`AddSource` 是合法的，持锁会死锁）。**没有照抄这条契约到 SDK 上**。
+
+### 验收
+
+- ✅ 示例不再绕过 `Player`：`g_scene->Install(player)`，工厂只写
+  `std::make_shared<Sdl2VideoSinkFactory>()`。
+- ✅ `examples/publisher_sink.h` **已删除**（被 `MakePublisherFactory()` 完全取代）。
+- ✅ 实跑：`--scene pip` → `scene: hook placed 48 frame(s), scene now bound,
+  0 source(s), hook installed`；`--scene fade --second <url>` →
+  `scene now bound, 1 source(s), hook installed` +
+  `--second: published=108 consumed=108 superseded=0`。
+- ✅ `tests/unit/player/scene_unittest.cc`（10 条）+ `gl_multi_source_unittest.cc`
+  补 2 条 hook 替换测试；**8 条突变反证真跑过、全红**。
+
+### 没做的
+
+`Scene` 刻意不暴露 `GlScene` 本身（SDK 用户的 include 路径里不该出现
+`media/gl`），也没有「导出到纹理 / 落盘」出口 —— 那属于 §5 的产品化能力，
+当前全部不存在。
 
 ---
 
@@ -208,7 +266,7 @@ grep `scene|layer|pip` **零命中**。`GlScene` / `GlSceneEngine` / `GlLayerSou
 | 项 | 状态 | 落地 |
 |---|---|---|
 | §1 旋转（渲染侧消费 rotation） | ✅ 完成 | 第六十六轮 |
-| §2 SDK 暴露场景 API | ⬜ 待办 | — |
+| §2 SDK 暴露场景 API | ✅ 完成 | 第六十九轮 |
 | §3 滤镜 × 零拷贝（改明确拒绝） | ✅ 完成 | 第六十七轮 |
 | §4 图层属性（背景色 / crop / aspect-fit）与多转场 | ✅ 完成 | 第六十八轮 |
 
