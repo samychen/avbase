@@ -225,6 +225,24 @@ class AVBASE_MEDIA_EXPORT Pipeline {
   virtual int GetVideoStreamId() const = 0;
   virtual int GetTextStreamId() const = 0;
 
+  // Add/Remove{Video,Audio,Text}Stream describe a shape avbase does not have.
+  //
+  // They came from Chromium's MediaResource, where one resource can carry
+  // several streams of the same type and `id` selects among them. avbase's
+  // Demuxer answers `GetStream(DemuxerStreamType)` -- ONE stream per type, no
+  // index -- so there is no "second video stream" for an id to name. A second
+  // picture is a second URL, which is a second Demuxer, not a second id.
+  //
+  // Track switching went the other way: SelectXxxTrack(stream_index) above is
+  // wired and is what Player::SelectTrack() actually calls. These six were
+  // declared for it (gap 4 at the top of this file) and were never wired --
+  // grepping AddVideoStream finds the declaration, the no-op override and
+  // nothing else. So they are not "not implemented yet"; they name an axis
+  // that does not exist here, and every implementation rejects them.
+  //
+  // They stay declared because this interface is frozen (M8) and because a
+  // caller that reaches them deserves a WARNING rather than a DCHECK: the
+  // facade may call before the pipeline is ready.
   virtual void AddVideoStream(int id) = 0;
   virtual void RemoveVideoStream(int id) = 0;
   virtual void AddAudioStream(int id) = 0;

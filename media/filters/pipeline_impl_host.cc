@@ -46,33 +46,46 @@ int PipelineImpl::GetTextStreamId() const {
   return -1;
 }
 
-// Track switching needs sub-renderer re-initialisation, which is M9 work
-// (docs/08). Logging rather than silently ignoring keeps the calls visible in
-// diagnostics; the facade rejects them with kNotImplemented before reaching
-// here anyway.
+// These six reject, and the reason is NOT that they are unimplemented -- see
+// the block above AddVideoStream in media/base/pipeline.h. They name a shape
+// avbase does not have: `id` would select among several streams of one type,
+// and Demuxer::GetStream(type) returns ONE per type. A second picture is a
+// second URL (a second Demuxer, or a second Player feeding the scene's
+// mailbox), not an id.
+//
+// Two things the previous comment asserted that are not true, and which
+// mattered because they made this look like a queue:
+//   * "M9 work" -- M9 is long past; nothing was ever wired.
+//   * "the facade rejects them with kNotImplemented before reaching here" --
+//     grepping the player/ tree for any of these names finds nothing, so the
+//     facade neither rejects them nor calls them. They are simply unreachable.
+//
+// WARNING rather than DCHECK: the return type is void and the pipeline may be
+// called before it is ready, so a caller that does reach here gets a visible
+// diagnostic and no effect -- which is exactly what the interface promises.
 void PipelineImpl::AddVideoStream(int id) {
   LOG(WARNING) << "avbase.pipeline: AddVideoStream(" << id
-               << ") is not supported until M9";
+               << ") rejected: avbase has one stream per type, not an id axis";
 }
 void PipelineImpl::RemoveVideoStream(int id) {
   LOG(WARNING) << "avbase.pipeline: RemoveVideoStream(" << id
-               << ") is not supported until M9";
+               << ") rejected: avbase has one stream per type, not an id axis";
 }
 void PipelineImpl::AddAudioStream(int id) {
   LOG(WARNING) << "avbase.pipeline: AddAudioStream(" << id
-               << ") is not supported until M9";
+               << ") rejected: avbase has one stream per type, not an id axis";
 }
 void PipelineImpl::RemoveAudioStream(int id) {
   LOG(WARNING) << "avbase.pipeline: RemoveAudioStream(" << id
-               << ") is not supported until M9";
+               << ") rejected: avbase has one stream per type, not an id axis";
 }
 void PipelineImpl::AddTextStream(int id) {
   LOG(WARNING) << "avbase.pipeline: AddTextStream(" << id
-               << ") is not supported until M9";
+               << ") rejected: avbase has one stream per type, not an id axis";
 }
 void PipelineImpl::RemoveTextStream(int id) {
   LOG(WARNING) << "avbase.pipeline: RemoveTextStream(" << id
-               << ") is not supported until M9";
+               << ") rejected: avbase has one stream per type, not an id axis";
 }
 
 // ---- Demuxer::Host ----------------------------------------------------------
