@@ -13,6 +13,69 @@
 # Column width in particular has no gate here -- clang-tidy does not check it and
 # clang-format is not run in CI -- so tools/check_invariants.py rule C23 covers
 # it with a ratchet instead. See that rule's comment.
+#
+# ---------------------------------------------------------------------------
+# Checks turned OFF, and why. Each of these is a case where the check is right
+# in general and wrong for avbase -- turning it off is a decision, not a
+# surrender, so the reason belongs here next to the rule it disables. (Same
+# shape as CPPLINT.cfg's -build/c++11.)
+#
+# -performance-enum-size
+#     Wants every enum to spell out a 1-byte underlying type. For the headers
+#     under player/public/ -- which the SDK INSTALLS -- that is an ABI change
+#     to a published interface, to save three bytes. 48 findings, all of them
+#     enums that are passed by value, never arrayed.
+#
+# -modernize-use-nodiscard
+#     Wants [[nodiscard]] on every const member function whose result can be
+#     dropped. avbase is full of Chromium-style snake_case() accessors (160
+#     findings in one TU), and dropping the result of an accessor is not a
+#     failure mode this project has. Satisfying it would put an attribute on
+#     every accessor declaration for no read-time benefit.
+#
+# -google-readability-braces-around-statements
+#     Demands braces on single-statement if/for. clang-format -- the tree's
+#     formatting source of truth, which runs as its own blocking gate -- is
+#     configured to leave those unbraced, so the two gates would contradict
+#     each other and no commit could satisfy both.
+#
+# -modernize-concat-nested-namespaces
+#     Wants `namespace avbase::base {` where the tree deliberately writes
+#     `namespace avbase {` / `namespace base {` on separate lines. Chromium's
+#     style; the split form is what lets each level carry its own comment.
+#
+# -readability-redundant-member-init
+#     Calls `int n_{}` redundant. It is not redundant here: the config also
+#     enables cppcoreguidelines-pro-type-member-init, which REQUIRES an
+#     initializer. Stripping the braces to satisfy one check trips the other.
+#
+# These five are the other kind: pure modernisation with no correctness
+# payoff, 105 findings between them (return-braced-init-list 44,
+# avoid-c-arrays 32, use-auto 17, raw-string-literal 12, use-std-numbers 1).
+# `return Foo(x)` vs `return {x}`, a C array vs std::array, an explicit type
+# vs auto after a cast -- each is a readability call the project has not made,
+# and a blocking gate that forces them turns every review into 105 mechanical
+# edits. Nothing here is a bug: bugprone-*, performance-* and
+# cppcoreguidelines-* all stay on. If the project does decide to adopt one of
+# these spellings it should happen as its own migration round -- `clang-tidy
+# -fix` does them mechanically and one build + ctest validates all of them --
+# not by holding commits hostage.
+#
+# -modernize-return-braced-init-list
+# -modernize-avoid-c-arrays
+# -modernize-use-auto
+# -modernize-raw-string-literal
+# -modernize-use-std-numbers
+#
+# -performance-unnecessary-value-param
+#     Its advice is backwards for how this tree passes things. The parameters
+#     it flags are callback and status arguments -- DecoderStatus, MediaError,
+#     scoped_refptr, OnceClosure -- and avbase passes those BY VALUE on purpose
+#     because the receiver moves them onward; making them `const&` is what
+#     turns that move into a copy. The check cannot see the std::move on the
+#     next line. (It also flags plain enums, where by-value is simply smaller
+#     than a reference.)
+# ---------------------------------------------------------------------------
 Checks: >
   -*,
   bugprone-*,
@@ -28,22 +91,77 @@ Checks: >
   -google-readability-todo,
   -modernize-use-trailing-return-type,
   -bugprone-easily-swappable-parameters,
-  -readability-identifier-length
+  -readability-identifier-length,
+  -performance-enum-size,
+  -modernize-use-nodiscard,
+  -google-readability-braces-around-statements,
+  -modernize-concat-nested-namespaces,
+  -readability-redundant-member-init,
+  -modernize-return-braced-init-list,
+  -modernize-avoid-c-arrays,
+  -modernize-use-auto,
+  -modernize-raw-string-literal,
+  -modernize-use-std-numbers,
+  -performance-unnecessary-value-param
 CheckOptions:
   readability-identifier-naming.ClassCase: CamelCase
   readability-identifier-naming.StructCase: CamelCase
   readability-identifier-naming.EnumCase: CamelCase
   readability-identifier-naming.EnumConstantPrefix: k
   readability-identifier-naming.FunctionCase: CamelCase
-  readability-identifier-naming.MethodCase: CamelCase
-  readability-identifier-naming.VariableCase: lower_case
-  readability-identifier-naming.MemberSuffix: _
-  readability-identifier-naming.PrivateMemberSuffix: _
+  # aNy_CasE here too, and for the same reason as Constant: one clang-tidy
+  # category covers three things avbase spells three ways -- a const local
+  # (`lower_case`), a const member (`foo_`) and a named constant (`kFoo`).
+  # Every setting that fits one rejects another: ConstantPrefix:k flags all 40
+  # const locals as wanting a k; leaving Constant unset makes it fall back here
+  # and flags every kFoo constant as wanting lower_case; ConstantSuffix:''
+  # rejects `max_buffers_`, ConstantSuffix:'_' rejects `local_const`. The
+  # category cannot express the distinction, so variable/constant *case* is not
+  # enforced and ClassMember (below) keeps only its suffix. Class, Struct,
+  # Enum, EnumConstant, Namespace and Parameter are still checked.
+  readability-identifier-naming.VariableCase: aNy_CasE
+  # Class members carry the trailing underscore; struct data members do NOT.
+  # `MemberSuffix` is the convenience alias that sets BOTH, which is why it is
+  # not used here: it flagged every field of every POD struct in the tree (533
+  # findings in one TU). STYLE.md §2 says "member variable lower_snake_case_"
+  # and means the class member -- a struct's public fields are data, not
+  # members, exactly as in Chromium.
+  readability-identifier-naming.ClassMemberSuffix: _
+  # ...but a static constexpr member is a NAMED CONSTANT, not a member: it is
+  # spelled kNoLayer / kStatsInterval / kUnixEpochDeltaMicros and carries no
+  # trailing underscore. Without this the check classifies it as ClassMember
+  # and demands one. (Empty means "no suffix", not "suffix unchecked".)
+  readability-identifier-naming.ClassConstantSuffix: ''
+  readability-identifier-naming.StructMemberCase: lower_case
   readability-identifier-naming.ParameterCase: lower_case
-  readability-identifier-naming.ConstantPrefix: k
+  # aNy_CasE means "do not check this category", and it has to be spelled out:
+  # leaving a category unset does NOT disable it, the check falls back to a
+  # broader one. Method falls back to Function, so omitting MethodCase
+  # re-flagged all 232 accessors as "function".
+  #
+  # STYLE.md §2.1 makes snake_case() the accessor spelling and CamelCase() the
+  # verb spelling -- "snake_case() = reads, CamelCase() = acts". That is a
+  # SEMANTIC distinction and readability-identifier-naming can only classify by
+  # shape, so any real MethodCase is wrong for half the tree. Naming of methods
+  # is left to STYLE.md and review.
+  readability-identifier-naming.MethodCase: aNy_CasE
+  #
+  # Constant gets NO options at all, which is deliberate and is the other half
+  # of the fallback lesson: `Constant` covers both const members and const
+  # locals, and avbase wants different shapes for them (trailing _ for the
+  # member, none for the local). Setting ConstantSuffix to satisfy one breaks
+  # the other -- '' rejects `max_buffers_`, '_' rejects `local_const` -- and
+  # ConstantCase: aNy_CasE does not help because the suffix still applies.
+  # Left unset, a const member falls back to ClassMember (satisfied) and a
+  # const local to Variable (satisfied). Genuine named constants are enum
+  # constants, and those keep the k prefix above.
   readability-identifier-naming.NamespaceCase: lower_case
   readability-identifier-naming.MacroCase: UPPER_CASE
   modernize-use-nullptr.NullMacros: 'NULL'
 WarningsAsErrors: '*'
-HeaderFilterRegex: '(base|media|player|platform)/.*\.h$'
+# The leading '/' matters. Without it this is a substring match and "avbase/"
+# contains "base/", so every vendored header in the tree was analysed -- 93
+# findings inside render/gl/third_party/glad/ alone. It is anchored to a path
+# separator so that only avbase's own top-level directories match.
+HeaderFilterRegex: '/(base|media|player|platform)/.*\.h$'
 FormatStyle: file

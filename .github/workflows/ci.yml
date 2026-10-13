@@ -456,32 +456,108 @@ jobs:
           echo "checking ${#FILES[@]} files"
           clang-format --dry-run --Werror --style=file "${FILES[@]}"
 
-  # clang-tidy over the project config (.clang-tidy). The tree-fixing round
-  # measured ZERO findings across 15 representative files on every layer, so
-  # this job goes straight in as blocking (R12: a gate must arrive green to
-  # be believed). Scoped to non-test, non-legacy sources: tests carry
-  # gtest idioms the config was not tuned for, and media/filters/legacy/ is
-  # the LGPL quarantine where formatting/provenance rules deliberately
-  # differ. When a second gate shares this scope it says so here: the
-  # check-cpplint job below mirrors this file list exactly.
+  # clang-tidy over the project config (.clang-tidy). Scoped to non-test,
+  # non-legacy sources: tests carry gtest idioms the config was not tuned for,
+  # and media/filters/legacy/ is the LGPL quarantine where formatting/provenance
+  # rules deliberately differ. The check-cpplint job below mirrors this file
+  # list exactly.
+  #
+  # Two things this job used to get wrong, both of which made it green by
+  # checking less than it claimed (R12: a gate must arrive green to be believed,
+  # and a gate that is green because it did not run is worse than no gate):
+  #
+  #   1. -header-filter was '^((?!third_party|legacy|/tests/).)*$'. clang-tidy's
+  #      Regex is POSIX ERE, which has no negative lookahead, so that pattern
+  #      never matched a header and NO header was ever checked -- one TU gave 17
+  #      findings with it and 1095 without. There is no --exclude-header-filter
+  #      in clang-tidy 18, so the header scope now comes from .clang-tidy's
+  #      HeaderFilterRegex (one source of truth) and no -header-filter is passed.
+  #      media/filters/legacy/ headers are inside that regex; they produce
+  #      nothing, and if they ever do this job says so.
+  #
+  #   2. The file list came from git ls-files but clang-tidy can only analyse a
+  #      file the compilation database knows about, and every backend under
+  #      platform/ is behind an option that `ffmpeg` does not set. run-clang-tidy
+  #      SKIPS such files silently, so platform/sdl2, platform/glfw and
+  #      platform/egl were never looked at. The configure step now turns every
+  #      optional backend on, and the step below fails if the database does not
+  #      cover the scope -- so scope and coverage cannot drift apart quietly.
   check-clang-tidy:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install toolchain, FFmpeg and clang-tidy
+      - name: Install toolchain, FFmpeg, clang-tidy and the optional backends
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build python3 pkg-config clang \
             clang-tidy libavformat-dev libavcodec-dev libavutil-dev \
-            libswscale-dev libswresample-dev
-      - run: cmake --preset ffmpeg
+            libswscale-dev libswresample-dev \
+            libsdl2-dev libglfw3-dev libegl1-mesa-dev
+      - name: Configure with every optional backend enabled
+        run: |
+          cmake --preset ffmpeg -DAVBASE_ENABLE_SDL2=ON \
+            -DAVBASE_ENABLE_GLFW=ON -DAVBASE_ENABLE_EGL=ON
+      # Every optional backend is an `if(<pkg>_FOUND)` gate, not a hard error:
+      # a missing dev package drops a whole directory from the build and the
+      # configure step still succeeds. The coverage check below would then
+      # report the symptom -- "this file is not in the compilation database"
+      # -- without naming the cause. Building the three targets explicitly
+      # converts it into "no rule to make target 'avbase_platform_egl'", which
+      # says which package did not install.
+      - name: The optional backend targets must exist
+        run: |
+          cmake --build --preset ffmpeg --target avbase_platform_sdl2 \
+            avbase_platform_glfw avbase_platform_egl
       - run: cmake --build --preset ffmpeg
+      - name: The compilation database must cover the whole scope
+        run: |
+          git ls-files 'base/*.cc' 'media/*.cc' 'player/*.cc' \
+                       'platform/*.cc' 'tools/*.cc' \
+            | grep -v 'legacy/' > /tmp/tidy-scope.txt
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          db = json.load(open("build/ffmpeg/compile_commands.json"))
+          known = set()
+          for entry in db:
+              path = entry["file"]
+              if not os.path.isabs(path):
+                  path = os.path.join(entry.get("directory", ""), path)
+              known.add(os.path.normpath(os.path.abspath(path)))
+
+          # Files this platform genuinely cannot compile. Say why: a scope that
+          # shrinks without anyone noticing is how this job checked nothing.
+          exempt = {
+              "platform/hwimport/cgl_iosurface_importer.cc":
+                  "Apple-only (CGL/IOSurface); guarded by if(APPLE) in "
+                  "platform/CMakeLists.txt, so no Linux database has it.",
+          }
+
+          missing = []
+          for rel in open("/tmp/tidy-scope.txt").read().split():
+              missing_rel = rel
+              if missing_rel in exempt:
+                  continue
+              if os.path.normpath(os.path.abspath(rel)) not in known:
+                  missing.append(missing_rel)
+
+          print(f"scope={len(open('/tmp/tidy-scope.txt').read().split())} "
+                f"database={len(known)} missing={len(missing)}")
+          for path in missing:
+              print(f"  not in compilation database: {path}")
+          if missing:
+              sys.exit("scope is not covered; these files would be skipped "
+                       "silently -- enable their backend or exempt them here "
+                       "with a reason")
+          PY
       - name: clang-tidy over non-test sources
         run: |
           files=$(git ls-files 'base/*.cc' 'media/*.cc' 'player/*.cc' \
                          'platform/*.cc' 'tools/*.cc' | grep -v 'legacy/' )
-          /usr/lib/llvm-18/bin/run-clang-tidy -p build/ffmpeg -quiet -j4 \
-            -header-filter '^((?!third_party|legacy|/tests/).)*$' $files
+          /usr/lib/llvm-18/bin/run-clang-tidy -p build/ffmpeg -quiet -j4 $files
 
   # cpplint over the project config (CPPLINT.cfg). Its fix-the-tree round
   # brought the non-test, non-legacy tree to zero findings, which is what let
