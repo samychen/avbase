@@ -149,8 +149,7 @@ void PlayerImpl::CompleteAccurateSeek(bool reached) {
   // to kAccurateSeekCompleted is exactly what will keep showing.
   AccurateSeekCompletedPayload accurate;
   accurate.position = GetMediaTime();
-  event_hub_.Post(EventType::kAccurateSeekCompleted, std::move(accurate),
-                  GetMediaTime());
+  event_hub_.Post(EventType::kAccurateSeekCompleted, accurate, GetMediaTime());
   SeekCompletedPayload payload;
   payload.request_id = id;
   payload.requested = target;

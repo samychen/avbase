@@ -54,7 +54,7 @@ TEST(ThreadTest, SetsTheOsThreadName) {
   std::string observed;
   ASSERT_TRUE(
       thread.task_runner()->PostTask(FROM_HERE, BindOnce([&observed, &done]() {
-                                       observed = PlatformThread::GetName();
+                                       observed = platform_thread::GetName();
                                        done.Signal();
                                      })));
   ASSERT_TRUE(done.TimedWait(Seconds(5)));
@@ -71,7 +71,7 @@ TEST(ThreadTest, LongNameIsTruncatedNotRejected) {
   std::string observed;
   ASSERT_TRUE(
       thread.task_runner()->PostTask(FROM_HERE, BindOnce([&observed, &done]() {
-                                       observed = PlatformThread::GetName();
+                                       observed = platform_thread::GetName();
                                        done.Signal();
                                      })));
   ASSERT_TRUE(done.TimedWait(Seconds(5)));

@@ -50,6 +50,11 @@ class AVBASE_PLAYER_EXPORT EventHub {
   void RemoveObserver(int id);
 
   // Assigns the monotonic sequence number and enqueues for dispatch.
+  //
+  // |payload| is by value and callers deliberately do NOT std::move into it:
+  // every alternative in EventPayload is trivially copyable, so a move is a
+  // copy and `std::move(payload)` is noise that reads like an optimisation
+  // (performance-move-const-arg flags it for exactly that reason).
   void Post(EventType type, EventPayload payload, base::TimeDelta media_time);
   // Runs |closure| on the event sequence -- the sink for callbacks the
   // facade promised to deliver there (Player::SeekTo's SeekCB).

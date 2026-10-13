@@ -59,6 +59,8 @@ Status ErrState(std::string_view api, PlayerState state) {
 
 }  // namespace
 
+// const& on purpose: by-value would copy |config| for a move nothing needs.
+// NOLINTNEXTLINE
 PlayerImpl::PlayerImpl(const PlayerConfig& config, std::unique_ptr<Deps> deps)
     : config_(config),
       deps_(deps ? std::move(deps)
@@ -86,12 +88,12 @@ PlayerImpl::PlayerImpl(const PlayerConfig& config, std::unique_ptr<Deps> deps)
       deps_->video_decoder_factories.insert(
           deps_->video_decoder_factories.end(), hw.begin(), hw.end());
     }
-    deps_->video_decoder_factories.push_back(
+    deps_->video_decoder_factories.emplace_back(
         base::MakeRefCounted<media::FFmpegVideoDecoderFactory>(
             video_thread_.task_runner()));
   }
   if (deps_->audio_decoder_factories.empty()) {
-    deps_->audio_decoder_factories.push_back(
+    deps_->audio_decoder_factories.emplace_back(
         base::MakeRefCounted<media::FFmpegAudioDecoderFactory>(
             audio_thread_.task_runner()));
   }
@@ -230,8 +232,8 @@ Status PlayerImpl::PrepareAsync() {
   // decorator is what turns it into a fresh connection. rtmp/rtsp/srt stay
   // on the protocol layer (streaming semantics the bridge does not model).
   if (source.kind == media::DataSourceDescriptor::Kind::kUri &&
-      (source.uri.rfind("http://", 0) == 0 ||
-       source.uri.rfind("https://", 0) == 0) &&
+      (source.uri.starts_with("http://") ||
+       source.uri.starts_with("https://")) &&
       config_.net.reconnect) {
     auto url_source =
         base::MakeRefCounted<media::ffmpeg::UrlDataSource>(source.uri);
@@ -310,7 +312,8 @@ Status PlayerImpl::PrepareAsync() {
 }
 
 Status PlayerImpl::PrepareSync(base::TimeDelta timeout) {
-  const Status prepare = PrepareAsync();
+  // Not const -- `return prepare;` should move, and a const local copies.
+  Status prepare = PrepareAsync();
   if (!prepare) {
     return prepare;
   }

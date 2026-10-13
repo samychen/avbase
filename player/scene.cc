@@ -152,11 +152,10 @@ bool SceneLayer::Upload(const media::VideoFrame& frame) {
 
 Scene::Scene() = default;
 
-Scene::~Scene() {
-  // Every engine unbinds itself before it dies, so there is nothing here to
-  // release -- which is the point of the teardown callback. What would be a
-  // leak of the pointer is instead a fact nobody has to remember.
-}
+// Every engine unbinds itself before it dies, so the defaulted destructor has
+// nothing to release -- which is the point of the teardown callback. What
+// would be a leak of the pointer is instead a fact nobody has to remember.
+Scene::~Scene() = default;
 
 std::shared_ptr<SceneSource> Scene::AddSource(std::string name, int z) {
   // Not make_shared: that would need the constructor to be public, and the
@@ -325,7 +324,10 @@ void Scene::RunHook(Scene* self, media::GlPresenter& presenter,
                     const base::scoped_refptr<media::VideoFrame>& frame,
                     media::PresentTiming* timing) {
   SceneUpdateCallback hook;
-  std::array<float, 4> background;
+  // Braced: the array is assigned under the lock below, but an uninitialised
+  // float[4] read between here and there is a real (if unlikely) path --
+  // cppcoreguidelines-pro-type-member-init is right about this one.
+  std::array<float, 4> background{};
   bool background_set = false;
   {
     base::AutoLock scoped(self->lock_);

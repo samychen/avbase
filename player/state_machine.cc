@@ -32,9 +32,9 @@ bool PlayerStateMachine::CanTransitionTo(PlayerState to) const {
   case PlayerState::kStarted:
     return to == PlayerState::kPaused || to == PlayerState::kCompleted ||
            to == PlayerState::kStopping || to == PlayerState::kError;
+  // kPaused and kCompleted have identical outgoing edges; falling through
+  // states that once, rather than repeating the expression twice.
   case PlayerState::kPaused:
-    return to == PlayerState::kStarted || to == PlayerState::kStopping ||
-           to == PlayerState::kError;
   case PlayerState::kCompleted:
     return to == PlayerState::kStarted || to == PlayerState::kStopping ||
            to == PlayerState::kError;
@@ -44,10 +44,10 @@ bool PlayerStateMachine::CanTransitionTo(PlayerState to) const {
     return to == PlayerState::kIdle;
   case PlayerState::kError:
     return to == PlayerState::kStopped;
+  // kBuffering is a projection of buffering events, not a state this machine
+  // drives (kept in the enum for the frozen event surface); kEnd is the enum
+  // sentinel. Neither has an outgoing edge.
   case PlayerState::kBuffering:
-    // kBuffering is a projection of buffering events, not a state this
-    // machine drives; kept in the enum for the frozen event surface.
-    return false;
   case PlayerState::kEnd:
     return false;
   }

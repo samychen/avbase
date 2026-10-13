@@ -76,8 +76,7 @@ Status PlayerImpl::SelectTrack(media::DemuxerStreamType type,
         payload.type = type;
         payload.old_index = old_index;
         payload.new_index = new_index;
-        hub->Post(EventType::kTrackChanged, std::move(payload),
-                  media::kNoTimestamp);
+        hub->Post(EventType::kTrackChanged, payload, media::kNoTimestamp);
       },
       &event_hub_, type, old_index, stream_index);
   if (!pipeline) {

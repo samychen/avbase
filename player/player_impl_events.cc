@@ -196,15 +196,14 @@ void PlayerImpl::OnBufferingStateChange(media::BufferingState state,
     BufferedUpdatePayload payload;
     payload.cached_time = GetBufferedTime();
     payload.high_water_mark_time = waited_for;
-    event_hub_.Post(EventType::kBufferingEnded, std::move(payload),
-                    GetMediaTime());
+    event_hub_.Post(EventType::kBufferingEnded, payload, GetMediaTime());
   }
 }
 
 void PlayerImpl::OnWaiting(media::WaitingReason reason) {
   WaitingPayload payload;
   payload.reason = static_cast<WaitingPayload::Reason>(reason);
-  event_hub_.Post(EventType::kWaiting, std::move(payload), GetMediaTime());
+  event_hub_.Post(EventType::kWaiting, payload, GetMediaTime());
 }
 
 void PlayerImpl::OnStatisticsUpdate(const media::PipelineStatistics& stats) {
@@ -236,12 +235,11 @@ void PlayerImpl::OnStatisticsUpdate(const media::PipelineStatistics& stats) {
     BufferingProgressPayload payload;
     payload.buffered_ahead = buffered;
     payload.percent = buffer_controller_.progress_percent(buffered);
-    event_hub_.Post(EventType::kBufferingProgress, std::move(payload),
-                    GetMediaTime());
+    event_hub_.Post(EventType::kBufferingProgress, payload, GetMediaTime());
   }
   StatsPayload payload;
   payload.stats = GetPlaybackStats();
-  event_hub_.Post(EventType::kStats, std::move(payload), GetMediaTime());
+  event_hub_.Post(EventType::kStats, payload, GetMediaTime());
 }
 
 void PlayerImpl::OnVideoConfigChange(const media::VideoDecoderConfig& config) {
@@ -253,8 +251,7 @@ void PlayerImpl::OnVideoConfigChange(const media::VideoDecoderConfig& config) {
   VideoSizeChangedPayload payload;
   payload.coded_size = config.coded_size;
   payload.natural_size = config.natural_size;
-  event_hub_.Post(EventType::kVideoSizeChanged, std::move(payload),
-                  GetMediaTime());
+  event_hub_.Post(EventType::kVideoSizeChanged, payload, GetMediaTime());
 }
 
 // ---- Queries ----------------------------------------------------------------

@@ -117,7 +117,7 @@ void EventHub::PostStateChanged(PlayerState from, PlayerState to,
   StateChangedPayload payload;
   payload.from = from;
   payload.to = to;
-  Post(EventType::kStateChanged, std::move(payload), media_time);
+  Post(EventType::kStateChanged, payload, media_time);
 }
 
 void EventHub::PostError(MediaError error, base::TimeDelta media_time) {

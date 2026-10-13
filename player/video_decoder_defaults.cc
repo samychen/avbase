@@ -28,7 +28,7 @@ DefaultHardwareVideoDecoderFactories(
   // spec compiles on any given host platform.
 #if AVBASE_ENABLE_VIDEOTOOLBOX
   using media::ffmpeg::FFmpegHwVideoDecoderFactory;
-  out.push_back(base::MakeRefCounted<FFmpegHwVideoDecoderFactory>(
+  out.emplace_back(base::MakeRefCounted<FFmpegHwVideoDecoderFactory>(
       platform::hwaccel::VideotoolboxHwSpec(), video_runner, allowed_codecs));
 #endif
 #if AVBASE_ENABLE_VAAPI

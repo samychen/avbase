@@ -51,7 +51,7 @@ enum class LinuxVideoBackend { kAuto = 0, kSdl2, kGl };
 enum class HdrToneMapping { kNone = 0, kSimple, kAuto };
 
 struct AVBASE_PLAYER_EXPORT DemuxConfig {
-  int64_t probe_size{5 * 1024 * 1024};                 // "probesize"
+  int64_t probe_size{5LL * 1024 * 1024};               // "probesize"
   base::TimeDelta analyze_duration{base::Seconds(5)};  // "analyzeduration"
   bool find_stream_info{true};                         // "find_stream_info"
   std::string forced_format;                           // "iformat"
@@ -62,10 +62,10 @@ struct AVBASE_PLAYER_EXPORT DemuxConfig {
 };
 
 struct AVBASE_PLAYER_EXPORT BufferConfig {
-  bool enabled{true};                  // "packet-buffering"
-  size_t max_bytes{15 * 1024 * 1024};  // "max-buffer-size"
-  size_t min_frames{5};                // "min-frames"
-  bool unlimited{false};               // "infbuf"
+  bool enabled{true};                     // "packet-buffering"
+  size_t max_bytes{15ULL * 1024 * 1024};  // "max-buffer-size"
+  size_t min_frames{5};                   // "min-frames"
+  bool unlimited{false};                  // "infbuf"
   base::TimeDelta max_cached_duration{base::Seconds(3)};
   // Three-tier high water mark: each stall->recovery cycle steps to the next,
   // and a seek resets to the first. Ported unchanged from ijkplayer.
@@ -179,7 +179,7 @@ struct AVBASE_PLAYER_EXPORT NetConfig {
 struct AVBASE_PLAYER_EXPORT DataSourceConfig {
   bool enable_cache{false};  // ijkio master switch (M18)
   std::string cache_dir;
-  size_t cache_max_bytes{512 * 1024 * 1024};
+  size_t cache_max_bytes{512ULL * 1024 * 1024};
 
   friend bool operator==(const DataSourceConfig&,
                          const DataSourceConfig&) = default;

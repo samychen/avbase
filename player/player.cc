@@ -117,7 +117,7 @@ void Player::SetVideoSurface(base::scoped_refptr<NativeDisplay> display) {
   impl_->core.SetVideoSurface(std::move(display));
 }
 Status Player::TakeSnapshot(base::TimeDelta at, std::string file_path) {
-  return impl_->core.TakeSnapshot(at, std::move(file_path));
+  return impl_->core.TakeSnapshot(at, file_path);
 }
 void Player::ReconnectNow() {
   // Since the UrlDataSource wiring, failed network reads are re-attempted
