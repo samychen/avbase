@@ -3,10 +3,16 @@
 ## 门禁命令
 ```sh
 python3 tools/check_invariants.py --root .     # C1/C4/C5/C16/C22-C28
-/usr/local/opt/llvm/bin/clang-format --dry-run --Werror --style=file
+# 三个静态工具都只在 venv 里，都不在 PATH（裸调 exit=127 → 门禁看起来绿）
+CF=~/.workbuddy/binaries/python/envs/default/bin/clang-format   # 18.1.3
+CT=~/.workbuddy/binaries/python/envs/tidy18/bin/clang-tidy      # 18.1.8，对齐 CI
+CP=~/.workbuddy/binaries/python/envs/cpplint/bin/cpplint        # 1.6.1，对齐 CI
 cmake --preset macos-sdl2 -DAVBASE_WERROR=ON -B <dir> && cmake --build <dir> && ctest
 tools/bench_render.sh
 ```
+- **clang-tidy 必须用 18**：本机 20.1.7 的 check 集合与 CI 的 llvm-18 不同，用它
+  判断「CI 会不会报」会错（第七十轮就据此误判过 `modernize-use-nodiscard` 是
+  19/20 新增）。brew 的 llvm 装不上（沙箱 TLS）→ 用 PyPI `clang-tidy==18.1.8`。
 - **文件数一直在变，别记死数字**（曾把不变量的 425 套到 format 上）。看 exit code 与行数。
 - **C28：`render/` 不得 include `media`/`platform`/`base`/`player/`。**
 - `avbase` 是 INTERFACE 库，ninja 不能 `--target avbase`。
@@ -24,14 +30,26 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
 **接口扩展必须和它的全部实现者一起，或放到最后**（只加数据字段的可单独成片）。
 每片提交后跑 check_invariants（几秒）；**完整构建只在最后跑一次**。
 
-## CI 两股风格门禁在 main 上是红的（存量）
-别信「门禁通过」；「15 个代表性文件零发现」是**抽样**不是跑 job 清单。
-- clang-tidy：`player/player_impl.cc` 20+、`platform/sdl2/sdl2_audio_sink.cc` 13、
-  `base/logging.h` 上百（`enum LogSeverity { LOG_VERBOSE }` 与 `EnumConstantPrefix: k` 冲突）。
-- cpplint：4 条 error（3 条缺 `<utility>`，1 条 `unsigned long long`）。
-- `.clang-tidy` 坑：`ConstantPrefix: k` 要求**所有** const 局部量（含 `const auto`）；
-  `HeaderFilterRegex` 子串匹配 `avbase/` → 所有头文件命中；抑制 = 上一行散文注释 +
-  裸 `// NOLINTNEXTLINE`。本机 clang-tidy 20.1.7 复现不了 CI 的 18。
+## CI 风格门禁 —— 第七十轮已闭合（不再是存量红灯）
+别信「门禁通过」；「15 个代表性文件零发现」是**抽样**不是跑 job 清单。这一节的
+存量红灯已在第七十轮清零，留下的是**它当时为什么是绿的**：
+
+- `-header-filter` 的 Regex 是 **POSIX ERE，没有负向前瞻** → CI 原来写的
+  `^((?!third_party|legacy|/tests/).)*$` 匹配不到任何头，**头文件从未被检查**
+  （同一 TU：带它 17 条、不带 1095 条）。18 也**没有** `--exclude-header-filter`
+  （19+ 才有），所以头 scope 只能来自 `.clang-tidy` 的 `HeaderFilterRegex`。
+- clang-tidy **静默跳过**不在 `compile_commands.json` 里的文件 → scope 142 个里
+  27 个（`platform/sdl2|glfw|egl`）从未被分析。**scope 与数据库必须校验一致**。
+- `HeaderFilterRegex` 必须**锚定**成 `/(base|media|...)/`：不锚定时是子串匹配，
+  `avbase/` 里含 `base/` → vendored 的 glad 全中（93 条）。
+- 命名选项：`MemberSuffix` 是**同时设 ClassMember 与 StructMember 的别名**，是
+  533 条 POD struct 字段误报的根源 → 拆成 `ClassMemberSuffix: _` +
+  `StructMemberCase: lower_case`；命名常量用 `ClassConstantSuffix: ''`（空串 =
+  「无后缀」，不是「不检查」）。**某一分类不设选项 ≠ 不检查**，它会 fallback 到
+  更通用分类（Method→Function、Constant→Variable）；要「不检查」写 `aNy_CasE`，
+  但它**只豁免 Case，不豁免 suffix/prefix**。
+- **抑制只能裸写**：cpplint 不认识 clang-tidy 的 check 名，带名字的 NOLINT 会被
+  报 `Unknown NOLINT error category`。
 
 ## 操作教训（都真踩过）
 - **声称「全树通过」前必须真扫全树。** 门禁的「绿」常常是「没跑」；2 秒跑完的「全树格式
@@ -96,6 +114,17 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
   变量从未被赋值（`-Werror=uninitialized`）或参数不再被使用（`-Wextra` 的
   `-Wunused-parameter`）；加 `(void)x;` 可以压掉后一类。第六十九轮 P3/P7 都是这么
   从 BUILD-FAIL 救回来的。
+- **抑制会静默失效，且比不写更危险**（读起来像处理过了）。第七十轮两种：
+  ① **差一行**——`NOLINTNEXTLINE` 放在 `template <typename T>` 之上只压住模板头，
+  而诊断报在**下一行**的类名上；宏定义的诊断报在**反斜杠续行的最后一行**。
+  改**行尾** `// NOLINT`（不怕上面插入行）或块抑制（覆盖整个宏）。
+  ② **散文注释里出现 NOLINT 这个词会被当成真指令**（写「不是 NOLINTNEXTLINE
+  形式」→ 报 `unmatched 'NOLINTBEGIN' comment`）。**注释里不要写 NOLINT。**
+- **别急着把红归因给「负载/flaky」，先探针。** 第七十轮全量 ctest 在并发构建下
+  红了一条断言样本数的用例，而本轮恰好改了同一函数的取整方式。在
+  `UpdateOutputTime` 里插临时探针统计「两种取整会分歧的区间（负数）是否出现」→
+  从未出现 → 才敢说是 flaky。**改动与红的那条若有任何语义重叠，就必须测。**
+  并且：不要为了消掉 flaky 去放宽容差（那正是 R12 反对的换绿方式）。
 - **先问「这个性质单线程能观测到吗」再写探针。** 第六十九轮有一条探针要钉
   「跑的是快照而不是实时成员」，但它唯一的观测手段是单线程测试 —— 两条代码路径
   逐像素输出相同。换成同一处代码**可观测**的那一半（清掉 hook 后场景必须还在）。

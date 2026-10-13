@@ -3769,3 +3769,132 @@ C1 拆分之后（见下）又重跑一遍确认仍是 8/8 —— P2/P5 的代�
   真正消除要动管线本身。
 - **SDL2 示例没有 glfw 那两条 `scene:` 诊断打印。** `play_sdl2.cc` 现在是
   498 行、C1 上限 500，加进去得先腾地方。不是缺口，是没做。
+
+---
+
+## 第七十轮 —— 门禁：把「绿」从「没跑」改成「真跑了」
+
+本轮不是做新能力，是修上一轮盘点出的第一项：**让「门禁绿」重新是一个有意义
+的信号**。起点是三个风格/静态门禁中的 `check-clang-tidy` —— 它绿着，但它检查
+的东西和它声称的不是一个量级。
+
+### 起点：这个 job 有三处失效，每一处都让它少查东西
+
+| # | 失效 | 实测证据 |
+| --- | --- | --- |
+| 1 | `-header-filter '^((?!third_party\|legacy\|/tests/).)*$'` | clang-tidy 的 Regex 是 **POSIX ERE，没有负向前瞻**，这个模式匹配不到任何头。同一 TU：带它 **17** 条，不带 **1095** 条 —— **头文件从未被检查过** |
+| 2 | 文件列表来自 `git ls-files`，编译数据库来自 `ffmpeg` preset | `platform/` 每个后端都在 `AVBASE_ENABLE_*` 选项后面，`ffmpeg` 不开。clang-tidy **静默跳过**不在数据库里的文件：scope 142 个里 **27 个从未被分析** |
+| 3 | `.clang-tidy` 的 `HeaderFilterRegex` 未锚定 | `(base\|media\|player\|platform)/.*\.h$` 是子串匹配，而路径里有 `avbase/`，「avbase/」含「base/」→ vendored 的 glad 全被检查，**93 条** |
+
+三处的共同点是同一个失败模式：**门禁的绿不是通过，是缺席**（operations.md 里
+那条「门禁的『绿』常常是『没跑』」）。而 R12 说的是它的代价：一个第一天就红的
+门禁会教会所有人忽略门禁 —— 同样，一个因为没跑而绿的门禁会让「绿」这个信号
+本身失去意义。
+
+修法是把三处都改成**能被反驳的**：
+
+- 不再传 `-header-filter`。头文件的 scope 只来自 `.clang-tidy` 的
+  `HeaderFilterRegex`（单一真相源），并加前导 `/` 锚定到路径分隔符。
+- configure 打开 `AVBASE_ENABLE_SDL2/GLFW/EGL`，并新增一步用 Python 校验
+  **每个 scope 文件都在 `compile_commands.json` 里**，缺了就 `sys.exit`。
+- 可选后端是 `if(<pkg>_FOUND)` 而**不是**硬错误，所以再补一步显式构建
+  `avbase_platform_sdl2/glfw/egl` 三个 target：缺包时报错是
+  `no rule to make target ...`，直接点名哪个包装漏了，而不是让覆盖率校验
+  报一个「文件不在数据库里」的症状。
+
+### 存量红灯：从 800 条降到 0
+
+配置改对之后，剩下的存量发现是 **800 条**。处理方式不是压下去，是分三类：
+
+**A. 关掉 check（写在 `.clang-tidy` 里，逐条给理由）。**
+
+| check | 条数 | 为什么关 |
+| --- | --- | --- |
+| `modernize-use-nodiscard` | 160 | Chromium 风格 accessor 全要加属性；无读时收益 |
+| `performance-enum-size` | 48 | `player/public/` 是**安装的 SDK 头**，改底层类型是 ABI 变化，为省 3 字节 |
+| `modernize-*` 纯现代化五项 | 105 | `use-auto` / `raw-string-literal` / `avoid-c-arrays` / `use-std-numbers` / `return-braced-init-list`：无正确性收益 |
+| `performance-unnecessary-value-param` | 25 | 在本树**建议是反向的**：被报的是回调/状态参数（`DecoderStatus` 含 `std::string`、`MediaError`、`scoped_refptr`、`OnceClosure`），故意按值传以便接收方 `std::move`；改 `const&` 会把移动变拷贝 |
+| `google-readability-braces-around-statements` | — | 与 clang-format **相互矛盾**，两个门禁打架 |
+| `readability-redundant-member-init` | — | 与同时开启的 `cppcoreguidelines-pro-type-member-init` 矛盾 |
+
+`readability-identifier-naming` 的 533 条 struct 字段误报是**一个选项**造成的：
+`MemberSuffix` 是同时设 `ClassMember` 与 `StructMember` 的便利别名，而树里的
+POD struct 字段不该有 `_`。拆成 `ClassMemberSuffix: _` + `StructMemberCase:
+lower_case` 就没了。命名常量（`kNoLayer` 那类）用 `ClassConstantSuffix: ''`
+分开 —— 空串是「无后缀」，不是「不检查后缀」。
+
+**B. 真缺陷（改代码）。** 其中两条值得点名：
+
+- `media/filters/audio_renderer_algorithm.cc:537`：`(int)(x + 0.5)` →
+  `std::lround(x)`。**真 rounding 缺陷**：`output_time_` 累积的是有符号时间
+  变化，负数时两者不同（-0.6 → 0 vs -1）。
+- `media/gl/gl_video_layer.cc:388`：`(float)(width_ / 2)` →
+  `(float)width_ / 2.0f`。奇数宽会先整除截断。
+
+其余是现代化替换（`alignof` / `starts_with` / `emplace_back`）、显式化
+（int→float 收窄、`5 * 1024 * 1024` 加 `LL`）、以及一处真未初始化
+（`player/scene.cc` 的 `std::array<float,4> background`）。
+
+**C. 刻意违反（加 NOLINT + 散文理由）。** 18 处刻意隐式构造（`scoped_refptr`
+从 `T*` 转换就是它的接口）、`raw_ptr`/`raw_ref`/`expected`/`unexpected`
+保留 STL 拼写、三个 LOG 宏**故意不加括号**。
+
+### 两个「抑制写了但没生效」，都是同一类错误
+
+抑制失效比不写更危险，因为它读起来像是处理过了。
+
+1. **行号漂移。** `NOLINTNEXTLINE` 放在 `template <typename T>` 之上，只压住
+   模板头，而诊断报在**下一行**的类名上 —— 差一行，静默失效。改用在 class 行
+   的行尾 `// NOLINT`：它不会因为上面插入一行而错位。宏定义的诊断报在**最后一
+   行**（反斜杠续行内），所以改用块抑制。
+2. **散文注释里的 NOLINT 字面量会被当成真指令。** 注释里写「不是
+   `NOLINTNEXTLINE` 形式」→ clang-tidy 当成指令，报
+   `unmatched 'NOLINTBEGIN' comment`。**注释里不能出现 NOLINT 这个词。**
+
+另外：抑制要写**裸** `NOLINT`，不能带 check 名 —— cpplint 不认识 clang-tidy 的
+check 名，会把每一条报成 `Unknown NOLINT error category`。
+
+### 一个 flaky，查证过才放下
+
+全量 ctest 在**同时跑另一个构建**时出现 1 红：
+`PipelineCountsTest.DoubleSpeedPresentsTheSameFramesInHalfTheTime`。单独重跑
+通过、无负载全量 715/715 通过。
+
+不能凭「看起来像负载」就放过 —— 本轮改了 `audio_renderer_algorithm.cc` 的取整，
+而这个用例断言的正是样本数。于是在 `UpdateOutputTime` 里插**临时探针**，统计
+`output_time_ * playback_rate` 是否曾为负（负数正是两种取整会分歧的唯一区间）：
+跑完 15 条相关用例，**探针文件从未产生** → 两写法在这些路径上完全等价 → 这条
+红与改动无关。探针已删除（`git diff` 核对过）。
+
+测试本身注释里已经写了这个性质：音频时钟是**外推**的，5% 容差就是为了吸收它，
+「ASan 下并行曾差 1184 帧（1%）」。所以没有动容差 —— 放宽容差会削弱断言，
+而削弱断言来换绿正是 R12 反对的事。这条留作**已知脆弱点**登记：CI 的
+`ctest` 是串行的，负载低，但若哪天在 CI 上红了，先按 flaky 查，不要当成回归。
+
+### 门禁（全部当场跑出）
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（456 文件） |
+| `clang-format`（改动文件） | 0 偏离 |
+| `cpplint`（142 文件，与 CI 同版 1.6.1） | **0 error** |
+| clang-tidy（clang-tidy **18.1.8**，与 CI 的 llvm-18 同版） | scope 内 **0 条**（本机无 EGL 头，`platform/egl/` 那条是环境噪声，CI 装了 `libegl1-mesa-dev`） |
+| no-ffmpeg + `-Werror` | ctest **521/521** |
+| macos-sdl2 + `-Werror`（含 GLFW） | ctest **715/715** |
+| `glfw-check`（GLFW=ON, FFMPEG=OFF, TESTS=OFF） | 构建通过 |
+
+clang-tidy 版本是特意对齐的：本机 20.1.7 与 CI 的 18 的 check 集合不一样，
+先前判断「`modernize-use-nodiscard` 是 19/20 新增」是**错的**（用
+`--list-checks` + `comm` 对比修正）。brew/llvm 装不上（沙箱 SSL），改用 PyPI
+的 `clang-tidy==18.1.8`，与 CI 同版。
+
+### 留下的问题
+
+- **cpplint 的阳性对照只做过一次。** 造过一个含 `long x` 的探针文件确认它真的
+  会报错（2 条 error 后删除）。这类「绿是因为没跑」的验证应该定期重做，尤其
+  在改了 scope 之后。
+- **`check-clang-tidy` 依赖 ubuntu-24.04 装上 EGL/GLFW dev 包。** 若哪天
+  `find_package(EGL)` 失败，新增的两步会把原因点名，但仍然会红 —— 这是有意的：
+  宁可红得指名道姓，也不要静默少查 27 个文件。
+- **`media/filters/` 单源限制未动**（TODO §0 表里仍是 🔶）。本轮是门禁，不是
+  管线。
