@@ -8,6 +8,8 @@
 #include <cmath>
 #include <utility>
 
+#include "media/gl/gl_layer_geometry.h"
+
 namespace avbase::media {
 
 GlScene::GlScene(const gl::GlApi& gl, std::shared_ptr<gl::GlProgram> program,

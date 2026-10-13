@@ -23,6 +23,7 @@
 #include "gl_test_frames.h"
 #include "gtest/gtest.h"
 #include "media/base/video_frame.h"
+#include "media/gl/gl_layer_geometry.h"
 #include "media/gl/gl_present.h"
 #include "media/gl/gl_scene.h"
 

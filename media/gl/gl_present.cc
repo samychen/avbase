@@ -9,6 +9,7 @@
 
 #include "base/logging.h"
 #include "base/time/time.h"
+#include "media/gl/gl_layer_geometry.h"
 #include "render/gl/gl_shaders.h"
 
 // The video-domain half of the GL path. Entry-point loading, shader
@@ -93,7 +94,8 @@ bool GlPresenter::Init() {
   transition_from_ = gl::GlFramebuffer::Create(*api_);
   transition_to_ = gl::GlFramebuffer::Create(*api_);
   std::string transition_error;
-  transition_ = gl::GlTransition::Create(*api_, &transition_error);
+  transition_ = gl::GlTransition::Create(
+      *api_, gl::TransitionKind::kCrossFade, &transition_error);
   if (!transition_from_ || !transition_to_ || !transition_) {
     LOG(ERROR) << "gl present: " << transition_error;
     return false;

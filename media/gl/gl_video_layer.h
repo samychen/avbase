@@ -78,36 +78,6 @@ CreateVideoLayerRectProgram(const gl::GlApi& gl, std::string* error);
 // another where the upload happens.
 AVBASE_MEDIA_EXPORT bool IsPlanarYuv(VideoFormat format);
 
-// Turns a rect in NORMALISED target coordinates -- (0,0) top-left, (1,1)
-// bottom-right, |w|/|h| as fractions of the target -- into the uRect the rect
-// vertex stage takes: xy is the centre in NDC and zw the half-extent, so a
-// full target is (0, 0, 1, 1).
-//
-// This is NOT the spelling gl::TextOverlay uses (there x/y are already NDC
-// offsets and w/h are fractions of the half-extent), and the difference is
-// worth a function rather than a comment at each call site: the two agree at
-// the full-target case and diverge everywhere else.
-AVBASE_MEDIA_EXPORT void NormalisedRectToUvRect(float x, float y, float w,
-                                                float h, float* out_rect);
-
-// (cos, sin) of a CLOCKWISE turn of |degrees| about a layer's own centre, for
-// the uRotation uniform. Four values are possible because a container's display
-// rotation is a quarter-turn count and nothing downstream can honour an
-// arbitrary angle -- so the input is snapped rather than rejected and then
-// silently mishandled.
-//
-// A table and not std::cos/std::sin: the four answers a caller can reach are
-// exactly representable, and the library's are not. Computing cos(90 degrees)
-// yields ~6e-17, which is a sub-pixel sampling offset -- invisible in a still
-// and wrong in a rotation test that compares two orientations of one picture.
-AVBASE_MEDIA_EXPORT void LayerRotationToCosSin(int degrees, float* out_cos_sin);
-
-// Snaps |degrees| to the nearest quarter turn and normalises it into 0, 90,
-// 180, 270. Exported because both the setter that records an angle and the
-// shader-facing conversion need the same answer, and "what did that 89 become"
-// is a question with exactly one right reply.
-AVBASE_MEDIA_EXPORT int SnapLayerRotation(int degrees);
-
 // One video source: three plane textures plus the colour conversion that turns
 // them back into RGB.
 //
@@ -207,11 +177,26 @@ class AVBASE_MEDIA_EXPORT GlVideoLayer {
   int width() const { return width_; }
   int height() const { return height_; }
 
+  // The shape the picture is meant to be SEEN at: its natural size with the
+  // container's display rotation applied (a quarter turn swaps the axes) and
+  // its sample aspect ratio folded in. Zero before the first upload, which is
+  // what tells a caller there is no aspect to fit yet.
+  //
+  // Captured during Upload(), like the layer's copy of the rotation, because
+  // the frame is the only witness to either and is released as soon as that
+  // call returns. Only the RATIO is meaningful -- these are the picture's
+  // proportions, not a size anything is allocated at.
+  float source_aspect() const { return source_aspect_; }
+
  private:
   explicit GlVideoLayer(const gl::GlApi& gl);
 
   // The copy route: plane bytes from CPU memory into the plane textures.
   bool UploadCpuPlanes(const VideoFrame& frame);
+  // A frame whose pixels are not in CPU memory: import if a backend will take
+  // it, otherwise read it back and take the copy route. Split out of Upload()
+  // so that "where the pixels come from" is one place asking the question.
+  bool UploadGpuFrame(const VideoFrame& frame, GlHwTextureImporter* importer);
   // The import route: the plane textures are pointed at the frame's own
   // graphics surface. The two differ in where the pixels come from and in
   // nothing else -- the texture set, the sampler parameters, the NV12 flag and
@@ -247,6 +232,8 @@ class AVBASE_MEDIA_EXPORT GlVideoLayer {
   bool ready_{false};
   int width_{0};
   int height_{0};
+  // The picture's own proportions; see source_aspect().
+  float source_aspect_{0.0f};
   int format_{0};  // VideoFormat as int; 0 = kUnknown, i.e. nothing uploaded.
   bool nv12_{false};
   UploadPath last_upload_path_{UploadPath::kNone};

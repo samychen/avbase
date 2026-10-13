@@ -9,6 +9,8 @@
 #include <utility>
 
 #include "base/logging.h"
+#include "media/gl/gl_layer_geometry.h"
+#include "media/gl/gl_yuv_colour.h"
 #include "render/gl/gl_shaders.h"
 
 // The video-domain half of the GL path, in one place. Entry-point loading,
@@ -57,62 +59,9 @@ const char* const kYuvSamplerRectDefines =
     "#define LUMA_COORD (vTexCoord * uTexSize)\n"
     "#define CHROMA_COORD (vTexCoord * uChromaSize)\n";
 
-namespace {
-
-// Rows are (Y, U, V) -> (R, G, B); stored column-major for
-// glUniformMatrix3fv (column 0 = the three Y coefficients, and so on).
-struct YuvMatrix {
-  std::array<float, 9> m;
-  float offset_y;
-};
-
-constexpr YuvMatrix kMatrix601Limited = {{1.164383f, 1.164383f, 1.164383f, 0.0f,
-                                          -0.391762f, 2.017232f, 1.596027f,
-                                          -0.812968f, 0.0f},
-                                         16.0f / 255.0f};
-constexpr YuvMatrix kMatrix601Full = {
-    {1.0f, 1.0f, 1.0f, 0.0f, -0.344136f, 1.772f, 1.402f, -0.714136f, 0.0f},
-    0.0f};
-constexpr YuvMatrix kMatrix709Limited = {{1.164383f, 1.164383f, 1.164383f, 0.0f,
-                                          -0.213249f, 2.112402f, 1.792741f,
-                                          -0.532909f, 0.0f},
-                                         16.0f / 255.0f};
-constexpr YuvMatrix kMatrix709Full = {
-    {1.0f, 1.0f, 1.0f, 0.0f, -0.187324f, 1.8556f, 1.5748f, -0.468124f, 0.0f},
-    0.0f};
-// BT.2020 non-constant-luminance, limited range. The chroma coefficients are
-// the FULL-range ones times 255/224 (= 1.138393), the same relationship the two
-// BT.709 rows above have: 0.164553*1.138393 = 0.187326 and 0.571353*1.138393 =
-// 0.650424. Copying the full-range row here instead (as this table briefly did)
-// leaves the limited-range Y scaling and offset in place while the chroma is
-// wrong, which is an off-by-a-matrix colour error rather than a visible crash:
-// limited-range BT.2020 content renders with the wrong saturation.
-constexpr YuvMatrix kMatrix2020Limited = {{1.164383f, 1.164383f, 1.164383f,
-                                           0.0f, -0.187326f, 2.141772f,
-                                           1.678673f, -0.650424f, 0.0f},
-                                          16.0f / 255.0f};
-constexpr YuvMatrix kMatrix2020Full = {
-    {1.0f, 1.0f, 1.0f, 0.0f, -0.164553f, 1.8814f, 1.4746f, -0.571353f, 0.0f},
-    0.0f};
-
-YuvMatrix SelectMatrix(const VideoColorSpace& cs) {
-  const bool full = cs.range == ColorRange::kFull;
-  switch (cs.matrix) {
-  case ColorMatrix::kBT709:
-    return full ? kMatrix709Full : kMatrix709Limited;
-  case ColorMatrix::kBT2020Ncl:
-  case ColorMatrix::kBT2020Cl:
-    return full ? kMatrix2020Full : kMatrix2020Limited;
-  case ColorMatrix::kSMPTE170M:
-    return full ? kMatrix601Full : kMatrix601Limited;
-  default:
-    // Unmarked: sws and libyuv both assume limited-range BT.601; matching
-    // them keeps the GL path indistinguishable from the CPU fallback.
-    return full ? kMatrix601Full : kMatrix601Limited;
-  }
-}
-
-}  // namespace
+// The colour conversion the uniforms below carry lives in gl_yuv_colour.h.
+// It is a table, not behaviour: the layer asks it for a matrix and an offset
+// and does not otherwise participate in choosing them.
 
 bool IsPlanarYuv(VideoFormat format) {
   return format == VideoFormat::kI420 || format == VideoFormat::kYV12 ||
@@ -182,10 +131,25 @@ void GlVideoLayer::ApplySamplers() {
 bool GlVideoLayer::Upload(const VideoFrame& frame,
                           GlHwTextureImporter* importer) {
   last_upload_path_ = UploadPath::kNone;
-  if (frame.IsMappable()) {
-    return UploadCpuPlanes(frame);
+  // The picture's own shape is taken from the frame the caller handed over,
+  // not from whatever the routes below end up uploading: the readback frame the
+  // fallback produces is a fresh I420 conversion that does not carry the
+  // container's display rotation, so asking IT would put the correction for a
+  // sideways clip on the wrong axis.
+  const float aspect = SourceAspectOf(frame);
+  const bool ok = frame.IsMappable() ? UploadCpuPlanes(frame)
+                                     : UploadGpuFrame(frame, importer);
+  if (!ok) {
+    // Nothing is being shown, so there is no shape to report either.
+    source_aspect_ = 0.0f;
+    return false;
   }
+  source_aspect_ = aspect;
+  return true;
+}
 
+bool GlVideoLayer::UploadGpuFrame(const VideoFrame& frame,
+                                  GlHwTextureImporter* importer) {
   // A GPU frame. Try the import route -- unless this backend has already been
   // refused by it, in which case asking again is a failed import per frame for
   // the same answer. CanImport() is asked here and once, so that the two ways
@@ -226,7 +190,7 @@ bool GlVideoLayer::Upload(const VideoFrame& frame,
 // decoder that reports "unspecified" gets the same 601 assumption as the
 // software path.
 void GlVideoLayer::SetColourUniforms(const VideoFrame& frame) {
-  const YuvMatrix m = SelectMatrix(frame.color_space());
+  const YuvMatrix m = SelectYuvMatrix(frame.color_space());
   matrix_ = m.m;
   offset_ = {m.offset_y, 0.5f, 0.5f};
 }
@@ -288,6 +252,13 @@ bool GlVideoLayer::ImportGpuPlanes(const VideoFrame& frame,
     }
   }
   SetColourUniforms(frame);
+  // Deliberately NOT capturing source_aspect_ here. Upload() owns it, and it
+  // has to: this route is also reached through the readback fallback, where
+  // |frame| is a fresh I420 conversion that has lost the container's display
+  // rotation -- so the aspect read off it would be the unturned one, and the
+  // correction for a sideways clip would land on the wrong axis. Two writers,
+  // one of them wrong, is a coin toss; Upload() is the only one that sees the
+  // frame the caller actually asked to draw.
   ready_ = true;
   last_upload_path_ = UploadPath::kHwZeroCopy;
   return true;
@@ -392,6 +363,9 @@ bool GlVideoLayer::UploadCpuPlanes(const VideoFrame& frame) {
   planes_[0]->SetUnpackRowLength(0);
 
   SetColourUniforms(frame);
+  // Same reason as the import route: the aspect is Upload()'s to record, not
+  // this function's. It is also called with the readback frame, which carries
+  // no rotation, and a second writer there would silently win half the time.
   ready_ = true;
   last_upload_path_ = UploadPath::kCpuSync;
   return true;
@@ -430,10 +404,15 @@ std::unique_ptr<gl::GlProgram> CreateLayerProgram(const gl::GlApi& gl,
                                                   const char* sampler_defines,
                                                   std::string* error) {
   const std::string prologue = gl::ShaderPrologue(gl);
-  // The define first: it must precede every non-preprocessor line.
+  // The defines first: each must precede every non-preprocessor line, and
+  // each turns on a uniform the stage then expects to be set. CROP is part of
+  // this contract rather than an option because a program that declared
+  // uSrcRect without anybody setting it would draw nothing -- an unset vec4
+  // is (0,0,0,0), which is not "the whole picture" but an empty box.
   auto program = gl::GlProgram::Create(
       gl,
-      (prologue + gl::kVertexRotationDefine + gl::kQuadVertexShaderWithRectBody)
+      (prologue + gl::kVertexCropDefine + gl::kVertexRotationDefine +
+       gl::kQuadVertexShaderWithRectBody)
           .c_str(),
       (prologue + sampler_defines + kYuvFragmentShaderBody).c_str(), error);
   if (!program) {
@@ -452,6 +431,9 @@ std::unique_ptr<gl::GlProgram> CreateLayerProgram(const gl::GlApi& gl,
   // back as (0, 0), which is not the identity but a collapse onto the centre
   // -- a blank frame, with no error and no log line to explain it.
   program->SetVec2("uRotation", 1.0f, 0.0f);
+  // Same reason, in the other transform: the whole picture is the identity
+  // of a crop, and (0,0,0,0) is an empty box rather than "no crop".
+  program->SetVec4("uSrcRect", 0.0f, 0.0f, 1.0f, 1.0f);
   return program;
 }
 
@@ -465,36 +447,6 @@ std::unique_ptr<gl::GlProgram> CreateVideoLayerProgram(const gl::GlApi& gl,
 std::unique_ptr<gl::GlProgram> CreateVideoLayerRectProgram(const gl::GlApi& gl,
                                                            std::string* error) {
   return CreateLayerProgram(gl, kYuvSamplerRectDefines, error);
-}
-
-void NormalisedRectToUvRect(float x, float y, float w, float h,
-                            float* out_rect) {
-  // NDC x spans -1..1 as the normalised x spans 0..1, so a normalised width of
-  // w covers 2w of NDC and the half-extent is w. NDC y is flipped: normalised
-  // y = 0 is the TOP, which in NDC is +1.
-  out_rect[0] = 2.0f * (x + w * 0.5f) - 1.0f;
-  out_rect[1] = 1.0f - 2.0f * (y + h * 0.5f);
-  out_rect[2] = w;
-  out_rect[3] = h;
-}
-
-int SnapLayerRotation(int degrees) {
-  // Normalise to 0..359 first (C++ % truncates toward zero), then snap.
-  int quarters = degrees % 360;
-  if (quarters < 0) {
-    quarters += 360;
-  }
-  return ((quarters + 45) / 90 % 4) * 90;
-}
-
-void LayerRotationToCosSin(int degrees, float* out_cos_sin) {
-  // (cos, sin) of a CLOCKWISE quarter turn. A table, not std::cos/std::sin:
-  // these four answers are exact and the library's are not.
-  constexpr float kCosSin[8] = {1.0f,  0.0f, 0.0f, 1.0f,
-                                -1.0f, 0.0f, 0.0f, -1.0f};
-  const int quarter = SnapLayerRotation(degrees) / 90;
-  out_cos_sin[0] = kCosSin[2 * quarter];
-  out_cos_sin[1] = kCosSin[2 * quarter + 1];
 }
 
 }  // namespace avbase::media
