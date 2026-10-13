@@ -285,6 +285,16 @@ Status PlayerImpl::PrepareAsync() {
   factory_deps.video_decoder_preference = config_.video.decoder_preference;
   factory_deps.video_hw_codecs = config_.video.hw_codecs;
   factory_deps.video_decoder_preference_set = true;
+  // How this scene gets plumbed into whichever sink this factory builds.
+  //
+  // A callback rather than a pointer because the sink does not exist yet: it is
+  // created on the media sequence the first time something asks the factory
+  // for one, which is during pipeline start. Observing that moment is the only
+  // way to catch it while it is still safe to install the hook, and it is also
+  // how the old pipeline's engine gets released without anybody having to
+  // remember to do it.
+  factory_deps.scene_observer =
+      base::BindRepeating(&Scene::Bind, base::Unretained(&scene_));
   auto renderer_factory =
       std::make_shared<media::DefaultRendererFactory>(std::move(factory_deps));
   {

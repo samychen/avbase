@@ -36,6 +36,16 @@ void PlayerImpl::Stop() {
     // fictional kStopped -> kStopped event.
     machine_.TransitionTo(PlayerState::kStopping);
   }
+  // Detach the composition BEFORE asking the pipeline to stop, not after.
+  //
+  // The scene's own safety net is the engine's teardown callback, which fires
+  // from inside its destructor -- so forgetting this line would not by itself
+  // leave a dangling pointer. What it WOULD leave is a window in which the
+  // scene still believes it has somewhere to plumb a source, and AddSource()
+  // called from a UI thread in that window would register into a sink that is
+  // mid-teardown. Unbinding here closes it at the point where "going away"
+  // first becomes known.
+  scene_.Bind(nullptr);
   const std::shared_ptr<media::PipelineImpl> pipeline = GetPipeline();
   if (pipeline) {
     pipeline->Stop();

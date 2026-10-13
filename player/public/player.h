@@ -30,6 +30,9 @@ namespace media {
 class DataSource;
 }  // namespace media
 
+class AVBASE_PLAYER_EXPORT Player;
+class Scene;
+
 // Re-exported from media/base so that SDK callers can spell it
 // avbase::DataSourceDescriptor without reaching into the media layer. The type
 // lives there because media::Demuxer takes it and media/ must not depend on
@@ -122,6 +125,24 @@ class AVBASE_PLAYER_EXPORT Player {
   // Full internal state as JSON, ~1 ms, safe to call at any time. The first
   // thing to attach to a bug report; see docs/10 §10.
   std::string DumpDiagnostics() const;
+
+  // ---- Composition ---------------------------------------------------------
+  // Multi-layer output: add picture-in-picture, a second stream, a logo, or
+  // drive layer placement per frame. See player/public/scene.h.
+  //
+  // Never null, and never invalidated -- the scene outlives every pipeline, so
+  // a source registered once survives Stop(), Reset() and another Prepare().
+  //
+  // Whether it can currently DO anything is a separate question the scene
+  // answers itself, because the default headless sink cannot composite and
+  // "the PiP is not showing" then has a completely different cause from "the
+  // layer is in the wrong place". Scene::Describe() names which.
+  //
+  // Callable from any thread; none of the scene's methods block on the render
+  // thread. This header deliberately forward-declares Scene rather than
+  // including it -- a caller that never composes should not have to compile
+  // the composition API.
+  Scene* scene();
 
   // ---- Events --------------------------------------------------------------
   using EventHandler = base::RepeatingCallback<void(const PlayerEvent&)>;

@@ -22,6 +22,7 @@
 #include "player/event_hub.h"
 #include "player/public/player.h"
 #include "player/public/player_config.h"
+#include "player/public/scene.h"
 #include "player/seek_controller.h"
 #include "player/state_machine.h"
 
@@ -89,6 +90,12 @@ class PlayerImpl final : public media::Pipeline::Client {
   PlaybackStats GetPlaybackStats() const;
   std::string DumpDiagnostics() const;
 
+  // ---- Composition ---------------------------------------------------------
+  // Never null. Whether the scene can DO anything is its own question and it
+  // answers it in words; see Scene::Describe(). Non-blocking and callable from
+  // any thread, like every other query here.
+  Scene* scene() { return &scene_; }
+
   // ---- Events --------------------------------------------------------------
   void SetEventHandler(Player::EventHandler handler) {
     event_hub_.SetEventHandler(std::move(handler));
@@ -136,6 +143,17 @@ class PlayerImpl final : public media::Pipeline::Client {
 
   PlayerConfig config_;
   std::unique_ptr<Deps> deps_;
+
+  // The composition surface. Declared ABOVE the pipeline pair rather than next
+  // to it for a reason about destruction order: members die in reverse, so this
+  // makes the scene the LAST thing to go, outliving every renderer factory and
+  // therefore every sink -- each of which reports its own death back here from
+  // its engine's destructor, which has to still have someone to report to.
+  //
+  // It also outlives them by design rather than by accident of plumbing: the
+  // host registered sources once and expects them kept, so "the player is
+  // rebuilt every Prepare" is this object's problem, not the host's.
+  Scene scene_;
 
   // S1 / S3 / S4 of docs/04 §1. Owned here so that ~PlayerImpl destroys them
   // after the pipeline is gone; DefaultRendererFactory borrows their runners.

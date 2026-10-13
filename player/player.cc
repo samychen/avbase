@@ -130,6 +130,10 @@ void Player::ReconnectNow() {
                "(config.net.reconnect); nothing to force";
 }
 
+Scene* Player::scene() {
+  return impl_->core.scene();
+}
+
 PlayerState Player::state() const {
   return impl_->core.state();
 }
