@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 //
 // PlayerImpl's stopping half: Stop(), StopSync() and Reset(). player_impl.cc
-// keeps construction, source selection, prepare and transport; the split is a
-// line-count one (C1), and the seam is "the player being driven" versus
-// "the player being torn down". The StopSync comment is load-bearing -- it
-// records a real teardown-ordering race the corpus run caught -- so it moved
-// here verbatim rather than being compressed to fit the other file.
+// keeps construction and the transport controls, and the preparing half
+// (SetDataSource, prepare, the ready snapshot) went to
+// player_impl_prepare.cc; the split is a line-count one (C1), and the seam
+// is "the player being driven" versus "the player being torn down". The
+// StopSync comment is load-bearing -- it records a real teardown-ordering
+// race the corpus run caught -- so it moved here verbatim rather than being
+// compressed to fit the other file.
 
 #include "player/player_impl.h"
 
