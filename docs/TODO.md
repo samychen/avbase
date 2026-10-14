@@ -268,6 +268,31 @@ SDK 用户没有。
 | 真色彩管理 | ❌ 无。只有 YUV→RGB 矩阵（`gl_video_layer.cc:69-113`），
   无 gamut 转换 / EOTF / ICC / HDR→SDR |
 
+### 5b. 已配置但未生效的选项 —— 第七十轮核验出 16 个
+
+`docs/05-迁移对照表.md` 里一度有 22 个 ✅，逐项回到代码追「谁读了这个字段」
+之后 **16 个不成立**。它们的共同形状是：**配置有字段、registry 有条目，`SetOption`
+不报错、`GetOption` 还能原样读回 —— 但没有任何一处把它变成行为**。这比「不存在
+的选项」更难发现，因为它不会报错。
+
+| 类 | 数量 | 选项 | 性质 |
+| --- | --- | --- | --- |
+| A 无读取者 | 14 | `fast` `rdftspeed` `min-frames` `packet-buffering` `sync-av-start` `infbuf` `video-pictq-size` `no-time-adjust` `preset-5-1-center-mix-level` `get-frame-mode` `video-mime-type` `ijkmeta-delay-init` `nodisp` `render-wait-start` | 除定义与 registry 外**零命中**；`video-pictq-size` 只被 `player_config.cc` 的区间校验读到 |
+| B 末环无调用者 | 2 | `max-fps` `framedrop` | **几乎通了**：`VideoRendererImpl::SetMaxFps/SetMaxFrameDrop` 已实现并转发到 compositor，**但全树零调用者、零测试** → `max_fps_` 停在默认 0 → 设置了没效果 |
+
+**B 类值得单独看待：它们各差一行调用就能活。** 之所以冒充 ✅ 这么久，是因为算法
+本体在 `video_frame_compositor_unittest.cc` 里有充分测试（测试直接给 `in.max_fps`
+赋值），而「选项 → 算法」那一段既无调用者也无测试 —— **「算法正确」不等于「选项
+生效」**。
+
+**未决：这 16 个该实现还是该删除。** 两条路都还没拍板：
+- **实现**：B 类各加一行调用（并加一条「设了 `--max-fps 30` 后帧率真的被限」的
+  端到端断言）；A 类要逐个判断 ijk 的原语义在 avbase 是否还需要。
+- **删除**：从 `PlayerConfig` 与 registry 摘掉，让 `SetOption` 对它们报错而不是
+  静默接受 —— 与 §3「静默退化改成点名拒绝」同一手法。
+
+在拍板之前它们按现状登记：**可读写、无行为**。详见 `docs/05` 文末「已登记但未生效」。
+
 ---
 
 ## 6. 环境相关（非代码，需特定机器/权限）

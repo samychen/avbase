@@ -3951,3 +3951,58 @@ clang-tidy 版本是特意对齐的：本机 20.1.7 与 CI 的 18 的 check 集�
 
 不变量 **457** 文件 all pass（+1 新测试文件）· no-ffmpeg-werror **524/524**
 （521 + 3 条新用例）· macos-sdl2-werror **718/718**（715 + 3）· clang-format 干净。
+
+### 同轮核验项：`docs/05` 迁移对照表的 ✅ 是真的吗？
+
+发现 `subtitle` 那条把 no-op 标成 ✅ 之后，顺势把整张表的 ✅ 全查了一遍 ——
+对外的迁移对照如果有一条是假的，其余的就不能默认可信。**22 个 ✅ 里 16 个不成立。**
+
+#### 方法
+
+对每个 ✅ 行取 registry 里的访问路径（如 `buffer.enabled`、`video.max_fps`），
+在 `player/ media/ render/ platform/` 里搜**排除** `player_config.h`（定义）与
+`option_registry.*`（读写通道）之外的提及。两个坑：
+
+- **字段名要回定义处确认真名**，不能猜。 `fast` 就是 `fast`（不是 `fast_seek`），
+  `packet-buffering` 是 `buffer.enabled`（不是 `packet_buffering`）。第一轮脚本
+  就是猜错了名字，得出了 `nodisp` 和 `infbuf` 的假阳性。
+- **「有命中」不等于「有效」**，必须补一次最后一跳检查：`player_config.cc` 里的
+  命中可能只是区间校验，`VideoRendererImpl::SetMaxFps` 那种则是「有实现、无调用者」。
+
+#### 三类结果
+
+| 类 | 数量 | 性质 |
+| --- | --- | --- |
+| A 完全没有读取者 | 14 | `fast` `rdftspeed` `min-frames` `packet-buffering` `sync-av-start` `infbuf` `video-pictq-size` `no-time-adjust` `preset-5-1-center-mix-level` `get-frame-mode` `video-mime-type` `ijkmeta-delay-init` `nodisp` `render-wait-start` |
+| B 链路走到末环断了 | 2 | `max-fps` / `framedrop` |
+| 真的端到端接通 | 6 | `vf0` `af` `iformat` `find_stream_info` `subtitle` `start-on-prepared` |
+
+共同形状：**配置有字段、registry 有条目，`SetOption` 不报错、`GetOption` 还能原样
+读回 —— 但没有任何一处把它变成行为。** 这比「不存在的选项」更难发现，因为它不会
+报错。
+
+#### B 类是这次最值得单独说的
+
+```
+option_registry -> config.video.max_fps        ✅
+VideoRendererImpl::SetMaxFps(int)              ✅ 已实现
+  -> compositor_.SetMaxFps(...)                ✅ 已实现
+     -> VideoFrameCompositor::max_fps_         ✅ 算法本体
+```
+
+但 `SetMaxFps` 与 `SetMaxFrameDrop` **全树零调用者、零测试**，所以 `max_fps_`
+永远停在默认 0，而 `ApplyFpsCap` 第一行就是 `if (in.max_fps > 0)` —— 设了没用。
+
+它能冒充 ✅ 这么久是同一个原因的两面：算法本体在
+`video_frame_compositor_unittest.cc` 里有 20 多处测试（测试直接给 `in.max_fps`
+赋值），测得很充分；而「选项 → 算法」那一段既没调用者也没测试。
+**「算法正确」不等于「选项生效」** —— 这是第六十五轮「引擎早退没有反证」的
+又一个变体：差别在于观测点选在了链路的中间而不是两头。
+
+#### 处置
+
+只动文档，未动代码：表里 16 行的判定列改成 `⚠️ 未生效` / `⚠️ 链路末环无调用者`
+（B 类用词不同，因为它们只差一行），图例加一行，`docs/05` 文末新增「已登记但未
+生效」整节（含可复现的核验方法），`TODO.md` 新增 §5b 并把它标为**未决**：该实现
+还是该删除还没拍板 —— 删除的话就是 §3 那套「静默退化改成点名拒绝」，让
+`SetOption` 对它们报错而不是静默接受。
