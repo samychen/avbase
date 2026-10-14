@@ -53,6 +53,23 @@ void PipelineImpl::Start(
   DCHECK(demuxer);
   DCHECK(renderer_factory);
   DCHECK(client);
+  // The kNew -> kStarting transition happens HERE, on the calling thread,
+  // not inside DoStart. IsRunning() is the "safe to destroy" predicate every
+  // waiter polls -- Player::Impl::StopSync and the test teardowns -- and a
+  // pipeline whose Start() has been posted but not yet run reads kNew, which
+  // is NOT running. A host that prepares and immediately stops (open a URL,
+  // change your mind) would then be told "safe" before the media sequence has
+  // done anything: the teardown stops the media thread, DoStop is dropped
+  // from its queue, and the pipeline is destroyed mid-kStarting --
+  // ~PipelineImpl's DCHECK names exactly that.
+  //
+  // The exchange also keeps Start() start-once, the job DoStart's old kNew
+  // guard did: a second Start() on a pipeline that already moved on is
+  // refused before it can replace the members below.
+  State expected = State::kNew;
+  if (!state_.compare_exchange_strong(expected, State::kStarting)) {
+    return;
+  }
   demuxer_ = std::move(demuxer);
   renderer_factory_ = renderer_factory;
   client_ = client;
@@ -67,10 +84,12 @@ void PipelineImpl::Start(
 
 void PipelineImpl::DoStart(RendererType renderer_type) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (state_ != State::kNew) {
+  // kStarting was set synchronously in Start(), so this is the "posted
+  // exactly once" guard now. Anything else -- stopping, stopped, errored --
+  // means starting would be wrong.
+  if (state_ != State::kStarting) {
     return;
   }
-  state_ = State::kStarting;
 
   // The demuxer doubles as the renderer's MediaResource (Demuxer derives
   // from it), and the renderer needs the probed stream configs, so the

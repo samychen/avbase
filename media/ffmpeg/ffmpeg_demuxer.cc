@@ -275,6 +275,19 @@ void FFmpegDemuxer::Initialize(
 
   // Opening can block on network I/O, so it runs on the demux thread and the
   // result is posted back to the media sequence.
+  //
+  // The raw |self| in the task is sound: this task can only run while the
+  // object is alive -- either in normal operation, or inside Stop()'s join
+  // of the demux thread, which happens before the owner may destroy anything.
+  //
+  // The COMPLETION, though, outlives that window: it is queued on the media
+  // sequence, and the owner is free to destroy the demuxer the moment Stop()
+  // returns. So it is bound through the WeakPtr below -- a raw pointer there
+  // is a use-after-free (docs/04 §7 R11). A player-level test that prepares a
+  // source and immediately tears the player down hit exactly that, every
+  // run: the open task ran inside Stop()'s join, posted its completion, and
+  // the demuxer died before the media sequence got to it. The media-sequence
+  // DCHECK catches it in a debug build; a release build corrupts silently.
   demux_thread_->task_runner()->PostTask(
       FROM_HERE,
       base::BindOnce(
@@ -282,9 +295,9 @@ void FFmpegDemuxer::Initialize(
              InitializeCB cb) {
             Status status = self->OpenOnDemuxThread(src, opts);
             self->media_runner_->PostTask(
-                FROM_HERE,
-                base::BindOnce(&FFmpegDemuxer::OnOpened, base::Unretained(self),
-                               std::move(status), std::move(cb)));
+                FROM_HERE, base::BindOnce(&FFmpegDemuxer::OnOpened,
+                                          self->weak_factory_.GetWeakPtr(),
+                                          std::move(status), std::move(cb)));
           },
           base::Unretained(this), source, options, std::move(init_cb)));
 }

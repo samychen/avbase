@@ -20,6 +20,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/synchronization/atomic_flag.h"
 #include "base/synchronization/lock.h"
@@ -232,6 +233,15 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   base::TimeTicks prepare_started_at_;
 
   SEQUENCE_CHECKER(media_sequence_checker_);
+
+  // Must be last: the open completion below is bound through it, so a
+  // completion that outlives the demuxer is skipped instead of running on
+  // freed memory. Stop() joins the demux thread (draining the open task),
+  // and the owner is free to destroy the demuxer the moment Stop() returns
+  // -- which is exactly when a raw-pointer completion would still be sitting
+  // on the media sequence. docs/04 §7 R11 names this shape; the renderers
+  // carry the same member for the same reason.
+  base::WeakPtrFactory<FFmpegDemuxer> weak_factory_{this};
 };
 
 }  // namespace avbase::media
