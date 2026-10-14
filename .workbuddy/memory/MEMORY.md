@@ -127,6 +127,24 @@ matrix 解析、被 `Player::video_rotation()` 上报，但**没有一帧真正�
 **未消除**：`media/filters/` 仍是「单源硬限制」—— §2 是绕过去（第二路完整 Player +
 邮箱），不是解决。真正解决要动管线本身。
 
+## player 层可观测性与 clang-tidy 环境陷阱（第七十二轮，TODO §5c/§5d）
+
+- **`PrepareAsync` 的 deps 组装可观测了**：`set_deps_observer_for_testing`
+  （`player_impl.h`），`std::move(factory_deps)` 之前、锁保护、**锁外**调用；
+  11 条测试在 `player_deps_wiring_unittest.cc`。拆分先例：
+  `player_impl_prepare.cc`（C1 500 行上限逼出来的 seam 拆分）。
+- **`DoStart` 先造 renderer 再初始化 demuxer** —— sink 工厂在通往失败的路上一定
+  会被调用（fake 工厂返回 nullptr 会 SEGV，别假设"失败得早所以不会调到我"）。
+- **拆除竞态两形态**（20 次循环钉住）：① 完成回调 posted 到 media sequence，
+  而 `Stop()` join 会 drain 该 task、返回后即可析构接收者 → 绑 WeakPtr；
+  ② `IsRunning()`（safe-to-destroy 谓词）**不数 `kNew`** → "已 post 未跑"被误判
+  安全 → `Start()` 同步做 `kNew→kStarting` CAS。谓词必须覆盖"已排队未执行"。
+- **本机 clang-tidy 对 `media/ffmpeg` 静默零发现**：`avbase_ffmpeg` 是全仓**唯一**
+  开 PCH 的 target，Xcode 新 PCH 格式 18.1.8 读不了 → 每 TU 一句
+  `PCH file uses a newer PCH format` 然后 **exit 0、零 finding**。本机跑 tidy
+  必须配 `-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON` 的 scratch 库（命令在
+  `operations.md`）；CI 在 Ubuntu 上没这个问题 —— **本机的"干净"不等于 CI 的**。
+
 ## 性能数据唯一入口
 三宿主示例均支持 `--stats`；`tools/bench_render.sh`，`SCENE=pip|fade` 测双层，
 `SECOND=<url>` 测真第二路解码。

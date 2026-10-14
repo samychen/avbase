@@ -9,6 +9,10 @@ CT=~/.workbuddy/binaries/python/envs/tidy18/bin/clang-tidy      # 18.1.8，对�
 CP=~/.workbuddy/binaries/python/envs/cpplint/bin/cpplint        # 1.6.1，对齐 CI
 cmake --preset macos-sdl2 -DAVBASE_WERROR=ON -B <dir> && cmake --build <dir> && ctest
 tools/bench_render.sh
+# clang-tidy 全 scope（必须配无 PCH 的 scratch 库，原因见教训「PCH 陷阱」）：
+cmake --preset macos-sdl2 -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON -B /tmp/tidy-nopch
+git ls-files 'base/*.cc' 'media/*.cc' 'player/*.cc' 'platform/*.cc' 'tools/*.cc' \
+  | grep -v 'legacy/'          # 与 CI check-clang-tidy 同口径（git 的 * 匹配斜线）
 ```
 - **clang-tidy 必须用 18**：本机 20.1.7 的 check 集合与 CI 的 llvm-18 不同，用它
   判断「CI 会不会报」会错（第七十轮就据此误判过 `modernize-use-nodiscard` 是
@@ -129,3 +133,19 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
   「跑的是快照而不是实时成员」，但它唯一的观测手段是单线程测试 —— 两条代码路径
   逐像素输出相同。换成同一处代码**可观测**的那一半（清掉 hook 后场景必须还在）。
   这是第六十五轮「引擎早退没有反证」的同形。
+- **clang-tidy 的 PCH 陷阱：对 `media/ffmpeg` 全层静默零发现（第七十二轮）。**
+  `avbase_ffmpeg` 是全仓**唯一**开 `target_precompile_headers` 的 target；Xcode 的
+  新 PCH 格式 PyPI clang-tidy 18.1.8 **读不了**，每个 TU 只报一句
+  `PCH file uses a newer PCH format`，然后 **exit 0、零 finding** —— 比报错更坏，
+  因为它看起来就是干净。第七十轮「142 TU 剩 1 条」因此漏掉全部 **21 个
+  media/ffmpeg TU**（唯一那条 EGL 噪声来自**没有 PCH** 的 `platform/egl`，所以
+  才看得见 ——「哪个 target 有 PCH」决定了哪层会被静默跳过）。**本机跑 tidy 必须
+  用 `-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON` 的 scratch 数据库**；CI 在 Ubuntu 上
+  由 clang-18 自己生成自己读 PCH，没这个问题 —— **本机的「干净」从来不等于 CI
+  的干净**。阳性对照：拿带 PCH 的真实库对 `media/ffmpeg/*.cc` 跑，应见到那句
+  PCH 错误；无 PCH 库能正常出 finding。另注：`git ls-files 'media/*.cc'` 的 `*`
+  **匹配斜线**，子目录在内（CI 口径 143 个文件）。
+- **`av_freep(&ptr)` 类的多级指针转换要 `reinterpret_cast`。**
+  `uint8_t**` → `void*` 是合法隐式转换（`uint8_t*` 本身是对象类型），编译器和人都
+  容易放过，但 `bugprone-multi-level-implicit-pointer-conversion` 认它 —— 且
+  **`static_cast` 不消这个 check**，它要最强的承认（`reinterpret_cast`）。

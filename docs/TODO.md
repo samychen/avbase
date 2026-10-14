@@ -304,6 +304,59 @@ config_.video.disabled;` 这一行（`vn` 选项），**528 个测试全绿，�
 - **在那之前**：这一跳的每次改动都必须靠 diff 自查 —— 这正是本轮的实际做法，也是它
   唯一的保障。
 
+**已闭合（第七十二轮）。** 缝、11 条测试、以及两个顺带挖出的拆除竞态：
+
+- **先拆文件才能开缝。** `player_impl.cc` 当时 499 行，C1 上限 500 —— 缝本身
+  （一个 setter）放不进去。按代码里已有的 seam 把"准备的一半"（`CreateDemuxer` /
+  `SetDataSource` / `PrepareAsync` / `PrepareSync` / `OnPipelineReady` 及两个
+  helper）整体移到 `player_impl_prepare.cc`，移完 208 行；两段 diff 逐字节比对一致。
+- **缝的形状**：`set_deps_observer_for_testing(FactoryDepsObserver)`，在
+  `std::move(factory_deps)` **之前**触发。观察者受 `state_lock_` 保护，调用在
+  **锁外**（观察者是测试代码，沿用 `GlSceneEngine` 的 update-hook 纪律）。
+  deps 组装是同步的 —— `pipeline->Start()` 只是 post，观察点在调用线程上必然
+  触发，测试无需等待。
+- **测试**：`player_deps_wiring_unittest.cc` 11 条，从 `PlayerBuilder` 一路走到
+  `PrepareAsync` 交出去的 `Deps`：默认配置 / `vn` / `an` / 帧率 / 解码器偏好 /
+  硬解掩码 / 滤镜图 / 同步主钟映射 / 注入时钟 / 注入 sink 工厂 / 解码器回退链。
+  **14 个突变全部变红** —— 包括删 `video_disabled` 赋值，即第七十一轮让 528 个
+  测试全绿的那一个。
+- **顺带修掉两个真实拆除竞态**（写"prepare 后立刻析构"的测试时撞见的，不是设计
+  出来的）：① demuxer 的 open 完成回调绑着裸指针，`Stop()` join demux 线程会
+  drain 那个 task，而 `Stop()` 返回后 owner 就可以销毁 demuxer —— UAF；改为绑
+  `WeakPtrFactory`（docs/04 §7 R11）。② `PipelineImpl::Start()` 把状态留在 `kNew`
+  直到 media sequence 跑 `DoStart`，而 `IsRunning()` 这个"safe to destroy"谓词
+  **不数 `kNew`** —— 拆除方被误告安全，管线 mid-`kStarting` 被析构；改为 `Start()`
+  同步做 `kNew → kStarting` CAS。两者由 `player_prepare_teardown_unittest.cc`
+  循环 20 次钉住（红色方向是时序相关的，单次复现不保证）。
+
+### 5d. 本机 clang-tidy 对 `media/ffmpeg` 静默零发现（第七十二轮查出，已修）
+
+`avbase_ffmpeg` 是全仓**唯一**用 `target_precompile_headers` 的 target，而本机
+PyPI `clang-tidy==18.1.8` 读不了 Xcode 的新 PCH 格式：每个 `avbase_ffmpeg` TU 报
+一句 `PCH file uses a newer PCH format`，然后 **exit 0、零 finding**。于是第七十轮
+"142 TU 剩 1 条"的记录里，**21 个 `media/ffmpeg` TU 全部静默没被分析**（那 1 条
+EGL 噪声来自没有 PCH 的 `platform/egl`，所以才看得见）。CI 在 Ubuntu 上由
+clang-18 自己生成、自己读 PCH，**没有这个问题** —— 这 11 条 CI 一定看得见。
+
+已修：本机跑 tidy 必须配 `-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON` 的 scratch
+数据库（`operations.md` 有命令）；用它重扫全 scope 得 11 条（3×
+`modernize-pass-by-value`、3× `bugprone-branch-clone`、2×
+`bugprone-implicit-widening-of-multiplication-result`、1×
+`bugprone-multi-level-implicit-pointer-conversion`、1×
+`modernize-use-starts-ends-with`、1×
+`performance-inefficient-string-concatenation`），逐条修完后重扫 **139 文件 0 条**。
+另修掉一个连带发现：`color_space_bridge.h` 用 `AVFrame` 却不包含任何定义它的头，
+一直靠 PCH 兜底 —— 改为前向声明（与 `hw_frame_readback.h` 同形）。
+
+### 5e. strict/debug 配置不可构建（第七十二轮查出，已修）
+
+`debug` preset（Debug + DCHECK + `-Wconversion`/`-Wsign-conversion` + `-Werror`）
+在 HEAD 上编不出来：6 处隐式转换，全是"已经发生、只差命名"。其中 3 处
+（`{live,retry}_data_source_unittest.cc`、`audio_convert_unittest.cc`）在
+origin/main 里就有 —— **CI 的 strict job 自 10 月 3 日起就是红的**（本地 86 个提交
+未推送，没人看得见）。代价不只是门禁：debug 是 DCHECK 的家，编不出来就没人能带着
+DCHECK 跑测试。6 处显式化后 debug 全量 ctest 663/663。
+
 ---
 
 ## 6. 环境相关（非代码，需特定机器/权限）

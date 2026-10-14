@@ -4078,3 +4078,125 @@ config_.video.disabled;` 这一行** —— 六条全绿。
 clang-tidy 那个 `-header-filter` 盲区同类。手动把 `.h` 加进去跑，19 条存量
 （header guard 风格、缺 `<utility>`/`<string>`），没有一条指向本轮新增的行。
 未修：那是独立的门禁 scope 决策，不该塞进这一轮。
+
+---
+
+## 第七十二轮 —— §5c 闭合：deps 观测缝、两个拆除竞态，和一次「门禁绿」的复发
+
+承接第七十一轮 mutation 逼出的 §5c：`PlayerImpl::PrepareAsync` 的 deps 组装
+（`PlayerConfig` → `RendererImpl::Deps`）零断言，因为没有任何测试构造 `Player`，
+而工厂由 `PrepareAsync` 内部构造，没有注入点。
+
+### 缝之前：先把 player_impl.cc 拆开
+
+`player_impl.cc` 499 行，C1 上限 500 —— 缝放不进去。按代码里已有的 seam
+（`player_impl_stop.cc` / `_events.cc` / `_accurate_seek.cc` 的先例）把"准备的
+一半"整体移到 `player_impl_prepare.cc`：`CreateDemuxer`、两个 `SetDataSource`、
+`PrepareAsync`、`PrepareSync`、`OnPipelineReady` 及匿名命名空间的两个 helper。
+**两段 diff 逐字节比对一致**后才继续；移完 208 行。
+
+缝本身（`player_impl.h`）：
+
+```cpp
+using FactoryDepsObserver =
+    base::RepeatingCallback<void(const media::DefaultRendererFactory::Deps&)>;
+void set_deps_observer_for_testing(FactoryDepsObserver observer);
+```
+
+调用点在 `player_impl_prepare.cc` 里 `std::move(factory_deps)` **之前**；快照受
+`state_lock_` 保护（`GUARDED_BY`），调用在**锁外** —— 观察者是测试代码，沿用
+`GlSceneEngine::Sync()` 的 update-hook 纪律。测试不需要等待：deps 组装是同步的，
+`pipeline->Start()` 只是 post，观察点在调用线程上必然触发。
+
+### 测试与突变
+
+`player_deps_wiring_unittest.cc` 11 条。观测点选在**最后一交**：不经
+`deps.sync_master`（经 Player 永远是默认值），而是经注入的 `av_sync` 对象的
+`requested_master()` 反推映射。`FakeSinkFactory` 断言 `creates == 1` —— 写测试时
+先入为主地假设"demuxer 先失败所以工厂永不调用"，第一次真跑 SEGV 才发现
+**`DoStart` 先造 renderer 再初始化 demuxer**，工厂在通往失败的路上一定会被调用；
+fake 返回 `nullptr` 的假设整个是反的。
+
+突变矩阵 14/14 全红，含删 `video_disabled` 赋值（第七十一轮让 528 个测试全绿的
+那一个）。两条探针纪律本轮各踩一次：filter 拼错 → "0 tests ran" 既不是红也不是绿；
+删 switch 分支触发 `-Werror=return-type` 是 BUILD-FAIL 不是断言红 —— 重跑修正版
+（M4r / M6r / M7r）后才认。
+
+### 顺带：两个真实的拆除竞态
+
+为钉住"prepare 后立刻析构"（宿主"打开一个 URL 又改主意"的形状）写
+`player_prepare_teardown_unittest.cc`，第一轮真跑就 FATAL 了两次，两个都不是
+测试的问题：
+
+1. **demuxer 完成回调 UAF。** open 完成绑着裸指针 posted 到 media sequence；
+   `Stop()` join demux 线程会 **drain** 那个 task，而 `Stop()` 返回后 owner 即可
+   销毁 demuxer —— 完成回调排在已销毁对象上。修：`WeakPtrFactory` + 绑弱指针
+   （docs/04 §7 R11）。lldb 在本沙箱起不来（SIGTERM 137），用临时探针定位。
+2. **`kNew` 被误判 safe-to-destroy。** `PipelineImpl::Start()` 把状态留在 `kNew`
+   直到 media sequence 跑 `DoStart`，而 `IsRunning()` —— `StopSync` 轮询的
+   "safe to destroy"谓词 —— **不数 `kNew`**。拆除方提前返回，media 线程被停、
+   `DoStop` 出队，管线 mid-`kStarting` 被析构（`~PipelineImpl` 的 DCHECK 点名）。
+   修：`Start()` 在调用线程同步做 `kNew → kStarting` CAS，`DoStart` 的守卫随之
+   改成只接受 `kStarting`。
+
+两者都由 20 次循环钉住：红色方向是时序相关的（需要主线程超越 media sequence，
+线程启动延迟使其近乎必然但不保证），单次复现不够。
+
+### 本轮最重要的发现：clang-tidy 的「绿」又一次是缺席
+
+第七十轮把 `check-clang-tidy` 从"绿因为没跑"修成真跑，并记录全 scope 0 条。
+本轮对同一文件复跑，**HEAD 上就有 5 条**。查下来不是版本问题（同 18.1.8）：
+
+- `avbase_ffmpeg` 是全仓**唯一**用 `target_precompile_headers` 的 target；
+  Xcode 的新 PCH 格式 PyPI clang-tidy 18.1.8 **读不了**，每个 TU 报一句
+  `PCH file uses a newer PCH format` 然后 **exit 0、零 finding**。
+- 第七十轮"142 TU 剩 1 条"里，**21 个 `media/ffmpeg` TU 全部静默没被分析**；
+  那 1 条 EGL 噪声来自**没有 PCH** 的 `platform/egl`，所以才看得见。
+- **CI 没有这个问题**：Ubuntu 上 clang-18 自己生成自己读 PCH。这 11 条 CI
+  一定看得见 —— 本地领先 origin 86 个提交，CI 状态陈旧，不能拿来当反证。
+
+用 `-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON` 的 scratch 数据库重扫全 scope：
+**11 条，全部在 `media/ffmpeg/`**。逐条修掉（3× `modernize-pass-by-value`：
+构造函数三个 config 参数改值传递 + 移动；3× `bugprone-branch-clone`：合并相同
+case；2× `bugprone-implicit-widening-of-multiplication-result`：行偏移先在
+`ptrdiff_t` 里乘；`bugprone-multi-level-implicit-pointer-conversion`：
+`av_freep(&io_buffer_)` 显式 `reinterpret_cast`（`static_cast` **不消**这个
+check —— 它要最强的承认）；`starts_with`；分次 `+=` 消临时 string）。连带修掉
+`color_space_bridge.h` 的 IWYU 脆弱点（用 `AVFrame` 却不包含定义它的头，一直靠
+PCH 兜底 → 前向声明，与 `hw_frame_readback.h` 同形）。修完重扫 **139 文件 0 条**。
+
+这条的价值高于那 11 条本身：第七十轮的失效在 **scope**（CI 少查文件），这次的
+失效在**工具环境**（本机扫描静默缺席一整层）。同一个失败模式换了位置复发 ——
+`operations.md` 新增"跑 tidy 前先确认数据库里的 TU 真的能分析"。
+
+### 同轮第二项：strict/debug 配置修回可构建
+
+为在 DCHECK 下验证两个竞态修复去跑 `debug` preset，发现它**根本编不出来**：
+keep-go 枚举出 **6 处**，全是已经发生着的隐式转换（显式命名即可）。其中 3 处
+（`{live,retry}_data_source_unittest.cc`、`audio_convert_unittest.cc`）在
+origin/main 里就有 —— **CI 的 strict job 自 10 月 3 日起就是红的**，没人注意是因为
+本地 86 个提交没推送、CI 早已不跑它们。这不只是门禁问题：debug 配置是 DCHECK 的
+家，编不出来=没人能用 DCHECK 跑测试，而竞态修复钉住的恰恰是 DCHECK 上报的缺陷。
+6 处修完 debug 全量 ctest **663/663**。
+
+### 门禁（全部当场跑出）
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（461 文件） |
+| `clang-format`（改动文件） | 0 偏离 |
+| `cpplint`（CI 口径，只 `.cc`） | 0 error |
+| clang-tidy 18.1.8（全 scope，无 PCH 数据库） | **0 条**（139/143；4 个 EGL/GLFW 文件本机无开发库，与第七十轮同） |
+| macos-sdl2 + `-Werror`（含 GLFW） | ctest **736/736**（1 条既有环境 skip：转码套件的 encoder 探测） |
+| no-ffmpeg + `-Werror` | ctest **530/530**（两个新测试 TU 在此配置编译为空） |
+| debug（strict + DCHECK） | ctest **663/663**（1 条既有环境 skip） |
+
+### 留下的问题
+
+- **4 个 `platform/{egl,glfw}` 文件本机无法分析**（无开发库，brew TLS 被拦）。
+  CI 装 `libegl1-mesa-dev`/`libglfw3-dev` 覆盖它们；第七十轮分析过（1 条 EGL
+  环境噪声）。下次在有 lib 的机器上补跑一次全 scope。
+- **本地领先 origin 86 个提交。** 本轮及此前数轮的门禁数字都是本机实测，CI 早已
+  不跑这些提交；下次推送时 `check-clang-tidy` 是第一次真正看见它们 —— 这也正是
+  本轮坚持修掉那 11 条的原因。同理，strict job 下次推送也会第一次真正变绿
+  （它自 10 月 3 日起在 origin/main 上是红的）。
