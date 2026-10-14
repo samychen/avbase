@@ -42,7 +42,7 @@ class FlakyDataSource final : public DataSource {
                  "test fault");
     }
     for (size_t i = 0; i < size; ++i) {
-      data[i] = static_cast<uint8_t>((offset + i) & 0xff);
+      data[i] = static_cast<uint8_t>((static_cast<size_t>(offset) + i) & 0xff);
     }
     served_ok_.fetch_add(1);
     return static_cast<int>(size);

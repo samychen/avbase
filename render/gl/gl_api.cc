@@ -143,7 +143,10 @@ bool GlApi::Load(NativeGLContext* ctx, std::string* error) {
   if (kCount > 0 && context_.GetStringi != nullptr) {
     extensions_.reserve(static_cast<size_t>(kCount));
     for (GLint i = 0; i < kCount; ++i) {
-      extensions_.emplace_back(AsString(context_.GetStringi(GL_EXTENSIONS, i)));
+      // GetStringi takes a GLuint index; the counter is GLint to stay
+      // comparable with kCount. -Wsign-conversion wants the widening named.
+      extensions_.emplace_back(
+          AsString(context_.GetStringi(GL_EXTENSIONS, static_cast<GLuint>(i))));
     }
   } else {
     SplitExtensionList(AsString(context_.GetString(GL_EXTENSIONS)),

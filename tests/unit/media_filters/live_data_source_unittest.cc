@@ -21,7 +21,7 @@ constexpr auto kWait = std::chrono::seconds(10);
 std::vector<uint8_t> PatternBytes(int64_t offset, size_t size) {
   std::vector<uint8_t> bytes(size);
   for (size_t i = 0; i < size; ++i) {
-    bytes[i] = static_cast<uint8_t>((offset + i) & 0xff);
+    bytes[i] = static_cast<uint8_t>((static_cast<size_t>(offset) + i) & 0xff);
   }
   return bytes;
 }

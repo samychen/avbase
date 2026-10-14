@@ -24,10 +24,12 @@ double AveragePeriod(double spent_ms, double jitter_ms, int frames) {
   base::TimeTicks deadline;
   for (int i = 0; i < frames; ++i) {
     const base::TimeTicks frame_start = now;
-    now += base::Milliseconds(spent_ms);
+    // The doubles are deliberate (sub-ms precision is what this loop is
+    // measuring); the truncation to whole milliseconds is too. Name it.
+    now += base::Milliseconds(static_cast<int64_t>(spent_ms));
     const FramePacing pacing =
         NextFrameDelay(frame_start, now, deadline, kInterval);
-    now += pacing.delay + base::Milliseconds(jitter_ms);
+    now += pacing.delay + base::Milliseconds(static_cast<int64_t>(jitter_ms));
     deadline = pacing.next_deadline;
   }
   return (now - origin).InMillisecondsF() / frames;

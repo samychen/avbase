@@ -32,7 +32,7 @@ FramePtr MakeInputFrame(int nb_samples, int rate, int channels,
   for (int ch = 0; ch < channels; ++ch) {
     float* p = reinterpret_cast<float*>(frame->data[ch]);
     for (int s = 0; s < nb_samples; ++s) {
-      p[s] = std::sin(kTwoPi * 1000.0 * s / rate);
+      p[s] = static_cast<float>(std::sin(kTwoPi * 1000.0 * s / rate));
     }
   }
   return frame;
