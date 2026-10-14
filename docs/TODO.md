@@ -278,20 +278,31 @@ SDK 用户没有。
 | 类 | 数量 | 选项 | 性质 |
 | --- | --- | --- | --- |
 | A 无读取者 | 14 | `fast` `rdftspeed` `min-frames` `packet-buffering` `sync-av-start` `infbuf` `video-pictq-size` `no-time-adjust` `preset-5-1-center-mix-level` `get-frame-mode` `video-mime-type` `ijkmeta-delay-init` `nodisp` `render-wait-start` | 除定义与 registry 外**零命中**；`video-pictq-size` 只被 `player_config.cc` 的区间校验读到 |
-| B 末环无调用者 | 2 | `max-fps` `framedrop` | **几乎通了**：`VideoRendererImpl::SetMaxFps/SetMaxFrameDrop` 已实现并转发到 compositor，**但全树零调用者、零测试** → `max_fps_` 停在默认 0 → 设置了没效果 |
+| B 末环无调用者 | 2 | `max-fps` `framedrop` | ~~几乎通了~~ → **第七十一轮已接通**（见下） |
 
-**B 类值得单独看待：它们各差一行调用就能活。** 之所以冒充 ✅ 这么久，是因为算法
-本体在 `video_frame_compositor_unittest.cc` 里有充分测试（测试直接给 `in.max_fps`
+**B 类已闭合（第七十一轮）。** 之所以冒充 ✅ 这么久，是因为算法本体在
+`video_frame_compositor_unittest.cc` 里有充分测试（测试直接给 `in.max_fps`
 赋值），而「选项 → 算法」那一段既无调用者也无测试 —— **「算法正确」不等于「选项
-生效」**。
+生效」**。接通的过程与由此发现的三件事（轨切换同样丢配置、`frames_dropped_fps`
+不上报、默认 31 是行为变更）见 `docs/05` 文末。
 
-**未决：这 16 个该实现还是该删除。** 两条路都还没拍板：
-- **实现**：B 类各加一行调用（并加一条「设了 `--max-fps 30` 后帧率真的被限」的
-  端到端断言）；A 类要逐个判断 ijk 的原语义在 avbase 是否还需要。
-- **删除**：从 `PlayerConfig` 与 registry 摘掉，让 `SetOption` 对它们报错而不是
-  静默接受 —— 与 §3「静默退化改成点名拒绝」同一手法。
+### 5c. `player/` 层零测试覆盖（第七十一轮 mutation 跑出来的）
 
-在拍板之前它们按现状登记：**可读写、无行为**。详见 `docs/05` 文末「已登记但未生效」。
+**没有任何测试构造 `Player`** —— tests/ 里 grep `PlayerBuilder` 零命中。后果不是
+抽象的：接通 `max-fps` 时误删了 `player_impl.cc` 里 `factory_deps.video_disabled =
+config_.video.disabled;` 这一行（`vn` 选项），**528 个测试全绿，无一发现**；是提交前
+自查 diff 时才抓到。
+
+`PlayerImpl::PrepareAsync` 那段 deps 组装（把 `PlayerConfig` 翻译成
+`RendererImpl::Deps`）因此**没有任何断言**。
+`renderer_option_wiring_unittest.cc` 覆盖的是 `Deps → 内部状态` 这一跳，它明确记录
+了这个边界，而不是假装测到了 player 层。
+
+- **要做的事**：给 `PlayerBuilder → PrepareAsync` 补一个能观测 deps 的测试。这需要
+  能拦截 `DefaultRendererFactory` 或其 Deps（工厂由 `PrepareAsync` 内部构造，目前没有
+  注入点），所以先要开一个缝。
+- **在那之前**：这一跳的每次改动都必须靠 diff 自查 —— 这正是本轮的实际做法，也是它
+  唯一的保障。
 
 ---
 

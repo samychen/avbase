@@ -4006,3 +4006,75 @@ VideoRendererImpl::SetMaxFps(int)              ✅ 已实现
 生效」整节（含可复现的核验方法），`TODO.md` 新增 §5b 并把它标为**未决**：该实现
 还是该删除还没拍板 —— 删除的话就是 §3 那套「静默退化改成点名拒绝」，让
 `SetOption` 对它们报错而不是静默接受。
+
+---
+
+## 第七十一轮 —— B 类接通，以及 mutation 逼出的一处无覆盖
+
+第七十轮核验出 22 个 ✅ 里 16 个不成立，其中 B 类（`max-fps` / `framedrop`）只差
+最后一环。本轮接通它，然后按铁律跑突变 —— **突变没验证已知的测试，它挖出了一个
+更大的问题**。
+
+### 接通：链路、统计、默认值
+
+链路是三跳：`player_impl.cc` 填 `RendererFactory::Deps` →
+`default_renderer_factory.cc` 转成 `RendererImpl::Deps` → `ApplyVideoConfig()`
+装进 compositor。`SetOption` 只在 `PlayerBuilder` 上（构建期），所以不需要运行时
+转发路径。
+
+三件顺手修掉的：
+
+1. **接通点有两处，不是一处。** `SwitchVideoRenderer` 会**扔掉**
+   `VideoRendererImpl` 另建一个新的（旧的进 `retired_video_` graveyard），所以只在
+   `CreateSubRenderers` 装一次，轨切换后必然静默丢失。同一处还丢着 `vf` 滤镜图和
+   `decoder_preference` —— 后者是 docs/12 §2.3 那个「kHardwareOnly 静默退化成
+   软件解码」的**残留实例**：修好了进场那条，没修跨轨那条。现在三样都走同一个
+   `ApplyVideoConfig()`，两个构造点都调。
+2. **`frames_dropped_fps_` 被计数却从不上报。** compositor 一直分原因统计
+   （`frames_dropped_late` / `_fps` / `_stale_serial` / `_accurate_seek`），但
+   `PipelineStatistics` 只读 `frames_presented/dropped/repeated`。于是"cap 正在
+   丢帧"这件事宿主看不见。经 `video_frames_dropped_fps` 上报到
+   `PipelineStatistics` 与 `Pipeline::Statistics` 两个出口。
+3. **默认 31 是行为变更，不是 bug 修复。** `VideoConfig::max_fps` 默认 31，而
+   media 层自己的默认是 0。接通后 60fps 源会被降到 31fps。这是设计意图（docs/07
+   要求 golden 录制显式 `--option max-fps=-1` 关掉它 —— 默认不生效的话那一笔根本
+   不必写），但它是**默认行为的改变**，所以单独记在 docs/05 而不是混在"修复"里。
+
+### mutation 挖出的东西：`player/` 层零覆盖
+
+`renderer_option_wiring_unittest.cc` 六条测试，四个突变全部精确命中：删
+`SetMaxFps` → 3 红；删轨切换处的 `ApplyVideoConfig` → 只红轨切换那条；删
+`SetMaxFrameDrop` → 只红「值到达」那条。看起来钉死了。
+
+然后第五个突变：**删掉 `player_impl.cc` 里 `factory_deps.video_disabled =
+config_.video.disabled;` 这一行** —— 六条全绿。
+
+原因：这些测试从 `RendererImpl::Deps` 起测，**根本没经过 player 层**。全树 grep
+`PlayerBuilder`，tests/ 里**零命中**：没有任何测试构造 `Player`，所以
+`PlayerImpl::PrepareAsync` 那段 deps 组装没有任何断言。
+
+这不是假想。接通 `max-fps` 的过程中我真的误删了那行（`old_string` 里带了相邻两
+行，替换时没保留），**528 个测试全绿**，是提交前自查 `git diff` 才抓到。所以测试
+文件里补了 `vn`/`an` 两条 —— 但补的时候如实写清了它们的边界：**它们覆盖 media 层
+那一跳，player 层是空的**。
+
+「绿」又一次来自缺席，只是这次缺席的是**一整个层**。TODO 新增 §5c 登记它，并写明
+唯一的现行保障是 diff 自查 —— 这不可持续，所以也写了要做的事（先给工厂开一个
+注入缝，才能观测 deps）。
+
+### 门禁（全部当场跑出）
+
+| 项 | 结果 |
+| --- | --- |
+| `check_invariants` | all rules pass（458 文件） |
+| `clang-format`（改动文件） | 0 偏离 |
+| `cpplint`（CI 口径，只 `.cc`） | 0 error |
+| clang-tidy 18.1.8（改动文件） | 0 条 |
+| no-ffmpeg-werror | **530/530** |
+| macos-sdl2-werror（含 GLFW） | **724/724** |
+| `glfw-check` | 构建通过 |
+
+顺带一个发现：**cpplint 的 CI 口径只 glob `*.cc`，头文件从未被检查** —— 与
+clang-tidy 那个 `-header-filter` 盲区同类。手动把 `.h` 加进去跑，19 条存量
+（header guard 风格、缺 `<utility>`/`<string>`），没有一条指向本轮新增的行。
+未修：那是独立的门禁 scope 决策，不该塞进这一轮。
