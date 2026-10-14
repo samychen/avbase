@@ -240,6 +240,18 @@ Status PlayerImpl::PrepareAsync() {
   // without anybody remembering to do it, are on Deps::scene_observer.
   factory_deps.scene_observer =
       base::BindRepeating(&Scene::Bind, base::Unretained(&scene_));
+  // The §5c seam, and why it sits HERE rather than anywhere later: this is
+  // the last moment the assembled Deps exist as a whole, before the move
+  // into the factory scatters them into the renderers. Snapshotted under
+  // state_lock_, run outside it -- see set_deps_observer_for_testing.
+  FactoryDepsObserver deps_observer;
+  {
+    base::AutoLock scoped(state_lock_);
+    deps_observer = deps_observer_;
+  }
+  if (deps_observer) {
+    deps_observer(factory_deps);
+  }
   auto renderer_factory =
       std::make_shared<media::DefaultRendererFactory>(std::move(factory_deps));
   {

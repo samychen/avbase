@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 
+#include "base/functional/callback.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
@@ -104,6 +105,29 @@ class PlayerImpl final : public media::Pipeline::Client {
   void RemoveObserver(int id);
 
   const PlayerConfig& config() const { return config_; }
+
+  // ---- the one test seam (docs/TODO §5c) ----------------------------------
+  // PrepareAsync translates PlayerConfig into DefaultRendererFactory::Deps,
+  // and until this existed nothing observed that translation. The cost was
+  // concrete, not theoretical: wiring "max-fps" in round 71, an edit deleted
+  // `factory_deps.video_disabled = config_.video.disabled;` (the "vn"
+  // option) and all 528 tests stayed green -- the loss surfaced only in a
+  // pre-commit diff self-review. A hop nobody asserts is a hop nobody can
+  // change safely.
+  //
+  // The observer fires once per PrepareAsync, on the calling thread, with
+  // the fully populated Deps just before they are moved into the factory:
+  // the last moment they exist as a whole. It is read under state_lock_ and
+  // invoked OUTSIDE it (snapshot, then run) -- the discipline
+  // GlSceneEngine::Sync() uses for its update hook, and for the same
+  // reason: the callback is test code and must never run under a player
+  // lock.
+  //
+  // Deliberately not in the public SDK. This header is internal; a host has
+  // no business observing what the facade hands its own factory.
+  using FactoryDepsObserver =
+      base::RepeatingCallback<void(const media::DefaultRendererFactory::Deps&)>;
+  void set_deps_observer_for_testing(FactoryDepsObserver observer);
 
  private:
   // MediaLog is what the media layer reports stages and errors through; the
@@ -229,6 +253,12 @@ class PlayerImpl final : public media::Pipeline::Client {
     base::AutoLock scoped(pipeline_lock_);
     renderer_factory_ = std::move(factory);
   }
+
+  // The §5c observer; see set_deps_observer_for_testing. Guarded even though
+  // the contract is "set it before the first PrepareAsync": the lock costs
+  // nothing once per prepare, and the annotation is what makes the contract
+  // checkable instead of a promise in a comment.
+  FactoryDepsObserver deps_observer_ GUARDED_BY(state_lock_);
 
   // ---- state ---------------------------------------------------------------
   mutable base::Lock state_lock_;

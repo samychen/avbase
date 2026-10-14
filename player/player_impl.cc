@@ -89,6 +89,11 @@ PlayerImpl::~PlayerImpl() {
   audio_thread_.Stop();
 }
 
+void PlayerImpl::set_deps_observer_for_testing(FactoryDepsObserver observer) {
+  base::AutoLock scoped(state_lock_);
+  deps_observer_ = std::move(observer);
+}
+
 void PlayerImpl::Start() {
   PlayerState previous;
   {
