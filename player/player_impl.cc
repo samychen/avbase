@@ -280,6 +280,10 @@ Status PlayerImpl::PrepareAsync() {
   factory_deps.av_sync = std::move(av_sync);
   factory_deps.video_disabled = config_.video.disabled;
   factory_deps.audio_disabled = config_.audio.disabled;
+  // "max-fps"/"framedrop": the setters had no caller in the tree until now, so
+  // the cap never reached the compositor. The default (31) is what turns it on.
+  factory_deps.video_max_fps = config_.video.max_fps;
+  factory_deps.video_max_frame_drop = config_.video.max_frame_drop;
   // This is where config.video.decoder_preference stops being documentation.
   // It reaches VideoRendererImpl, which ranks the candidates against the real
   // stream config; before this wiring the field was honoured nowhere at
@@ -287,14 +291,9 @@ Status PlayerImpl::PrepareAsync() {
   factory_deps.video_decoder_preference = config_.video.decoder_preference;
   factory_deps.video_hw_codecs = config_.video.hw_codecs;
   factory_deps.video_decoder_preference_set = true;
-  // How this scene gets plumbed into whichever sink this factory builds.
-  //
-  // A callback rather than a pointer because the sink does not exist yet: it is
-  // created on the media sequence the first time something asks the factory
-  // for one, which is during pipeline start. Observing that moment is the only
-  // way to catch it while it is still safe to install the hook, and it is also
-  // how the old pipeline's engine gets released without anybody having to
-  // remember to do it.
+  // How this scene gets plumbed into whichever sink this factory builds. Why a
+  // callback rather than a pointer, and how the old engine gets released
+  // without anybody remembering to do it, are on Deps::scene_observer.
   factory_deps.scene_observer =
       base::BindRepeating(&Scene::Bind, base::Unretained(&scene_));
   auto renderer_factory =
