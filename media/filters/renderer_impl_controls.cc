@@ -430,6 +430,8 @@ void RendererImpl::SwitchVideoRenderer(DemuxerStream* new_stream,
   video_ = std::make_unique<VideoRendererImpl>(
       deps_.video_task_runner, deps_.video_factories, deps_.tick_clock,
       deps_.compositor_thresholds);
+  // New object: everything inside it is re-installed (ApplyVideoConfig).
+  ApplyVideoConfig(video_.get());
   WireVideoCallbacks();
   video_initialized_ = false;
   pending_video_switch_.stream = new_stream;

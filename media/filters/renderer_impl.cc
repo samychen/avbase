@@ -187,6 +187,23 @@ void RendererImpl::Initialize(
   }
 }
 
+void RendererImpl::ApplyVideoConfig(VideoRendererImpl* v) {
+  if (!deps_.video_filter_graph.empty()) {
+    v->set_filter_graph(deps_.video_filter_graph, deps_.video_filter_factory);
+  }
+  // Forwarded, not applied here: the ranking needs the stream's config, which
+  // only exists once Initialize() runs on S3 (see
+  // VideoRendererImpl::set_decoder_preference).
+  if (deps_.video_decoder_preference_set) {
+    v->set_decoder_preference(deps_.video_decoder_preference,
+                              deps_.video_hw_codecs);
+  }
+  // config.video.max_fps / config.video.max_frame_drop ("max-fps" /
+  // "framedrop"). 0 disables each, which is also the compositor's default.
+  v->SetMaxFps(deps_.video_max_fps);
+  v->SetMaxFrameDrop(deps_.video_max_frame_drop);
+}
+
 void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
                                       DemuxerStream* audio_stream) {
   if (has_video_) {
@@ -197,17 +214,7 @@ void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
     video_ = std::make_unique<VideoRendererImpl>(
         deps_.video_task_runner, deps_.video_factories, deps_.tick_clock,
         deps_.compositor_thresholds);
-    if (!deps_.video_filter_graph.empty()) {
-      video_->set_filter_graph(deps_.video_filter_graph,
-                               deps_.video_filter_factory);
-    }
-    // Forwarded, not applied here: the ranking needs the stream's config, which
-    // only exists once Initialize() runs on S3 (see
-    // VideoRendererImpl::set_decoder_preference).
-    if (deps_.video_decoder_preference_set) {
-      video_->set_decoder_preference(deps_.video_decoder_preference,
-                                     deps_.video_hw_codecs);
-    }
+    ApplyVideoConfig(video_.get());
   }
   if (has_audio_) {
     audio_stream_ = audio_stream;

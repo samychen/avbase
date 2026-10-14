@@ -88,6 +88,7 @@ PipelineStatistics RendererImpl::GetStatistics() const {
     const VideoFrameCompositor::Stats c = video_->compositor_stats();
     stats.video_frames_presented = c.frames_presented;
     stats.video_frames_dropped = c.frames_dropped;
+    stats.video_frames_dropped_fps = c.frames_dropped_fps;
     stats.video_frames_repeated = c.frames_repeated;
     if (c.avg_av_diff_ms != 0.0) {
       stats.avg_av_diff_ms = c.avg_av_diff_ms;

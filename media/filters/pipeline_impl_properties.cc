@@ -118,6 +118,7 @@ Pipeline::Statistics PipelineImpl::GetStatistics() const {
   out.total_bytes_read = last_stats_.total_bytes_read;
   out.video_frames_presented = last_stats_.video_frames_presented;
   out.video_frames_dropped = last_stats_.video_frames_dropped;
+  out.video_frames_dropped_fps = last_stats_.video_frames_dropped_fps;
   out.audio_glitches = last_stats_.audio_glitches;
   out.avg_av_diff_ms = last_stats_.avg_av_diff_ms;
   out.seek_count = last_stats_.seek_count;

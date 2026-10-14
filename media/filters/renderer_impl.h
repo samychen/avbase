@@ -149,6 +149,12 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
     // config.video.disabled / config.audio.disabled ("vn"/"an").
     bool video_disabled = false;
     bool audio_disabled = false;
+    // config.video.max_fps ("max-fps") and config.video.max_frame_drop
+    // ("framedrop"), applied to the compositor through VideoRendererImpl.
+    // 0 (and any negative value) disables each one, which is also the
+    // compositor's own default -- see VideoFrameCompositor::SetMaxFps.
+    int video_max_fps = 0;
+    int video_max_frame_drop = 0;
   };
 
   explicit RendererImpl(Deps deps);
@@ -195,6 +201,13 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // For PipelineImpl's statistics aggregation.
   PipelineStatistics GetStatistics() const;
   bool ended() const { return ended_; }
+
+  // The video sub-renderer, or nullptr when there is no video leg. Exposed so
+  // "did this setting reach the compositor" is answerable from outside -- the
+  // alternative is a behaviour-only assertion, which cannot tell a lost
+  // setting from a setting that never had anything to do. Borrowed; the
+  // renderer owns it and hands it to the graveyard on a track switch.
+  VideoRendererImpl* video_renderer() const { return video_.get(); }
 
   // Cadence of the S1 clock/statistics push loops; shared by the start path
   // and the audio-switch resumption.
@@ -257,6 +270,20 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // Called once from Initialize() on S1; the Posts inside go to S3/S4.
   void CreateSubRenderers(DemuxerStream* video_stream,
                           DemuxerStream* audio_stream);
+  // Applies every deps_ setting that lives INSIDE a VideoRendererImpl to |v|:
+  // the filter graph, the decoder preference and the two pacing caps.
+  //
+  // Must be called at BOTH sites that construct one (initial start and the
+  // mid-flight track switch), because a switch throws the old renderer away
+  // and builds a fresh one: the compositor is new, the filter stage is new,
+  // and none of these settings survive. They are not carried over because
+  // there is nothing to carry them from -- the retiring renderer is inert and
+  // headed for the graveyard.
+  //
+  // The track-switch branch had none of the three until now, which is the same
+  // defect docs/12 §2.3 describes for the first entry path (kHardwareOnly
+  // falling back to software): fixed on the way in, lost on the way across.
+  void ApplyVideoConfig(VideoRendererImpl* v);
   // Periodic: read the master clock on S1, push it to S3.
   void PushMasterClock();
   void PushStatistics();

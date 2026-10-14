@@ -56,6 +56,8 @@ std::unique_ptr<Renderer> DefaultRendererFactory::CreateRenderer(
   impl_deps.video_filter_factory = deps_.video_filter_factory;
   impl_deps.video_disabled = deps_.video_disabled;
   impl_deps.audio_disabled = deps_.audio_disabled;
+  impl_deps.video_max_fps = deps_.video_max_fps;
+  impl_deps.video_max_frame_drop = deps_.video_max_frame_drop;
   impl_deps.av_sync = deps_.av_sync;
   return std::make_unique<RendererImpl>(std::move(impl_deps));
 }

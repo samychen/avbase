@@ -80,6 +80,14 @@ class AVBASE_MEDIA_EXPORT DefaultRendererFactory final
     // is hidden from the renderer, exactly as if the container had none.
     bool video_disabled = false;
     bool audio_disabled = false;
+    // config.video.max_fps ("max-fps") and config.video.max_frame_drop
+    // ("framedrop"). Both default to 0 here, which is the compositor's own
+    // default and means "no cap / no dropping" -- so a host that builds a
+    // renderer without a Player keeps today's behaviour, and it is the
+    // PlayerConfig default (31) that turns the cap on when it is plumbed
+    // through. See VideoFrameCompositor::SetMaxFps for what the values mean.
+    int video_max_fps = 0;
+    int video_max_frame_drop = 0;
     // The shared clock controller, constructed by the facade per playback
     // (the facade and PipelineImpl::GetMediaTime() both need the same
     // instance to survive renderer teardown).
