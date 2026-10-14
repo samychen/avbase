@@ -28,7 +28,6 @@ namespace ff = ::avbase::media::ffmpeg;
 AVPixelFormat ToAvPixelFormat(VideoFormat format) {
   switch (format) {
   case VideoFormat::kI420:
-    return AV_PIX_FMT_YUV420P;
   case VideoFormat::kYV12:
     return AV_PIX_FMT_YUV420P;  // Plane order differs.
   case VideoFormat::kNV12:

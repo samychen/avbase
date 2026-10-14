@@ -46,7 +46,6 @@ const libyuv::YuvConstants* SelectYuvMatrix(const AVFrame& src) {
   case AVCOL_SPC_BT470BG:
   case AVCOL_SPC_SMPTE170M:
   case AVCOL_SPC_SMPTE240M:
-    return full_range ? &libyuv::kYuvJPEGConstants : &libyuv::kYuvI601Constants;
   default:
     return full_range ? &libyuv::kYuvJPEGConstants : &libyuv::kYuvI601Constants;
   }

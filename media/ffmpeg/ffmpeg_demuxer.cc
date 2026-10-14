@@ -95,16 +95,15 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
     DemuxerStreamType type, int32_t index,
     base::scoped_refptr<MediaLog> media_log,
     base::scoped_refptr<base::SequencedTaskRunner> media_runner,
-    const VideoDecoderConfig& video_config,
-    const AudioDecoderConfig& audio_config,
-    const TextDecoderConfig& text_config, StreamLiveness liveness)
+    VideoDecoderConfig video_config, AudioDecoderConfig audio_config,
+    TextDecoderConfig text_config, StreamLiveness liveness)
     : type_(type),
       index_(index),
       media_log_(std::move(media_log)),
       media_runner_(std::move(media_runner)),
-      video_config_(video_config),
-      audio_config_(audio_config),
-      text_config_(text_config),
+      video_config_(std::move(video_config)),
+      audio_config_(std::move(audio_config)),
+      text_config_(std::move(text_config)),
       liveness_(liveness),
       queue_(std::make_unique<DecoderBufferQueue>(
           std::string(GetDemuxerStreamTypeName(type)) + "#" +
@@ -314,7 +313,7 @@ bool IsNetworkUri(const std::string& uri) {
                                    "rtmps://", "rtsp://",  "srt://",
                                    "mms://",   "udp://",   "tcp://"};
   for (const char* scheme : kSchemes) {
-    if (uri.rfind(scheme, 0) == 0) {
+    if (uri.starts_with(scheme)) {
       return true;
     }
   }
@@ -356,7 +355,12 @@ FFmpegDemuxer::BuildOpenOptions(const DemuxerOptions& options,
     if (!options.headers.empty()) {
       std::string joined;
       for (const auto& [key, value] : options.headers) {
-        joined += key + ": " + value + "\r\n";
+        // Appended piecewise: key + ": " + value + "\r\n" would build (and
+        // free) three temporaries per header.
+        joined += key;
+        joined += ": ";
+        joined += value;
+        joined += "\r\n";
       }
       out["headers"] = joined;
     }

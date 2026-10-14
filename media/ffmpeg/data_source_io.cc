@@ -64,7 +64,10 @@ bool DataSourceIO::Attach(AVFormatContext* ctx, media::MediaError* error) {
   if (!pb_) {
     // M11: the av_malloc'd 32KB buffer was owned by the (now never created)
     // AVIOContext -- on this failure path it leaked.
-    av_freep(&io_buffer_);
+    // av_freep() takes void*, and uint8_t** -> void* is a multilevel
+    // conversion the compiler accepts silently (and tidy flags) -- it would
+    // take any T** here. reinterpret_cast names the one type it is.
+    av_freep(reinterpret_cast<void*>(&io_buffer_));
     *error = UnusableSourceError("avio_alloc_context failed (out of memory)");
     return false;
   }

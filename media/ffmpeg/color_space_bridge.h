@@ -8,6 +8,12 @@
 #include "media/base/decoder_config.h"
 #include "media/base/video_color_space.h"
 
+// Only ever an opaque pointer here (the definition lives in av_includes.h, and
+// C4 keeps libav types inside media/ffmpeg). Forward-declared rather than
+// included so this header stays cheap: it used to rely on the includer -- and
+// on avbase_ffmpeg's precompiled header -- having already seen it.
+struct AVFrame;
+
 namespace avbase::media::ffmpeg {
 
 // Maps an AVFrame's colour metadata onto avbase's VideoColorSpace, falling

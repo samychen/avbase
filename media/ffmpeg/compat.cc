@@ -271,8 +271,6 @@ media::DecoderStatus ToDecoderStatus(int av_error, std::string_view context) {
   Codes code = Codes::kDecodeError;
   switch (av_error) {
   case AVERROR(EAGAIN):
-    code = Codes::kDecodeError;
-    break;
   case AVERROR_EOF:
     code = Codes::kDecodeError;
     break;

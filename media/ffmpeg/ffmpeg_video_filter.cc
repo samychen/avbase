@@ -200,9 +200,15 @@ bool FFmpegVideoFilter::Process(base::scoped_refptr<VideoFrame> in,
       const int rows =
           p == 0 ? ctx_->coded_size.height : ctx_->coded_size.height / 2;
       for (int y = 0; y < rows; ++y) {
+        // Row stride in the wide type the pointer arithmetic already uses:
+        // y * stride is int multiplication, and a 2^31-byte row offset would
+        // overflow it before the widening to ptrdiff_t ever happens.
+        const ptrdiff_t dst_offset =
+            static_cast<ptrdiff_t>(y) * result->stride(plane);
+        const ptrdiff_t src_offset =
+            static_cast<ptrdiff_t>(y) * out_frame->linesize[p];
         std::memcpy(
-            dst_span.data() + y * result->stride(plane),
-            out_frame->data[p] + y * out_frame->linesize[p],
+            dst_span.data() + dst_offset, out_frame->data[p] + src_offset,
             static_cast<size_t>(out_frame->linesize[p] < result->stride(plane)
                                     ? out_frame->linesize[p]
                                     : result->stride(plane)));

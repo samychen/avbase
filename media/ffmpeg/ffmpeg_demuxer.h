@@ -46,9 +46,8 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
       DemuxerStreamType type, int32_t index,
       base::scoped_refptr<MediaLog> media_log,
       base::scoped_refptr<base::SequencedTaskRunner> media_runner,
-      const VideoDecoderConfig& video_config,
-      const AudioDecoderConfig& audio_config,
-      const TextDecoderConfig& text_config, StreamLiveness liveness);
+      VideoDecoderConfig video_config, AudioDecoderConfig audio_config,
+      TextDecoderConfig text_config, StreamLiveness liveness);
   FFmpegDemuxerStream(const FFmpegDemuxerStream&) = delete;
   FFmpegDemuxerStream& operator=(const FFmpegDemuxerStream&) = delete;
   ~FFmpegDemuxerStream() override;
