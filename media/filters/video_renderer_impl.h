@@ -242,6 +242,11 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
   void SetStepMode(bool step);
   void SetMaxFrameDrop(int max_frame_drop);
   void SetMaxFps(int max_fps);
+  // The compositor's current values for the two above, so "did the setting
+  // reach the algorithm" is answerable. See VideoFrameCompositor::max_fps on
+  // why the read side matters as much as the write side.
+  int max_frame_drop() const { return compositor_.max_frame_drop(); }
+  int max_fps() const { return compositor_.max_fps(); }
   void SetBufferingBlocked(bool blocked);
   void BeginAccurateSeek(base::TimeDelta target);
   void EndAccurateSeek();

@@ -120,6 +120,9 @@ class AVBASE_MEDIA_EXPORT Pipeline {
     int64_t total_bytes_read{0};
     uint64_t video_frames_presented{0};
     uint64_t video_frames_dropped{0};
+    // The fps-capped subset of video_frames_dropped, so a host can tell "the
+    // cap I asked for is doing work" from "the pipeline is falling behind".
+    uint64_t video_frames_dropped_fps{0};
     uint64_t audio_glitches{0};
     double avg_av_diff_ms{0.0};
     uint64_t seek_count{0};

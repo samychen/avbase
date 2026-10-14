@@ -205,6 +205,17 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
   void SetPlaybackRate(double rate);
   void SetMaxFrameDrop(int max_frame_drop);
   void SetMaxFps(int max_fps);
+  // The read side of the two setters above. They exist because both of these
+  // settings were write-only for a long time: the setters had no caller in the
+  // whole tree, and the values they carried could not be read back either. A
+  // setting that can be written but not read is exactly the shape that let
+  // "max-fps" and "framedrop" pass as implemented options while nothing
+  // reached the compositor -- there was no way to ask "did it get here?".
+  //
+  // Locked reads of the same fields the setters write; const, so a test (or a
+  // host diagnosing its own configuration) can call them from anywhere.
+  int max_frame_drop() const;
+  int max_fps() const;
   void SetPaused(bool paused);
   void SetStepMode(bool step);
   void SetBufferingBlocked(bool blocked);

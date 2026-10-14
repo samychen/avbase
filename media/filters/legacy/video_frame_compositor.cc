@@ -442,6 +442,16 @@ void VideoFrameCompositor::SetMaxFps(int max_fps) {
   max_fps_ = max_fps;
 }
 
+int VideoFrameCompositor::max_fps() const {
+  base::AutoLock scoped(lock_);
+  return max_fps_;
+}
+
+int VideoFrameCompositor::max_frame_drop() const {
+  base::AutoLock scoped(lock_);
+  return max_frame_drop_;
+}
+
 void VideoFrameCompositor::SetPaused(bool paused) {
   base::AutoLock scoped(lock_);
   paused_ = paused;

@@ -105,6 +105,15 @@ struct AVBASE_MEDIA_EXPORT PipelineStatistics {
   uint64_t video_frames_decoded{0};
   uint64_t video_frames_dropped{0};  // Late, fps-capped, or stale serial.
   uint64_t video_frames_presented{0};
+  // The fps-capped subset of video_frames_dropped. The compositor already
+  // counted these separately (frames_dropped_fps_) but nothing reported them,
+  // so "max-fps is capping my output" was invisible to a stats consumer: the
+  // total dropped count moves for late frames and for seek generations too,
+  // and there was no way to attribute it. Kept as a separate field rather than
+  // a drop-reason breakdown because the reasons are not mutually exclusive to
+  // count, and this one is the only one that is a policy decision the host
+  // made -- the others are the pipeline catching up with reality.
+  uint64_t video_frames_dropped_fps{0};
   uint64_t video_frames_repeated{0};  // Held because no new frame was due.
   uint64_t video_decode_error_count{0};
   uint64_t video_keyframe_count{0};
