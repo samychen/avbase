@@ -279,6 +279,60 @@ AvSyncController::AlignAudioDurationToVideo(base::TimeDelta raw_duration) {
   return aligned.is_negative() ? base::TimeDelta() : aligned;
 }
 
+// ---------------------------------------------------------------------------
+// Per-source playback offsets (docs/14 stage 2)
+// ---------------------------------------------------------------------------
+
+void AvSyncController::RegisterSource(int source_id) {
+  if (source_id < 0) {
+    DCHECK(false) << "source ids are dense from 0; got " << source_id;
+    return;
+  }
+  base::AutoLock scoped(source_lock_);
+  // resize, not push_back: ids arrive in order at Initialize, and a gap
+  // would mean a source was skipped -- which the pipeline never does.
+  if (static_cast<size_t>(source_id) >= source_offsets_.size()) {
+    source_offsets_.resize(static_cast<size_t>(source_id) + 1);
+  }
+}
+
+void AvSyncController::SetSourceOffset(int source_id, base::TimeDelta offset) {
+  if (source_id <= 0) {
+    // Source 0 IS the master timeline (its audio clock is the master), and
+    // negative ids are not sources. Both are no-ops rather than errors: the
+    // pipeline deliberately skips source 0 when stating offsets, so this is
+    // the documented contract, not a tolerated mistake.
+    return;
+  }
+  base::AutoLock scoped(source_lock_);
+  if (static_cast<size_t>(source_id) >= source_offsets_.size()) {
+    DCHECK(false) << "source " << source_id << " was never registered";
+    return;
+  }
+  source_offsets_[static_cast<size_t>(source_id)] = offset;
+}
+
+base::TimeDelta AvSyncController::source_offset(int source_id) const {
+  if (source_id <= 0) {
+    return base::TimeDelta();
+  }
+  base::AutoLock scoped(source_lock_);
+  if (static_cast<size_t>(source_id) >= source_offsets_.size()) {
+    return base::TimeDelta();
+  }
+  return source_offsets_[static_cast<size_t>(source_id)];
+}
+
+base::TimeDelta AvSyncController::SourceTime(int source_id,
+                                             base::TimeDelta media_pts) const {
+  if (media::IsNoTimestamp(media_pts)) {
+    // No timestamp maps to no timestamp; adding an offset to
+    // kNoTimestamp would produce a meaningless "valid" value.
+    return media_pts;
+  }
+  return media_pts + source_offset(source_id);
+}
+
 void AvSyncController::GetWallClockTimes(
     const std::vector<base::TimeDelta>& media_timestamps,
     base::TimeTicks reference_time, std::vector<WallClockTime>* out) {

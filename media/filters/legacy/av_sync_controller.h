@@ -47,6 +47,7 @@
 #include <stdint.h>
 
 #include <atomic>
+#include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/synchronization/lock.h"
@@ -133,6 +134,34 @@ class AVBASE_MEDIA_EXPORT AvSyncController final : public TimeSource {
   // audio drifts toward video instead of away from it.
   base::TimeDelta AlignAudioDurationToVideo(base::TimeDelta raw_duration);
 
+  // ---- Per-source playback offsets (docs/14 stage 2) -----------------------
+  // Declares that |source_id| exists. Called once per source at Initialize;
+  // re-registering is a no-op that keeps whatever offset was set. Source ids
+  // are dense from 0 (the composite numbers its children by position), which
+  // is what lets the table below be a plain vector.
+  void RegisterSource(int source_id);
+  // Maps |media_pts| -- a timestamp in source |source_id|'s OWN timeline --
+  // onto the master timeline: the master reading at which a frame carrying
+  // that timestamp should be on screen. Source 0 maps identically (the
+  // master timeline IS source 0's), and so does any source that was never
+  // registered: with no offset stated, a source is assumed time-aligned.
+  //
+  // This is the quantity a multi-source compositor schedules against
+  // (docs/14 §5.1); in stage 2 its callers are the unit tests and the
+  // per-leg clock push, which needs the inverse direction (see
+  // source_offset). The first production consumer of the forward direction
+  // is stage 3's compositor.
+  base::TimeDelta SourceTime(int source_id, base::TimeDelta media_pts) const;
+  // The offset itself, for the pacing push and for diagnostics. Zero for
+  // source 0 and for unregistered sources.
+  base::TimeDelta source_offset(int source_id) const;
+  // States the offset for a registered source. Source 0's is structurally
+  // zero and cannot be changed: the master clock is source 0's audio clock,
+  // so shifting source 0 as well would correct the same skew twice. An
+  // unregistered id is ignored (a DCHECK in debug builds) -- the renderer
+  // registers exactly the sources it discovered at Initialize.
+  void SetSourceOffset(int source_id, base::TimeDelta offset);
+
   // TimeSource:
   void GetWallClockTimes(const std::vector<base::TimeDelta>& media_timestamps,
                          base::TimeTicks reference_time,
@@ -166,6 +195,17 @@ class AVBASE_MEDIA_EXPORT AvSyncController final : public TimeSource {
   mutable double audio_diff_cum_ GUARDED_BY(diff_lock_){0.0};
   mutable int audio_diff_samples_ GUARDED_BY(diff_lock_){0};
   mutable double audio_diff_avg_ GUARDED_BY(diff_lock_){0.0};
+
+  // The per-source offset table (docs/14 stage 2). Written on the media
+  // sequence (Initialize registers; a seek's completion states the offsets)
+  // and read from there by the clock push; the lock exists because stage 3's
+  // compositor will read SourceTime() from the render sequences, and a
+  // plain vector would then be a data race. The table is tiny and touched
+  // once per push tick, so the cost is irrelevant next to the three clocks.
+  mutable base::Lock source_lock_;
+  // Index == source id; size == number of registered sources. Values are
+  // offsets, defaulted to zero (time-aligned) by resize.
+  std::vector<base::TimeDelta> source_offsets_ GUARDED_BY(source_lock_);
 
   std::atomic<bool> has_audio_{true};
   std::atomic<bool> has_video_{true};

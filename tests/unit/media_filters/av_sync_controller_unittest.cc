@@ -339,6 +339,97 @@ TEST_F(AvSyncControllerTest, MasterTypeNames) {
   EXPECT_STREQ(GetMasterTypeName(M::kExternal), "external");
 }
 
+// ---- per-source playback offsets (docs/14 stage 2) -------------------------
+
+// Source 0 is the master timeline by construction (its audio clock is the
+// master), so its offset is structurally zero and SetSourceOffset refuses to
+// change it. Shifting source 0 as well would correct the same skew twice:
+// once in the mapping and once in the clock it is mapped against.
+TEST_F(AvSyncControllerTest, SourceZeroCannotBeOffset) {
+  // Registered like every other source -- Initialize registers all of them,
+  // source 0 included -- so the refusal below is about source 0's STRUCTURAL
+  // offset, not about a missing registration.
+  controller_->RegisterSource(0);
+  controller_->SetSourceOffset(0, base::Seconds(5));
+  EXPECT_EQ(controller_->source_offset(0), base::TimeDelta());
+  EXPECT_EQ(controller_->SourceTime(0, base::Seconds(3)), base::Seconds(3));
+}
+
+// A source nobody registered is assumed time-aligned: identity, not an
+// error. The renderer registers exactly the sources it discovered, so an
+// unregistered id means "this offset was never stated" -- and a stage-3
+// compositor asking about a source that does not exist should get the
+// un-mapped answer rather than a crash.
+TEST_F(AvSyncControllerTest, AnUnregisteredSourceMapsIdentically) {
+  EXPECT_EQ(controller_->source_offset(7), base::TimeDelta());
+  EXPECT_EQ(controller_->SourceTime(7, base::Seconds(3)), base::Seconds(3));
+}
+
+// The mapping itself: a secondary source's pts plus its offset is the master
+// reading at which that frame belongs on screen.
+TEST_F(AvSyncControllerTest, SourceTimeMapsPtsByTheStatedOffset) {
+  controller_->RegisterSource(1);
+  controller_->SetSourceOffset(1, base::Seconds(2));
+  EXPECT_EQ(controller_->source_offset(1), base::Seconds(2));
+  EXPECT_EQ(controller_->SourceTime(1, base::Seconds(3)), base::Seconds(5));
+  EXPECT_EQ(controller_->SourceTime(1, base::TimeDelta()), base::Seconds(2));
+  // Source 0 is unaffected by another source's offset.
+  EXPECT_EQ(controller_->SourceTime(0, base::Seconds(3)), base::Seconds(3));
+}
+
+// A negative offset is the "this source landed early" case: its pts map to
+// an EARLIER master reading, which is what pulls the picture forward.
+TEST_F(AvSyncControllerTest, ANegativeOffsetPullsTheSourceEarlier) {
+  controller_->RegisterSource(1);
+  controller_->SetSourceOffset(1, -base::Seconds(2));
+  EXPECT_EQ(controller_->SourceTime(1, base::Seconds(3)), base::Seconds(1));
+}
+
+// Registering is idempotent and must not reset the offset: Initialize
+// registers, a seek states the offset, and nothing re-registers in between
+// -- but a defensive re-register that wiped the table would silently
+// un-map every secondary source.
+TEST_F(AvSyncControllerTest, RegisteringTwiceKeepsTheOffset) {
+  controller_->RegisterSource(1);
+  controller_->SetSourceOffset(1, base::Seconds(2));
+  controller_->RegisterSource(1);
+  EXPECT_EQ(controller_->source_offset(1), base::Seconds(2));
+  EXPECT_EQ(controller_->SourceTime(1, base::Seconds(3)), base::Seconds(5));
+}
+
+// kNoTimestamp maps to kNoTimestamp. Adding an offset to TimeDelta::Min()
+// would manufacture a "valid" timestamp out of the absence of one, and
+// every caller treats a valid mapping as a frame that can be scheduled.
+TEST_F(AvSyncControllerTest, SourceTimePassesNoTimestampThrough) {
+  controller_->RegisterSource(1);
+  controller_->SetSourceOffset(1, base::Seconds(2));
+  EXPECT_EQ(controller_->SourceTime(1, media::kNoTimestamp),
+            media::kNoTimestamp);
+}
+
+// The offset table is a separate axis from the master clocks: registering a
+// source with a large offset must not move the master, the A/V diff, or the
+// master selection. This is the regression guard for the stage-2 gate
+// "single-source A/V sync metrics unchanged" -- the table is only consulted
+// by the per-source mapping, never by the three-clock resolution.
+TEST_F(AvSyncControllerTest, OffsetsDoNotDisturbTheMasterClock) {
+  controller_->SetStreamAvailability(/*has_audio=*/true, /*has_video=*/true);
+  controller_->OnAudioFramesConsumed(1024, base::Seconds(5), 1);
+  controller_->OnVideoFramePresented(base::Seconds(4), 1);
+  const base::TimeDelta master_before = controller_->GetMasterClock();
+  const base::TimeDelta diff_before = controller_->av_diff();
+
+  controller_->RegisterSource(1);
+  controller_->RegisterSource(2);
+  controller_->SetSourceOffset(1, base::Seconds(30));
+  controller_->SetSourceOffset(2, -base::Seconds(30));
+
+  EXPECT_EQ(controller_->GetMasterClock(), master_before);
+  EXPECT_EQ(controller_->av_diff(), diff_before);
+  EXPECT_EQ(controller_->ResolveMasterType(), M::kAudio);
+  EXPECT_EQ(controller_->master_serial(), 1);
+}
+
 // ---- seqlock correctness (behaviour difference Δ14) -------------------------
 
 // ffplay reads the clock's plain doubles from the video thread while the audio
