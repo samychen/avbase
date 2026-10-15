@@ -38,17 +38,23 @@ void RendererImpl::PushMasterClock() {
   CheckForEnded();
   CheckBufferingTransitions();
   const AvSyncController::Snapshot snapshot = av_sync_->GetSnapshot();
-  if (video_ && snapshot.master_valid) {
+  // Pushed to EVERY leg (docs/14 stage 1): a compositor with no clock
+  // presents frames the instant they decode, which burns the decode chain
+  // and grows the pending queue without bound. Source 0's leg remains the
+  // only one whose presented frames feed the clock (WireVideoCallbacks).
+  for (auto& v : video_renderers_) {
+    if (!v || !snapshot.master_valid) {
+      continue;
+    }
     // Posted, not called: the compositor's write side must stay on S3 (see the
     // threading note in video_renderer_impl.h for why S3 and not S1).
     deps_.video_task_runner->PostTask(
-        FROM_HERE,
-        base::BindOnce(&VideoRendererImpl::SetMasterClock,
-                       base::Unretained(video_.get()), snapshot.master,
-                       av_sync_->master_serial(), true));
+        FROM_HERE, base::BindOnce(&VideoRendererImpl::SetMasterClock,
+                                  base::Unretained(v.get()), snapshot.master,
+                                  av_sync_->master_serial(), true));
     deps_.video_task_runner->PostTask(
         FROM_HERE, base::BindOnce(&VideoRendererImpl::SetMasterIsVideo,
-                                  base::Unretained(video_.get()),
+                                  base::Unretained(v.get()),
                                   snapshot.resolved ==
                                       AvSyncController::MasterType::kVideo));
   }
@@ -84,26 +90,40 @@ PipelineStatistics RendererImpl::GetStatistics() const {
                          audio_params_.sample_rate());
     }
   }
-  if (video_) {
-    const VideoFrameCompositor::Stats c = video_->compositor_stats();
-    stats.video_frames_presented = c.frames_presented;
-    stats.video_frames_dropped = c.frames_dropped;
-    stats.video_frames_dropped_fps = c.frames_dropped_fps;
-    stats.video_frames_repeated = c.frames_repeated;
+  // Frame counts aggregate across every leg (docs/14 stage 1): the pipeline
+  // presented N frames in total, and a second chain's frames are as real as
+  // the first's. The per-frame COST and the A/V diff come from the FIRST leg
+  // that has one -- the composited layer, the one CreateSubRenderers handed
+  // the host sink, and the one whose lateness the viewer actually sees.
+  bool primary_sampled = false;
+  for (const auto& v : video_renderers_) {
+    if (!v) {
+      continue;
+    }
+    const VideoFrameCompositor::Stats c = v->compositor_stats();
+    stats.video_frames_presented += c.frames_presented;
+    stats.video_frames_dropped += c.frames_dropped;
+    stats.video_frames_dropped_fps += c.frames_dropped_fps;
+    stats.video_frames_repeated += c.frames_repeated;
+    if (primary_sampled) {
+      continue;
+    }
+    primary_sampled = true;
     if (c.avg_av_diff_ms != 0.0) {
       stats.avg_av_diff_ms = c.avg_av_diff_ms;
     }
-    // Frame counts come from the compositor, which counts them; the per-frame
-    // COST comes from the sink, which is the only object that runs the GL
-    // calls. Sampling it here is what turns sink telemetry into something a
-    // PlaybackStats reader can see, instead of a struct nobody calls.
+    // Frame counts come from the compositor, which counts them; the
+    // per-frame COST comes from the sink, which is the only object that
+    // runs the GL calls. Sampling it here is what turns sink telemetry into
+    // something a PlaybackStats reader can see, instead of a struct nobody
+    // calls.
     //
-    // filter_state is the one field the sink cannot supply. It sees only the
-    // frames that came out the far end of the graph, so an unfiltered frame
-    // and a frame the graph refused are the same thing to it; only the
-    // renderer, which decided, can tell them apart.
-    RenderPerfStats render = video_->sink_stats().render;
-    render.filter_state = video_->filter_state();
+    // filter_state is the one field the sink cannot supply. It sees only
+    // the frames that came out the far end of the graph, so an unfiltered
+    // frame and a frame the graph refused are the same thing to it; only
+    // the renderer, which decided, can tell them apart.
+    RenderPerfStats render = v->sink_stats().render;
+    render.filter_state = v->filter_state();
     stats.render = render;
   }
   if (audio_) {
@@ -114,7 +134,9 @@ PipelineStatistics RendererImpl::GetStatistics() const {
 
 void RendererImpl::TakeSnapshot(base::TimeDelta at,
                                 Renderer::SnapshotFrameCallback callback) {
-  if (!video_) {
+  // Source 0's leg: the composited layer is what a snapshot of "the video"
+  // means (docs/14 stage 1 -- a second picture is not yet composited in).
+  if (!video_renderer()) {
     std::move(callback).Run(
         MediaError(ErrorCode::kNotImplemented,
                    "this pipeline has no video renderer",
@@ -127,7 +149,7 @@ void RendererImpl::TakeSnapshot(base::TimeDelta at,
   // binding a WeakPtr as an argument would unwrap it to a raw pointer at the
   // dispatch layer, losing the liveness check (see base/functional/bind.h).
   base::WeakPtr<RendererImpl> self = weak_factory_.GetWeakPtr();
-  auto* video = video_.get();
+  auto* video = video_renderer();
   auto* media_runner = deps_.media_task_runner.get();
   deps_.video_task_runner->PostTask(
       FROM_HERE, base::BindOnce([video, self, media_runner, at,

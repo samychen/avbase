@@ -50,16 +50,21 @@ COLUMN_BASELINE = "tools/column_baseline.txt"
 # entry here requires a linked issue (invariant C12 / risk R12).
 LINE_LIMIT_ALLOWLIST = {
     # Both grew by the live-cue policy (SetSourceLiveness / IsCueStale and its
-    # wiring). The better fix is a renderer_impl_text.cc split, matching the
-    # ffmpeg_demuxer_track_select.cc seam; until then the ceiling moves rather
-    # than the code being compressed to fit, because the comments here are
-    # load-bearing (they record why liveness cannot be discovered by the
-    # renderer, which is the non-obvious part).
+    # wiring). That policy and the cue pump (PumpText / OnTextRead) are now in
+    # renderer_impl_text.cc, the split this entry always named as the better
+    # fix; what remains is the control surface itself. Splitting the track
+    # switches into their own TU is still the pending fix -- the allowlist
+    # ceiling moved down with the split (700 -> 690) rather than the
+    # load-bearing comments being compressed to fit, because they record why
+    # liveness cannot be discovered by the renderer, which is the non-obvious
+    # part.
     "media/filters/renderer_impl_controls.cc": (
-        700, "Renderer control surface: playback start, pause, accurate seek, "
-             "the audio AND video track switches, and the text leg. The video "
-             "switch added ~170 lines (docs/12 4.1); splitting the track "
-             "switches into their own TU is the pending fix."),
+        690, "Renderer control surface: the Set* family, GetMediaTime, the "
+             "accurate-seek window, the audio AND video track switches (with "
+             "the multi-source foreign-stream guards, docs/14 stage 1) and "
+             "the renderer type. The video switch added ~170 lines (docs/12 "
+             "4.1); splitting the track switches into their own TU is the "
+             "pending fix."),
     "player/player_impl.cc": (
         500, "The facade: config validation, the source/pipeline lifecycle, "
              "track selection, options and the public event surface. Its "
@@ -106,11 +111,14 @@ LINE_LIMIT_ALLOWLIST = {
              "before/after numbers live in the comment on CanPerformWsola(). "
              "See the LENGTH note in the file header."),
     "media/filters/renderer_impl.cc": (
-        600, "Sub-renderer lifecycle plumbing: initialize/flush/ended fan-out "
-             "across the video and audio halves plus the buffering-verdict "
-             "wiring from M9's starvation work. The two halves mirror each "
-             "other call for call; splitting video from audio would duplicate "
-             "the state machine instead of naming a seam. Revisit when M9 "
+        590, "Sub-renderer lifecycle plumbing: the initialize/flush/ended "
+             "fan-out across the video and audio halves plus the "
+             "buffering-verdict wiring from M9's starvation work. The two "
+             "halves mirror each other call for call; splitting video from "
+             "audio would duplicate the state machine instead of naming a "
+             "seam. Sub-renderer construction and callback wiring moved to "
+             "renderer_impl_sources.cc (docs/14 stage 1, C1 split) and the "
+             "ceiling moved down with it (600 -> 590). Revisit when M9 "
              "BufferController absorbs CheckBufferingTransitions()."),
 }
 

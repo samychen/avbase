@@ -16,6 +16,7 @@
 
 #include "media/filters/renderer_impl.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "base/check.h"
@@ -82,6 +83,15 @@ DestroyOn(const base::scoped_refptr<base::SequencedTaskRunner>& runner,
 }
 
 RendererImpl::~RendererImpl() {
+  // A flush whose last leg had not answered yet still owes the pipeline its
+  // completion. The single-leg code this replaces posted the caller's closure
+  // straight to S1 -- no renderer state, so it survived teardown; the fan-out
+  // barrier (docs/14 stage 1) holds it in a member instead, so teardown runs
+  // it. First thing, so a completion that re-enters the renderer finds a
+  // fully alive object.
+  if (video_flush_done_cb_) {
+    std::move(video_flush_done_cb_).Run();
+  }
   // Fixed destruction order (docs/03 §10.1): consumers before producers, and
   // av_sync_ last because both sub-renderers hold a pointer to it.
   //
@@ -92,8 +102,13 @@ RendererImpl::~RendererImpl() {
   // caller's shutdown contract (Player::StopSync detaches after
   // config.shutdown_timeout, Δ15), and the sinks' own Stop() guarantees no
   // further Render() callbacks while this runs.
-  if (video_) {
-    DestroyOn(deps_.video_task_runner.get(), &video_);
+  //
+  // One loop per video source (docs/14 stage 1): every leg is destroyed the
+  // same way, on S3, before the graveyard is drained.
+  for (auto& video : video_renderers_) {
+    if (video) {
+      DestroyOn(deps_.video_task_runner.get(), &video);
+    }
   }
   // The audio renderer must QUIESCE on S4 before its memory goes away: a
   // pump task whose read reply was still in flight would otherwise run after
@@ -111,7 +126,6 @@ RendererImpl::~RendererImpl() {
   // handed-back sink means the retiring renderer has nothing left to quiesce
   // (its sink is null), so the in-flight-decode drain that the audio path
   // needs has already happened inside the handover itself.
-  DestroyOn(deps_.video_task_runner.get(), &video_);
   for (auto& retired : retired_video_) {
     DestroyOn(deps_.video_task_runner.get(), &retired);
   }
@@ -143,22 +157,38 @@ void RendererImpl::Initialize(
   DCHECK(media_resource);
   DCHECK(client);
   client_ = client;
+  media_resource_ = media_resource;
   if (media_task_runner) {
     deps_.media_task_runner = std::move(media_task_runner);
   }
   av_sync_ = deps_.av_sync;
 
-  DemuxerStream* video_stream =
-      deps_.video_disabled
-          ? nullptr
-          : media_resource->GetStream(DemuxerStreamType::kVideo);
-  DemuxerStream* audio_stream =
-      deps_.audio_disabled
-          ? nullptr
-          : media_resource->GetStream(DemuxerStreamType::kAudio);
-  has_video_ = video_stream != nullptr;
-  has_audio_ = audio_stream != nullptr;
-  if (!has_video_ && !has_audio_) {
+  // Discover every source's streams through the addressing axis (docs/14
+  // stage 1). The no-axis GetStream(type) the old code called IS source 0, so
+  // a single-source resource walks exactly the same path it always did.
+  const int source_count = media_resource->source_count();
+  std::vector<SourceStreams> sources;
+  sources.reserve(source_count);
+  bool any_media = false;
+  for (int id = 0; id < source_count; ++id) {
+    SourceStreams s;
+    s.source_id = id;
+    s.video = deps_.video_disabled
+                  ? nullptr
+                  : media_resource->GetStream(id, DemuxerStreamType::kVideo);
+    s.audio = deps_.audio_disabled
+                  ? nullptr
+                  : media_resource->GetStream(id, DemuxerStreamType::kAudio);
+    any_media = any_media || s.video != nullptr || s.audio != nullptr;
+    sources.push_back(s);
+  }
+  // Source 0 is the clock-relevant source: its audio is the only audio leg
+  // (§4.2) and its video is the only one feeding the master video clock. An
+  // empty aggregate (source_count() == 0) has no source 0 at all, which is
+  // the same "nothing to play" case as a subtitle-only file below.
+  has_video_ = !sources.empty() && sources[0].video != nullptr;
+  has_audio_ = !sources.empty() && sources[0].audio != nullptr;
+  if (!any_media) {
     // Not "no media": a subtitle-only file is a legitimate input, but this
     // renderer has no TextRenderer (gap 3), so it genuinely cannot play it.
     //
@@ -181,110 +211,10 @@ void RendererImpl::Initialize(
   // back to S1, so nothing can run this callback before Initialize() returns,
   // but taking ownership first keeps the "exactly one owner" rule visible.
   pending_init_cb_ = std::move(init_cb);
-  CreateSubRenderers(video_stream, audio_stream);
-  if (!video_ && !audio_) {
+  CreateSubRenderers(sources);
+  if (video_renderer_count() == 0 && !audio_) {
     MaybeReportInitialized();
   }
-}
-
-void RendererImpl::ApplyVideoConfig(VideoRendererImpl* v) {
-  if (!deps_.video_filter_graph.empty()) {
-    v->set_filter_graph(deps_.video_filter_graph, deps_.video_filter_factory);
-  }
-  // Forwarded, not applied here: the ranking needs the stream's config, which
-  // only exists once Initialize() runs on S3 (see
-  // VideoRendererImpl::set_decoder_preference).
-  if (deps_.video_decoder_preference_set) {
-    v->set_decoder_preference(deps_.video_decoder_preference,
-                              deps_.video_hw_codecs);
-  }
-  // config.video.max_fps / config.video.max_frame_drop ("max-fps" /
-  // "framedrop"). 0 disables each, which is also the compositor's default.
-  v->SetMaxFps(deps_.video_max_fps);
-  v->SetMaxFrameDrop(deps_.video_max_frame_drop);
-}
-
-void RendererImpl::CreateSubRenderers(DemuxerStream* video_stream,
-                                      DemuxerStream* audio_stream) {
-  if (has_video_) {
-    // Recorded next to the renderer, for the same reason audio_stream_ is
-    // (media/base/media_resource.h: identity for "no switch needed" and for a
-    // handover to re-anchor against).
-    video_stream_ = video_stream;
-    video_ = std::make_unique<VideoRendererImpl>(
-        deps_.video_task_runner, deps_.video_factories, deps_.tick_clock,
-        deps_.compositor_thresholds);
-    ApplyVideoConfig(video_.get());
-  }
-  if (has_audio_) {
-    audio_stream_ = audio_stream;
-    audio_params_ = MakeAudioParameters(audio_stream->audio_decoder_config(),
-                                        deps_.audio_frames_per_buffer);
-    audio_ = std::make_unique<AudioRendererImpl>(
-        deps_.audio_task_runner, deps_.audio_factories, av_sync_.get());
-    if (!deps_.audio_filter_graph.empty()) {
-      audio_->set_filter_graph(deps_.audio_filter_graph,
-                               deps_.audio_filter_factory);
-    }
-  }
-
-  // Initialise the sub-renderers on their own sequences. Both callbacks come
-  // back to S1, where MaybeReportInitialized() decides when the pipeline may be
-  // told that startup finished.
-  if (video_) {
-    deps_.video_task_runner->PostTask(
-        FROM_HERE,
-        base::BindOnce(&VideoRendererImpl::Initialize,
-                       base::Unretained(video_.get()), video_stream,
-                       std::move(deps_.video_sink),
-                       base::BindOnce(&RendererImpl::PostVideoInitialized,
-                                      base::Unretained(this))));
-  }
-  if (audio_) {
-    deps_.audio_task_runner->PostTask(
-        FROM_HERE,
-        base::BindOnce(&AudioRendererImpl::Initialize,
-                       base::Unretained(audio_.get()), audio_stream,
-                       audio_params_, deps_.audio_sink,
-                       base::BindOnce(&RendererImpl::PostAudioInitialized,
-                                      base::Unretained(this))));
-  }
-  // The ended callbacks fire on the sub-renderers' own sequences (S3/S4); the
-  // decision "everything has drained" belongs to S1, so each callback only
-  // posts a hop. CheckForEnded() then reads the two thread-safe buffered
-  // getters (the compositor's lock and the audio handoff lock) instead of the
-  // sub-renderers' plain bools, which would be a data race from S1.
-  if (video_) {
-    WireVideoCallbacks();
-  }
-  if (audio_) {
-    WireAudioCallbacks();
-  }
-}
-
-// The callback wiring shared by both construction sites of each sub-renderer
-// (initial start above and the mid-flight track switch in
-// renderer_impl_controls.cc) -- duplicated wiring is how a new callback gets
-// forgotten on one of the two paths. The ended callbacks stay Unretained
-// because they only re-post weak-bound tasks (the class-level "task outlives
-// its target" closure, see PostVideoEnded below); the H2 error callbacks are
-// weak themselves -- ReportError runs directly on the sub-renderer's decode
-// sequence with no intermediate hop to cancel a call racing teardown, so the
-// binding itself has to be the weak link.
-void RendererImpl::WireVideoCallbacks() {
-  video_->set_ended_cb(base::BindRepeating(&RendererImpl::PostVideoEnded,
-                                           base::Unretained(this)));
-  video_->set_frame_presented_cb(base::BindRepeating(
-      &RendererImpl::OnVideoFramePresented, base::Unretained(this)));
-  video_->SetErrorCB(base::BindRepeating(&RendererImpl::ReportError,
-                                         weak_factory_.GetWeakPtr()));
-}
-
-void RendererImpl::WireAudioCallbacks() {
-  audio_->set_ended_cb(base::BindRepeating(&RendererImpl::PostAudioEnded,
-                                           base::Unretained(this)));
-  audio_->SetErrorCB(base::BindRepeating(&RendererImpl::ReportError,
-                                         weak_factory_.GetWeakPtr()));
 }
 
 // The two ended hops, and the two init hops below, are the class-level
@@ -297,10 +227,10 @@ void RendererImpl::WireAudioCallbacks() {
 // the WeakPtr moves the guarantee into the binding layer: a hop that runs after
 // ~RendererImpl is a no-op instead of a use-after-free, so teardown no longer
 // has to be timed.
-void RendererImpl::PostVideoEnded() {
+void RendererImpl::PostVideoEnded(int source_index) {
   deps_.media_task_runner->PostTask(
       FROM_HERE, base::BindOnce(&RendererImpl::OnVideoStreamEnded,
-                                weak_factory_.GetWeakPtr()));
+                                weak_factory_.GetWeakPtr(), source_index));
 }
 
 void RendererImpl::PostAudioEnded() {
@@ -309,8 +239,12 @@ void RendererImpl::PostAudioEnded() {
                                 weak_factory_.GetWeakPtr()));
 }
 
-void RendererImpl::OnVideoStreamEnded() {
-  video_ended_ = true;
+void RendererImpl::OnVideoStreamEnded(int source_index) {
+  const size_t i = static_cast<size_t>(source_index);
+  if (i >= video_ended_.size()) {
+    return;  // Reply from a leg that no longer exists (post-teardown tick).
+  }
+  video_ended_[i] = true;
   CheckForEnded();
 }
 
@@ -328,16 +262,34 @@ void RendererImpl::CheckBufferingTransitions() {
   // period; WSOLA's residual OLA window makes queue-depth tests
   // unsatisfiable mid-stream). Video uses the compositor's live pending
   // count. RendererImpl only merges -- it is not in a position to guess.
-  const bool starved = rendering_ && !ended_ &&
-                       (!video_ || video_->frames_pending() == 0) &&
+  //
+  // The merge now spans every video leg (docs/14 stage 1): the pipeline is
+  // starved when EVERY leg has nothing pending, so one lagging secondary
+  // source cannot mask a dry primary.
+  bool any_video = false;
+  bool all_video_dry = true;
+  for (const auto& v : video_renderers_) {
+    if (!v) {
+      continue;
+    }
+    any_video = true;
+    if (v->frames_pending() != 0) {
+      all_video_dry = false;
+    }
+  }
+  const bool starved = rendering_ && !ended_ && (!any_video || all_video_dry) &&
                        (!audio_ || audio_->starved());
   if (starved == starved_reported_) {
     return;
   }
   starved_reported_ = starved;
+  const int primary_pending =
+      video_renderers_.empty() || !video_renderers_[0]
+          ? -1
+          : static_cast<int>(video_renderers_[0]->frames_pending());
   LOG(INFO) << "[hwm] edge " << (starved ? "DRY" : "RECOVER")
-            << " video_pending="
-            << (video_ ? static_cast<int>(video_->frames_pending()) : -1)
+            << " video_pending=" << primary_pending
+            << " video_legs=" << video_renderer_count()
             << " audio_buffered=" << (audio_ ? audio_->buffered_frames() : -1);
   if (client_) {
     client_->OnBufferingStateChange(starved ? BufferingState::kHaveNothing
@@ -350,8 +302,19 @@ void RendererImpl::CheckForEnded() {
   if (!initialized_ || ended_) {
     return;
   }
-  const bool video_done =
-      !video_ || (video_ended_ && video_->frames_pending() == 0);
+  // Every video leg must both report EOS and drain (docs/14 stage 1). The old
+  // single-leg rule was this rule with N == 1.
+  bool video_done = true;
+  for (size_t i = 0; i < video_renderers_.size(); ++i) {
+    const auto& v = video_renderers_[i];
+    if (!v) {
+      continue;
+    }
+    if (!video_ended_[i] || v->frames_pending() != 0) {
+      video_done = false;
+      break;
+    }
+  }
   const bool audio_done =
       !audio_ || (audio_ended_ && audio_->buffered_frames() == 0);
   if (video_done && audio_done) {
@@ -359,10 +322,12 @@ void RendererImpl::CheckForEnded() {
   }
 }
 
-void RendererImpl::PostVideoInitialized(PipelineStatus status) {
+void RendererImpl::PostVideoInitialized(int source_index,
+                                        PipelineStatus status) {
   deps_.media_task_runner->PostTask(
-      FROM_HERE, base::BindOnce(&RendererImpl::OnVideoInitialized,
-                                weak_factory_.GetWeakPtr(), status));
+      FROM_HERE,
+      base::BindOnce(&RendererImpl::OnVideoInitialized,
+                     weak_factory_.GetWeakPtr(), source_index, status));
 }
 
 void RendererImpl::PostAudioInitialized(PipelineStatus status) {
@@ -371,8 +336,11 @@ void RendererImpl::PostAudioInitialized(PipelineStatus status) {
                                 weak_factory_.GetWeakPtr(), status));
 }
 
-void RendererImpl::OnVideoInitialized(PipelineStatus status) {
-  video_initialized_ = true;
+void RendererImpl::OnVideoInitialized(int source_index, PipelineStatus status) {
+  const size_t i = static_cast<size_t>(source_index);
+  if (i < video_initialized_.size()) {
+    video_initialized_[i] = true;
+  }
   if (status != PipelineStatus::kOk) {
     CompleteInitialization(status);
     return;
@@ -393,14 +361,26 @@ void RendererImpl::MaybeReportInitialized() {
   // Whichever sub-renderer finishes last reports, and only once. A pipeline
   // that is told "ready" twice starts playback twice; one that is never told
   // hangs forever, so the guard is on both sides.
-  const bool video_done = !has_video_ || video_initialized_;
+  //
+  // The video half waits for EVERY leg (docs/14 stage 1): "the renderer is
+  // ready" means every decode chain it built has its decoder, and a pipeline
+  // that starts while a secondary leg is still initializing would race that
+  // leg's first StartPlayingFrom against its own Initialize.
+  bool video_done = true;
+  for (bool initialized : video_initialized_) {
+    if (!initialized) {
+      video_done = false;
+      break;
+    }
+  }
   const bool audio_done = !has_audio_ || audio_initialized_;
   if (!video_done || !audio_done || initialized_) {
     return;
   }
   initialized_ = true;
   LOG(INFO) << "avbase.pipeline: renderer ready (video=" << has_video_
-            << " audio=" << has_audio_ << ")";
+            << " audio=" << has_audio_
+            << " video_legs=" << video_renderer_count() << ")";
   if (pending_init_cb_) {
     CompleteInitialization(PipelineStatus::kOk);
   }
@@ -420,7 +400,7 @@ void RendererImpl::StartPlayingFrom(base::TimeDelta time) {
   rendering_ = true;
   start_time_ = time;
   ended_ = false;
-  video_ended_ = false;
+  std::fill(video_ended_.begin(), video_ended_.end(), false);
   audio_ended_ = false;
   // Anchor the external clock at the start point: it has no writer of its own
   // (ffplay leaves extclk to extrapolate from the last set_clock), and when
@@ -430,10 +410,13 @@ void RendererImpl::StartPlayingFrom(base::TimeDelta time) {
   if (av_sync_) {
     av_sync_->SetExternalClock(time, av_sync_->master_serial());
   }
-  if (video_) {
-    deps_.video_task_runner->PostTask(
-        FROM_HERE, base::BindOnce(&VideoRendererImpl::StartPlayingFrom,
-                                  base::Unretained(video_.get()), time));
+  // Every leg starts (docs/14 stage 1); each renderer is posted on S3.
+  for (auto& v : video_renderers_) {
+    if (v) {
+      deps_.video_task_runner->PostTask(
+          FROM_HERE, base::BindOnce(&VideoRendererImpl::StartPlayingFrom,
+                                    base::Unretained(v.get()), time));
+    }
   }
   if (audio_) {
     deps_.audio_task_runner->PostTask(
@@ -459,8 +442,12 @@ void RendererImpl::StartPlayingFrom(base::TimeDelta time) {
   PumpText();
 }
 
-// The master-clock push loop, statistics sampler and snapshot grab live in
-// renderer_impl_reporting.cc (C1 split): they read av_sync_ and the
+// The class's other seams, all C1 line-count splits: sub-renderer
+// construction and callback wiring live in renderer_impl_sources.cc; the
+// post-startup control surface (the Set* family, the accurate-seek window and
+// both track switches) in renderer_impl_controls.cc; and the master-clock
+// push loop, statistics sampler and snapshot grab in
+// renderer_impl_reporting.cc. Those last ones read av_sync_ and the
 // sub-renderers and report outward, and are not part of the
 // initialize/flush/ended lifecycle carried here.
 
@@ -475,7 +462,7 @@ void RendererImpl::Flush(base::OnceClosure flush_cb) {
   // completed, which is what makes Player::SeekTo()'s "flush done" meaningful.
   av_sync_->Flush();
   ended_ = false;
-  video_ended_ = false;
+  std::fill(video_ended_.begin(), video_ended_.end(), false);
   audio_ended_ = false;
   // The text leg's pending Read is aborted by the demuxer flush; the
   // generation bump makes the reply a no-op, and the pump re-arms at
@@ -500,28 +487,67 @@ void RendererImpl::Flush(base::OnceClosure flush_cb) {
         base::BindOnce(&AudioRendererImpl::Flush,
                        base::Unretained(audio_.get()), base::DoNothing()));
   }
-  if (video_) {
-    const int32_t serial = av_sync_->master_serial();
-    // The video flush completes on S3 (where the decoder reset runs); the
-    // pipeline's completion contract is S1, so hop it back. The sequence
-    // checker caught the first draft running it inline.
+  // Video fans out to every leg (docs/14 stage 1). Each leg's Flush completes
+  // on S3 (where the decoder reset runs) and hops the completion back to S1;
+  // the barrier counts them so the pipeline's callback still means "all legs
+  // flushed", which is what makes Player::SeekTo()'s "flush done" meaningful.
+  size_t pending = 0;
+  for (const auto& v : video_renderers_) {
+    if (v) {
+      ++pending;
+    }
+  }
+  if (pending == 0) {
+    std::move(flush_cb).Run();
+    return;
+  }
+  DCHECK_EQ(pending_video_flushes_, 0u);
+  DCHECK(!video_flush_done_cb_);
+  pending_video_flushes_ = pending;
+  video_flush_done_cb_ = std::move(flush_cb);
+  const int32_t serial = av_sync_->master_serial();
+  // Captured, not bound: this bind.h unwraps a BOUND WeakPtr to a raw pointer
+  // (base/functional/bind.h UnwrapArg), so a lambda parameter typed WeakPtr
+  // would be handed a RendererImpl*. The capture keeps the token a WeakPtr,
+  // and the inner BindOnce binds it as the method's receiver -- which is where
+  // the liveness check lives.
+  const base::WeakPtr<RendererImpl> weak = weak_factory_.GetWeakPtr();
+  for (auto& v : video_renderers_) {
+    if (!v) {
+      continue;
+    }
     deps_.video_task_runner->PostTask(
         FROM_HERE,
         base::BindOnce(
-            [](VideoRendererImpl* v, int32_t s, base::OnceClosure done,
-               base::scoped_refptr<base::SequencedTaskRunner> media) {
-              v->Flush(
-                  s, base::BindOnce(
-                         [](base::OnceClosure d,
-                            base::scoped_refptr<base::SequencedTaskRunner> m) {
-                           m->PostTask(FROM_HERE, std::move(d));
-                         },
-                         std::move(done), std::move(media)));
+            [weak](VideoRendererImpl* v, int32_t s,
+                   base::SequencedTaskRunner* media) {
+              v->Flush(s, base::BindOnce(
+                              [weak](base::SequencedTaskRunner* media) {
+                                // Weak, like every other S3->S1 hop in this
+                                // class: a flush completing after ~RendererImpl
+                                // must be a no-op, not a walk through freed
+                                // members.
+                                media->PostTask(
+                                    FROM_HERE,
+                                    base::BindOnce(
+                                        &RendererImpl::OnVideoFlushed, weak));
+                              },
+                              media));
             },
-            base::Unretained(video_.get()), serial, std::move(flush_cb),
-            deps_.media_task_runner));
-  } else {
-    std::move(flush_cb).Run();
+            base::Unretained(v.get()), serial, deps_.media_task_runner.get()));
+  }
+}
+
+void RendererImpl::OnVideoFlushed() {
+  DCHECK_GT(pending_video_flushes_, 0u);
+  if (pending_video_flushes_ > 0) {
+    --pending_video_flushes_;
+  }
+  if (pending_video_flushes_ != 0) {
+    return;
+  }
+  if (video_flush_done_cb_) {
+    std::move(video_flush_done_cb_).Run();
   }
 }
 

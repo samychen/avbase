@@ -3,11 +3,14 @@
 // found in the LICENSE file.
 //
 // RendererImpl's post-initialise control surface: the Set* family, the
-// thread-safe GetMediaTime(), and the two interface methods that are still
-// stubs (track switching and the renderer type). renderer_impl.cc keeps
+// thread-safe GetMediaTime(), the accurate-seek window, the wired audio and
+// video track switches (with the multi-source foreign-stream guards,
+// docs/14 stage 1) and the renderer type. renderer_impl.cc keeps
 // construction, initialization, the clock/statistics pushes and the
 // end-of-stream contract; the split is a line-count one (C1), and the seam is
-// "called after startup" versus "called to start".
+// "called after startup" versus "called to start". The text leg -- the
+// live-edge policy and the cue pump -- moved to renderer_impl_text.cc, the
+// seam this file's allowlist entry used to name as the pending fix.
 
 #include "media/filters/renderer_impl.h"
 
@@ -33,10 +36,14 @@ void RendererImpl::SetPaused(bool paused) {
     // instead of sliding forward through the pause.
     av_sync_->SetPlaybackRate(paused ? 0.0 : playback_rate_);
   }
-  if (video_) {
-    deps_.video_task_runner->PostTask(
-        FROM_HERE, base::BindOnce(&VideoRendererImpl::SetPaused,
-                                  base::Unretained(video_.get()), paused));
+  // Every leg pauses (docs/14 stage 1): a paused pipeline with one leg still
+  // compositing would present frames against a frozen clock.
+  for (auto& v : video_renderers_) {
+    if (v) {
+      deps_.video_task_runner->PostTask(
+          FROM_HERE, base::BindOnce(&VideoRendererImpl::SetPaused,
+                                    base::Unretained(v.get()), paused));
+    }
   }
   if (audio_) {
     deps_.audio_task_runner->PostTask(
@@ -46,11 +53,16 @@ void RendererImpl::SetPaused(bool paused) {
 }
 
 void RendererImpl::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
-  if (video_) {
-    deps_.video_task_runner->PostTask(
-        FROM_HERE,
-        base::BindOnce(&VideoRendererImpl::SetOutputTarget,
-                       base::Unretained(video_.get()), std::move(display)));
+  // Every leg gets the display: the secondary sinks were created with a null
+  // one (CreateSubRenderers), so this is where they receive theirs. Copied
+  // per leg, not moved -- moving inside the loop would hand leg 2..N a null
+  // display.
+  for (auto& v : video_renderers_) {
+    if (v) {
+      deps_.video_task_runner->PostTask(
+          FROM_HERE, base::BindOnce(&VideoRendererImpl::SetOutputTarget,
+                                    base::Unretained(v.get()), display));
+    }
   }
 }
 
@@ -62,10 +74,13 @@ void RendererImpl::BeginAccurateSeek(base::TimeDelta target,
   // restarts.
   accurate_reached_cb_ = std::move(reached_cb);
   accurate_target_micros_.store(target.InMicroseconds());
-  if (video_) {
+  // Source 0 only (docs/14 stage 1): the presented-frame hook that observes
+  // the window is wired on source 0's leg alone, so opening it anywhere else
+  // would arm a check nobody performs.
+  if (video_renderer()) {
     deps_.video_task_runner->PostTask(
         FROM_HERE, base::BindOnce(&VideoRendererImpl::BeginAccurateSeek,
-                                  base::Unretained(video_.get()), target));
+                                  base::Unretained(video_renderer()), target));
   } else if (accurate_reached_cb_) {
     // No video stream: nothing will ever be presented, so the wait cannot
     // succeed -- report immediately rather than ride the caller's timeout.
@@ -84,10 +99,10 @@ void RendererImpl::EndAccurateSeek() {
         FROM_HERE, base::BindOnce(&RendererImpl::OnAccurateSeekTargetReached,
                                   weak_factory_.GetWeakPtr()));
   }
-  if (video_) {
+  if (video_renderer()) {
     deps_.video_task_runner->PostTask(
         FROM_HERE, base::BindOnce(&VideoRendererImpl::EndAccurateSeek,
-                                  base::Unretained(video_.get())));
+                                  base::Unretained(video_renderer())));
   }
 }
 
@@ -181,11 +196,12 @@ void RendererImpl::SetPlaybackRate(double playback_rate) {
         base::BindOnce(&AudioRendererImpl::SetPlaybackRate,
                        base::Unretained(audio_.get()), playback_rate));
   }
-  if (video_) {
-    deps_.video_task_runner->PostTask(
-        FROM_HERE,
-        base::BindOnce(&VideoRendererImpl::SetPlaybackRate,
-                       base::Unretained(video_.get()), playback_rate));
+  for (auto& v : video_renderers_) {
+    if (v) {
+      deps_.video_task_runner->PostTask(
+          FROM_HERE, base::BindOnce(&VideoRendererImpl::SetPlaybackRate,
+                                    base::Unretained(v.get()), playback_rate));
+    }
   }
 }
 
@@ -270,7 +286,7 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
       std::move(change_completed_cb).Run();
       return;
     }
-    if (!video_ || !enabled_track) {
+    if (!video_renderer() || !enabled_track) {
       ReportError(MediaError(
           ErrorCode::kNotImplemented,
           "enabling or disabling the video track at runtime is not supported",
@@ -291,6 +307,25 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
     }
     if (enabled_track == video_stream_) {
       std::move(change_completed_cb).Run();  // Same track: nothing to do.
+      return;
+    }
+    // FOREIGN-STREAM GUARD (docs/14 stage 1). The handover machinery below
+    // switches source 0's alternates: it re-anchors against video_stream_,
+    // hands over source 0's sink, and re-wires source 0's clock-feeding
+    // frame hook. A stream belonging to another source is none of those
+    // things, and reaching it would silently build a replacement renderer
+    // for the wrong leg. CompositeDemuxer::SetActiveStream only routes source
+    // 0 today, so this is unreachable through the pipeline -- it is a guard
+    // with a direct unit test, not a speculation.
+    if (!IsPrimaryStream(DemuxerStreamType::kVideo, enabled_track)) {
+      ReportError(MediaError(
+          ErrorCode::kNotImplemented,
+          "switching to another source's video track is not supported",
+          "the video track switch hands over source 0's renderer, sink and "
+          "clock hook; that stream belongs to a different source",
+          "select one of the primary source's video tracks (its alternates "
+          "are what runtime switching covers)"));
+      std::move(change_completed_cb).Run();
       return;
     }
     SwitchVideoRenderer(enabled_track, std::move(change_completed_cb));
@@ -330,6 +365,19 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
   }
   if (enabled_track == audio_stream_) {
     std::move(change_completed_cb).Run();  // Same track: nothing to do.
+    return;
+  }
+  // FOREIGN-STREAM GUARD (docs/14 §4.2): the audio leg is source 0 only, so a
+  // stream from another source has no renderer to switch INTO. Same shape and
+  // same unreachable-through-the-pipeline status as the video one above.
+  if (!IsPrimaryStream(DemuxerStreamType::kAudio, enabled_track)) {
+    ReportError(MediaError(
+        ErrorCode::kNotImplemented,
+        "switching to another source's audio track is not supported",
+        "the audio leg belongs to source 0; that stream is a different "
+        "source's, and secondary audio is seen but not selected",
+        "select one of the primary source's audio tracks"));
+    std::move(change_completed_cb).Run();
     return;
   }
   SwitchAudioRenderer(enabled_track, std::move(change_completed_cb));
@@ -398,7 +446,7 @@ void RendererImpl::SwitchVideoRenderer(DemuxerStream* new_stream,
   // once that has finished is it safe to take the sink back -- taking it
   // first would hand the replacement a sink whose RenderCallback still points
   // into the renderer being destroyed.
-  VideoRendererImpl* old = video_.get();
+  VideoRendererImpl* old = video_renderer();
   deps_.video_task_runner->PostTask(
       FROM_HERE,
       base::BindOnce(
@@ -426,14 +474,16 @@ void RendererImpl::SwitchVideoRenderer(DemuxerStream* new_stream,
 
   // Park the retiring renderer immediately: it is inert once its teardown task
   // starts, and parking it here frees the member without waiting for S3.
-  retired_video_.emplace_back(video_.release());
-  video_ = std::make_unique<VideoRendererImpl>(
+  // Source 0's slot: the handover machinery is source 0's (docs/14 stage 1),
+  // and the foreign-stream guard above is what keeps it that way.
+  retired_video_.emplace_back(video_renderers_[0].release());
+  video_renderers_[0] = std::make_unique<VideoRendererImpl>(
       deps_.video_task_runner, deps_.video_factories, deps_.tick_clock,
       deps_.compositor_thresholds);
   // New object: everything inside it is re-installed (ApplyVideoConfig).
-  ApplyVideoConfig(video_.get());
-  WireVideoCallbacks();
-  video_initialized_ = false;
+  ApplyVideoConfig(video_renderer());
+  WireVideoCallbacks(0);
+  video_initialized_[0] = false;
   pending_video_switch_.stream = new_stream;
   pending_video_switch_.was_rendering = was_rendering;
   pending_video_switch_.resume_at = resume_at;
@@ -481,7 +531,7 @@ void RendererImpl::FinishVideoHandoverSinkReady() {
                                base::Unretained(self), was_rendering, resume_at,
                                std::move(done)));
           },
-          base::Unretained(video_.get()), stream, std::move(sink),
+          base::Unretained(video_renderer()), stream, std::move(sink),
           base::Unretained(this), was_rendering, resume_at, std::move(done)));
 }
 
@@ -499,14 +549,14 @@ void RendererImpl::OnSwitchedVideoInitialized(
               // The outgoing renderer is already gone. Report and continue
               // audio-only rather than tearing playback down over a track
               // switch -- the same call the audio handover makes.
-              self->video_initialized_ = false;
+              self->video_initialized_[0] = false;
               self->ReportError(PipelineStatusToMediaError(s));
               if (cb) {
                 std::move(cb).Run();
               }
               return;
             }
-            self->video_initialized_ = true;
+            self->video_initialized_[0] = true;
             if (was_rendering) {
               // Re-anchor: the replacement's compositor is empty by
               // construction, so playback resumes at |resume_at| rather than
@@ -519,7 +569,7 @@ void RendererImpl::OnSwitchedVideoInitialized(
               // because AudioRendererImpl::StartPlayingFrom is reached
               // through its own Initialize. Calling it from S1 tripped
               // CalledOnValidSequence() the first time this ran.
-              VideoRendererImpl* replacement = self->video_.get();
+              VideoRendererImpl* replacement = self->video_renderer();
               self->deps_.video_task_runner->PostTask(
                   FROM_HERE, base::BindOnce(
                                  [](VideoRendererImpl* v, base::TimeDelta at) {
@@ -529,7 +579,7 @@ void RendererImpl::OnSwitchedVideoInitialized(
             }
             if (self->client_) {
               self->client_->OnVideoConfigChange(
-                  self->video_->video_decoder_config());
+                  self->video_renderer()->video_decoder_config());
             }
             if (cb) {
               std::move(cb).Run();
@@ -606,91 +656,27 @@ void RendererImpl::FinishAudioSwitch(bool was_rendering,
   std::move(change_completed_cb).Run();
 }
 
-// The reasoning lives at the declaration in renderer_impl.h.
-void RendererImpl::SetSourceLiveness(bool is_live,
-                                     base::TimeDelta max_cue_age) {
-  source_is_live_ = is_live;
-  // Clamped: a negative window would make every cue stale, so a misconfigured
-  // value must disable the policy rather than drop everything.
-  max_cue_age_ =
-      max_cue_age > base::TimeDelta() ? max_cue_age : base::TimeDelta();
-  if (source_is_live_ && max_cue_age_ > base::TimeDelta()) {
-    LOG(INFO) << "avbase.text: live source, cues older than "
-              << max_cue_age_.InMilliseconds() << "ms will be dropped";
-  }
-}
-
-bool RendererImpl::IsCueStale(const TimedTextCue& cue) const {
-  if (!source_is_live_ || max_cue_age_ <= base::TimeDelta()) {
-    return false;  // Recorded content: a seek lands on a cue on purpose.
-  }
-  const AvSyncController::Snapshot now = av_sync_->GetSnapshot();
-  if (!now.master_valid) {
-    // No clock yet. Dropping on an unknown clock would discard every cue of a
-    // stream that is merely starting up; showing a slightly late one is the
-    // lesser error, and the window is generous by construction.
+// True when |stream| is one of source 0's streams of |type|, asked of the
+// resource live (the no-axis GetStreams answers source 0). Lives here rather
+// than with the text leg because its only callers are the two
+// foreign-stream guards in OnTracksChanged above.
+bool RendererImpl::IsPrimaryStream(DemuxerStreamType type,
+                                   DemuxerStream* stream) const {
+  if (!media_resource_ || !stream) {
     return false;
   }
-  return now.master - cue.pts > max_cue_age_;
-}
-
-void RendererImpl::PumpText() {
-  if (!text_stream_ || !text_decoder_ || text_read_outstanding_ ||
-      text_ended_) {
-    return;
-  }
-  text_read_outstanding_ = true;
-  const int generation = text_generation_;
-  text_stream_->Read(1, base::BindOnce(&RendererImpl::OnTextRead,
-                                       weak_factory_.GetWeakPtr(), generation));
-}
-
-void RendererImpl::OnTextRead(int generation, DemuxerStream::Status status,
-                              DemuxerStream::DecoderBufferVector buffers) {
-  text_read_outstanding_ = false;
-  if (generation != text_generation_) {
-    return;  // Reply from a leg that was switched away or flushed.
-  }
-  if (status == DemuxerStream::Status::kAborted) {
-    return;  // A flush invalidates the leg; the next PumpText re-arms.
-  }
-  if (status != DemuxerStream::Status::kOk) {
-    // H2: a non-aborted read failure is terminal for the text leg (PumpText
-    // stops re-arming), so report it instead of letting subtitles die
-    // silently. kAborted returned above is a flush, not an error.
-    const std::string name = DemuxerStream::GetStatusName(status);
-    LOG(ERROR) << "avbase.text: read failed (" << name << ")";
-    ReportError(MediaError(ErrorCode::kDecodeFailed, "text read failed", name,
-                           "check the text track, or disable subtitles"));
-    return;
-  }
-  for (auto& buffer : buffers) {
-    if (buffer->IsEndOfStream()) {
-      text_ended_ = true;
-      return;
-    }
-    if (text_stream_ && buffer->serial() < text_stream_->serial()) {
-      continue;  // Pre-seek generation; docs/04 §4 R1.
-    }
-    std::vector<TimedTextCue> cues;
-    if (const Status decode = text_decoder_->Decode(*buffer, &cues); !decode) {
-      LOG(ERROR) << "avbase.text: decode failed: " << decode.error().ToString();
-      continue;
-    }
-    if (client_) {
-      for (TimedTextCue& cue : cues) {
-        if (IsCueStale(cue)) {
-          // Dropped, not clamped forward. Shifting a stale cue onto the
-          // present would display a line whose text belongs to a moment the
-          // viewer has already watched past, which is worse than no subtitle.
-          ++stale_cues_dropped_;
-          continue;
-        }
-        client_->OnTimedText(cue);
-      }
+  // The no-axis overload answers source 0 -- which is exactly the question.
+  // Asked LIVE, not from an Initialize-time snapshot: a resource's stream
+  // list can grow afterwards (renderer_option_wiring_unittest.cc adds a
+  // second video stream between Initialize and the switch, and a snapshot
+  // guard rejected it -- TheCapSurvivesAVideoTrackSwitch sat out its 5 s
+  // ceiling until this became a live query).
+  for (DemuxerStream* s : media_resource_->GetStreams(type)) {
+    if (s == stream) {
+      return true;
     }
   }
-  PumpText();
+  return false;
 }
 
 RendererType RendererImpl::GetRendererType() {
