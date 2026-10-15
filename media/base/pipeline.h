@@ -139,8 +139,8 @@ class AVBASE_MEDIA_EXPORT Pipeline {
   // status callback here because PipelineController owns the kStarting ->
   // kReady transition and needs to observe it either way.
   virtual void
-  Start(std::unique_ptr<Demuxer> demuxer, RendererFactory* renderer_factory,
-        RendererType renderer_type,
+  Start(std::vector<std::unique_ptr<Demuxer>> sources,
+        RendererFactory* renderer_factory, RendererType renderer_type,
         base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
         Client* client) = 0;
 
@@ -256,6 +256,18 @@ class AVBASE_MEDIA_EXPORT Pipeline {
  protected:
   Pipeline();
 };
+
+// Stage 0 (docs/14): Start() takes a list of N demuxers. The common
+// single-source pipeline wraps its one demuxer with this so callers don't spell
+// out the vector.
+// Found via ADL on the unique_ptr<Demuxer> argument, so callers can write
+// MakeSingleSource(std::move(demuxer)) without qualification.
+inline std::vector<std::unique_ptr<Demuxer>> MakeSingleSource(
+    std::unique_ptr<Demuxer> demuxer) {
+  std::vector<std::unique_ptr<Demuxer>> sources;
+  sources.push_back(std::move(demuxer));
+  return sources;
+}
 
 }  // namespace avbase::media
 

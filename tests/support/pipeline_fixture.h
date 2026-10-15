@@ -248,7 +248,8 @@ class PipelineTestFixture : public ::testing::Test {
     DemuxerOptions options;
     if (ffmpeg_mode_) {
 #if AVBASE_ENABLE_FFMPEG && AVBASE_PIPELINE_FIXTURE_HAS_TESTDATA
-      pipeline_->Start(std::make_unique<FFmpegDemuxer>(media_log_),
+      pipeline_->Start(MakeSingleSource(std::make_unique<FFmpegDemuxer>(
+                           media_log_)),
                        renderer_factory_.get(), RendererType::kRendererImpl,
                        runner_, &client_);
       pipeline_->SetSource(DataSourceDescriptor::FromSource(source_), options);
@@ -269,8 +270,9 @@ class PipelineTestFixture : public ::testing::Test {
         live_spec.enable_text = with_text_factory_;
         auto live =
             std::make_unique<test::SyntheticLiveDemuxer>(live_spec, nullptr);
-        pipeline_->Start(std::move(live), renderer_factory_.get(),
-                         RendererType::kRendererImpl, runner_, &client_);
+        pipeline_->Start(MakeSingleSource(std::move(live)),
+                         renderer_factory_.get(), RendererType::kRendererImpl,
+                         runner_, &client_);
         return;
       }
       auto synthetic = std::make_unique<test::SyntheticDemuxer>(spec_);
@@ -280,8 +282,9 @@ class PipelineTestFixture : public ::testing::Test {
         // than the pipeline.
         synthetic->set_tick_clock(&tick_clock_);
       }
-      pipeline_->Start(std::move(synthetic), renderer_factory_.get(),
-                       RendererType::kRendererImpl, runner_, &client_);
+      pipeline_->Start(MakeSingleSource(std::move(synthetic)),
+                       renderer_factory_.get(), RendererType::kRendererImpl,
+                       runner_, &client_);
     }
   }
 

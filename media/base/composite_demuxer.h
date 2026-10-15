@@ -69,6 +69,12 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   }
   DemuxerStream* GetStream(int source_id, DemuxerStreamType type) override;
 
+  // Forwarded to source 0 so a single wrapped demuxer behaves exactly as it did
+  // when used directly: multi-stream sources expose all their streams for track
+  // selection, and the active-stream choice reaches the real demuxer.
+  std::vector<DemuxerStream*> GetStreams(DemuxerStreamType type) override;
+  void SetActiveStream(DemuxerStreamType type, int stream_index) override;
+
   // Demuxer lifecycle, fanned out to every child. Each child carries its own
   // open parameters in its Source bundle; the single |source|/|options| from
   // Demuxer::Initialize do not apply to a multi-source resource and are

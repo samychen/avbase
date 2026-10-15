@@ -51,12 +51,12 @@ void PipelineImpl::SelectTrack(DemuxerStreamType type, int stream_index,
 void PipelineImpl::DoSelectTrack(DemuxerStreamType type, int stream_index,
                                  PipelineStatusCallback cb) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (state_ != State::kReady || !renderer_ || !demuxer_) {
+  if (state_ != State::kReady || !renderer_ || !composite_) {
     std::move(cb).Run(PipelineStatus::kTrackSwitchError);
     return;
   }
   DemuxerStream* target = nullptr;
-  for (DemuxerStream* stream : demuxer_->GetStreams(type)) {
+  for (DemuxerStream* stream : composite_->GetStreams(type)) {
     if (stream->stream_index() == stream_index) {
       target = stream;
       break;
@@ -69,7 +69,7 @@ void PipelineImpl::DoSelectTrack(DemuxerStreamType type, int stream_index,
   // Re-point routing BEFORE the handover: the moment the old consumer stops
   // draining its stream, that stream's queue would wedge the demux loop on
   // its own watermark and starve the very track we are switching to.
-  demuxer_->SetActiveStream(type, stream_index);
+  composite_->SetActiveStream(type, stream_index);
   // The renderer reports a failed handover through Client::OnError and still
   // runs the completion closure; that closure only means "the attempt
   // finished and the pipeline is consistent".

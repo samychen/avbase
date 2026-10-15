@@ -24,8 +24,7 @@ namespace avbase::media {
 
 namespace {
 
-int StreamIdFor(const std::unique_ptr<Demuxer>& demuxer,
-                DemuxerStreamType type) {
+int StreamIdFor(Demuxer* demuxer, DemuxerStreamType type) {
   const DemuxerStream* stream = demuxer ? demuxer->GetStream(type) : nullptr;
   return stream ? stream->stream_index() : -1;
 }
@@ -33,11 +32,11 @@ int StreamIdFor(const std::unique_ptr<Demuxer>& demuxer,
 }  // namespace
 
 int PipelineImpl::GetAudioStreamId() const {
-  return StreamIdFor(demuxer_, DemuxerStreamType::kAudio);
+  return StreamIdFor(composite_.get(), DemuxerStreamType::kAudio);
 }
 
 int PipelineImpl::GetVideoStreamId() const {
-  return StreamIdFor(demuxer_, DemuxerStreamType::kVideo);
+  return StreamIdFor(composite_.get(), DemuxerStreamType::kVideo);
 }
 
 int PipelineImpl::GetTextStreamId() const {
@@ -146,8 +145,8 @@ void PipelineImpl::OnDurationChange(base::TimeDelta duration) {
 void PipelineImpl::OnStatisticsUpdate(const PipelineStatistics& stats) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   PipelineStatistics merged = stats;
-  if (demuxer_) {
-    const DemuxerStats d = demuxer_->GetStats();
+  if (composite_) {
+    const DemuxerStats d = composite_->GetStats();
     merged.total_bytes_read = d.bytes_read;
     merged.seek_count = d.seek_count;
   }
@@ -160,7 +159,7 @@ void PipelineImpl::OnStatisticsUpdate(const PipelineStatistics& stats) {
   // playhead. The action is the pipeline's own two-phase skip (renderer
   // flush + demuxer resume-from-newest), NOT a physical seek -- live
   // containers cannot seek backward.
-  if (demuxer_ && demuxer_->IsLive() && playing_ && !seek_in_flight_) {
+  if (composite_ && composite_->IsLive() && playing_ && !seek_in_flight_) {
     const base::TimeDelta edge =
         base::TimeDelta::FromMicroseconds(duration_micros_.load());
     const base::TimeDelta behind = edge - GetMediaTime();
@@ -179,7 +178,7 @@ void PipelineImpl::OnStatisticsUpdate(const PipelineStatistics& stats) {
       // chase is launching (pipeline_impl.cc's Seek path already does this).
       renderer_->Flush(base::BindOnce(&PipelineImpl::OnRendererFlushed,
                                       weak_factory_.GetWeakPtr()));
-      demuxer_->StartPlayingFrom(
+      composite_->StartPlayingFrom(
           target, base::BindOnce(&PipelineImpl::OnSeekDemuxerDone,
                                  weak_factory_.GetWeakPtr()));
     }

@@ -46,11 +46,11 @@ void PipelineImpl::SetClock(std::shared_ptr<AvSyncController> av_sync) {
 }
 
 void PipelineImpl::Start(
-    std::unique_ptr<Demuxer> demuxer, RendererFactory* renderer_factory,
-    RendererType renderer_type,
+    std::vector<std::unique_ptr<Demuxer>> sources,
+    RendererFactory* renderer_factory, RendererType renderer_type,
     base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
     Client* client) {
-  DCHECK(demuxer);
+  DCHECK(!sources.empty());
   DCHECK(renderer_factory);
   DCHECK(client);
   // The kNew -> kStarting transition happens HERE, on the calling thread,
@@ -70,7 +70,7 @@ void PipelineImpl::Start(
   if (!state_.compare_exchange_strong(expected, State::kStarting)) {
     return;
   }
-  demuxer_ = std::move(demuxer);
+  sources_ = std::move(sources);
   renderer_factory_ = renderer_factory;
   client_ = client;
   media_runner_ = std::move(media_task_runner);
@@ -104,10 +104,25 @@ void PipelineImpl::DoStart(RendererType renderer_type) {
         PipelineStatusToMediaError(PipelineStatus::kFailedToCreatePipeline));
     return;
   }
-  demuxer_->Initialize(source_, options_, this, media_runner_,
-                       base::BindOnce(&PipelineImpl::OnDemuxerInitialized,
+  // Aggregate the N demuxers into a single MediaResource. Each child carries
+  // the shared descriptor/options for now (per-source descriptors arrive in a
+  // later stage); for a single-source Start this reproduces the old direct path
+  // exactly -- CompositeDemuxer fans Initialize/Seek to one child.
+  std::vector<CompositeDemuxer::Source> composite_sources;
+  composite_sources.reserve(sources_.size());
+  for (auto& demuxer : sources_) {
+    CompositeDemuxer::Source s;
+    s.demuxer = std::move(demuxer);
+    s.descriptor = source_;
+    s.options = options_;
+    composite_sources.push_back(std::move(s));
+  }
+  sources_.clear();
+  composite_ = std::make_unique<CompositeDemuxer>(std::move(composite_sources));
 
-                                      weak_factory_.GetWeakPtr()));
+  composite_->Initialize(source_, options_, this, media_runner_,
+                         base::BindOnce(&PipelineImpl::OnDemuxerInitialized,
+                                        weak_factory_.GetWeakPtr()));
 }
 
 void PipelineImpl::OnDemuxerInitialized(Status status) {
@@ -126,16 +141,16 @@ void PipelineImpl::OnDemuxerInitialized(Status status) {
   // where it is known and the renderer cannot discover it: a MediaResource
   // hands out streams and nothing else. One call, one decision, rather than a
   // liveness flag threaded through the renderer's whole surface.
-  renderer_->SetSourceLiveness(demuxer_->IsLive(), live_cue_max_age_);
-  renderer_->Initialize(demuxer_.get(), this, media_runner_,
+  renderer_->SetSourceLiveness(composite_->IsLive(), live_cue_max_age_);
+  renderer_->Initialize(composite_.get(), this, media_runner_,
                         base::BindOnce(&PipelineImpl::OnRendererInitialized,
 
                                        weak_factory_.GetWeakPtr()));
   {
     base::AutoLock scoped(snapshot_lock_);
-    media_info_ = demuxer_->media_info();
+    media_info_ = composite_->media_info();
   }
-  const MediaInfo info = demuxer_->media_info();
+  const MediaInfo info = composite_->media_info();
   if (info.duration != kNoTimestamp) {
     duration_micros_.store(info.duration.InMicroseconds());
     client_->OnDurationChange(info.duration);
@@ -335,9 +350,9 @@ void PipelineImpl::DoSeek(base::TimeDelta time, base::OnceClosure seeked_cb) {
   // frame could be scheduled against a pre-seek clock anchor.
   renderer_->Flush(base::BindOnce(&PipelineImpl::OnRendererFlushed,
                                   weak_factory_.GetWeakPtr()));
-  demuxer_->StartPlayingFrom(time,
-                             base::BindOnce(&PipelineImpl::OnSeekDemuxerDone,
-                                            weak_factory_.GetWeakPtr()));
+  composite_->StartPlayingFrom(time,
+                               base::BindOnce(&PipelineImpl::OnSeekDemuxerDone,
+                                              weak_factory_.GetWeakPtr()));
 }
 
 void PipelineImpl::OnRendererFlushed() {
@@ -426,9 +441,9 @@ void PipelineImpl::DoStop() {
 void PipelineImpl::FinishStop() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   renderer_.reset();
-  if (demuxer_) {
-    demuxer_->Stop();
-    demuxer_.reset();
+  if (composite_) {
+    composite_->Stop();
+    composite_.reset();
   }
   state_ = State::kStopped;
 }

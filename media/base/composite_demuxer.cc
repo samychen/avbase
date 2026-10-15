@@ -33,6 +33,21 @@ DemuxerStream* CompositeDemuxer::GetStream(int source_id,
   return sources_[source_id].demuxer->GetStream(type);
 }
 
+std::vector<DemuxerStream*> CompositeDemuxer::GetStreams(
+    DemuxerStreamType type) {
+  if (sources_.empty()) {
+    return {};
+  }
+  return sources_[0].demuxer->GetStreams(type);
+}
+
+void CompositeDemuxer::SetActiveStream(DemuxerStreamType type,
+                                       int stream_index) {
+  if (!sources_.empty()) {
+    sources_[0].demuxer->SetActiveStream(type, stream_index);
+  }
+}
+
 Demuxer* CompositeDemuxer::source(int id) const {
   if (id < 0 || id >= static_cast<int>(sources_.size())) {
     return nullptr;
@@ -160,7 +175,14 @@ void CompositeDemuxer::Stop() {
 }
 
 const MediaInfo& CompositeDemuxer::media_info() const {
-  return media_info_;
+  // Computed on demand: child 0's MediaResource reports its real (post-
+  // Initialize) stream configs and duration here, so the aggregate mirrors a
+  // single demuxer exactly for source 0 instead of returning the default
+  // MediaInfo cached at construction.
+  if (sources_.empty()) {
+    return media_info_;
+  }
+  return sources_[0].demuxer->media_info();
 }
 
 base::TimeDelta CompositeDemuxer::GetStartTime() const {

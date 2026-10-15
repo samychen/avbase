@@ -260,8 +260,8 @@ Status PlayerImpl::PrepareAsync() {
   }
   SetRendererFactory(renderer_factory);
 
-  pipeline->Start(std::move(demuxer), renderer_factory.get(),
-                  media::RendererType::kRendererImpl,
+  pipeline->Start(media::MakeSingleSource(std::move(demuxer)),
+                  renderer_factory.get(), media::RendererType::kRendererImpl,
                   media_thread_.task_runner(), this);
   return OkStatus();
 }

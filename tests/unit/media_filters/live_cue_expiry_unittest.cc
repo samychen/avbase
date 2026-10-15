@@ -109,8 +109,9 @@ class LiveCueExpiryTest : public ::testing::Test {
     pipeline_->SetTickClock(&tick_clock_);
     pipeline_->SetClock(av_sync_);
     pipeline_->SetLiveCueMaxAge(window);
-    pipeline_->Start(std::move(live_), renderer_factory_.get(),
-                     RendererType::kRendererImpl, runner_, &client_);
+    pipeline_->Start(MakeSingleSource(std::move(live_)),
+                     renderer_factory_.get(), RendererType::kRendererImpl,
+                     runner_, &client_);
     // The demuxer has moved to |live_|; keep the raw pointer for Close().
     live_ = nullptr;
 

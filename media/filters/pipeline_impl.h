@@ -16,6 +16,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
+#include "media/base/composite_demuxer.h"
 #include "media/base/data_source_descriptor.h"
 #include "media/base/demuxer.h"
 #include "media/base/media_info.h"
@@ -86,7 +87,7 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   }
 
   // Pipeline:
-  void Start(std::unique_ptr<Demuxer> demuxer,
+  void Start(std::vector<std::unique_ptr<Demuxer>> sources,
              RendererFactory* renderer_factory, RendererType renderer_type,
              base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
              Client* client) override;
@@ -195,7 +196,11 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   // has told us whether the source is live. Zero disables the drop.
   base::TimeDelta live_cue_max_age_{base::TimeDelta()};
 
-  std::unique_ptr<Demuxer> demuxer_;
+  // Stage 0 (docs/14): Start() receives N demuxers. They are aggregated into a
+  // single CompositeDemuxer (composite_) that the renderer sees as one
+  // MediaResource; a single-source Start is indistinguishable from before.
+  std::vector<std::unique_ptr<Demuxer>> sources_;
+  std::unique_ptr<CompositeDemuxer> composite_;
   std::unique_ptr<Renderer> renderer_;
   std::shared_ptr<AvSyncController> av_sync_;
 
