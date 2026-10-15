@@ -4284,3 +4284,99 @@ origin/main 里就有 —— **CI 的 strict job 自 10 月 3 日起就是红的
 - **86 个提交未推送**（第七十二轮同条）——下次推送时 CI 才第一次真正看见
   第七十二、七十三两轮。
 - **两个同级测试文件的 gtest include_order 存量**（CI 口径外，本轮登记未动）。
+
+## 第七十四轮 —— docs/14 阶段 0：管线多源的数据模型地基
+
+承接 docs/12 §4.9 / docs/14：L5 用「第二路完整 Player + 单槽邮箱」绕过了
+「管线只有一路」，本轮把 docs/14 **阶段 0**（寻址轴 + 聚合 + Start 收 N 源）
+落地，**渲染消费仍单源**，行为逐字节不变。四个提交，按依赖层切：
+
+### 切片①寻址轴（26bed98）
+
+`MediaResource` 加 `GetStream(int source_id, DemuxerStreamType)` 重载，无轴版
+保持「source 0」语义——现有调用方一个都不用改。`Demuxer` 基类给出忽略
+`source_id` 的默认实现（**一个 demuxer 永远是 source 0**），于是
+`FFmpegDemuxer` 等全部子类零改动。`media/base` 无平台宏，C5 成立。
+
+### 切片②CompositeDemuxer（eb10f1f）
+
+`MediaResource` 聚合 N 个 demuxer：寻址轴扇出（`GetStream(id,type)` → 子 id，
+无轴版 → 子 0），生命周期扇出（Initialize/StartPlayingFrom/Flush/Reset/Stop
+到全部子 demuxer，**全子应答才回调**），兼 `Demuxer::Host` 把子 demuxer 的
+duration/buffering/error 事件转发给管线宿主。**包一个 demuxer 时与裸用无异**。
+7 条单测，其中寻址用例带**两处突变反证**（记录在测试的 mutation-proof 头注里）：
+把路由改成 `1-id` → 红；把基类默认实现改成返回 nullptr → 红。两处恢复后重跑绿。
+
+### 切片③Pipeline::Start 收 N 源（79df43d）
+
+入参从单个 `unique_ptr<Demuxer>` 改为 `std::vector<std::unique_ptr<Demuxer>>`；
+`PipelineImpl` 把 N 个 demuxer 包成**一个** `CompositeDemuxer` 交给渲染器。
+单源调用方经新增的 `MakeSingleSource()` 包裹（PlayerImpl、pipeline 夹具、
+live-cue 测试三处）。为使 composite 成为**透明的单源包装**，补了三处转发：
+`GetStreams()` / `SetActiveStream()` 委托 source 0；`media_info()` 改为**按需取
+source 0 的活值**——构造期缓存的是 Initialize 前的默认 MediaInfo，会报零时长。
+media 357 + player 40 全绿。
+
+**与设计书的一处有意偏差**：§3.4 写的是 `PipelineImpl` 持
+`vector<unique_ptr<Demuxer>> sources_`，落地改为「持一个 composite」——渲染器
+看到的 `MediaResource*` 仍是同一个对象，「渲染消费单源」不变，而向量归
+composite 所有，PipelineImpl 侧的循环初始化/遍历整段消失。阶段 1 要逐源访问时
+走 §3.3 预留的 `source_count()` / `source(id)`，接口已在。
+
+### 一处推不倒的突变（如实登记）
+
+`media_info()` 按需取活值这条修复，**突变后没有任何单源测试变红**——把
+composite 包一个 demuxer 的每条扇出路径摊开看，它委托的就是那个 demuxer 本身，
+单源观测点上「修复」与「未修复」逐字节相同。这不是测试该有的样子（断言构造
+函数那类同形），但在单源阶段**结构上无法红**：能红的是多源观测点，而那要等
+阶段 1。已按第六十七轮立下的规矩处置：**反证必须真跑一遍看有没有红的**——
+跑了，没有，于是不假装证明过，登记为「该轴的承重证明在切片②的 M1，本切片以
+全量回归为门禁」。docs/14「落地进度」与 docs/12 §4.9 同样记了这笔。
+
+### 补跑门禁抓到的两族存量偏离
+
+此前三个切片只跑了 `check_invariants` + 80 列，**没跑 format 与 cpplint**——
+补跑（本机 Xcode clang-format 17；cpplint 1.6.1 按 CI 口径 `--repository=.`
++ CPPLINT.cfg，只扫非测试非 legacy 的 `*.cc`）抓到两族，各修一个提交：
+
+- **format**（5597af6）：5 个文件 26 处偏离，集中在手写的函数声明续行
+  （`CompositeDemuxer::Initialize` 五参数签名）与测试夹具；
+- **include-what-you-use**（0fdae5c）：`pipeline_impl.cc` 缺 `<vector>`、
+  `composite_demuxer.cc` 缺 `<utility>`，均为本阶段新代码引入、靠传递包含
+  蒙混，CI 会报 [4]。头文件不在 CI 的 cpplint 口径内（仓库 guard 带
+  `AVBASE_` 前缀，与 cpplint 期待的风格结构性不合，第七十三轮同形）。
+
+教训与第七十二轮同源但更深一层：**门禁工具要先查 operations.md 的
+「门禁命令」段**——本机三个静态工具都在受管 venv 里且版本对齐 CI
+（clang-format 18.1.3 / cpplint 1.6.1 / clang-tidy 18.1.8），本轮第一反应
+却是裸调 PATH，拿到的是 **Xcode 自带的 17.0.0**（`xcrun -f clang-format`）。
+用它格式化完「复检 0 偏离」是**假门禁**：17 与 18 的折行策略不同，CI 跑的
+是 18。发现后改用 venv 的 18.1.3 重跑——本次两者输出恰好一致（运气，不是
+规律），且 clang-tidy 18.1.8 对 5 个改动 `.cc` 实跑 0 条（本机一直没跑
+tidy 是因为以为没装，其实 `envs/tidy18` 在）。「N warnings generated」是
+编译器诊断不是 finding，CI 用 `-quiet` 压掉的正是它。
+
+### 门禁（最终状态当场跑出，均为 CI 对齐版本）
+
+| 项 | 结果 |
+|---|---|
+| `check_invariants` | all rules pass |
+| clang-format **18.1.3**（13 个改动文件） | 0 偏离 |
+| cpplint **1.6.1**（CI 口径：非测试非 legacy `.cc`） | 0 error |
+| clang-tidy **18.1.8**（5 个改动 `.cc`，`-p build`） | 0 条 |
+| macos 构建（media/player 目标） | 通过 |
+| `media_unittests` | **357/357** |
+| `player_unittests` | **40/40** |
+
+全树 ctest 三预设本轮未跑——改动集中在 media/base 与管线接线，以 media/player
+两个套件为回归面，如实登记。
+
+### 留下的问题
+
+- **阶段 1–3 待做**：渲染多路（RendererImpl 接 N 对）/ 时钟多轴（主钟 +
+  每源媒体钟）/ 合成器升格并退役 L5「第二路 Player + 邮箱」绕行
+  （`SceneSource::MakePublisherFactory()` 语义废弃）。见 docs/14 §4–§6。
+- **`media_info()` 修复无单源反证**（见上），阶段 1 补多源观测点时应一并补。
+- **5 个提交未推送**（本轮全部；第七十三轮记的 86 个已在轮际间推送，
+  origin/main 现位于 `0fdd66b`）——CI 尚未见过本轮任何东西。
+- **两个同级测试文件的 gtest include_order 存量**（CI 口径外，仍未动）。

@@ -124,8 +124,13 @@ matrix 解析、被 `Player::video_rotation()` 上报，但**没有一帧真正�
   Start()」= 给数据竞争穿的外衣，真代价是 `RepeatingCallback` 的引用计数。
   SDK **没有**照抄这条契约。
 
-**未消除**：`media/filters/` 仍是「单源硬限制」—— §2 是绕过去（第二路完整 Player +
-邮箱），不是解决。真正解决要动管线本身。
+**单源硬限制的修复已开工（第七十四轮，docs/14 阶段 0 落地）**：
+`MediaResource`/`Demuxer` 有 `source_id` 寻址轴（无轴版=source 0，子类零改动），
+`CompositeDemuxer` 聚合 N 源，`Pipeline::Start` 收 `vector<unique_ptr<Demuxer>>`
+（PipelineImpl 持 composite 而非裸 vector——与设计书 §3.4 的有意偏差，逐源访问走
+`source_count()`/`source(id)`）。**RendererImpl 仍只消费 source 0**——阶段 1–3
+（渲染多路 / 时钟多轴 / GlSceneEngine 升格退役 L5 绕行）待做。§2 的 SDK 场景门面
+（第二路 Player + 邮箱）在阶段 3 才废弃。
 
 ## player 层可观测性与 clang-tidy 环境陷阱（第七十二轮，TODO §5c/§5d）
 
@@ -158,4 +163,5 @@ matrix 解析、被 `Player::video_rotation()` 上报，但**没有一帧真正�
 
 ## 路线图
 L1 可观测性 / L2 FBO 合成 / L3 多源场景层 / L4 硬件零拷贝 / L5 多源编排 —— **全部完成**。
-剩余差距在播放器层：管线仍单源，L5 用「第二路 Player + 邮箱」绕过去。
+播放器层「管线多源」改造（docs/14）：**阶段 0 已落地（第七十四轮）**，阶段 1–3 待做；
+L5 的「第二路 Player + 邮箱」绕行在阶段 3 退役。
