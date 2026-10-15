@@ -79,11 +79,11 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   // open parameters in its Source bundle; the single |source|/|options| from
   // Demuxer::Initialize do not apply to a multi-source resource and are
   // ignored.
-  void Initialize(const DataSourceDescriptor& source,
-                  const DemuxerOptions& options, Host* host,
-                  base::scoped_refptr<base::SequencedTaskRunner>
-                      media_task_runner,
-                  Demuxer::InitializeCB init_cb) override;
+  void
+  Initialize(const DataSourceDescriptor& source, const DemuxerOptions& options,
+             Host* host,
+             base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
+             Demuxer::InitializeCB init_cb) override;
   void StartPlayingFrom(base::TimeDelta time, Demuxer::SeekCB cb) override;
   void Flush(base::OnceClosure flush_cb) override;
   void Reset(base::OnceClosure reset_cb) override;

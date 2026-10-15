@@ -262,8 +262,8 @@ class AVBASE_MEDIA_EXPORT Pipeline {
 // out the vector.
 // Found via ADL on the unique_ptr<Demuxer> argument, so callers can write
 // MakeSingleSource(std::move(demuxer)) without qualification.
-inline std::vector<std::unique_ptr<Demuxer>> MakeSingleSource(
-    std::unique_ptr<Demuxer> demuxer) {
+inline std::vector<std::unique_ptr<Demuxer>>
+MakeSingleSource(std::unique_ptr<Demuxer> demuxer) {
   std::vector<std::unique_ptr<Demuxer>> sources;
   sources.push_back(std::move(demuxer));
   return sources;

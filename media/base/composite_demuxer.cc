@@ -14,9 +14,8 @@ namespace avbase::media {
 CompositeDemuxer::CompositeDemuxer(std::vector<Source> sources) {
   sources_.reserve(sources.size());
   for (auto& s : sources) {
-    sources_.push_back(
-        Child{std::move(s.demuxer), std::move(s.descriptor),
-              std::move(s.options)});
+    sources_.push_back(Child{std::move(s.demuxer), std::move(s.descriptor),
+                             std::move(s.options)});
   }
   media_info_ =
       sources_.empty() ? MediaInfo() : sources_[0].demuxer->media_info();
@@ -26,15 +25,14 @@ CompositeDemuxer::~CompositeDemuxer() = default;
 
 DemuxerStream* CompositeDemuxer::GetStream(int source_id,
                                            DemuxerStreamType type) {
-  if (source_id < 0 ||
-      source_id >= static_cast<int>(sources_.size())) {
+  if (source_id < 0 || source_id >= static_cast<int>(sources_.size())) {
     return nullptr;
   }
   return sources_[source_id].demuxer->GetStream(type);
 }
 
-std::vector<DemuxerStream*> CompositeDemuxer::GetStreams(
-    DemuxerStreamType type) {
+std::vector<DemuxerStream*>
+CompositeDemuxer::GetStreams(DemuxerStreamType type) {
   if (sources_.empty()) {
     return {};
   }
@@ -56,8 +54,8 @@ Demuxer* CompositeDemuxer::source(int id) const {
 }
 
 void CompositeDemuxer::Initialize(
-    const DataSourceDescriptor& /*source*/,
-    const DemuxerOptions& /*options*/, Host* host,
+    const DataSourceDescriptor& /*source*/, const DemuxerOptions& /*options*/,
+    Host* host,
     base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
     Demuxer::InitializeCB init_cb) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);

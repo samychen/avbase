@@ -99,8 +99,8 @@ CompositeDemuxer::Source MakeSource(std::unique_ptr<FakeDemuxer> d) {
 // Builds the source vector by moving (push_back), never copying -- Source holds
 // a unique_ptr<Demuxer>, so an initializer_list {a, b} would force a copy and
 // fail to compile.
-std::vector<CompositeDemuxer::Source> MakeSources(
-    std::unique_ptr<FakeDemuxer> a, std::unique_ptr<FakeDemuxer> b) {
+std::vector<CompositeDemuxer::Source>
+MakeSources(std::unique_ptr<FakeDemuxer> a, std::unique_ptr<FakeDemuxer> b) {
   std::vector<CompositeDemuxer::Source> v;
   v.reserve(2);
   v.push_back(MakeSource(std::move(a)));
@@ -142,9 +142,9 @@ TEST(CompositeDemuxerTest, InitializeFansOutToAllChildren) {
   CompositeDemuxer comp(MakeSources(std::move(d0), std::move(d1)));
 
   bool called = false;
-  comp.Initialize(
-      DataSourceDescriptor(), DemuxerOptions(), /*host=*/nullptr, nullptr,
-      base::BindOnce([&called](Status) { called = true; }));
+  comp.Initialize(DataSourceDescriptor(), DemuxerOptions(), /*host=*/nullptr,
+                  nullptr,
+                  base::BindOnce([&called](Status) { called = true; }));
 
   EXPECT_TRUE(called);
   EXPECT_EQ(p0->init_count(), 1);
@@ -223,8 +223,7 @@ TEST(CompositeDemuxerTest, SingleSourceDemuxerAxisDefaultsToPlainStream) {
   Demuxer* d_ptr = d.get();
   EXPECT_EQ(d_ptr->GetStream(0, DemuxerStreamType::kVideo),
             d_ptr->GetStream(DemuxerStreamType::kVideo));
-  EXPECT_EQ(d_ptr->GetStream(0, DemuxerStreamType::kVideo),
-            d->video_stream());
+  EXPECT_EQ(d_ptr->GetStream(0, DemuxerStreamType::kVideo), d->video_stream());
 }
 
 // ---------------------------------------------------------------------------

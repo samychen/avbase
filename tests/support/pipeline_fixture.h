@@ -248,10 +248,10 @@ class PipelineTestFixture : public ::testing::Test {
     DemuxerOptions options;
     if (ffmpeg_mode_) {
 #if AVBASE_ENABLE_FFMPEG && AVBASE_PIPELINE_FIXTURE_HAS_TESTDATA
-      pipeline_->Start(MakeSingleSource(std::make_unique<FFmpegDemuxer>(
-                           media_log_)),
-                       renderer_factory_.get(), RendererType::kRendererImpl,
-                       runner_, &client_);
+      pipeline_->Start(
+          MakeSingleSource(std::make_unique<FFmpegDemuxer>(media_log_)),
+          renderer_factory_.get(), RendererType::kRendererImpl, runner_,
+          &client_);
       pipeline_->SetSource(DataSourceDescriptor::FromSource(source_), options);
 #endif
     } else {
