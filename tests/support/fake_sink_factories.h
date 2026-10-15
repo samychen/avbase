@@ -14,6 +14,7 @@
 
 #include <memory>
 #include <mutex>
+#include <vector>
 
 #include "base/memory/scoped_refptr.h"
 #include "media/base/audio_renderer_sink.h"
@@ -29,6 +30,12 @@ class FakeVideoSinkFactory final : public VideoRendererSinkFactory {
   // The sink created last, borrowed. Valid while the pipeline holds it --
   // which is exactly the window a test pumps it in.
   FakeVideoSink* last_sink() const;
+  // EVERY sink this factory created, in creation order, borrowed under the
+  // same rule. The multi-source suites need the full list (docs/14 stage 1):
+  // one sink per secondary video leg, and "the host sink went to source 0"
+  // is only assertable against all of them -- last_sink() alone cannot tell
+  // the first leg's sink from the second's.
+  std::vector<FakeVideoSink*> sinks() const;
 
   // VideoRendererSinkFactory.
   std::unique_ptr<VideoRendererSink>
@@ -38,6 +45,7 @@ class FakeVideoSinkFactory final : public VideoRendererSinkFactory {
  private:
   mutable std::mutex lock_;
   FakeVideoSink* last_ = nullptr;
+  std::vector<FakeVideoSink*> all_;
 };
 
 class FakeAudioSinkFactory final : public AudioRendererSinkFactory {

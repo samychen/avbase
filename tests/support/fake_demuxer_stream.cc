@@ -76,34 +76,60 @@ void FakeDemuxerStream::Read(uint32_t count, ReadCB read_cb) {
 
 void FakeMediaResource::set_stream(DemuxerStreamType type,
                                    DemuxerStream* stream) {
+  set_stream(0, type, stream);
+}
+
+void FakeMediaResource::set_stream(int source_id, DemuxerStreamType type,
+                                   DemuxerStream* stream) {
+  if (source_id < 0) {
+    return;  // A negative source is a test bug; refuse rather than corrupt.
+  }
+  const size_t index = static_cast<size_t>(source_id);
+  if (index >= sources_.size()) {
+    sources_.resize(index + 1);
+  }
+  Source& s = sources_[index];
   switch (type) {
   case DemuxerStreamType::kAudio:
-    audio_ = stream;
+    s.audio = stream;
     return;
   case DemuxerStreamType::kVideo:
-    video_ = stream;
+    s.video = stream;
     return;
   case DemuxerStreamType::kUnknown:
   case DemuxerStreamType::kText:
     // The text leg exists as of Phase 4.2 (renderer_impl.h's PumpText), so
     // the fake CAN express one; the old comment here predated it and made
     // the live-cue policy untestable at the renderer level.
-    text_ = stream;
+    s.text = stream;
     return;
   }
 }
 
 DemuxerStream* FakeMediaResource::GetStream(DemuxerStreamType type) {
+  return GetStream(0, type);
+}
+
+DemuxerStream* FakeMediaResource::GetStream(int source_id,
+                                            DemuxerStreamType type) {
+  if (source_id < 0 || static_cast<size_t>(source_id) >= sources_.size()) {
+    return nullptr;
+  }
+  const Source& s = sources_[static_cast<size_t>(source_id)];
   switch (type) {
   case DemuxerStreamType::kAudio:
-    return audio_;
+    return s.audio;
   case DemuxerStreamType::kVideo:
-    return video_;
+    return s.video;
   case DemuxerStreamType::kUnknown:
   case DemuxerStreamType::kText:
-    return text_;
+    return s.text;
   }
   return nullptr;
+}
+
+int FakeMediaResource::source_count() const {
+  return static_cast<int>(sources_.size());
 }
 
 }  // namespace avbase::media::test

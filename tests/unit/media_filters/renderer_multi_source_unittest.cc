@@ -1,0 +1,464 @@
+// Copyright 2026 The avbase Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+//
+// RendererImpl's multi-source contract (docs/14 stage 1): one video leg per
+// source, audio still source 0 only (§4.2).
+//
+// WHY THIS FILE EXISTS. Stage 1's refactor keeps single-source behaviour
+// byte-identical -- the 357 green media tests prove that and say nothing
+// about the second source. "Every source got a decode chain" is observable
+// only through the sinks the chains present into, and the factory that
+// created those sinks is the witness of the assembly (fake_sink_factories.h
+// says the same about the single-source suites). The assertions below
+// therefore pair a structural half (counts, identities, factory records)
+// with a behavioural half (both chains emit frames, secondary audio is never
+// read, ended waits for every leg), because either half alone is a bug in a
+// different place: a count that moves without frames is a chain that decodes
+// into nothing, and frames without the count is a chain nobody built.
+//
+// Real threads, bounded one-sided waits: the discipline and the reasons are
+// renderer_impl_unittest.cc's header (a fake runner deadlocks in
+// ~RendererImpl's DestroyOn). The one exception below is a deliberately
+// bounded NEGATIVE wait, where the suite wants a state to NOT arrive.
+
+#include "media/filters/renderer_impl.h"
+
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <thread>
+#include <utility>
+#include <vector>
+
+#include "base/functional/bind.h"
+#include "base/memory/scoped_refptr.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/test/task_environment.h"
+#include "base/threading/thread.h"
+#include "base/time/time.h"
+#include "gtest/gtest.h"
+#include "media/base/audio_bus.h"
+#include "media/base/audio_decoder_factory.h"
+#include "media/base/decoder_buffer.h"
+#include "media/base/demuxer_stream.h"
+#include "media/base/media_error.h"
+#include "media/base/pipeline_status.h"
+#include "media/base/renderer.h"
+#include "media/base/video_decoder_factory.h"
+#include "media/base/video_frame.h"
+#include "media/filters/legacy/av_sync_controller.h"
+#include "tests/support/fake_decoder_factories.h"
+#include "tests/support/fake_demuxer_stream.h"
+#include "tests/support/fake_renderer_sinks.h"
+#include "tests/support/fake_sink_factories.h"
+#include "tests/support/mock_renderer_client.h"
+
+namespace avbase::media {
+namespace {
+
+// Chunk size for the audio ring, and the ceiling for every wait. Generous
+// because it is a ceiling and not a delay: each wait returns as soon as its
+// state is reached.
+constexpr int kFramesPerBuffer = 256;
+constexpr auto kWaitTimeout = std::chrono::seconds(5);
+
+// Distinct serials for the two sources' video streams. The serial rides on
+// every decoded frame (the fake decoder copies it from the buffer), so the
+// serial of the frames a sink received is a behavioural witness of WHICH
+// source's leg that sink belongs to -- which is what turns "the host sink
+// went to source 0" from a structural claim into an observable one.
+constexpr int32_t kPrimaryVideoSerial = 1000;
+constexpr int32_t kSecondaryVideoSerial = 2000;
+
+class RendererMultiSourceTest : public ::testing::Test {
+ protected:
+  RendererMultiSourceTest()
+      : env_(base::test::TaskEnvironment::TimeSource::kRealTime),
+        video_thread_("avbase-test-S3"),
+        audio_thread_("avbase-test-S4") {}
+
+  void SetUp() override {
+    runner_ = env_.GetMainThreadTaskRunnerRef();
+    ASSERT_TRUE(video_thread_.Start());
+    ASSERT_TRUE(audio_thread_.Start());
+  }
+
+  void TearDown() override {
+    DestroyRenderer();
+    video_thread_.Stop();
+    audio_thread_.Stop();
+  }
+
+  // The stage-1 shape this suite is about. Source 0 carries video AND audio
+  // (the composited layer); source 1 carries video AND audio too -- its audio
+  // stream is the "secondary audio is seen but not selected" case (§4.2), and
+  // scripting buffers into it is what makes "never read" a meaningful
+  // assertion rather than "there was nothing to read".
+  void SetTwoSources() {
+    for (int source = 0; source < 2; ++source) {
+      auto video = std::make_unique<test::FakeDemuxerStream>(
+          DemuxerStreamType::kVideo, test::MakeValidAudioConfig(),
+          test::MakeValidVideoConfig());
+      video->set_stream_index(source * 2);
+      video->set_serial(source == 0 ? kPrimaryVideoSerial
+                                    : kSecondaryVideoSerial);
+      resource_.set_stream(source, DemuxerStreamType::kVideo, video.get());
+      video_streams_.push_back(std::move(video));
+
+      auto audio = std::make_unique<test::FakeDemuxerStream>(
+          DemuxerStreamType::kAudio, test::MakeValidAudioConfig(),
+          test::MakeValidVideoConfig());
+      audio->set_stream_index(source * 2 + 1);
+      resource_.set_stream(source, DemuxerStreamType::kAudio, audio.get());
+      audio_streams_.push_back(std::move(audio));
+    }
+  }
+
+  // |buffers| worth of scripted data per stream, then EOS (FakeDemuxerStream
+  // emits EOS from the read that finds nothing left).
+  void ScriptBuffers(int buffers) {
+    behaviour_.outputs_per_buffer = 2;
+    for (int i = 0; i < buffers; ++i) {
+      for (auto& video : video_streams_) {
+        video->AppendBuffer(
+            test::MakeDataBuffer(DemuxerStreamType::kVideo, video->serial()));
+      }
+      for (auto& audio : audio_streams_) {
+        audio->AppendBuffer(
+            test::MakeDataBuffer(DemuxerStreamType::kAudio, audio->serial()));
+      }
+    }
+  }
+
+  RendererImpl::Deps MakeDeps() {
+    RendererImpl::Deps deps;
+    deps.media_task_runner = runner_;
+    deps.tick_clock = env_.GetTickClock();
+    deps.audio_frames_per_buffer = kFramesPerBuffer;
+    deps.video_task_runner = video_thread_.task_runner();
+    deps.audio_task_runner = audio_thread_.task_runner();
+    video_factory_ =
+        base::MakeRefCounted<test::FakeVideoDecoderFactory>(behaviour_);
+    deps.video_factories.emplace_back(video_factory_);
+    audio_factory_ =
+        base::MakeRefCounted<test::FakeAudioDecoderFactory>(behaviour_);
+    deps.audio_factories.emplace_back(audio_factory_);
+    // The host sink: source 0's in every pipeline, which is the claim the
+    // sink-policy assertions below hold the renderer to.
+    auto sink = std::make_unique<test::FakeVideoSink>();
+    host_sink_ = sink.get();
+    deps.video_sink = std::move(sink);
+    // The secondary legs' only legal destination in stage 1. Recording every
+    // Create() is what lets these tests see the assembly.
+    extra_factory_ = std::make_shared<test::FakeVideoSinkFactory>();
+    deps.extra_video_sink_factory = extra_factory_;
+    audio_sink_ = base::MakeRefCounted<test::FakeAudioSink>();
+    deps.audio_sink = base::scoped_refptr<AudioRendererSink>(audio_sink_.get());
+    av_sync_ = std::make_shared<AvSyncController>(
+        AvSyncController::MasterType::kAudio, env_.GetTickClock(),
+        AvSyncController::Thresholds());
+    deps.av_sync = av_sync_;
+    return deps;
+  }
+
+  void CreateRenderer() {
+    renderer_ = std::make_unique<RendererImpl>(MakeDeps());
+  }
+
+  void Initialize() {
+    renderer_->Initialize(
+        &resource_, &client_, runner_,
+        base::BindOnce(&RendererMultiSourceTest::OnInitialized,
+                       base::Unretained(this)));
+  }
+
+  void OnInitialized(PipelineStatus status) {
+    ++init_calls_;
+    init_status_ = status;
+    init_done_ = true;
+  }
+
+  // Pumps the media sequence while waiting for |predicate|, pulling the sinks
+  // as a display and a device would. Bounded: a stall fails the test instead
+  // of hanging it.
+  template <typename Predicate>
+  bool WaitFor(Predicate predicate,
+               std::chrono::milliseconds timeout = kWaitTimeout) {
+    const auto start = std::chrono::steady_clock::now();
+    while (true) {
+      env_.RunUntilIdle();
+      if (predicate()) {
+        return true;
+      }
+      PumpSinks();
+      if (std::chrono::steady_clock::now() - start > timeout) {
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+
+  // One display interval's worth of frames per video sink plus one audio
+  // device period. |pump_secondary_| is the one lever a test has over WHICH
+  // legs get pulled: with it off, the secondary leg's frames decode but
+  // nothing pulls them out of its compositor, so its pending count never
+  // reaches zero -- which is what the ended test below needs.
+  void PumpSinks() {
+    if (host_sink_) {
+      host_sink_->PullFrames(4);
+    }
+    if (pump_secondary_) {
+      for (test::FakeVideoSink* sink : extra_factory_->sinks()) {
+        sink->PullFrames(4);
+      }
+    }
+    PullAudioPeriod();
+  }
+
+  int PullAudioPeriod() {
+    if (!audio_bus_) {
+      audio_bus_ = AudioBus::Create(2, kFramesPerBuffer);
+    }
+    const int frames = audio_sink_->PullPeriod(audio_bus_.get());
+    if (frames > 0) {
+      ++audio_periods_with_data_;
+    }
+    return frames;
+  }
+
+  // Same bounded drain as renderer_impl_unittest.cc's: run what is ready,
+  // then destroy. The weak-bound S1 hops make a tick still in flight inert
+  // rather than fatal, so this is a backstop that fails loudly, never a wait
+  // that is expected to elapse.
+  void DestroyRenderer() {
+    if (!renderer_) {
+      return;
+    }
+    for (int i = 0; i < 100 && env_.HasDelayedTasks(); ++i) {
+      env_.RunUntilIdle();
+      if (!env_.HasDelayedTasks()) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    env_.RunUntilIdle();
+    renderer_.reset();
+  }
+
+  // Declaration order matters: the threads and the environment must outlive
+  // the renderer they are handed to, and ~RendererImpl blocks on the threads.
+  base::test::TaskEnvironment env_;
+  base::Thread video_thread_;
+  base::Thread audio_thread_;
+  base::scoped_refptr<base::SequencedTaskRunner> runner_;
+  test::FakeDecoderBehaviour behaviour_;
+  base::scoped_refptr<test::FakeVideoDecoderFactory> video_factory_;
+  base::scoped_refptr<test::FakeAudioDecoderFactory> audio_factory_;
+  std::shared_ptr<AvSyncController> av_sync_;
+  test::FakeVideoSink* host_sink_ = nullptr;
+  std::shared_ptr<test::FakeVideoSinkFactory> extra_factory_;
+  base::scoped_refptr<test::FakeAudioSink> audio_sink_;
+  test::FakeMediaResource resource_;
+  std::vector<std::unique_ptr<test::FakeDemuxerStream>> video_streams_;
+  std::vector<std::unique_ptr<test::FakeDemuxerStream>> audio_streams_;
+  std::unique_ptr<RendererImpl> renderer_;
+  test::FakeRendererClient client_;
+  std::unique_ptr<AudioBus> audio_bus_;
+  int audio_periods_with_data_ = 0;
+  int init_calls_ = 0;
+  bool init_done_ = false;
+  bool pump_secondary_ = true;
+  PipelineStatus init_status_ = PipelineStatus::kOk;
+};
+
+// The contract's core: TWO video chains, not one. The structural half --
+// video_renderer_count() and the two decoders the shared factory was asked
+// for -- and the behavioural half -- both sinks receive frames -- are
+// asserted together because either can be right while the other is wrong
+// (a count of 2 whose second leg decodes into a sink nobody pulls would pass
+// the first and fail the second).
+TEST_F(RendererMultiSourceTest, EverySourceGetsItsOwnVideoChain) {
+  SetTwoSources();
+  ScriptBuffers(/*buffers=*/2);
+  CreateRenderer();
+  Initialize();
+
+  ASSERT_TRUE(WaitFor([this] { return init_done_; }));
+  EXPECT_EQ(init_calls_, 1);
+  EXPECT_EQ(init_status_, PipelineStatus::kOk);
+
+  // Structural half. Two legs, and TWO decoders out of the one shared
+  // factory -- which is what "a decode chain per source" means, as opposed
+  // to a second bookkeeping entry around one chain.
+  EXPECT_EQ(renderer_->video_renderer_count(), 2u);
+  EXPECT_EQ(video_factory_->create_calls(), 2);
+  EXPECT_EQ(video_factory_->counters().init_calls, 2);
+  // The audio leg is still exactly one: source 0's.
+  EXPECT_EQ(audio_factory_->create_calls(), 1);
+
+  // The sink policy: the host sink went to source 0's leg, and the factory
+  // was asked for exactly the one secondary leg. If the policy handed the
+  // host sink to a later source -- or built the primary leg out of the
+  // factory -- one of these two is where it shows up.
+  ASSERT_EQ(extra_factory_->sinks().size(), 1u);
+  EXPECT_NE(extra_factory_->sinks()[0], host_sink_);
+
+  // Behavioural half: both chains present, and EACH sink carries its own
+  // source's frames. The serials make that second half observable: the host
+  // sink holding only primary-serial frames and the factory sink holding
+  // only secondary-serial frames is the sink policy doing its job, not two
+  // bookkeeping entries around one chain observed twice. A policy that
+  // handed the host sink to source 1's leg swaps these two sets.
+  renderer_->StartPlayingFrom(base::TimeDelta());
+  ASSERT_TRUE(WaitFor([this] { return !host_sink_->frames().empty(); }))
+      << "source 0's leg never presented a frame";
+  const std::vector<test::FakeVideoSink*> secondary = extra_factory_->sinks();
+  ASSERT_EQ(secondary.size(), 1u);
+  ASSERT_TRUE(WaitFor([sink = secondary[0]] {
+    return !sink->frames().empty();
+  })) << "source 1's leg never presented a frame";
+  for (const base::scoped_refptr<VideoFrame>& frame : host_sink_->frames()) {
+    EXPECT_EQ(frame->serial(), kPrimaryVideoSerial)
+        << "the host sink received a frame that is not source 0's";
+  }
+  for (const base::scoped_refptr<VideoFrame>& frame : secondary[0]->frames()) {
+    EXPECT_EQ(frame->serial(), kSecondaryVideoSerial)
+        << "the secondary sink received a frame that is not source 1's";
+  }
+}
+
+// §4.2: secondary audio is SEEN but not selected. The assertion is a zero
+// read count on a stream that HAS scripted data -- "read and ignored" and
+// "never wired" are different defects and only the count tells them apart,
+// because a leg that consumed source 1's audio would also have decoded it
+// (audio_factory_->create_calls() above is the other half of that witness).
+TEST_F(RendererMultiSourceTest, SecondaryAudioIsSeenButNotSelected) {
+  SetTwoSources();
+  ScriptBuffers(/*buffers=*/2);
+  CreateRenderer();
+  Initialize();
+  ASSERT_TRUE(WaitFor([this] { return init_done_; }));
+  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+
+  renderer_->StartPlayingFrom(base::TimeDelta());
+
+  // Wait for the PRIMARY audio leg to be genuinely flowing first: asserting
+  // a zero before anything has been read would pass against a pipeline whose
+  // audio never started at all.
+  ASSERT_TRUE(WaitFor([this] { return audio_streams_[0]->read_count() > 0; }))
+      << "source 0's audio leg never read";
+  EXPECT_EQ(audio_streams_[1]->read_count(), 0);
+  EXPECT_EQ(audio_factory_->create_calls(), 1);
+}
+
+// "Ended" now means EVERY leg drained (docs/14 stage 1). The negative wait
+// is the assertion: with the secondary leg's sink unpumped, its frames
+// decode and its EOS arrives, but nothing pulls them out of the compositor,
+// so its pending count never reaches zero -- and the pipeline must not
+// report ended while that is true, even though source 0's leg and the audio
+// leg have fully drained. A source-0-only ended condition fires here.
+TEST_F(RendererMultiSourceTest, EndedWaitsForEveryLegToDrain) {
+  SetTwoSources();
+  ScriptBuffers(/*buffers=*/1);
+  CreateRenderer();
+  Initialize();
+  ASSERT_TRUE(WaitFor([this] { return init_done_; }));
+
+  pump_secondary_ = false;
+  renderer_->StartPlayingFrom(base::TimeDelta());
+
+  // Both drainable legs drain: source 0's frames come out and the audio ring
+  // empties. The secondary leg cannot, by construction of this test.
+  ASSERT_TRUE(WaitFor([this] { return !host_sink_->frames().empty(); }));
+  ASSERT_TRUE(WaitFor([this] { return audio_periods_with_data_ > 0; }));
+  EXPECT_FALSE(WaitFor([this] { return client_.Has("ended"); },
+                       std::chrono::milliseconds(500)))
+      << "ended fired while source 1's leg still held frames";
+
+  // Now the secondary leg drains too, and the same wait succeeds -- once.
+  pump_secondary_ = true;
+  EXPECT_TRUE(WaitFor([this] { return client_.Has("ended"); }))
+      << "no OnEnded after every leg drained";
+  EXPECT_EQ(client_.Count("ended"), 1);
+  EXPECT_TRUE(renderer_->ended());
+  // The drain path must not have taken a failure branch on the way here: an
+  // ended AND an error would hide a real defect behind the event being
+  // waited for.
+  EXPECT_EQ(client_.Count("error"), 0);
+}
+
+// The foreign-stream guard, video side. The handover machinery switches
+// source 0's alternates: it re-anchors against video_stream_, hands over
+// source 0's sink, and re-wires source 0's clock hook. Source 1's stream is
+// none of those things, and CompositeDemuxer::SetActiveStream only routes
+// source 0 today -- so this is unreachable through the pipeline, which is
+// exactly why it needs a direct test: a guard nothing exercises is a guard
+// nothing keeps correct.
+TEST_F(RendererMultiSourceTest, SwitchingToAnotherSourcesVideoTrackIsRefused) {
+  SetTwoSources();
+  // Plenty of data: the switch must happen mid-stream, not after EOS, or the
+  // kInvalidState branch answers first and the guard is never reached.
+  ScriptBuffers(/*buffers=*/40);
+  CreateRenderer();
+  Initialize();
+  ASSERT_TRUE(WaitFor([this] { return init_done_; }));
+  renderer_->StartPlayingFrom(base::TimeDelta());
+  ASSERT_TRUE(WaitFor([this] { return !host_sink_->frames().empty(); }));
+
+  VideoRendererImpl* before = renderer_->video_renderer();
+  bool switch_done = false;
+  renderer_->OnTracksChanged(
+      DemuxerStreamType::kVideo, video_streams_[1].get(),
+      base::BindOnce([](bool* flag) { *flag = true; }, &switch_done));
+
+  // Refused, not crashed and not silently wired into source 0's renderer:
+  // the caller's callback still runs (a wait on it must not hang), the error
+  // says why, and source 0's renderer is the same object as before.
+  ASSERT_TRUE(WaitFor([&switch_done] { return switch_done; }));
+  EXPECT_TRUE(client_.Has("error"));
+  EXPECT_EQ(client_.last_error().code(), ErrorCode::kNotImplemented);
+  EXPECT_EQ(renderer_->video_renderer(), before);
+
+  // ...and source 0's leg keeps rendering after the refusal. A guard that
+  // rejected the switch but broke the primary leg would pass every assertion
+  // above.
+  const size_t frames_before = host_sink_->frames().size();
+  EXPECT_TRUE(WaitFor([this, frames_before] {
+    return host_sink_->frames().size() > frames_before;
+  })) << "source 0's leg stopped presenting after a refused switch";
+}
+
+// The same guard on the audio side (§4.2): the audio leg belongs to source
+// 0, so source 1's audio stream has no renderer to switch INTO. The
+// "untouched" half is the factory count -- a replacement AudioRendererImpl
+// would have initialized a second decoder.
+TEST_F(RendererMultiSourceTest, SwitchingToAnotherSourcesAudioTrackIsRefused) {
+  SetTwoSources();
+  ScriptBuffers(/*buffers=*/40);
+  CreateRenderer();
+  Initialize();
+  ASSERT_TRUE(WaitFor([this] { return init_done_; }));
+  renderer_->StartPlayingFrom(base::TimeDelta());
+  ASSERT_TRUE(WaitFor([this] { return audio_streams_[0]->read_count() > 0; }));
+
+  bool switch_done = false;
+  renderer_->OnTracksChanged(
+      DemuxerStreamType::kAudio, audio_streams_[1].get(),
+      base::BindOnce([](bool* flag) { *flag = true; }, &switch_done));
+
+  ASSERT_TRUE(WaitFor([&switch_done] { return switch_done; }));
+  EXPECT_TRUE(client_.Has("error"));
+  EXPECT_EQ(client_.last_error().code(), ErrorCode::kNotImplemented);
+  EXPECT_EQ(audio_factory_->create_calls(), 1);
+
+  // The primary audio leg keeps flowing.
+  const int reads_before = audio_streams_[0]->read_count();
+  EXPECT_TRUE(WaitFor([this, reads_before] {
+    return audio_streams_[0]->read_count() > reads_before;
+  })) << "source 0's audio leg stopped reading after a refused switch";
+}
+
+}  // namespace
+}  // namespace avbase::media

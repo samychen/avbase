@@ -105,23 +105,44 @@ class FakeDemuxerStream final : public DemuxerStream {
   std::atomic<int> read_count_{0};
 };
 
-// Returns the stream of the requested type, or nullptr when the test set none,
-// which is how the audio-only and video-only cases are expressed. nullptr is
-// not an error for a MediaResource; RendererImpl falls back to the external
-// clock (media/base/media_resource.h).
+// Returns the stream of the requested type for source 0, or nullptr when the
+// test set none, which is how the audio-only and video-only cases are
+// expressed. nullptr is not an error for a MediaResource; RendererImpl falls
+// back to the external clock (media/base/media_resource.h).
+//
+// MULTI-SOURCE (docs/14 stage 1). set_stream(source_id, ...) extends the
+// source list and the resource answers source_count() accordingly, so a test
+// builds "source 0 has video+audio, source 1 has video" with two calls. Source
+// 0 always exists, which is what keeps the single-source suites above
+// byte-identical: the no-axis GetStream(type) is exactly GetStream(0, type).
+// A source whose slot is null is a real shape (a video-less or audio-less
+// source), not an error -- the renderer's per-source vectors keep a null
+// entry for it.
 class FakeMediaResource final : public MediaResource {
  public:
   FakeMediaResource() = default;
 
+  // Source 0 (the shape every existing suite uses).
   void set_stream(DemuxerStreamType type, DemuxerStream* stream);
+  // Source |source_id|. Extends the source list when |source_id| is past the
+  // end. A negative id is a test bug and is refused rather than corrupting the
+  // list.
+  void set_stream(int source_id, DemuxerStreamType type, DemuxerStream* stream);
 
   // MediaResource.
   DemuxerStream* GetStream(DemuxerStreamType type) override;
+  DemuxerStream* GetStream(int source_id, DemuxerStreamType type) override;
+  int source_count() const override;
 
  private:
-  DemuxerStream* audio_ = nullptr;
-  DemuxerStream* video_ = nullptr;
-  DemuxerStream* text_ = nullptr;
+  struct Source {
+    DemuxerStream* audio = nullptr;
+    DemuxerStream* video = nullptr;
+    DemuxerStream* text = nullptr;
+  };
+  // One entry per source; sources_[0] exists from construction so the
+  // single-source setter never has to grow the list.
+  std::vector<Source> sources_{Source{}};
 };
 
 }  // namespace avbase::media::test

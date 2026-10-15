@@ -11,6 +11,11 @@ FakeVideoSink* FakeVideoSinkFactory::last_sink() const {
   return last_;
 }
 
+std::vector<FakeVideoSink*> FakeVideoSinkFactory::sinks() const {
+  std::scoped_lock scoped(lock_);
+  return all_;
+}
+
 std::unique_ptr<VideoRendererSink>
 FakeVideoSinkFactory::Create(base::scoped_refptr<NativeDisplay> /*display*/) {
   // The display is deliberately ignored: the fake has nowhere to draw, and
@@ -18,6 +23,7 @@ FakeVideoSinkFactory::Create(base::scoped_refptr<NativeDisplay> /*display*/) {
   auto sink = std::make_unique<FakeVideoSink>();
   std::scoped_lock scoped(lock_);
   last_ = sink.get();
+  all_.push_back(sink.get());
   return sink;
 }
 
