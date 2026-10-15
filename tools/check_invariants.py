@@ -132,23 +132,16 @@ PLATFORM_MACRO_RE = re.compile(r'\b(__ANDROID__|__APPLE__|__linux__|_WIN32|__lin
 PLATFORM_SUFFIX_RE = re.compile(
     r"_(posix|linux|win|mac|ios|android|fuchsia|epoll|x11|wayland)\.(cc|h)$")
 
-# The one file pair under media/transcode/ that names platform encoders.
-#
-# CreateVideoEncoderFactories() puts VideoToolbox / VAAPI / NVENC into the list
-# under #if defined(__APPLE__) / __linux__. Its decoder twin solved this the
-# right way: the specs live in platform/hwaccel/*_hw_spec.h and
-# player/video_decoder_defaults.cc assembles the list, because player is the
-# injection point (docs/02 §6 rule 1). The encoder side has not been converted
-# yet -- docs/12 §5 tracks it -- so these two files are exempted here.
-#
-# Deliberately PER FILE, not per directory: C5 still guards the other sixteen
-# files in media/transcode/, so a stray __APPLE__ in the transcode pump is
-# still a violation. Exempting the directory would have been the easy thing to
-# write and the wrong thing to keep.
-ENCODER_SPEC_FILES = frozenset({
-    "media/transcode/video_encoder_factory.cc",
-    "media/transcode/video_encoder_factory.h",
-})
+# media/transcode/ used to need a per-file exemption here:
+# video_encoder_factory.{h,cc} picked its hardware encoder list under
+# #if defined(__APPLE__) / __linux__. Round 73 moved that choice onto the
+# build's own AVBASE_ENABLE_* flags -- the vocabulary
+# player/video_decoder_defaults.cc already assembles its decoder list with --
+# so the host knowledge now lives in cmake/AvbaseOptions.cmake and the
+# exemption is gone. The fuller split the decoder side has (specs in
+# platform/hwaccel/, assembly at an injection point above media/) waits for a
+# transcode consumer up there; docs/12 §5 E5b records why forcing it now
+# would delete the working platform default.
 
 
 DRAFT_FILES: list[str] = []
@@ -245,22 +238,22 @@ def check_file(path: pathlib.Path, rel: str, report: Report) -> None:
                 report.add("C4", path, i, "FFmpeg header outside media/ffmpeg/")
 
         # C5: no platform headers or macros in base/ media/ player/.
-        # Exempt: base/'s per-platform translation units (see PLATFORM_SUFFIX_RE),
-        # media/ffmpeg/ -- the vendor adapter, which is where platform/ffmpeg
-        # went when FFmpeg stopped being filed as a platform -- and the encoder
-        # factory pair under media/transcode/ (see ENCODER_SPEC_FILES). The
-        # media/ffmpeg/ files name platform-specific encoders and hwaccels by
-        # nature; C5 never covered them while they sat under platform/, and a
-        # directory move is not the moment to change what this rule enforces.
-        # The rule's job is to keep the PORTABLE layers portable, and
-        # media/ffmpeg/ and media/transcode/ are both opt-in
-        # (AVBASE_ENABLE_FFMPEG) rather than portable.
+        # Exempt: base/'s per-platform translation units (see PLATFORM_SUFFIX_RE)
+        # and media/ffmpeg/ -- the vendor adapter, which is where platform/ffmpeg
+        # went when FFmpeg stopped being filed as a platform. The media/ffmpeg/
+        # files name platform-specific encoders and hwaccels by nature; C5 never
+        # covered them while they sat under platform/, and a directory move is
+        # not the moment to change what this rule enforces. The rule's job is to
+        # keep the PORTABLE layers portable, and media/ffmpeg/ is opt-in
+        # (AVBASE_ENABLE_FFMPEG) rather than portable. media/transcode/ has no
+        # exemption at all any more (see the note above the DRAFT_FILES list):
+        # its encoder factory selects hardware through AVBASE_ENABLE_* flags,
+        # which are the build's vocabulary, not the host's.
         is_platform_tu = rel.startswith("base/") and bool(
             PLATFORM_SUFFIX_RE.search(rel))
         is_vendor_adapter = rel.startswith("media/ffmpeg/")
         if (rel.startswith(("base/", "media/", "player/")) and not is_test
-                and not is_platform_tu and not is_vendor_adapter
-                and rel not in ENCODER_SPEC_FILES):
+                and not is_platform_tu and not is_vendor_adapter):
             if PLATFORM_INCLUDE_RE.search(line):
                 report.add("C5", path, i, "platform header in a core file")
             if PLATFORM_MACRO_RE.search(line) and not stripped.startswith("*"):
