@@ -71,13 +71,31 @@ class AVBASE_MEDIA_EXPORT MediaResource {
   // when there is no audio stream, exactly as ffplay does.
   virtual DemuxerStream* GetStream(DemuxerStreamType type) = 0;
 
+  // Addressing axis for multi-source pipelines (docs/14, stage 0). A resource
+  // that carries more than one source answers the stream of |type| belonging to
+  // |source_id| (source 0 is the primary). Every resource today -- each Demuxer
+  // and the test fakes -- is single-source, so the default ignores |source_id|
+  // and behaves exactly like GetStream(type). Only CompositeDemuxer
+  // (media/base/composite_demuxer.h) overrides it with real per-source routing;
+  // keeping the default here means existing single-source subclasses compile
+  // unchanged.
+  virtual DemuxerStream* GetStream(int /*source_id*/, DemuxerStreamType type) {
+    return GetStream(type);
+  }
+
   // All streams of |type|, in container order (index 0 = first container
   // stream of that type). The default covers resources that carry at most one
   // stream per type; demuxers that keep alternates for runtime track
   // switching override it. Stream identity is DemuxerStream::stream_index()
   // (the container stream index, which is what MediaInfo::streams reports).
   virtual std::vector<DemuxerStream*> GetStreams(DemuxerStreamType type) {
-    if (DemuxerStream* stream = GetStream(type)) {
+    return GetStreams(0, type);
+  }
+
+  // All streams of |type| for |source_id|, in container order.
+  virtual std::vector<DemuxerStream*> GetStreams(int source_id,
+                                                 DemuxerStreamType type) {
+    if (DemuxerStream* stream = GetStream(source_id, type)) {
       return {stream};
     }
     return {};

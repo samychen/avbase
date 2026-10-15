@@ -103,6 +103,16 @@ class AVBASE_MEDIA_EXPORT Demuxer : public MediaResource {
   // must answer it. |override| (not just |virtual|) is what the style rule
   // asks for, and the base class is the reason it is an override at all.
   DemuxerStream* GetStream(DemuxerStreamType type) override = 0;
+
+  // Single-source addressing (docs/14 stage 0): a Demuxer is source 0,
+  // so |source_id| is irrelevant and the answer is GetStream(type). Overridden
+  // (rather than merely inherited from MediaResource) so the name stays visible
+  // -- declaring GetStream(DemuxerStreamType) above would otherwise hide this
+  // overload in Demuxer's scope (C++ name hiding), which would make
+  // CompositeDemuxer's per-source routing unreachable through a Demuxer*.
+  DemuxerStream* GetStream(int /*source_id*/, DemuxerStreamType type) override {
+    return GetStream(type);
+  }
   // Tells the demuxer which stream of |type| the renderer consumes (runtime
   // track switching, Phase 4). Only the active stream's queue exerts
   // backpressure: packets routed to inactive alternates of the same type are
