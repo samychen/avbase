@@ -4200,3 +4200,87 @@ origin/main 里就有 —— **CI 的 strict job 自 10 月 3 日起就是红的
   不跑这些提交；下次推送时 `check-clang-tidy` 是第一次真正看见它们 —— 这也正是
   本轮坚持修掉那 11 条的原因。同理，strict job 下次推送也会第一次真正变绿
   （它自 10 月 3 日起在 origin/main 上是红的）。
+
+---
+
+## 第七十三轮 —— E5b：编码器平台表的归属，一次"照做不了"的查证
+
+承接 docs/12 §5 E5b（P2，本机唯一能闭环的结构性缺口）：
+`CreateVideoEncoderFactories()` 用 `#if defined(__APPLE__) / __linux__` 挑硬件编码器
+列表，`media/transcode/` 因此拿着 C5 的**文件级**豁免（`ENCODER_SPEC_FILES`）。
+原条的设想是"照做"解码侧——spec 进 `platform/hwaccel/`、列表在注入点组装。
+
+### 查证：完整拆分当前不可能，硬拆有害
+
+三个事实叠起来把"照做"堵死了：
+
+1. **C26 不给 transcode 豁免。** `media/` 不得 include `platform/`——C27 明确点名
+   放过 transcode（它可以 include `media/ffmpeg/`），C26 没有。所以 spec 头无法从
+   `media/transcode/` 消费，列表只能留在 media 内或搬到 media 之上。
+2. **转码在 media 之上没有消费者。** 解码侧的组装点在 `player/`，因为 player 是
+   注入点；而 `avbase_player` **刻意不链接** `avbase_transcode`（docs/02 §4.5：
+   播放构建不能背编码器与封装写端）。`media/transcode/` 的 13 条外部 include
+   全部来自测试。
+3. **搬走列表 = 删掉能用的默认。** `prefer_hardware` 是出厂功能（E5 接线时专门
+   给了它生产调用方）；把平台列表挪到一个没有调用方的角落，这个旋钮就变成
+   "配了不生效"——正是 TODO §5b 那类缺陷。
+
+### 落地：宿主知识移回构建系统
+
+`#if defined(__APPLE__)` → `#if AVBASE_ENABLE_VIDEOTOOLBOX`，
+`#if defined(__linux__) && !defined(__APPLE__)` → `#if AVBASE_ENABLE_VAAPI`。
+这两个旗标是 `cmake/AvbaseOptions.cmake` 自己的词汇（`APPLE → VT ON` 本就写在
+那里），也正是 `player/video_decoder_defaults.cc` 组装解码列表用的那一套。于是：
+
+- 源码里不再有宿主宏，`ENCODER_SPEC_FILES` 删除，C5 恢复纯目录规则；
+- 宿主知识（"这台机器有 VideoToolbox"）集中在构建系统一处；
+- NVENC 保持无守卫（不绑定平台 SDK，只是一个 FFmpeg 编码器名）。
+
+**行为差异仅一处**：Linux 默认构建（`AVBASE_ENABLE_VAAPI=OFF`）不再注册 VAAPI
+编码器工厂——与解码侧同一旗标口径一致，且只在 `prefer_hardware=true` 时可见
+（树内无人设置）。macOS 上等价：VT=1、VAAPI=0，与旧的宿主宏判断同结果。
+
+### 测试与反证
+
+`PlatformListIsHardwareFirst` 原来只在 Apple/Linux 上期望"有硬件"——NVENC 无
+守卫，这个期望其实**任何构建都成立**，旧的 `#if` 守卫是废话。改成随旗标断言的
+列表组成：旗标开着 → 对应工厂必须按名字在列表里；NVENC 永远在。两个突变：
+
+| 探针 | 结果 |
+|---|---|
+| 删 `CreateVideoEncoderFactories()` 里的 VT 入列 | **红**：`listed("VideoToolbox")` 为 false，诊断语点名 |
+| 把 `#if defined(__APPLE__)` 写回（保留 checker 改动） | **C5 报错**：`video_encoder_factory.cc:202 platform macro in a core file` |
+
+第二条是给门禁本身的反证：豁免删掉后规则还有牙，不是摆着好看。另跑通
+`check_invariants`（无豁免，461 文件全过）、clang-format / cpplint / clang-tidy
+18.1.8（改动文件均 0）。
+
+### 顺手：一个文件里的存量 cpplint
+
+`video_encoder_factory_unittest.cc` 的 `<gtest/gtest.h>` 被 cpplint 归类成 C
+系统头（angle-bracket + `.h`），排在 C++ 系统头之后即报 include_order。同目录
+另两个测试文件带着同款存量。**CI 的 cpplint 口径不含 `tests/`**（`git ls-files
+'base/*.cc' 'media/*.cc' ...`），所以它从未染红过 CI——与第七十一轮"19 条头文件
+存量"同形。本次只改正在编辑的这个文件（引号版 `"gtest/gtest.h"` 进项目块，树内
+干净先例如此），两个同级文件登记不动。
+
+### 门禁（最终状态当场跑出）
+
+| 项 | 结果 |
+|---|---|
+| `check_invariants` | all rules pass（461 文件，**无 ENCODER_SPEC_FILES 豁免**） |
+| `clang-format` / `cpplint`（改动文件） | 0 偏离 / 0 error |
+| clang-tidy 18.1.8（改动文件） | 0 条 |
+| macos-sdl2 + `-Werror`（含 GLFW） | ctest **736/736**（1 条既有环境 skip） |
+| no-ffmpeg + `-Werror` | ctest **530/530** |
+| debug（strict + DCHECK） | ctest **663/663**（同 1 条环境 skip） |
+
+### 留下的问题
+
+- **完整拆分欠着一次"消费者出现"。** media 之上出现转码消费者（转码 CLI /
+  SDK 入口）那天，spec 进 `platform/hwaccel/`、组装进那个消费者即是机械劳动；
+  条件与论证记在 docs/12 §5 E5b。
+- **4 个 `platform/{egl,glfw}` 文件**仍待有 dev 库的机器（第七十二轮同条）。
+- **86 个提交未推送**（第七十二轮同条）——下次推送时 CI 才第一次真正看见
+  第七十二、七十三两轮。
+- **两个同级测试文件的 gtest include_order 存量**（CI 口径外，本轮登记未动）。
