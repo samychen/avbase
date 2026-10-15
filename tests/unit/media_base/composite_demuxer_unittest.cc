@@ -119,7 +119,14 @@ TEST(CompositeDemuxerTest, AddressingAxisRoutesToCorrectChild) {
 
   CompositeDemuxer comp(MakeSources(std::move(d0), std::move(d1)));
 
-  EXPECT_EQ(comp.source_count(), 2u);
+  // int, not size_t: the addressing axis is int throughout (GetStream takes an
+  // int source_id), and a size_t here would force a narrowing cast on every
+  // loop bound that walks it.
+  EXPECT_EQ(comp.source_count(), 2);
+  // Visible through the BASE pointer, which is how the renderer sees it:
+  // RendererImpl::Initialize walks [0, source_count()) on a MediaResource*,
+  // never on a CompositeDemuxer.
+  EXPECT_EQ(static_cast<const MediaResource&>(comp).source_count(), 2);
   // The axis must reach the right child, not always the first one.
   EXPECT_EQ(comp.GetStream(0, DemuxerStreamType::kVideo), s0);
   EXPECT_EQ(comp.GetStream(1, DemuxerStreamType::kVideo), s1);
@@ -224,6 +231,9 @@ TEST(CompositeDemuxerTest, SingleSourceDemuxerAxisDefaultsToPlainStream) {
   EXPECT_EQ(d_ptr->GetStream(0, DemuxerStreamType::kVideo),
             d_ptr->GetStream(DemuxerStreamType::kVideo));
   EXPECT_EQ(d_ptr->GetStream(0, DemuxerStreamType::kVideo), d->video_stream());
+  // ...and a lone demuxer is exactly one source through the base pointer, so
+  // a renderer walking the axis over a non-aggregate sees N == 1.
+  EXPECT_EQ(d_ptr->source_count(), 1);
 }
 
 // ---------------------------------------------------------------------------

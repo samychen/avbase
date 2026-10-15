@@ -101,6 +101,15 @@ class AVBASE_MEDIA_EXPORT MediaResource {
     return {};
   }
 
+  // How many sources this resource carries (docs/14, stage 1). 1 is the
+  // default and the truth for every resource that is not an aggregate: a
+  // single Demuxer is one source, and the stage-0 test fakes are one source
+  // each. Only CompositeDemuxer overrides it. RendererImpl::Initialize walks
+  // [0, source_count()) to discover every source's streams, so a resource that
+  // answers more than one here MUST route GetStream(source_id, type)
+  // accordingly -- the two are one contract.
+  virtual int source_count() const { return 1; }
+
  protected:
   MediaResource() = default;
   virtual ~MediaResource() = default;

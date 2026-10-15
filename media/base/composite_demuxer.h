@@ -97,7 +97,13 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   const char* name() const override;
 
   // Aggregate inspection.
-  size_t source_count() const { return sources_.size(); }
+  // MediaResource's addressing contract (media/base/media_resource.h): an
+  // aggregate is the one resource whose source_count() exceeds 1, and it must
+  // route GetStream(source_id, type) to match -- both were added together in
+  // docs/14 stage 0/1.
+  int source_count() const override {
+    return static_cast<int>(sources_.size());
+  }
   Demuxer* source(int id) const;
 
   // Demuxer::Host: forward child events to the pipeline host.
