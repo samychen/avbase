@@ -11,6 +11,7 @@
 #include "media/filters/pipeline_impl.h"
 
 #include <utility>
+#include <vector>
 
 #include "base/check.h"
 #include "base/functional/bind.h"
