@@ -162,6 +162,22 @@ class AVBASE_MEDIA_EXPORT Renderer {
     (void)max_cue_age;
   }
 
+  // Per-source playback offset (docs/14 stage 2). A secondary source's frames
+  // carry timestamps in that source's own timeline; |offset| is what maps them
+  // onto the master timeline (AvSyncController::SourceTime), so a source whose
+  // seek landed somewhere other than source 0's still composites the same
+  // moment. The pipeline derives it from the per-source seek results and
+  // states it here; the renderer hands it to the clock controller.
+  //
+  // Default no-op, like SetPaused and BeginAccurateSeek above: single-source
+  // renderers have nothing to offset, and source 0's offset is structurally
+  // zero (the master clock IS source 0's audio clock -- shifting it would
+  // correct the same skew twice).
+  virtual void SetSourceOffset(int source_id, base::TimeDelta offset) {
+    (void)source_id;
+    (void)offset;
+  }
+
   // ---- Valid only after Initialize() -------------------------------------
 
   // Drops every buffered packet and frame, then runs |flush_cb|. After the

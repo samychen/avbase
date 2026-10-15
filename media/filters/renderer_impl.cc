@@ -181,6 +181,12 @@ void RendererImpl::Initialize(
                   : media_resource->GetStream(id, DemuxerStreamType::kAudio);
     any_media = any_media || s.video != nullptr || s.audio != nullptr;
     sources.push_back(s);
+    // Declare the source to the clock controller (docs/14 stage 2), so a
+    // later SetSourceOffset() for it is accepted rather than ignored: every
+    // source, not only video-bearing ones -- the offset is per demuxer.
+    if (av_sync_) {
+      av_sync_->RegisterSource(id);
+    }
   }
   // Source 0 is the clock-relevant source: its audio is the only audio leg
   // (§4.2) and its video is the only one feeding the master video clock. An

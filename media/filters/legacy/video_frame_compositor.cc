@@ -91,10 +91,9 @@ FrameSyncOutput MakeDrop(FrameSyncOutput out, DropReason reason) {
   return out;
 }
 
-bool IsNoTimestamp(base::TimeDelta t) {
-  // media::kNoTimestamp is TimeDelta::Min(); also treat Max() as unset.
-  return t.is_min() || t.is_max();
-}
+// IsNoTimestamp comes from media/base/media_constants.h (pulled in by the
+// header for the master_clock_ default): one predicate, not a second copy in
+// this TU's anonymous namespace.
 
 }  // namespace
 
@@ -450,6 +449,11 @@ int VideoFrameCompositor::max_fps() const {
 int VideoFrameCompositor::max_frame_drop() const {
   base::AutoLock scoped(lock_);
   return max_frame_drop_;
+}
+
+base::TimeDelta VideoFrameCompositor::master_clock() const {
+  base::AutoLock scoped(lock_);
+  return master_clock_;
 }
 
 void VideoFrameCompositor::SetPaused(bool paused) {

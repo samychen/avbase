@@ -4,12 +4,14 @@
 //
 // RendererImpl's sub-renderer construction and wiring (docs/14 stage 1):
 // one VideoRendererImpl per source that carries a video stream, the sink
-// assignment policy, and the ended / frame-presented / error hooks. Split
-// from renderer_impl.cc as a line-count seam (C1). The seam is "what was
-// built": Initialize() discovers the sources, this file builds a renderer
-// for each and wires it, and the rest of the class drives what exists --
-// Flush, StartPlayingFrom and the track switches never construct a leg
-// except through SwitchVideoRenderer, which re-enters WireVideoCallbacks.
+// assignment policy, and the ended / frame-presented / error hooks. Stage 2
+// adds the per-source side of the clock offset: the per-leg accessor and
+// SetSourceOffset. Split from renderer_impl.cc as a line-count seam (C1).
+// The seam is "what was built": Initialize() discovers the sources, this
+// file builds a renderer for each and wires it, and the rest of the class
+// drives what exists -- Flush, StartPlayingFrom and the track switches
+// never construct a leg except through SwitchVideoRenderer, which re-enters
+// WireVideoCallbacks.
 
 #include "media/filters/renderer_impl.h"
 
@@ -151,6 +153,34 @@ size_t RendererImpl::video_renderer_count() const {
     }
   }
   return count;
+}
+
+VideoRendererImpl* RendererImpl::video_renderer(int source_index) const {
+  // The index IS the source id (video_renderers_ keeps a null entry for a
+  // video-less source precisely so this holds), so an out-of-range index is
+  // a caller bug rather than a legitimate "no leg here" -- answered null
+  // either way, without reading past the vector.
+  if (source_index < 0 ||
+      static_cast<size_t>(source_index) >= video_renderers_.size()) {
+    return nullptr;
+  }
+  return video_renderers_[static_cast<size_t>(source_index)].get();
+}
+
+void RendererImpl::SetSourceOffset(int source_id, base::TimeDelta offset) {
+  // Stated to the clock controller, not applied here: the clock push
+  // (renderer_impl_reporting.cc) consumes it, pacing each leg against the
+  // master clock minus that source's offset. Source 0 is refused there (the
+  // master timeline cannot be shifted against itself) and an unregistered id
+  // is ignored -- Initialize registered exactly the sources the resource has.
+  //
+  // Lives in this file rather than with the other Set* controls because it is
+  // a statement about a SOURCE, not about playback: the pipeline derives it
+  // from the per-source seek results (docs/14 §7.2), and nothing a viewer or
+  // a host can do mid-playback changes it.
+  if (av_sync_) {
+    av_sync_->SetSourceOffset(source_id, offset);
+  }
 }
 
 // The callback wiring shared by both construction sites of each sub-renderer

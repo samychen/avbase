@@ -127,8 +127,8 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
     std::unique_ptr<VideoRendererSink> video_sink;
     // Sink factory for the video legs of sources 1..N (docs/14 stage 1).
     // Null -- the default -- means every secondary leg renders into a
-    // NullVideoSink: stage 1 runs the decode chains but composites only the
-    // primary layer (stage 3 supplies the compositor's per-source slots).
+    // NullVideoSink: stage 1 runs the chains but composites only the primary
+    // layer (stage 3 supplies the compositor's per-source slots).
     std::shared_ptr<VideoRendererSinkFactory> extra_video_sink_factory;
     base::scoped_refptr<AudioRendererSink> audio_sink;
     VideoFrameCompositor::Thresholds compositor_thresholds;
@@ -182,6 +182,10 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // Live-edge text policy. See Renderer::SetSourceLiveness for why the
   // pipeline states this rather than the renderer discovering it.
   void SetSourceLiveness(bool is_live, base::TimeDelta max_cue_age) override;
+  // Per-source playback offset (docs/14 stage 2): forwarded to the clock
+  // controller, which maps this source's pts onto the master timeline; the
+  // clock push paces each leg against its own mapped value (source 0: no-op).
+  void SetSourceOffset(int source_id, base::TimeDelta offset) override;
   void Flush(base::OnceClosure flush_cb) override;
   void StartPlayingFrom(base::TimeDelta time) override;
   void SetPlaybackRate(double playback_rate) override;
@@ -216,6 +220,10 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   VideoRendererImpl* video_renderer() const {
     return video_renderers_.empty() ? nullptr : video_renderers_[0].get();
   }
+  // The leg of any source; nullptr when it has none (or the index is out of
+  // range). Stage 2's offset wiring is per-leg, so "the offset reached source
+  // 1" is a question about a specific leg, not the composited one.
+  VideoRendererImpl* video_renderer(int source_index) const;
   // How many sources got a video leg: the structural half of the multi-source
   // contract, asserted alongside the behavioural half in
   // renderer_multi_source_unittest.cc (the mutation that drops a chain turns
@@ -239,9 +247,8 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
 
   // Handed to the sub-renderers; they run it on S3 and S4 respectively, so it
   // only hops -- the flags it flips are S1 state. Same split as the ended
-  // callbacks below, and for the same reason: a TSan run of
-  // tests/unit/media_filters/renderer_impl_unittest.cc reported the direct
-  // version as a data race between S3, S4 and S1.
+  // callbacks below, for the same reason: a TSan run of
+  // renderer_impl_unittest.cc reported the direct version as a data race.
   void PostVideoInitialized(int source_index, PipelineStatus status);
   void PostAudioInitialized(PipelineStatus status);
   // Runtime audio-track switch (Phase 4). Runs on S1; |settings| carries what
@@ -317,7 +324,6 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   void ReportError(MediaError error);
   // The callback wiring shared by both construction sites of each
   // sub-renderer; requires |video_renderers_| / |audio_| to be non-null.
-  //
   // Takes the source index because two of the three video callbacks are
   // source-specific (docs/14 stage 1): the ended hop carries the index, and
   // the frame-presented hook is wired ONLY for source 0 -- the master video
@@ -333,10 +339,9 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // Posted by the sub-renderers' ended callbacks (which fire on S3/S4); the
   // flags they set and the decision itself stay on S1. "Ended" means every
   // existing sub-renderer has reported end of stream *and* the video side has
-  // nothing left to present. Fires OnEnded() once per playback.
-  //
-  // The video version carries the source index (docs/14 stage 1): each video
-  // leg ends on its own, and "the video side is done" now means ALL of them.
+  // nothing left to present. Fires OnEnded() once per playback. The video
+  // version carries the source index (docs/14 stage 1): each video leg ends
+  // on its own, and "the video side is done" now means ALL of them.
   void PostVideoEnded(int source_index);
   // S6: every frame the sink takes, feeding the video clock and the
   // accurate-seek target check.
@@ -364,10 +369,9 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // Shared with PipelineImpl (see Deps::av_sync); GetMediaTime() reads it
   // through the seqlock from any thread.
   std::shared_ptr<AvSyncController> av_sync_;
-  // One VideoRendererImpl per source that has a video stream; entries for
-  // video-less sources stay null so the index still answers the source id
-  // (docs/14 stage 1, audio excepted -- §4.2). Index 0's renderer is the
-  // composited layer: it owns the host sink and feeds the video clock.
+  // One VideoRendererImpl per source that has a video stream; video-less
+  // sources stay null so the index answers the source id (docs/14 stage 1,
+  // audio excepted -- §4.2). Index 0's is the composited layer (host sink).
   std::vector<std::unique_ptr<VideoRendererImpl>> video_renderers_;
   // Per-source completion flags, same indexing as video_renderers_. A source
   // without a video leg has nothing to wait for, so its entries start true.
@@ -387,8 +391,7 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // leg has had this since Phase 4; the video leg needed it for the same two
   // reasons: a "same track, nothing to do" check in OnTracksChanged, and a
   // stream to re-anchor on after a handover. Lifetime is the MediaResource's
-  // (the same contract as the audio one, and as VideoRendererImpl's own
-  // stream pointer).
+  // (the audio one's contract, and VideoRendererImpl's own).
   DemuxerStream* video_stream_{nullptr};
   // The resource this renderer was initialized with. Raw, same lifetime
   // contract as the stream pointers; the foreign-stream guard in
@@ -438,8 +441,7 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   std::unique_ptr<VideoRendererSink> video_sink_in_handover_;
   // Flush fan-out state (docs/14 stage 1): the countdown turns N S3 flush
   // completions into the one S1 callback the pipeline's contract wants. A
-  // member counter because Flush is S1-only and the pipeline serializes
-  // flushes -- asserted, not assumed.
+  // member counter because Flush is S1-only and flushes are serialized.
   size_t pending_video_flushes_ = 0;
   base::OnceClosure video_flush_done_cb_;
   bool has_video_{false};
@@ -466,9 +468,8 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   AudioParameters audio_params_;
   // ---- accurate seek (renderer_impl_controls.cc) --------------------------
   // The open window's target in microseconds, 0 when closed. Atomic because
-  // the S6 presented-frame hook reads it; every decision happens on S1
-  // (BeginAccurateSeek/EndAccurateSeek/OnAccurateSeekTargetReached), so the
-  // hook only ever observes.
+  // the S6 presented-frame hook reads it; every decision happens on S1, so
+  // the hook only ever observes.
   std::atomic<int64_t> accurate_target_micros_{0};
   // S1-only: the facade's "target reached" callback, held between Begin and
   // the completion hop.

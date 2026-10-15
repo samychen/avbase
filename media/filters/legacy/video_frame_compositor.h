@@ -54,6 +54,7 @@
 #include "base/synchronization/lock.h"
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
+#include "media/base/media_constants.h"
 #include "media/base/video_frame.h"
 #include "media/media_export.h"
 
@@ -216,6 +217,14 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
   // host diagnosing its own configuration) can call them from anywhere.
   int max_frame_drop() const;
   int max_fps() const;
+  // The master clock currently being paced against, or kNoTimestamp before
+  // the first push. Another read side, for the same reason as the two above:
+  // docs/14 stage 2 pushes a PER-LEG value (the master clock minus that
+  // source's offset), so "the offset reached this leg" is a question about a
+  // specific compositor, and without a read side it could only be answered by
+  // watching frames -- which cannot tell a lost offset from a frame that was
+  // merely early.
+  base::TimeDelta master_clock() const;
   void SetPaused(bool paused);
   void SetStepMode(bool step);
   void SetBufferingBlocked(bool blocked);
@@ -294,7 +303,12 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
   std::deque<base::scoped_refptr<VideoFrame>> pending_frames_ GUARDED_BY(lock_);
   base::scoped_refptr<VideoFrame> current_frame_ GUARDED_BY(lock_);
 
-  base::TimeDelta master_clock_ GUARDED_BY(lock_);
+  // kNoTimestamp, not zero: zero is a perfectly valid media time (the first
+  // second of every file), so a default of zero would claim a clock was
+  // pushed when none was. Every reader gates on master_clock_valid_ anyway,
+  // which makes the default value behaviour-neutral -- it only matters to the
+  // read side above.
+  base::TimeDelta master_clock_ GUARDED_BY(lock_){media::kNoTimestamp};
   int32_t master_serial_ GUARDED_BY(lock_){0};
   bool master_clock_valid_ GUARDED_BY(lock_){false};
   bool master_is_video_ GUARDED_BY(lock_){false};

@@ -42,19 +42,31 @@ void RendererImpl::PushMasterClock() {
   // presents frames the instant they decode, which burns the decode chain
   // and grows the pending queue without bound. Source 0's leg remains the
   // only one whose presented frames feed the clock (WireVideoCallbacks).
-  for (auto& v : video_renderers_) {
+  //
+  // Each leg gets the master clock expressed in ITS OWN timeline (stage 2):
+  // the compositor compares a frame's pts against the clock it is given, so
+  // pacing leg i against (master - offset_i) presents a frame when the
+  // master reaches SourceTime(i, pts) -- the frame's mapped position. That
+  // is the inverse direction of SourceTime(), and the design's own formula
+  // (§5.1: "present_time = master_now - source_offset"). Source 0's offset
+  // is structurally zero, so the single-source push is unchanged to the
+  // microsecond.
+  for (size_t i = 0; i < video_renderers_.size(); ++i) {
+    VideoRendererImpl* v = video_renderers_[i].get();
     if (!v || !snapshot.master_valid) {
       continue;
     }
+    const base::TimeDelta leg_clock =
+        snapshot.master - av_sync_->source_offset(static_cast<int>(i));
     // Posted, not called: the compositor's write side must stay on S3 (see the
     // threading note in video_renderer_impl.h for why S3 and not S1).
     deps_.video_task_runner->PostTask(
-        FROM_HERE, base::BindOnce(&VideoRendererImpl::SetMasterClock,
-                                  base::Unretained(v.get()), snapshot.master,
-                                  av_sync_->master_serial(), true));
+        FROM_HERE,
+        base::BindOnce(&VideoRendererImpl::SetMasterClock, base::Unretained(v),
+                       leg_clock, av_sync_->master_serial(), true));
     deps_.video_task_runner->PostTask(
         FROM_HERE, base::BindOnce(&VideoRendererImpl::SetMasterIsVideo,
-                                  base::Unretained(v.get()),
+                                  base::Unretained(v),
                                   snapshot.resolved ==
                                       AvSyncController::MasterType::kVideo));
   }

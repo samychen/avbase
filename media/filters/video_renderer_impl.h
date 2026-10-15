@@ -264,6 +264,12 @@ class AVBASE_MEDIA_EXPORT VideoRendererImpl final
 
   bool initialized() const { return initialized_; }
   bool ended() const { return ended_; }
+  // The master clock this leg is pacing against (kNoTimestamp before the
+  // first push). Forwarded read side: RendererImpl pushes a PER-LEG value in
+  // a multi-source pipeline -- the master clock minus this source's playback
+  // offset (docs/14 stage 2) -- so this is where "the offset reached leg N"
+  // becomes observable without playing a file.
+  base::TimeDelta master_clock() const { return compositor_.master_clock(); }
   VideoFrameCompositor::Stats compositor_stats() const;
   // The sink's counters plus its per-stage render timings (upload / compose /
   // blit / present). A plain accessor, sampled from the media sequence on the

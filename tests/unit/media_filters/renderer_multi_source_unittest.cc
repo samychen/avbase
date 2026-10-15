@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// RendererImpl's multi-source contract (docs/14 stage 1): one video leg per
-// source, audio still source 0 only (§4.2).
+// RendererImpl's multi-source contract: stage 1 (docs/14) gave every source
+// its own video chain; stage 2 paces each chain against the master clock
+// expressed in that source's own timeline.
 //
 // WHY THIS FILE EXISTS. Stage 1's refactor keeps single-source behaviour
 // byte-identical -- the 357 green media tests prove that and say nothing
@@ -129,6 +130,24 @@ class RendererMultiSourceTest : public ::testing::Test {
         audio->AppendBuffer(
             test::MakeDataBuffer(DemuxerStreamType::kAudio, audio->serial()));
       }
+    }
+  }
+
+  // Collapses every stream of both sources onto ONE seek generation. The
+  // compositor paces a leg against the master clock only while the clock's
+  // serial matches the frame's (the generation guard in
+  // media/base/decoder_buffer_queue.h), and the master clock is written from
+  // source 0's audio. In the pipeline every queue bumps in lockstep on a
+  // seek, so one generation across sources is the real shape; the DISTINCT
+  // serials above are the sink-ownership witness, which answers a different
+  // question. Call before ScriptBuffers, which stamps the serial into the
+  // buffers.
+  void CohereGenerations(int32_t serial) {
+    for (auto& video : video_streams_) {
+      video->set_serial(serial);
+    }
+    for (auto& audio : audio_streams_) {
+      audio->set_serial(serial);
     }
   }
 
@@ -458,6 +477,119 @@ TEST_F(RendererMultiSourceTest, SwitchingToAnotherSourcesAudioTrackIsRefused) {
   EXPECT_TRUE(WaitFor([this, reads_before] {
     return audio_streams_[0]->read_count() > reads_before;
   })) << "source 0's audio leg stopped reading after a refused switch";
+}
+
+// ---- per-source playback offsets (docs/14 stage 2) -------------------------
+
+// The wiring half: the renderer registers every source with the clock
+// controller at Initialize, forwards a stated offset, and paces each leg
+// against the master clock minus that leg's offset. The read side
+// (VideoRendererImpl::master_clock()) is what makes the last step observable
+// without watching frames -- a frame-count assertion could not tell a lost
+// offset from a frame that was merely early.
+TEST_F(RendererMultiSourceTest, TheOffsetReachesEveryLegsClock) {
+  SetTwoSources();
+  CohereGenerations(4242);
+  ScriptBuffers(/*buffers=*/40);
+  CreateRenderer();
+  Initialize();
+  ASSERT_TRUE(WaitFor([this] { return init_done_; }));
+  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+
+  // Registered, and defaulted to time-aligned: an unstated offset is zero,
+  // not "unknown".
+  EXPECT_EQ(av_sync_->source_offset(0), base::TimeDelta());
+  EXPECT_EQ(av_sync_->source_offset(1), base::TimeDelta());
+  EXPECT_EQ(av_sync_->SourceTime(1, base::Seconds(3)), base::Seconds(3));
+
+  // Source 0 cannot be offset: it IS the master timeline.
+  renderer_->SetSourceOffset(0, base::Seconds(5));
+  EXPECT_EQ(av_sync_->source_offset(0), base::TimeDelta());
+
+  // A stated offset maps source 1's pts onto the master timeline...
+  renderer_->SetSourceOffset(1, base::Seconds(2));
+  EXPECT_EQ(av_sync_->source_offset(1), base::Seconds(2));
+  EXPECT_EQ(av_sync_->SourceTime(1, base::Seconds(3)), base::Seconds(5));
+
+  // ...and reaches both legs' compositors as a per-leg clock. The tolerance
+  // covers the two legs' readbacks landing on different push ticks (the
+  // master extrapolates ~10 ms per tick); a mutation that drops the offset
+  // from the push shows up as a difference near ZERO, and a sign flip as a
+  // negative one, so 0.5 s around 2 s separates all three cases.
+  renderer_->StartPlayingFrom(base::TimeDelta());
+  VideoRendererImpl* leg0 = renderer_->video_renderer(0);
+  VideoRendererImpl* leg1 = renderer_->video_renderer(1);
+  ASSERT_NE(leg0, nullptr);
+  ASSERT_NE(leg1, nullptr);
+  ASSERT_TRUE(WaitFor([leg0, leg1] {
+    return !leg0->master_clock().is_min() && !leg1->master_clock().is_min();
+  })) << "a leg never received a master-clock push";
+  const base::TimeDelta difference =
+      leg0->master_clock() - leg1->master_clock();
+  EXPECT_NEAR(difference.InSecondsF(), 2.0, 0.5)
+      << "leg 1's clock is not the master minus its offset";
+}
+
+// The behavioural half, end to end: with a 2 s offset on source 1, that
+// leg's SECOND frame is held for roughly the offset, because its clock reads
+// (master - 2 s) while its frames' pts sit near zero. The first frame still
+// presents immediately -- a null frame_timer has no reference to pace
+// against (DecideNextFrame step 9) -- which is exactly why the assertion is
+// about the frames AFTER the first.
+TEST_F(RendererMultiSourceTest, ASecondaryLegHoldsItsFramesForTheOffset) {
+  SetTwoSources();
+  CohereGenerations(4242);
+  ScriptBuffers(/*buffers=*/40);
+  CreateRenderer();
+  Initialize();
+  ASSERT_TRUE(WaitFor([this] { return init_done_; }));
+  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+
+  pump_secondary_ = false;
+  renderer_->SetSourceOffset(1, base::Seconds(2));
+  renderer_->StartPlayingFrom(base::TimeDelta());
+
+  // Determinism gate, not politeness: wait until leg 1's compositor holds
+  // the offset-adjusted clock AND has a frame decoded. Pulling before the
+  // push lands would set the first frame's frame_timer from the UNMAPPED
+  // clock and the hold below would measure the wrong thing.
+  ASSERT_TRUE(WaitFor([this] {
+    VideoRendererImpl* leg1 = renderer_->video_renderer(1);
+    return leg1 && !leg1->master_clock().is_min() && leg1->frames_pending() > 0;
+  })) << "leg 1 never received the offset-adjusted clock with a frame ready";
+  test::FakeVideoSink* secondary = extra_factory_->sinks()[0];
+
+  // Now the leg is pulled. The window is bounded by the MASTER's position
+  // rather than by wall time: the offset's effect legitimately ends once the
+  // master reaches it, and a fast-pulling machine must not be able to
+  // outrun the assertion into a false failure.
+  pump_secondary_ = true;
+  const base::TimeDelta hold_limit = base::Seconds(2) - base::Milliseconds(100);
+  const auto wall_deadline =
+      std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+  bool leaked = false;
+  while (std::chrono::steady_clock::now() < wall_deadline &&
+         av_sync_->GetMasterClock() < hold_limit) {
+    PumpSinks();
+    if (secondary->frames().size() > 1) {
+      leaked = true;
+      break;
+    }
+  }
+  EXPECT_FALSE(leaked)
+      << "the secondary leg presented past its first frame while the offset "
+         "should still be holding it";
+  EXPECT_EQ(secondary->frames().size(), 1u)
+      << "the first frame presents immediately; every later one waits for "
+         "the offset";
+
+  // Recovery: clearing the offset lets the same leg flow again, which is
+  // what keeps "the offset was applied" from being confused with "the leg is
+  // wedged". The held frame's timer was set when it was first due, so this
+  // waits out the remainder of the offset -- bounded by kWaitTimeout.
+  renderer_->SetSourceOffset(1, base::TimeDelta());
+  EXPECT_TRUE(WaitFor([secondary] { return secondary->frames().size() > 1; }))
+      << "the secondary leg never resumed after the offset was cleared";
 }
 
 }  // namespace
