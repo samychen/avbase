@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "avbase/BuildConfig.h"
 #include "base/logging.h"
 #include "media/transcode/ffmpeg_video_encoder.h"
 
@@ -163,7 +164,7 @@ base::scoped_refptr<VideoEncoderFactory> CreateSoftwareVideoEncoderFactory() {
   return base::MakeRefCounted<SoftwareVideoEncoderFactory>();
 }
 
-#if defined(__APPLE__)
+#if AVBASE_ENABLE_VIDEOTOOLBOX
 base::scoped_refptr<VideoEncoderFactory> CreateVideoToolboxEncoderFactory() {
   HardwareVideoEncoderFactory::Spec spec;
   spec.display_name = "VideoToolbox";
@@ -174,7 +175,7 @@ base::scoped_refptr<VideoEncoderFactory> CreateVideoToolboxEncoderFactory() {
 }
 #endif
 
-#if defined(__linux__) && !defined(__APPLE__)
+#if AVBASE_ENABLE_VAAPI
 base::scoped_refptr<VideoEncoderFactory> CreateVaapiEncoderFactory() {
   HardwareVideoEncoderFactory::Spec spec;
   spec.display_name = "VAAPI";
@@ -198,10 +199,10 @@ std::vector<base::scoped_refptr<VideoEncoderFactory>>
 CreateVideoEncoderFactories() {
   std::vector<base::scoped_refptr<VideoEncoderFactory>> factories;
   factories.push_back(CreateSoftwareVideoEncoderFactory());
-#if defined(__APPLE__)
+#if AVBASE_ENABLE_VIDEOTOOLBOX
   factories.push_back(CreateVideoToolboxEncoderFactory());
 #endif
-#if defined(__linux__) && !defined(__APPLE__)
+#if AVBASE_ENABLE_VAAPI
   factories.push_back(CreateVaapiEncoderFactory());
 #endif
   factories.push_back(CreateNvencEncoderFactory());

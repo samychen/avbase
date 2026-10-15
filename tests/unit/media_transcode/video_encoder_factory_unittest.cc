@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include <gtest/gtest.h>
-
+#include "avbase/BuildConfig.h"
+#include "gtest/gtest.h"
 #include "media/filters/decoder_selector.h"  // HwCodecFlag, HwCodecMask
 
 namespace avbase::media::ffmpeg {
@@ -37,7 +37,7 @@ TEST(VideoEncoderFactoryTest, SelectorPrioritizesHardware) {
   std::vector<base::scoped_refptr<VideoEncoderFactory>> factories;
   factories.push_back(sw);
 
-#if defined(__APPLE__)
+#if AVBASE_ENABLE_VIDEOTOOLBOX
   auto hw = CreateVideoToolboxEncoderFactory();
   factories.push_back(hw);
 #endif
@@ -62,7 +62,7 @@ TEST(VideoEncoderFactoryTest, HwMaskFiltersCodecs) {
   EXPECT_TRUE(sw->SupportsCodec(media::VideoCodec::kH264, hevc_only));
   EXPECT_TRUE(sw->SupportsCodec(media::VideoCodec::kHevc, hevc_only));
 
-#if defined(__APPLE__)
+#if AVBASE_ENABLE_VIDEOTOOLBOX
   auto hw = CreateVideoToolboxEncoderFactory();
   // Hardware factory respects the mask.
   EXPECT_FALSE(hw->SupportsCodec(media::VideoCodec::kH264, hevc_only));
@@ -86,15 +86,29 @@ TEST(VideoEncoderFactoryTest, SoftwareFactoryNamesItsEncoders) {
 }
 
 // E5: the platform list ships at least software, and any hardware factory
-// present must outrank it. The list is where the #if-per-platform logic
-// belongs, so media/ never has to know what this machine is.
+// present must outrank it. Selection is expressed in AVBASE_ENABLE_* build
+// flags rather than host macros (video_encoder_factory.h records why the
+// list is not split the way the decoder side is), which makes the list's
+// composition a property of the BUILD — asserted here against those same
+// flags: a flag that is on must have its factory listed, and NVENC,
+// deliberately unguarded because it is just an FFmpeg encoder name, must be
+// listed on every build. Deleting a push_back in CreateVideoEncoderFactories()
+// therefore turns this red instead of silently shrinking the list.
 TEST(VideoEncoderFactoryTest, PlatformListIsHardwareFirst) {
   const auto factories = CreateVideoEncoderFactories();
   ASSERT_FALSE(factories.empty());
+  auto listed = [&factories](const char* factory_name) {
+    for (const auto& f : factories) {
+      if (f && std::string(f->name()) == factory_name) {
+        return true;
+      }
+    }
+    return false;
+  };
   int saw_hardware = 0;
   int highest_priority = -1;
   for (const auto& f : factories) {
-    EXPECT_TRUE(f);
+    ASSERT_TRUE(f);
     if (f->GetCapability().hardware) {
       // Hardware has to know its own codec names, else it is decoration.
       EXPECT_FALSE(f->EncoderNameFor(media::VideoCodec::kH264).empty())
@@ -103,8 +117,20 @@ TEST(VideoEncoderFactoryTest, PlatformListIsHardwareFirst) {
     }
     highest_priority = std::max(highest_priority, f->GetCapability().priority);
   }
-#if defined(__APPLE__) || (defined(__linux__) && !defined(__APPLE__))
+  EXPECT_TRUE(listed("NVENC"))
+      << "the NVENC factory is unguarded by design and must be listed";
+  // NVENC is a hardware factory, so this holds on every build — it used to be
+  // guarded by "is this Apple or Linux", which stopped meaning anything once
+  // the list followed the build flags instead of the host macros.
   EXPECT_GT(saw_hardware, 0);
+#if AVBASE_ENABLE_VIDEOTOOLBOX
+  EXPECT_TRUE(listed("VideoToolbox"))
+      << "AVBASE_ENABLE_VIDEOTOOLBOX is on but the list has no VideoToolbox "
+         "factory";
+#endif
+#if AVBASE_ENABLE_VAAPI
+  EXPECT_TRUE(listed("VAAPI"))
+      << "AVBASE_ENABLE_VAAPI is on but the list has no VAAPI factory";
 #endif
   const auto selected = SelectVideoEncoder(
       factories, media::VideoCodec::kH264,
@@ -116,7 +142,7 @@ TEST(VideoEncoderFactoryTest, PlatformListIsHardwareFirst) {
   }
 }
 
-#if defined(__APPLE__)
+#if AVBASE_ENABLE_VIDEOTOOLBOX
 // E5: VideoToolbox answers with its own encoder names, and admits to having
 // nothing for the codecs it cannot encode.
 TEST(VideoEncoderFactoryTest, VideoToolboxNamesHardwareEncoders) {

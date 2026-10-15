@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "avbase/BuildConfig.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
 #include "media/base/decoder_config.h"       // VideoCodec
@@ -74,14 +75,18 @@ class AVBASE_MEDIA_EXPORT VideoEncoderFactory
 AVBASE_MEDIA_EXPORT
 base::scoped_refptr<VideoEncoderFactory> CreateSoftwareVideoEncoderFactory();
 
-#if defined(__APPLE__)
-// macOS/iOS VideoToolbox hardware encoder.
+// Hardware encoder: macOS/iOS VideoToolbox. Guarded by the build's own
+// AVBASE_ENABLE_VIDEOTOOLBOX, not by __APPLE__: the host knowledge ("this
+// machine has VideoToolbox") lives in cmake/AvbaseOptions.cmake, where the
+// decoder side already keeps it, and this file only learns what the build
+// enabled. Same vocabulary player/video_decoder_defaults.cc assembles with.
+#if AVBASE_ENABLE_VIDEOTOOLBOX
 AVBASE_MEDIA_EXPORT
 base::scoped_refptr<VideoEncoderFactory> CreateVideoToolboxEncoderFactory();
 #endif
 
-#if defined(__linux__) && !defined(__APPLE__)
-// Linux VAAPI hardware encoder.
+// Hardware encoder: Linux VAAPI, same flag discipline as above.
+#if AVBASE_ENABLE_VAAPI
 AVBASE_MEDIA_EXPORT
 base::scoped_refptr<VideoEncoderFactory> CreateVaapiEncoderFactory();
 #endif
@@ -93,9 +98,23 @@ base::scoped_refptr<VideoEncoderFactory> CreateVaapiEncoderFactory();
 AVBASE_MEDIA_EXPORT
 base::scoped_refptr<VideoEncoderFactory> CreateNvencEncoderFactory();
 
-// The platform's factory list, highest priority first, in the order the
-// caller should try them. Keeping the #if sprawl here means media/ never has
-// to know which platforms exist.
+// The build's factory list, highest priority first, in the order the caller
+// should try them. The #if sprawl is expressed in AVBASE_ENABLE_* build flags
+// rather than host macros, so no raw __APPLE__/__linux__ survives in media/
+// (invariant C5) and the host knowledge stays in cmake/AvbaseOptions.cmake.
+//
+// Why the list is assembled HERE and not split the way the decoder side is
+// (specs in platform/hwaccel/, assembly in player/): the split needs a
+// consumer layer above media/ to host the assembly, and transcode has none.
+// Its decoder twin has player as the injection point (docs/02 §6 rule 1);
+// avbase_player deliberately does not link avbase::transcode (docs/02 §4.5 —
+// playback builds must not carry the encoders), and C26 gives media/
+// transcode no exemption for including platform/ (unlike C27, which names
+// transcode explicitly). Moving the list out would delete the working
+// platform default and leave prefer_hardware inert unless every caller
+// assembled factories itself — the "configured but not effective" shape
+// TODO §5b exists to hunt. When a transcode consumer above media/ appears,
+// the split becomes mechanical; until then the flags are the honest middle.
 AVBASE_MEDIA_EXPORT
 std::vector<base::scoped_refptr<VideoEncoderFactory>>
 CreateVideoEncoderFactories();
