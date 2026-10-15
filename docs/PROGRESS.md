@@ -4380,3 +4380,115 @@ tidy 是因为以为没装，其实 `envs/tidy18` 在）。「N warnings generat
 - **5 个提交未推送**（本轮全部；第七十三轮记的 86 个已在轮际间推送，
   origin/main 现位于 `0fdd66b`）——CI 尚未见过本轮任何东西。
 - **两个同级测试文件的 gtest include_order 存量**（CI 口径外，仍未动）。
+
+---
+
+## 第七十五轮 —— docs/14 阶段 1：RendererImpl 每源一对
+
+承接第七十四轮（阶段 0 数据模型地基）：本轮落地 docs/14 **阶段 1**（渲染多路）——
+`RendererImpl` 从「至多一对 video/audio」改成「每源一对」，audio 仍仅源 0（§4.2），
+**单源行为逐字节不变**（media 357→362、player 40 全绿即回归）。三个提交，按依赖层切：
+
+### 切片A 寻址轴收尾（3840c3b）
+
+`MediaResource::source_count()`（默认 1）+ `CompositeDemuxer` override；
+`composite_demuxer_unittest` 补轴断言：经 BASE 指针看，孤立 demuxer 恒答 1、
+聚合答 2——无轴版「恒答 source 0」因此是被钉住的性质，不是注释里的说法。
+
+### 切片B+C RendererImpl 每源一对（340f2fa）
+
+`video_renderers_` 按源索引（视频缺失的源留空项占位，索引仍是源 id），
+`video_initialized_` / `video_ended_` 同步索引；`video_initialized_` /
+`video_ended_` 两个旧布尔删除，audio 侧不动。源 0 保持主层特权：拿宿主 sink、
+`frame_presented_cb` **仅源 0** 接线（喂视频时钟与精搜窗口）、`TakeSnapshot`
+与轨道切换只作用源 0。三条值得记的实现决定：
+
+- **次源 sink 政策**：第一个有 video 的源拿 `deps_.video_sink`，其余走新增的
+  `extra_video_sink_factory`（null → `NullVideoSink`）。选 NullVideoSink 而不是
+  跳过整条腿，是让「两条解码链」可观测的关键——帧存在，只是没人看。
+- **Flush 扇出屏障**：N 条腿各在自己的 S3 上完成，`pending_video_flushes_`
+  计数汇成一个 S1 回调。完成回调**捕获** WeakPtr 而非绑定参数：bind.h 的
+  `UnwrapArg` 会把**绑定参数**里的 WeakPtr 解包成裸指针（失活检查在
+  `BindState::Run`，只保护方法接收者），lambda 形参写 `WeakPtr` 会静静收到
+  一个裸指针——第一版就是这么错的，编译期毫无意见。
+- **外来流守卫实时求证**：`IsPrimaryStream` 每次向 `media_resource_` 现场问，
+  不用 Initialize 时快照。快照版让 `MaxFpsOptionTest.TheCapSurvivesAVideoTrackSwitch`
+  等满 5s 上限全红——该用例在 Initialize **之后**才 `AddVideoStream()`，新流被
+  快照守卫误判外来，切换被拒，渲染器接着读一条已枯竭的流。**流的集合是会长的，
+  守卫问的必须是「现在」**。
+
+C1 三文件超限（748/521/766），拆两个新 TU：`renderer_impl_sources.cc`
+（子渲染器构造+接线）与 `renderer_impl_text.cc`（文本腿——allowlist 注释
+早就点名这是 better fix）。allowlist 两条上限随拆分**下调**（600→590、
+700→690），`renderer_impl.h` 压缩本轮新增注释至 499 行（保留全部「为什么」，
+含两处既有注释的等价改写）。门禁另抓到一条真问题：`SourceStreams::source_id`
+无默认初值（clang-tidy `pro-type-member-init`）。
+
+### 切片D 多源契约套件 + 突变反证（e1bcebf）
+
+新 `tests/unit/media_filters/renderer_multi_source_unittest.cc` 5 条。单源套件
+全绿证明不了第二源，所以每条断言都是**结构性一半 + 行为性一半**：
+
+- 两源视频流用**不同 serial**，帧的 serial 随解码传播——「宿主 sink 给源 0」
+  于是从结构断言（factory 记录）升级为**行为断言**（宿主 sink 里只应出现主源
+  帧）。这条技巧值得记：fake 之间流传的身份字段就是路由的可观测证据。
+- 次源音频「看见但不选」：源 1 的音频流有脚本数据但 `read_count` 恒 0，
+  且先等主源音频真正流动再断言零——「读不到」和「没读」是两种缺陷。
+- ended 全腿：不拉次源 sink，次源帧永不排出合成器，ended **不得**触发
+  （有界负向等待）；放拉后恰好触发一次。
+- 两条外来流守卫直测——此前只有注释声称「有直测」，实际一条都没有。
+
+测试支撑：`FakeMediaResource` 支持 `set_stream(source_id, ...)` 与
+`source_count()`（源 0 恒存在，既有单源套件逐字节不变）；`FakeVideoSinkFactory`
+新增 `sinks()` 记录全部 `Create()`。
+
+突变四条，**全部真跑看红、还原后 diff 校验逐字节一致**：
+
+| 突变 | 结果 |
+|---|---|
+| M1 `CreateSubRenderers` 强制只建源 0 视频腿 | 链断言 + ended 负向等待 **红** |
+| M2 宿主 sink 给次源腿 | 链断言 **红，且红在 serial 行为断言上**（宿主 sink 里出现次源帧 2000） |
+| M3 `IsPrimaryStream` 恒真 | 两条守卫测试 **红**（音频那条等满 5s 上限） |
+| M4 音频腿指向 `sources[1]` | 次源音频 + 音频守卫 **红** |
+
+M2 是本轮方法论上最满意的一条：它证明 serial 断言抓的是**路由**而不是计数——
+换成纯结构断言（factory 记录条数），这个突变只会让 size 从 1 变 2，同样会红，
+但红的原因从「帧走错了 sink」退化成「多建了一个 sink」。
+
+### 与设计书的偏差（均有意，已记入 docs/14 落地进度）
+
+- §4.1 的 `sources_` **成员**落地为参数类型：`CreateSubRenderers` 之后源 0 活流的
+  事实权威是 `video_stream_` / `audio_stream_`（轨道切换会重指），常驻成员会让
+  「哪份是权威」有两个答案。
+- §4.1 的每源 `text_renderers_` **未做**：文本腿没有 video/audio 那样的每源状态
+  会被交接机械踩坏（守卫的存在理由对文本不适用），次源文本流经管线也不可达。
+  登记为开放项，不做无理由守卫。
+
+### 门禁（最终状态当场跑出，均为 CI 对齐版本）
+
+| 项 | 结果 |
+|---|---|
+| `check_invariants` | all rules pass（467 文件） |
+| clang-format **18.1.3**（8 个改动/新增文件） | 0 偏离 |
+| cpplint **1.6.1**（CI 口径：非测试非 legacy `.cc`） | 0 error |
+| clang-tidy **18.1.8**（改动 `.cc` + 新测试文件） | 0 条 |
+| `media_unittests`（no-ffmpeg） | **362/362** |
+| `player_unittests` | **40/40** |
+| `media_ffmpeg_unittests`（共享 fake 改动，ninja 重建后实跑） | **90/90** |
+
+tests/ 不在 CI 的 cpplint/tidy 口径内（与第七十四轮同：CI 只扫
+base/media/player/platform/tools 的非 legacy `.cc`），仍按同版本实跑为零。
+ffmpeg 套件必须另建回归：两条 fake 是**共享**测试支撑，`build/ffmpeg` 是
+**ninja** 目录——第一版探针在那上面跑 `make`，「No rule to make target」被
+管道吞掉退出码，于是对着**上一个二进制**跑出 87/87（第六十五轮同形陷阱，
+operations.md 有记）。重建后实跑 90/90。
+
+### 留下的问题
+
+- **阶段 2–3 待做**：时钟多轴（主钟 + 每源媒体钟）/ 合成器升格并退役 L5
+  「第二路 Player + 邮箱」绕行。见 docs/14 §5–§6。
+- **每源文本腿未做**（见上），次源字幕经管线不可达，暂不设守卫。
+- **本机 clang-tidy 对 `media/ffmpeg` 的 PCH 陷阱依旧**：本轮 tidy 只跑了
+  `media/filters` 与 tests，未碰 `media/ffmpeg`（无 PCH scratch 库才看得见它，
+  operations.md 有命令）；CI 在 Ubuntu 上没这个问题。
+- **提交未推送**：本轮三个 + 文档切片，origin/main 仍停在第七十四轮之前。

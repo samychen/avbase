@@ -20,6 +20,11 @@ git ls-files 'base/*.cc' 'media/*.cc' 'player/*.cc' 'platform/*.cc' 'tools/*.cc'
 - **文件数一直在变，别记死数字**（曾把不变量的 425 套到 format 上）。看 exit code 与行数。
 - **C28：`render/` 不得 include `media`/`platform`/`base`/`player/`。**
 - `avbase` 是 INTERFACE 库，ninja 不能 `--target avbase`。
+- **每个 build 子目录的生成器不同，跑构建前先看目录里是 `Makefile` 还是
+  `build.ninja`**：`build/` 是 Unix Makefiles，`build/ffmpeg`（及其余 preset
+  子目录）是 Ninja。第七十五轮在 ffmpeg 目录跑 `make`，"No rule to make target"
+  被 `| tail` 管道吞掉退出码 → 对着**上一个二进制**跑出 87/87 假绿；ninja 重建后
+  实跑 90/90。「构建失败那一轮，基准跑的是上一个二进制」的同形复现。
 - 默认 `macos-sdl2` 预设**不开** `-Werror` → 两套预设都要跑。
 - **`clang-format` 不在 PATH**（裸调 exit=127），必须给全路径。
 - 两套清单数不同别套用。拼清单连未跟踪新文件：

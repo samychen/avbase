@@ -163,5 +163,21 @@ matrix 解析、被 `Player::video_rotation()` 上报，但**没有一帧真正�
 
 ## 路线图
 L1 可观测性 / L2 FBO 合成 / L3 多源场景层 / L4 硬件零拷贝 / L5 多源编排 —— **全部完成**。
-播放器层「管线多源」改造（docs/14）：**阶段 0 已落地（第七十四轮）**，阶段 1–3 待做；
+播放器层「管线多源」改造（docs/14）：**阶段 1 已落地（第七十五轮）**，阶段 2–3 待做；
 L5 的「第二路 Player + 邮箱」绕行在阶段 3 退役。
+
+## RendererImpl 多源（第七十五轮，docs/14 阶段 1）
+`video_renderers_` 按源索引（视频缺失的源留空项占位），`video_initialized_`/
+`video_ended_` 同步索引；**audio 腿仍仅源 0**（§4.2：次源音频「看见但不选」）。
+源 0 主层特权：宿主 sink、`frame_presented_cb` 仅源 0 接线（喂视频时钟）、
+`TakeSnapshot` 与轨道切换只作用源 0。次源 sink 走 `extra_video_sink_factory`
+（null→`NullVideoSink`——选 Null 而非跳过整腿，「两条解码链」才可观测）。
+- **bind.h `UnwrapArg` 解包绑定参数里的 WeakPtr**：失活检查只在 `BindState::Run`。
+  跨线程完成回调要**捕获** WeakPtr、内层 `BindOnce(方法, weak)`，形参直接写
+  `WeakPtr` 会静静收到裸指针（Flush 屏障就这么修的）。
+- **外来流守卫实时求证**（`IsPrimaryStream` 向 resource 现场问，不用 Initialize
+  快照）：流的集合会长，快照守卫把 `TheCapSurvivesAVideoTrackSwitch` 挂满 5s。
+- **fake 间流传的身份字段 = 路由的可观测证据**：两源视频流给不同 serial，sink 里
+  帧的 serial 证明「宿主 sink 给源 0」是行为断言（突变 M2 红在 serial 上）。
+- 新 TU：`renderer_impl_sources.cc`（构造+接线）/ `renderer_impl_text.cc`（文本腿）；
+  allowlist 上限 600→590、700→690。双源套件 `renderer_multi_source_unittest.cc`。
