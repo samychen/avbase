@@ -19,13 +19,14 @@
 # than a positional because passing a scene without a canvas would otherwise
 # mean an empty argument.
 #
-# Set SECOND=<url> to feed the second layer from a SECOND Player -- its own
-# demuxer, decoder and clock, publishing into the scene through the publisher
-# sink factory that SceneSource::MakePublisherFactory() hands out -- instead of
-# the delayed copy of the same stream
-# that SCENE alone uses. That is the path "N independent decoders" has to take
-# in a renderer that is single-source, so it is the one worth measuring: it
-# costs an extra decode, not just an extra upload.
+# Set SECOND=<url> to feed the second layer from a SECOND DECODER instead of
+# the delayed copy of the same stream that SCENE alone uses. docs/14 stage 3
+# made that second decoder part of the same pipeline: it costs an extra decode,
+# not just an extra upload, which is exactly why it is the path worth
+# measuring. (Before stage 3 this needed a second whole Player whose output
+# arrived through a mailbox; the numbers mean the same thing either way, but a
+# regression now shows up in one pipeline's counters rather than being split
+# across two.)
 #
 # Requires: ffmpeg on PATH (to build the clips), python3, and a build that
 # includes play_glfw (AVBASE_ENABLE_GLFW=ON with glfw3 found) as well as a

@@ -262,7 +262,9 @@ class PipelineTestFixture : public ::testing::Test {
           MakeSingleSource(std::make_unique<FFmpegDemuxer>(media_log_)),
           renderer_factory_.get(), RendererType::kRendererImpl, runner_,
           &client_);
-      pipeline_->SetSource(DataSourceDescriptor::FromSource(source_), options);
+      std::vector<DataSourceDescriptor> descriptors;
+      descriptors.push_back(DataSourceDescriptor::FromSource(source_));
+      pipeline_->SetSource(std::move(descriptors), options);
 #endif
     } else {
       if (live_source_) {

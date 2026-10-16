@@ -66,13 +66,12 @@ avbase::Player* g_player{nullptr};  // Set in main; outlives the event loop.
 // because the scene outlives main's locals -- the player owns the scene.
 std::unique_ptr<avbase::examples::SceneDemo> g_scene;
 
-// --second <url>: where the second layer's frames come from. Empty means the
-// delayed-copy fallback in SceneDemo. |g_second_source| is what a second,
-// independent Player publishes into; the scene registers it up front.
-std::string g_second_url;
-std::shared_ptr<avbase::SceneSource> g_second_source;
-// Torn down before the first player's sink: the mailbox must outlive it.
-std::unique_ptr<avbase::Player> g_second_player;
+// The second source used to live here -- the SceneSource the layer's frames
+// arrive in, the URL they come from, and the second Player instance that
+// decoded them. All three are gone as of docs/14 stage 3: the second source is
+// a second DEMUXER IN THE SAME PIPELINE, so there is no second Player to hold,
+// no window for it to not have, and no teardown order to respect. --second's
+// URL now goes to Player::AddSource() inside SceneDemo::Install().
 
 // A first-cut font resolution: the demo is not the SDK. A real host points
 // at the user's configured font; these cover this machine's defaults.
@@ -228,16 +227,9 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
     g_error.store(true);
   } else if (e.type == avbase::EventType::kCompleted) {
     g_completed.store(true);
-  } else if (e.type == avbase::EventType::kPrepared) {
-    // The source was registered before Prepare; what this waits for is the
-    // first stream running, not anything existing.
-    if (g_second_source) {
-      g_second_player =
-          avbase::examples::StartSecondSource(g_second_url, g_second_source);
-      if (!g_second_player) {
-        g_error.store(true);
-      }
-    }
+    // The kPrepared branch that used to be here STARTED A SECOND PLAYER for
+    // --second. There is nothing left for it to do: the second source belongs
+    // to this pipeline, so preparing one prepared both.
   } else if (e.type == avbase::EventType::kStateChanged) {
     // One-shot: auto-select the first text track once the pipeline is
     // prepared, so the demo shows subtitles without extra flags. A real
@@ -447,14 +439,13 @@ int main(int argc, char** argv) {
       std::make_shared<avbase::media::Sdl2VideoSinkFactory>();
   deps->audio_sink_factory =
       std::make_shared<avbase::media::Sdl2AudioSinkFactory>();
-  g_second_url = options.second;
-
   avbase::Player player(avbase::PlayerConfig(), std::move(deps));
   g_player = &player;
   if (g_scene != nullptr) {
+    // Before SetDataSource/PrepareAsync: that is when the second source
+    // becomes a demuxer, so registering later is refused.
     g_scene->set_second_url(options.second);
     g_scene->Install(player);
-    g_second_source = g_scene->second_source();
   }
   player.SetEventHandler(avbase::base::BindRepeating(&OnPlayerEvent));
   g_print_stats.store(options.stats);
@@ -474,15 +465,12 @@ int main(int argc, char** argv) {
   // L6: Stop() is asynchronous; tearing SDL resources down against a player
   // that may still be flushing races the sink's teardown. StopSync() blocks
   // until the pipeline actually finished stopping (see player.h for the
-  // Stop/StopSync contract).
+  // Stop/StopSync contract). Every source stops with the one pipeline --
+  // there is no second producer to quieten first.
   player.StopSync(avbase::base::Seconds(5));
-  // The second pipeline publishes into a mailbox the first player's sink owns,
-  // so it has to be quiet before that sink is destroyed.
-  if (g_second_player) {
-    g_second_player->StopSync(avbase::base::Seconds(5));
-    g_second_player.reset();
+  if (g_scene != nullptr && g_scene->second_source()) {
+    avbase::examples::ReportSecondSource(*g_scene->second_source());
   }
-  g_second_source.reset();
 
   if (gl_context) {
     // The sink released the context in Stop(); destroying it here is the

@@ -64,15 +64,12 @@ avbase::Player* g_player{nullptr};  // Set in main; outlives the event loop.
 // scene, and it outlives the frame it was configured on.
 std::unique_ptr<avbase::examples::SceneDemo> g_scene;
 
-// The source the second layer's frames arrive in, when --second was given.
-// Registered straight away on the player's scene rather than smuggled out of a
-// sink factory; see examples/scene_demo.h on why neither is hard any more.
-std::shared_ptr<avbase::SceneSource> g_second_source;
-// Its URL, kept next to it so the kPrepared handler can act on it.
-std::string g_second_url;
-// The second pipeline itself, torn down before the first player's sink so the
-// mailbox outlives its producer.
-std::unique_ptr<avbase::Player> g_second_player;
+// The second source used to live here -- the SceneSource the layer's frames
+// arrive in, the URL they come from, and the second Player instance that
+// decoded them. All three are gone as of docs/14 stage 3: the second source is
+// a second DEMUXER IN THE SAME PIPELINE, so there is no second Player to hold,
+// no window for it to not have, and no teardown order to respect. --second's
+// URL now goes to Player::AddSource() inside SceneDemo::Install().
 
 struct Options {
   std::string url;
@@ -143,17 +140,10 @@ void OnPlayerEvent(const avbase::PlayerEvent& e) {
     g_error.store(true);
   } else if (e.type == avbase::EventType::kCompleted) {
     g_completed.store(true);
-  } else if (e.type == avbase::EventType::kPrepared) {
-    // Not because the source only exists now -- it was registered before
-    // Prepare -- but because the first stream has to be running before a
-    // second decoder is worth the CPU.
-    if (g_second_source) {
-      g_second_player =
-          avbase::examples::StartSecondSource(g_second_url, g_second_source);
-      if (!g_second_player) {
-        g_error.store(true);
-      }
-    }
+    // The kPrepared branch that used to be here STARTED A SECOND PLAYER for
+    // --second. It has nothing left to do: the second source is part of the
+    // same pipeline, so preparing this one prepared both, and both started
+    // together.
   } else if (e.type == avbase::EventType::kStats) {
     if (g_print_stats.load()) {
       if (const auto* payload = avbase::AsStats(e)) {
@@ -311,13 +301,12 @@ int main(int argc, char** argv) {
   g_print_stats.store(options.stats);
   player.SetEventHandler(avbase::base::BindRepeating(&OnPlayerEvent));
   player.SetVideoSurface(display);
-  g_second_url = options.second;
   if (g_scene != nullptr) {
-    // Any time, including before SetDataSource: neither the hook nor the
-    // source is a pipeline object, so there is nothing to wait for.
+    // Before SetDataSource/PrepareAsync, because that is when the second
+    // source becomes a demuxer: registration after prepare is refused. See
+    // examples/scene_demo.h.
     g_scene->set_second_url(options.second);
     g_scene->Install(player);
-    g_second_source = g_scene->second_source();
   }
   if (const avbase::Status s = player.SetDataSource(options.url); !s) {
     std::fprintf(stderr, "SetDataSource failed: %s\n",
@@ -348,15 +337,14 @@ int main(int argc, char** argv) {
                  static_cast<unsigned long long>(g_scene->frames_placed()),
                  player.scene()->Describe().c_str());
   }
-  // The second pipeline first: it publishes into a mailbox the first player's
-  // sink owns, so it has to be quiet before that sink is destroyed.
-  avbase::examples::StopSecondSource(std::move(g_second_player),
-                                     g_second_source);
-  g_second_source.reset();
   // StopSync() blocks until the pipeline actually finished stopping, so the
   // sink's render thread (and its GL context) is gone before we destroy the
-  // window here.
+  // window here. Every source stops with the one pipeline -- there is no
+  // second producer to quieten first.
   player.StopSync(avbase::base::Seconds(5));
+  if (g_scene != nullptr && g_scene->second_source()) {
+    avbase::examples::ReportSecondSource(*g_scene->second_source());
+  }
 
   glfwDestroyWindow(window);
   glfwTerminate();

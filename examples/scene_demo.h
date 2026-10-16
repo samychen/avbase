@@ -13,19 +13,24 @@
 //   pip   the stream, delayed a fraction of a second, in an inset rect
 //   fade  the same delayed copy filling the canvas, its opacity cycling
 //
-// Both need a SECOND image, and the player is single-source today. The demo
-// takes that image from one of two places:
+// Both need a SECOND image, and for most of this file's life a second image
+// meant a second PLAYER -- its own demuxer, decoder and clock, publishing into
+// a SceneSource through that source's publisher sink factory. That shape is
+// gone as of docs/14 stage 3: the second image now comes from a second SOURCE
+// registered on the same player, and the two are decoded by one pipeline
+// against one clock. What the demo does on screen did not change.
 //
 //   * by default, a short ring of the frames the sink already handed it -- a
 //     delayed copy of the same stream is a genuinely independent texture with
 //     its own upload, which is the property on trial;
-//   * with --second <url>, a SECOND Player: its own demuxer, its own decoder,
-//     its own clock, publishing into a SceneSource through the publisher sink
-//     factory that source hands out.
+//   * with --second <url>, a second demuxer in the same pipeline, whose sink
+//     publishes into the SceneSource the registration returned.
 //
-// The second one is the real thing, and it is the reason a source is a mailbox
-// rather than a layer: two pipelines never agree on a clock, and the only clock
-// here that decides what is shown is the display's.
+// The difference is the kind of thing that used to be invisible: two pipelines
+// never agree on a clock, and the mailbox was the truce between them. One
+// pipeline has nothing to reconcile -- its renderer asks every source for the
+// frame that belongs in this refresh window, and the display's clock stays the
+// only one that decides what is shown.
 //
 // EVERYTHING HERE GOES THROUGH Player::scene(). It used to need a bespoke
 // VideoRendererSinkFactory that static_cast the sink it was handed down to
@@ -50,8 +55,9 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
 #include "media/base/video_frame.h"
-#include "media/filters/null_audio_sink.h"
-#include "player/public/deps.h"
+// No Deps and no NullAudioSinkFactory any more: those belonged to the second
+// Player this file used to build. A second source needs neither -- no second
+// output to route, and no second master clock to muzzle.
 #include "player/public/player.h"
 #include "player/public/scene.h"
 
@@ -81,10 +87,15 @@ class SceneDemo {
 
   // The whole of what wiring this demo up used to be.
   //
-  // Note WHEN this can be called: any time, including before SetDataSource,
-  // because neither the scene nor anything on it belongs to a pipeline. The
-  // callback and the source below are plumbed into whichever renderer gets
-  // built later, and into the next one if the player is reset.
+  // Note WHEN this can be called: after construction but BEFORE SetDataSource
+  // and PrepareAsync. The scene is not part of a pipeline, but a registered
+  // source IS: the player turns it into a demuxer at PrepareAsync, so a
+  // registration made later is refused (and says so by returning null) rather
+  // than quietly never being fed.
+  //
+  // Everything past registration is unchanged by that: the callback and the
+  // source are plumbed into whichever renderer gets built later, and into the
+  // next one if the player is reset.
   void Install(avbase::Player& player) {
     if (!enabled()) {
       return;
@@ -92,7 +103,17 @@ class SceneDemo {
     player.scene()->SetUpdateCallback(
         base::BindRepeating(&SceneDemo::OnFrame, base::Unretained(this)));
     if (!second_url_.empty()) {
-      second_ = player.scene()->AddSource("second", kSecondZ);
+      // One registration instead of a whole second Player instance. Source 0
+      // is whichever URL SetDataSource() gets; this is source 1, and its
+      // decoded video lands in the layer this returns.
+      second_ =
+          player.AddSource(avbase::DataSourceDescriptor::FromUri(second_url_),
+                           "second", kSecondZ);
+      if (!second_) {
+        std::fprintf(stderr,
+                     "--second: AddSource failed (state past "
+                     "kInitialized?); falling back to the delayed copy\n");
+      }
     }
   }
 
@@ -188,71 +209,27 @@ class SceneDemo {
   base::TimeTicks start_;  // Set on the first frame; the fade's phase zero.
 };
 
-// Builds the SECOND pipeline: its own Player, decoding |url| independently of
-// the first, presenting into |source| through that source's own publisher sink
-// factory instead of a window. Audio goes to the null sink -- one master clock
-// per process, and the first player's is it.
+// Reports what the second source's mailbox saw.
 //
-// Returns null when the URL cannot be opened. The caller owns the result and
-// must StopSync() it before the first player's sink goes away, because the
-// source it publishes into belongs to that sink's renderer.
-inline std::unique_ptr<avbase::Player>
-StartSecondSource(std::string url,
-                  std::shared_ptr<avbase::SceneSource> source) {
-  DCHECK(source);
-  auto deps = std::make_unique<avbase::Deps>();
-  deps->video_sink_factory = source->MakePublisherFactory();
-  deps->audio_sink_factory =
-      std::make_shared<avbase::media::NullAudioSinkFactory>();
-
-  auto player =
-      std::make_unique<avbase::Player>(avbase::PlayerConfig(), std::move(deps));
-  if (avbase::Status s = player->SetDataSource(url); !s) {
-    std::fprintf(stderr, "--second: SetDataSource failed: %s\n",
-                 s.error().ToString().c_str());
-    return nullptr;
-  }
-  // PrepareSync() also STARTS it (PlayerConfig::start_on_prepared), which is
-  // exactly what a second source wants: decode from here on, at its own pace,
-  // with no window and no clock of its own. Calling Start() on top of it is the
-  // "Start in state Started is not legal" error.
-  if (avbase::Status s = player->PrepareSync(); !s) {
-    std::fprintf(stderr, "--second: Prepare failed: %s\n",
-                 s.error().ToString().c_str());
-    return nullptr;
-  }
-  return player;
-}
-
-// Tears the second pipeline down and reports what the mailbox saw.
-//
-// MUST run before the first player's sink is destroyed: the source belongs to
-// that sink's renderer, and the producer has to be quiet first -- the same
-// "stop the producer, then the consumer" order the sinks rely on for the
-// presenter.
-inline void StopSecondSource(std::unique_ptr<avbase::Player> player,
-                             std::shared_ptr<avbase::SceneSource> source) {
-  if (player) {
-    player->StopSync(avbase::base::Seconds(5));
-  }
-  if (!source) {
-    return;
-  }
+// The teardown ORDERING that used to be documented here -- "stop the producer
+// before the consumer" -- is gone with the second pipeline. There is one
+// pipeline now, so there is nothing whose producer has to be quietened first:
+// stopping the player stops every source at once. That simplification is most
+// of what stage 3 was for.
+inline void ReportSecondSource(avbase::SceneSource& source) {
   // published - consumed - superseded == still waiting (0 or 1). Printed once,
   // at the end, because that is the only number that says whether the second
   // decoder really fed the second layer: a source that produced N frames and
-  // had all N superseded was being polled faster than it could decode, which
+  // had all N superseded was being fed faster than the layer was drawn, which
   // is fine, and one that produced 0 was never wired up at all.
   //
-  // These counters now come from the SceneSource rather than from the engine's
-  // mailbox, so they still add up after the first player has been stopped and
-  // its sink with it.
+  // These counters come from the SceneSource rather than from the renderer, so
+  // they still add up after the pipeline has been stopped.
   std::fprintf(stderr,
                "--second: published=%llu consumed=%llu superseded=%llu\n",
-               static_cast<unsigned long long>(source->frames_published()),
-               static_cast<unsigned long long>(source->frames_consumed()),
-               static_cast<unsigned long long>(source->frames_superseded()));
-  source.reset();
+               static_cast<unsigned long long>(source.frames_published()),
+               static_cast<unsigned long long>(source.frames_consumed()),
+               static_cast<unsigned long long>(source.frames_superseded()));
 }
 
 }  // namespace avbase::examples
