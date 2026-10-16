@@ -151,7 +151,12 @@ class RendererMultiSourceTest : public ::testing::Test {
     }
   }
 
-  RendererImpl::Deps MakeDeps() {
+  // Build the Deps, wiring |extra| as the secondary-leg factory. MakeDeps()
+  // passes a plain FakeVideoSinkFactory (the suite's default); the stage-3
+  // test passes a SourceAwareVideoSinkFactory to observe the source id the
+  // renderer requests.
+  RendererImpl::Deps
+  MakeDepsWith(std::shared_ptr<VideoRendererSinkFactory> extra) {
     RendererImpl::Deps deps;
     deps.media_task_runner = runner_;
     deps.tick_clock = env_.GetTickClock();
@@ -171,8 +176,7 @@ class RendererMultiSourceTest : public ::testing::Test {
     deps.video_sink = std::move(sink);
     // The secondary legs' only legal destination in stage 1. Recording every
     // Create() is what lets these tests see the assembly.
-    extra_factory_ = std::make_shared<test::FakeVideoSinkFactory>();
-    deps.extra_video_sink_factory = extra_factory_;
+    deps.extra_video_sink_factory = std::move(extra);
     audio_sink_ = base::MakeRefCounted<test::FakeAudioSink>();
     deps.audio_sink = base::scoped_refptr<AudioRendererSink>(audio_sink_.get());
     av_sync_ = std::make_shared<AvSyncController>(
@@ -182,8 +186,17 @@ class RendererMultiSourceTest : public ::testing::Test {
     return deps;
   }
 
+  RendererImpl::Deps MakeDeps() {
+    extra_factory_ = std::make_shared<test::FakeVideoSinkFactory>();
+    return MakeDepsWith(extra_factory_);
+  }
+
   void CreateRenderer() {
     renderer_ = std::make_unique<RendererImpl>(MakeDeps());
+  }
+
+  void CreateRendererWith(RendererImpl::Deps deps) {
+    renderer_ = std::make_unique<RendererImpl>(std::move(deps));
   }
 
   void Initialize() {
@@ -219,6 +232,21 @@ class RendererMultiSourceTest : public ::testing::Test {
     }
   }
 
+  // The secondary sinks to pump, from whichever extra factory the test
+  // wired. The stage-3 test uses a SourceAwareVideoSinkFactory (which is a
+  // different type from FakeVideoSinkFactory), so this collapses the two into
+  // one list instead of PumpSinks() reaching into a specific member that may
+  // be null for the other test shape.
+  std::vector<test::FakeVideoSink*> SecondarySinks() const {
+    if (source_aware_factory_) {
+      return source_aware_factory_->sinks();
+    }
+    if (extra_factory_) {
+      return extra_factory_->sinks();
+    }
+    return {};
+  }
+
   // One display interval's worth of frames per video sink plus one audio
   // device period. |pump_secondary_| is the one lever a test has over WHICH
   // legs get pulled: with it off, the secondary leg's frames decode but
@@ -229,7 +257,7 @@ class RendererMultiSourceTest : public ::testing::Test {
       host_sink_->PullFrames(4);
     }
     if (pump_secondary_) {
-      for (test::FakeVideoSink* sink : extra_factory_->sinks()) {
+      for (test::FakeVideoSink* sink : SecondarySinks()) {
         sink->PullFrames(4);
       }
     }
@@ -278,6 +306,7 @@ class RendererMultiSourceTest : public ::testing::Test {
   std::shared_ptr<AvSyncController> av_sync_;
   test::FakeVideoSink* host_sink_ = nullptr;
   std::shared_ptr<test::FakeVideoSinkFactory> extra_factory_;
+  std::shared_ptr<test::SourceAwareVideoSinkFactory> source_aware_factory_;
   base::scoped_refptr<test::FakeAudioSink> audio_sink_;
   test::FakeMediaResource resource_;
   std::vector<std::unique_ptr<test::FakeDemuxerStream>> video_streams_;
@@ -590,6 +619,56 @@ TEST_F(RendererMultiSourceTest, ASecondaryLegHoldsItsFramesForTheOffset) {
   renderer_->SetSourceOffset(1, base::TimeDelta());
   EXPECT_TRUE(WaitFor([secondary] { return secondary->frames().size() > 1; }))
       << "the secondary leg never resumed after the offset was cleared";
+}
+
+// Stage 3's source-aware sink contract: the renderer must wire each secondary
+// leg (source id >= 1) through VideoRendererSinkFactory::CreateForSource(id,
+// ...) -- NOT Create() -- so a GL host can bind leg 1 to its own scene layer,
+// leg 2 to layer 2's, and so on. "The secondary leg got a sink" alone cannot
+// tell Create() from CreateForSource() (both hand back a sink), so the witness
+// is a factory that overrides CreateForSource to record the requested id: if
+// the renderer had called Create(), source_ids() would be empty and this test
+// would go red. That is the deliberately-run mutation (see the closed
+// regression note on docs/14 stage 3): the assertion is not vacuous.
+//
+// The assertion pairs the structural record (exactly one CreateForSource(1)
+// call) with the behavioural half already proven by
+// EverySourceGetsItsOwnVideoChain (the sink bound to source 1 carries source
+// 1's frames): either alone is the wrong bug. A record of {1} with no frames
+// is a factory that was asked but never fed; frames in a sink whose id was
+// never recorded is a sink the renderer built through the wrong path.
+TEST_F(RendererMultiSourceTest, SecondaryLegRoutesThroughSourceAwareSink) {
+  SetTwoSources();
+  ScriptBuffers(/*buffers=*/2);
+  source_aware_factory_ = std::make_shared<test::SourceAwareVideoSinkFactory>();
+  CreateRendererWith(MakeDepsWith(source_aware_factory_));
+  Initialize();
+  ASSERT_TRUE(WaitFor([this] { return init_done_; }));
+  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+
+  // Structural half: the renderer took the source-aware path exactly once, for
+  // the one secondary leg (source 1). Source 0 never reaches here -- it takes
+  // the dedicated host sink first -- so {1} and nothing else is the signature
+  // of the contract holding.
+  const std::vector<int> ids = source_aware_factory_->source_ids();
+  ASSERT_EQ(ids.size(), 1u)
+      << "the renderer did not request exactly one secondary sink";
+  EXPECT_EQ(ids[0], 1)
+      << "the secondary leg was wired with the wrong source id";
+
+  // Behavioural half: the sink that path created actually carries source 1's
+  // frames (the serial is the sink-ownership witness from
+  // EverySourceGetsItsOwnVideoChain). A factory that recorded {1} but was fed
+  // source 0's frames would mean the id and the leg were decoupled.
+  ASSERT_EQ(source_aware_factory_->sinks().size(), 1u);
+  test::FakeVideoSink* secondary = source_aware_factory_->sinks()[0];
+  renderer_->StartPlayingFrom(base::TimeDelta());
+  ASSERT_TRUE(WaitFor([secondary] { return !secondary->frames().empty(); }))
+      << "the source-aware sink never received a frame";
+  for (const base::scoped_refptr<VideoFrame>& frame : secondary->frames()) {
+    EXPECT_EQ(frame->serial(), kSecondaryVideoSerial)
+        << "the source-aware sink received a frame that is not source 1's";
+  }
 }
 
 }  // namespace

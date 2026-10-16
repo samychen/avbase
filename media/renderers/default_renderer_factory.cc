@@ -46,6 +46,11 @@ std::unique_ptr<Renderer> DefaultRendererFactory::CreateRenderer(
   impl_deps.text_decoder_factory = deps_.text_decoder_factory;
   impl_deps.video_sink = CreateVideoRendererSink(display_);
   impl_deps.audio_sink = CreateAudioRendererSink();
+  // Docs/14 stage 3: forward the secondary-leg sink factory, if the host set
+  // one. Null means the secondary legs fall back to NullVideoSink in
+  // RendererImpl -- the decode chains still run, the frames are just not
+  // composited until a host wires this up.
+  impl_deps.extra_video_sink_factory = deps_.extra_video_sink_factory;
   impl_deps.compositor_thresholds = deps_.compositor_thresholds;
   impl_deps.sync_thresholds = deps_.sync_thresholds;
   impl_deps.sync_master = deps_.sync_master;

@@ -102,9 +102,13 @@ void RendererImpl::CreateSubRenderers(
       sink = std::move(deps_.video_sink);
       host_sink_used = true;
     } else if (deps_.extra_video_sink_factory) {
-      // A host that opted into multi-source output (none yet -- that is stage
-      // 3's scene compositor).
-      sink = deps_.extra_video_sink_factory->Create(nullptr);
+      // A host that opted into multi-source output (docs/14 stage 3): each
+      // secondary leg gets a sink bound to its own compositor layer, named by
+      // its source id. |i| is s.source_id -- the demuxer index -- so a factory
+      // can hand leg 1 a sink that publishes into layer 1's GlLayerSource and
+      // leg 2 one for layer 2's, rather than all of them fighting over one.
+      sink = deps_.extra_video_sink_factory->CreateForSource(
+          static_cast<int>(i), nullptr);
     } else {
       // Stage-1 policy (§4.1): the decode chain runs, the frames are decoded
       // and presented into a sink that drops them, because compositing stays

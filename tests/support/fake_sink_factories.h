@@ -48,6 +48,65 @@ class FakeVideoSinkFactory final : public VideoRendererSinkFactory {
   std::vector<FakeVideoSink*> all_;
 };
 
+// A factory that OBSERVES the source-aware sink path (docs/14 stage 3). It
+// delegates every Create() to an inner FakeVideoSinkFactory -- so the sinks
+// are the same manually-pumped fakes the other suites use -- and overrides
+// CreateForSource() to record which source id the renderer requested before
+// delegating. The stage-3 test proves the renderer routes each secondary leg
+// through CreateForSource(id, ...) -- not Create() -- by asserting the
+// recorded id is exactly the secondary source's index: a renderer that called
+// Create() instead would leave source_ids() empty and the assertion would go
+// red. This is the behavioural witness for "stage 3's source-aware sink
+// contract holds"; without it, "the secondary leg got a sink" (which a plain
+// Create() also satisfies) could not distinguish the two code paths.
+//
+// Thread-safety mirrors FakeVideoSinkFactory: the media sequence calls
+// Create()/CreateForSource(), and the test thread reads sinks()/source_ids()
+// afterwards under the same after-Initialize happens-before, but the record is
+// mutex-guarded so a TSan run does not flag it.
+class SourceAwareVideoSinkFactory final : public VideoRendererSinkFactory {
+ public:
+  SourceAwareVideoSinkFactory() = default;
+
+  // Every sink this factory created, in creation order (forwarded from the
+  // inner FakeVideoSinkFactory).
+  std::vector<FakeVideoSink*> sinks() const {
+    std::lock_guard<std::mutex> guard(lock_);
+    return inner_.sinks();
+  }
+  // The source ids the renderer requested via CreateForSource(), in call
+  // order. Empty means the renderer never took the source-aware path.
+  std::vector<int> source_ids() const {
+    std::lock_guard<std::mutex> guard(lock_);
+    return source_ids_;
+  }
+  bool source_aware_path_taken() const {
+    std::lock_guard<std::mutex> guard(lock_);
+    return !source_ids_.empty();
+  }
+
+  // VideoRendererSinkFactory.
+  std::unique_ptr<VideoRendererSink>
+  Create(base::scoped_refptr<NativeDisplay> display) override {
+    return inner_.Create(std::move(display));
+  }
+  std::unique_ptr<VideoRendererSink>
+  CreateForSource(int source_id,
+                  base::scoped_refptr<NativeDisplay> display) override {
+    {
+      std::lock_guard<std::mutex> guard(lock_);
+      source_ids_.push_back(source_id);
+    }
+    return inner_.Create(std::move(display));
+  }
+  const char* name() const override { return "SourceAwareVideoSinkFactory"; }
+
+ private:
+  mutable std::mutex lock_;
+  FakeVideoSinkFactory inner_;
+  std::vector<int> source_ids_;
+};
+
 class FakeAudioSinkFactory final : public AudioRendererSinkFactory {
  public:
   FakeAudioSinkFactory() = default;

@@ -57,6 +57,12 @@ class AVBASE_MEDIA_EXPORT DefaultRendererFactory final
     base::scoped_refptr<TextDecoderFactory> text_decoder_factory;
     std::shared_ptr<VideoRendererSinkFactory> video_sink_factory;
     std::shared_ptr<AudioRendererSinkFactory> audio_sink_factory;
+    // Docs/14 stage 3: a sink factory for the SECONDARY legs (source id >= 1).
+    // Null means every secondary leg renders into a NullVideoSink (stage 1
+    // policy) -- the decode chains still run and their frames are observable,
+    // they are just not composited. Set it when the host wants a secondary
+    // leg's picture in its own scene layer. Mirrors video_sink_factory.
+    std::shared_ptr<VideoRendererSinkFactory> extra_video_sink_factory;
     VideoFrameCompositor::Thresholds compositor_thresholds;
     AvSyncController::Thresholds sync_thresholds;
     AvSyncController::MasterType sync_master{

@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include <memory>
+#include <utility>
 
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
@@ -120,6 +121,23 @@ class AVBASE_MEDIA_EXPORT VideoRendererSinkFactory {
 
   virtual std::unique_ptr<VideoRendererSink>
   Create(base::scoped_refptr<NativeDisplay> display) = 0;
+
+  // Source-aware sink creation (docs/14 stage 3). A multi-source host hands
+  // each secondary leg a sink bound to its own compositor layer; the default
+  // delegates to Create() so every existing factory -- which knows nothing
+  // about sources -- is unchanged, and a renderer that has no extra factory
+  // (or only one) still builds the right sink for source 0. |source_id| is the
+  // demuxer index handed to Pipeline::Start; source 0 is the host's own
+  // layer and never reaches here (it takes the dedicated host sink first).
+  virtual std::unique_ptr<VideoRendererSink>
+  CreateForSource(int source_id, base::scoped_refptr<NativeDisplay> display) {
+    // The default does not distinguish sources: a stage-3 source-aware host
+    // overrides this, and every existing factory (which knows nothing about
+    // sources) lands here. |source_id| is intentionally ignored on this path.
+    (void)source_id;
+    return Create(std::move(display));
+  }
+
   virtual const char* name() const = 0;
 
  protected:
