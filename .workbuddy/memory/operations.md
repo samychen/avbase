@@ -27,6 +27,16 @@ git ls-files 'base/*.cc' 'media/*.cc' 'player/*.cc' 'platform/*.cc' 'tools/*.cc'
   实跑 90/90。「构建失败那一轮，基准跑的是上一个二进制」的同形复现。
 - 默认 `macos-sdl2` 预设**不开** `-Werror` → 两套预设都要跑。
 - **`clang-format` 不在 PATH**（裸调 exit=127），必须给全路径。
+- **`clang-format` 不要对 `.md` 跑**：`Pipeline Multi-Source` 被重排成
+  `Multi - Source`，设计书的代码块与英文散文一并被重排（一次 178 增/75 删的纯噪声
+  diff）。发现后 `cp` 备份 → `git checkout --` 还原 → 手工重贴新增段落。第七章第
+  七十七轮栽的。
+- **删掉一个 API 之后，全仓 grep 它的名字，包括 docs。** 退役
+  `SceneSource::MakePublisherFactory()` 那次，第二天的文档新鲜度复查仍找出 6 处
+  「当前状态描述」把它当成正解：TODO.md §0/§2/§7、docs/03、docs/05、docs/12 §4.9、
+  docs/13 §6.2、docs/14 开头。**PROGRESS.md 是轮次史，别改**（它记载第六十九轮就是
+  那么做的）；要改的是「现在怎么做」的那几句。判据很简单：句子里有没有轮次编号 ——
+  有编号的是历史，没有的是现状。
 - 两套清单数不同别套用。拼清单连未跟踪新文件：
   `git ls-files --cached --others --exclude-standard`。
 - `tools/deps`/`tools/build` 已 gitignore；`tools/inspect` 是自有代码（7 个文件）。
