@@ -134,6 +134,12 @@ Scene* Player::scene() {
   return impl_->core.scene();
 }
 
+std::shared_ptr<SceneSource>
+Player::AddSource(const DataSourceDescriptor& descriptor, std::string name,
+                  int z) {
+  return impl_->core.AddSource(descriptor, std::move(name), z);
+}
+
 PlayerState Player::state() const {
   return impl_->core.state();
 }

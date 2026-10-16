@@ -129,11 +129,34 @@ class PlayerImpl final : public media::Pipeline::Client {
       base::RepeatingCallback<void(const media::DefaultRendererFactory::Deps&)>;
   void set_deps_observer_for_testing(FactoryDepsObserver observer);
 
+  // ---- multi-source registration (docs/14 stage 3) -------------------------
+  // Called by the Player facade. Registers a secondary data source plus the
+  // scene layer its decoded video lands in; the demuxer is built at
+  // PrepareAsync, so registration has to happen before it runs. See
+  // player/public/player.h for the caller-facing contract.
+  std::shared_ptr<SceneSource>
+  AddSource(const media::DataSourceDescriptor& descriptor, std::string name,
+            int z);
+
  private:
   // MediaLog is what the media layer reports stages and errors through; the
   // facade does not subscribe (MediaLog events are diagnostics, not SDK
   // events), but the demuxer wants one.
   std::unique_ptr<media::Demuxer> CreateDemuxer();
+  // Builds a demuxer for an explicit descriptor (docs/14 stage 3 secondary
+  // sources); CreateDemuxer() above reads the player's own source_.
+  std::unique_ptr<media::Demuxer>
+  CreateDemuxerFor(const media::DataSourceDescriptor& descriptor);
+
+  // docs/14 stage 3: a registered secondary data source. Each becomes a demuxer
+  // at PrepareAsync (source id = its index in secondary_sources_ + 1) and its
+  // decoded video is routed into |source|'s scene layer via the secondary sink
+  // factory that PrepareAsync derives from this vector.
+  struct SecondarySource {
+    media::DataSourceDescriptor descriptor;
+    std::shared_ptr<SceneSource> source;
+    int z{0};
+  };
 
   // Pipeline::Client (media sequence):
   void OnError(MediaError error) override;
@@ -269,6 +292,9 @@ class PlayerImpl final : public media::Pipeline::Client {
   bool prepared_handled_ GUARDED_BY(state_lock_) = false;
   media::DataSourceDescriptor source_ GUARDED_BY(state_lock_);
   bool source_set_ GUARDED_BY(state_lock_) = false;
+  // docs/14 stage 3: registered secondary sources (ids 1..N). Cleared on
+  // Reset(); the SceneSource each holds stays alive in the scene.
+  std::vector<SecondarySource> secondary_sources_ GUARDED_BY(state_lock_);
   base::scoped_refptr<NativeDisplay> display_ GUARDED_BY(state_lock_);
 
   std::atomic<double> playback_rate_{1.0};

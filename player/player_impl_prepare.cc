@@ -33,6 +33,7 @@
 #include "media/ffmpeg/ffmpeg_video_filter.h"
 #include "media/ffmpeg/url_data_source.h"
 #endif
+#include "player/scene_internal.h"
 
 namespace avbase {
 namespace {
@@ -60,22 +61,119 @@ Status ErrState(std::string_view api, PlayerState state) {
 
 }  // namespace
 
-std::unique_ptr<media::Demuxer> PlayerImpl::CreateDemuxer() {
+namespace {
+
+// Production retry wiring (docs/12 §2.5 GAP closed): http(s) URIs leave
+// FFmpeg's protocol layer and enter the DataSource bridge as an avio-backed
+// UrlDataSource wrapped in RetryDataSource. The protocol layer's own reconnect
+// only covers mid-stream errors; a reset during connect or a hard reset
+// mid-transfer surfaces as a read error HERE, and the retry decorator is what
+// turns it into a fresh connection. rtmp/rtsp/srt stay on the protocol layer
+// (streaming semantics the bridge does not model). |out_retry| is filled only
+// when |track| is set -- the main source keeps its decorator named for
+// diagnostics / ReconnectNow, while secondary sources keep theirs alive inside
+// the wrapped descriptor's |custom| and need no separate handle.
+media::DataSourceDescriptor
+WrapRetry(const media::DataSourceDescriptor& descriptor, const NetConfig& net,
+          bool track, base::scoped_refptr<media::RetryDataSource>* out_retry) {
 #if AVBASE_ENABLE_FFMPEG
-  bool has_source = false;
-  {
-    base::AutoLock scoped(state_lock_);
-    has_source = source_set_;
+  if (descriptor.kind == media::DataSourceDescriptor::Kind::kUri &&
+      (descriptor.uri.starts_with("http://") ||
+       descriptor.uri.starts_with("https://")) &&
+      net.reconnect) {
+    auto url_source =
+        base::MakeRefCounted<media::ffmpeg::UrlDataSource>(descriptor.uri);
+    auto retry = base::MakeRefCounted<media::RetryDataSource>(
+        std::move(url_source),
+        media::RetryDataSource::Config{net.reconnect_max_retries,
+                                       net.reconnect_delay});
+    // Named BEFORE the descriptor takes ownership, never after: moving
+    // |retry| into FromSource() below leaves it null, and a ReconnectNow()
+    // that holds an empty handle fails silently -- which is what an ordering
+    // this subtle deserves a warning about. (Found by clang-tidy's
+    // bugprone-use-after-move; no test had noticed.)
+    if (track && out_retry) {
+      *out_retry = retry;
+    }
+    // Keep the URI for logs and MediaInfo: the hop below replaces the
+    // descriptor with a URI-less bridge, and source_.uri is guarded by
+    // state_lock_, so the copy arrives from |descriptor| instead.
+    auto wrapped = media::DataSourceDescriptor::FromSource(std::move(retry));
+    wrapped.uri = descriptor.uri;
+    return wrapped;
   }
-  if (has_source) {
-    // Every descriptor kind the demuxer can now serve: URI and fd through
-    // FFmpeg's protocol layer, memory and custom sources through the
-    // DataSource→AVIOContext bridge. Unsupported kinds fail inside the
-    // demuxer with an actionable error rather than here.
-    return std::make_unique<media::FFmpegDemuxer>(media_log_);
-  }
+  return descriptor;
+#else
+  (void)net;
+  (void)track;
+  (void)out_retry;
+  return descriptor;
 #endif
+}
+
+}  // namespace
+
+std::unique_ptr<media::Demuxer> PlayerImpl::CreateDemuxer() {
+  base::AutoLock scoped(state_lock_);
+  if (!source_set_) {
+    return nullptr;
+  }
+  return CreateDemuxerFor(source_);
+}
+
+std::unique_ptr<media::Demuxer>
+PlayerImpl::CreateDemuxerFor(const media::DataSourceDescriptor& descriptor) {
+#if AVBASE_ENABLE_FFMPEG
+  // A descriptor that names nothing cannot be opened, and discovering that
+  // INSIDE the demuxer means one secondary source takes the whole prepare down
+  // with "failed to open ''" -- which does not say which source, or why a
+  // source was there at all. Refused here instead, with the same test
+  // SetDataSource() applies to the player's own source, so the two agree.
+  if (descriptor.kind == media::DataSourceDescriptor::Kind::kUri &&
+      descriptor.uri.empty()) {
+    return nullptr;
+  }
+  // Every descriptor kind the demuxer can now serve: URI and fd through
+  // FFmpeg's protocol layer, memory and custom sources through the
+  // DataSource→AVIOContext bridge. Unsupported kinds fail inside the
+  // demuxer with an actionable error rather than here.
+  //
+  // The descriptor is deliberately NOT handed to the constructor: it travels
+  // with the demuxer to Initialize() (one per source, paired in
+  // PipelineImpl::DoStart), which is where an open actually happens.
+  return std::make_unique<media::FFmpegDemuxer>(media_log_);
+#else
+  (void)descriptor;
   return nullptr;
+#endif
+}
+
+std::shared_ptr<SceneSource>
+PlayerImpl::AddSource(const media::DataSourceDescriptor& descriptor,
+                      std::string name, int z) {
+  base::AutoLock scoped(state_lock_);
+  // Stage 3 sources are demuxers built at PrepareAsync, so they must be
+  // registered before it runs. Allowed from kIdle (no source yet) or
+  // kInitialized (SetDataSource done); anything later is a kInvalidState,
+  // which is also what makes "register then re-register after a Reset" the
+  // only supported shape.
+  const PlayerState s = machine_.state();
+  if (s != PlayerState::kIdle && s != PlayerState::kInitialized) {
+    return nullptr;
+  }
+  // The scene creates the layer handle; the player keeps a parallel record so
+  // PrepareAsync can build the demuxer and the secondary sink factory in the
+  // same source-id order.
+  std::shared_ptr<SceneSource> source = scene_.AddSource(std::move(name), z);
+  if (!source) {
+    return nullptr;
+  }
+  SecondarySource entry;
+  entry.descriptor = descriptor;
+  entry.source = source;
+  entry.z = z;
+  secondary_sources_.push_back(std::move(entry));
+  return source;
 }
 
 Status PlayerImpl::SetDataSource(std::string_view uri) {
@@ -129,21 +227,68 @@ Status PlayerImpl::PrepareAsync() {
   options.headers = config_.net.headers;
   options.extra_options = config_.extra_format_options;
 
-  auto demuxer = CreateDemuxer();
-  if (!demuxer) {
-    {
-      base::AutoLock scoped(state_lock_);
-      machine_.TransitionTo(PlayerState::kError);
+  // docs/14 stage 3: build the descriptor + demuxer list. Index 0 is this
+  // player's own source (SetDataSource); indices 1..N are the secondary
+  // sources registered via AddSource(), in registration order -- so each
+  // secondary's demuxer index is also its source id. With none registered
+  // this collapses to the single-source path exactly as before.
+  std::vector<media::DataSourceDescriptor> descriptors;
+  std::vector<std::unique_ptr<media::Demuxer>> demuxers;
+  std::vector<std::shared_ptr<SceneSource>> secondary_scene_sources;
+  {
+    base::AutoLock scoped(state_lock_);
+    descriptors.push_back(source_);
+    for (const auto& entry : secondary_sources_) {
+      descriptors.push_back(entry.descriptor);
+      secondary_scene_sources.push_back(entry.source);
     }
-    event_hub_.PostError(
-        MediaError(ErrorCode::kNotImplemented,
-                   "no demuxer is available for this data source",
-                   "this build has AVBASE_ENABLE_FFMPEG off, or the source "
-                   "kind needs the DataSource bridge (M9)",
-                   "build with -DAVBASE_ENABLE_FFMPEG=ON and pass a URI, or "
-                   "wait for the M9 DataSource AVIOContext bridge"),
-        base::TimeDelta());
-    return OkStatus();
+  }
+  // Production retry wiring (docs/12 §2.5): wrap http(s) URIs in a
+  // RetryDataSource. The main source keeps its decorator named for
+  // diagnostics / ReconnectNow; secondary sources keep theirs alive inside
+  // the wrapped descriptor's |custom|. retry_source_ is shared with
+  // ReconnectNow(), so writing it stays inside state_lock_ exactly as it was
+  // before the descriptor list existed.
+  {
+    base::AutoLock scoped(state_lock_);
+    descriptors[0] =
+        WrapRetry(descriptors[0], config_.net, /*track=*/true, &retry_source_);
+  }
+  for (size_t i = 1; i < descriptors.size(); ++i) {
+    descriptors[i] =
+        WrapRetry(descriptors[i], config_.net, /*track=*/false, nullptr);
+  }
+  // One demuxer per descriptor, same order: the main reads source_, each
+  // secondary from its descriptor.
+  demuxers.push_back(CreateDemuxer());
+  for (size_t i = 1; i < descriptors.size(); ++i) {
+    demuxers.push_back(CreateDemuxerFor(descriptors[i]));
+  }
+  {
+    bool missing = demuxers.empty();
+    for (const auto& d : demuxers) {
+      if (!d) {
+        missing = true;
+        break;
+      }
+    }
+    if (missing) {
+      {
+        base::AutoLock scoped(state_lock_);
+        machine_.TransitionTo(PlayerState::kError);
+      }
+      // Outside the lock, as it was: an event handler is allowed to call back
+      // into the player, and PostError runs them synchronously.
+      event_hub_.PostError(
+          MediaError(ErrorCode::kNotImplemented,
+                     "no demuxer is available for this data source",
+                     "this build has AVBASE_ENABLE_FFMPEG off, or a source "
+                     "kind needs the DataSource bridge (M9)",
+                     "build with -DAVBASE_ENABLE_FFMPEG=ON and pass a URI, or "
+                     "wait for the M9 DataSource AVIOContext bridge"),
+          base::TimeDelta());
+      return OkStatus();
+    }
   }
 
   auto av_sync = std::make_shared<media::AvSyncController>(
@@ -162,43 +307,7 @@ Status PlayerImpl::PrepareAsync() {
   pipeline->SetLiveCueMaxAge(config_.subtitle.enabled
                                  ? config_.subtitle.live_cue_max_age
                                  : base::TimeDelta());
-  media::DataSourceDescriptor source;
-  {
-    base::AutoLock scoped(state_lock_);
-    source = source_;
-  }
-#if AVBASE_ENABLE_FFMPEG
-  // Production retry wiring (docs/12 §2.5 GAP closed): http(s) URIs leave
-  // FFmpeg's protocol layer and enter the DataSource bridge as an avio-backed
-  // UrlDataSource wrapped in RetryDataSource. The protocol layer's own
-  // reconnect only covers mid-stream errors; a reset during connect or a hard
-  // reset mid-transfer surfaces as a read error HERE, and the retry
-  // decorator is what turns it into a fresh connection. rtmp/rtsp/srt stay
-  // on the protocol layer (streaming semantics the bridge does not model).
-  if (source.kind == media::DataSourceDescriptor::Kind::kUri &&
-      (source.uri.starts_with("http://") ||
-       source.uri.starts_with("https://")) &&
-      config_.net.reconnect) {
-    auto url_source =
-        base::MakeRefCounted<media::ffmpeg::UrlDataSource>(source.uri);
-    auto retry = base::MakeRefCounted<media::RetryDataSource>(
-        std::move(url_source),
-        media::RetryDataSource::Config{config_.net.reconnect_max_retries,
-                                       config_.net.reconnect_delay});
-    {
-      base::AutoLock scoped(state_lock_);
-      retry_source_ = retry;
-    }
-    source = media::DataSourceDescriptor::FromSource(std::move(retry));
-    // Keep the URI for logs and MediaInfo; read it under state_lock_, which
-    // guards source_ -- the hop above replaced |source| with a URI-less bridge.
-    {
-      base::AutoLock scoped(state_lock_);
-      source.uri = source_.uri;
-    }
-  }
-#endif
-  pipeline->SetSource(std::move(source), std::move(options));
+  pipeline->SetSource(std::move(descriptors), options);
 
   media::DefaultRendererFactory::Deps factory_deps;
   factory_deps.audio_filter_graph = config_.audio.filter_graph;
@@ -220,6 +329,15 @@ Status PlayerImpl::PrepareAsync() {
   factory_deps.audio_decoder_factories = deps_->audio_decoder_factories;
   factory_deps.text_decoder_factory = deps_->text_decoder_factory;
   factory_deps.video_sink_factory = deps_->video_sink_factory;
+  // docs/14 stage 3: the secondary legs (source id >= 1) get a sink that
+  // publishes into their SceneSource, which the host sink's engine composites.
+  // Built from the scene sources PrepareAsync collected above; null here means
+  // every secondary leg renders into a NullVideoSink (stage 1 policy) -- the
+  // decode chains still run, the frames are just not shown.
+  if (!secondary_scene_sources.empty()) {
+    factory_deps.extra_video_sink_factory =
+        CreateSecondarySinkFactory(std::move(secondary_scene_sources));
+  }
   factory_deps.audio_sink_factory = deps_->audio_sink_factory;
   factory_deps.av_sync = std::move(av_sync);
   factory_deps.video_disabled = config_.video.disabled;
@@ -260,8 +378,8 @@ Status PlayerImpl::PrepareAsync() {
   }
   SetRendererFactory(renderer_factory);
 
-  pipeline->Start(media::MakeSingleSource(std::move(demuxer)),
-                  renderer_factory.get(), media::RendererType::kRendererImpl,
+  pipeline->Start(std::move(demuxers), renderer_factory.get(),
+                  media::RendererType::kRendererImpl,
                   media_thread_.task_runner(), this);
   return OkStatus();
 }

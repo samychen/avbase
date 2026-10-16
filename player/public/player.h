@@ -32,6 +32,7 @@ class DataSource;
 
 class AVBASE_PLAYER_EXPORT Player;
 class Scene;
+class SceneSource;
 
 // Re-exported from media/base so that SDK callers can spell it
 // avbase::DataSourceDescriptor without reaching into the media layer. The type
@@ -143,6 +144,24 @@ class AVBASE_PLAYER_EXPORT Player {
   // including it -- a caller that never composes should not have to compile
   // the composition API.
   Scene* scene();
+
+  // ---- Multi-source composition (docs/14 stage 3) --------------------------
+  // Registers a SECONDARY data source on this player and a scene layer for it,
+  // returning the layer's handle. At PrepareAsync the player builds a demuxer
+  // for |descriptor| and routes its decoded video into the layer this returns,
+  // which the host places via SceneFrame::layer_of() in the per-frame hook.
+  //
+  // Source 0 is this player's own SetDataSource(); each AddSource() adds the
+  // next source (id 1, then 2, ...). All sources are composited by the SAME
+  // pipeline and the SAME master clock -- there is no second Player, and the
+  // "second Player + mailbox" detour of earlier builds is retired.
+  //
+  // Call before PrepareAsync, from kIdle or kInitialized; a later call is
+  // rejected with kInvalidState and returns null. The returned handle stays
+  // valid across Stop()/Reset()/re-Prepare() -- the scene keeps it -- but the
+  // demuxer is only rebuilt if the source is re-registered after a Reset().
+  std::shared_ptr<SceneSource> AddSource(const DataSourceDescriptor& descriptor,
+                                         std::string name, int z);
 
   // ---- Events --------------------------------------------------------------
   using EventHandler = base::RepeatingCallback<void(const PlayerEvent&)>;

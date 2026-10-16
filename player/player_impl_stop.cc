@@ -165,6 +165,11 @@ void PlayerImpl::Reset() {
     machine_.ForceReset();
     source_set_ = false;
     source_ = media::DataSourceDescriptor();
+    // Stage 3: the secondary source registrations are per-playback; drop them
+    // so a re-Prepare without re-AddSource() is single-source. The SceneSource
+    // each held stays alive in the scene (the host may still place it), it is
+    // just no longer fed by a demuxer.
+    secondary_sources_.clear();
     prepared_handled_ = false;
     // M4: the retry decorator belongs to the OLD source; keeping it alive
     // past Reset() let ReconnectNow() reach a data source that is no longer

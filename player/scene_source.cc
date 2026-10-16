@@ -16,6 +16,7 @@
 
 #include "media/base/render_cadence.h"
 #include "media/base/video_renderer_sink.h"
+#include "media/filters/null_video_sink.h"
 #include "media/gl/gl_layer_source.h"
 
 namespace avbase {
@@ -63,16 +64,26 @@ bool SceneSource::Publish(base::scoped_refptr<media::VideoFrame> frame) {
   return true;
 }
 
-// ---- SceneSource::MakePublisherFactory --------------------------------------
+// ---- In-pipeline secondary sink -------------------------------------------
+// docs/14 stage 3 retired SceneSource::MakePublisherFactory() -- the public
+// "second Player" path -- and the player now builds its secondary legs
+// directly. The PublisherSink is KEPT as the in-pipeline adapter: each
+// secondary leg's VideoRendererImpl hands it frames, and it publishes them into
+// that leg's SceneSource, which the scene has already plumbed into the host
+// sink's engine. So a second picture is now a second demuxer in the SAME
+// pipeline, not a second Player -- same composited result, no mailbox-crossing
+// clock mismatch.
 namespace {
 
-// The second stream's endpoint: it draws nothing, and every frame the
-// compositor hands it is published into a SceneSource, which the owning
-// player's sink drains once per displayed frame.
+// The secondary stream's endpoint: it draws nothing, and every frame the
+// compositor hands it is published into a SceneSource, which the host sink's
+// engine drains once per displayed frame.
 //
-// THE MAILBOX IS THE POINT, not the poll loop. Two pipelines running at their
+// THE MAILBOX IS THE POINT, not the poll loop. Two decoders running at their
 // own rates would otherwise have to be made to agree on one; here they never
-// meet, and the display's clock is the only one that decides what is shown.
+// meet -- the secondary leg is pulled on its own cadence and the display's
+// clock (the host sink) is the only one that decides what is shown, because it
+// is the one that composites.
 class PublisherSink final : public media::VideoRendererSink {
  public:
   explicit PublisherSink(std::shared_ptr<SceneSource> source)
@@ -127,7 +138,7 @@ class PublisherSink final : public media::VideoRendererSink {
   const char* name() const override { return "publisher"; }
 
  private:
-  // The pull side of the second player's compositor: one frame per tick, which
+  // The pull side of a secondary leg's compositor: one frame per tick, which
   // is all a mailbox that keeps only the newest one can make use of.
   void PollLoop() {
     base::TimeTicks deadline;
@@ -156,26 +167,47 @@ class PublisherSink final : public media::VideoRendererSink {
   std::atomic<bool> playing_{false};
 };
 
-class ScenePublisherSinkFactory final : public media::VideoRendererSinkFactory {
+// Hands each secondary leg (source id >= 1) a PublisherSink into its own
+// SceneSource. Indexed by source id: sources_[k] serves the leg whose source
+// id is k + 1, because source 0 takes the dedicated host sink first and never
+// reaches here. A leg whose id is out of range -- a mis-registration, which
+// should not happen -- gets a NullVideoSink so it degrades rather than
+// crashes.
+class SceneSecondarySinkFactory final : public media::VideoRendererSinkFactory {
  public:
-  explicit ScenePublisherSinkFactory(std::shared_ptr<SceneSource> source)
-      : source_(std::move(source)) {}
+  explicit SceneSecondarySinkFactory(
+      std::vector<std::shared_ptr<SceneSource>> sources)
+      : sources_(std::move(sources)) {}
 
   std::unique_ptr<media::VideoRendererSink>
   Create(base::scoped_refptr<media::NativeDisplay> /*display*/) override {
-    return std::make_unique<PublisherSink>(source_);
+    // A leg that somehow takes the non-source-aware path gets a drop sink: the
+    // secondary legs always arrive through CreateForSource(), so reaching here
+    // means a wiring mistake upstream, not a real configuration.
+    return std::make_unique<media::NullVideoSink>();
   }
-  const char* name() const override { return "scene-publisher"; }
+
+  std::unique_ptr<media::VideoRendererSink> CreateForSource(
+      int source_id,
+      base::scoped_refptr<media::NativeDisplay> /*display*/) override {
+    const size_t index = static_cast<size_t>(source_id) - 1;
+    if (source_id < 1 || index >= sources_.size() || !sources_[index]) {
+      return std::make_unique<media::NullVideoSink>();
+    }
+    return std::make_unique<PublisherSink>(sources_[index]);
+  }
+
+  const char* name() const override { return "scene-secondary"; }
 
  private:
-  std::shared_ptr<SceneSource> source_;
+  std::vector<std::shared_ptr<SceneSource>> sources_;
 };
 
 }  // namespace
 
 std::shared_ptr<media::VideoRendererSinkFactory>
-SceneSource::MakePublisherFactory() {
-  return std::make_shared<ScenePublisherSinkFactory>(shared_from_this());
+CreateSecondarySinkFactory(std::vector<std::shared_ptr<SceneSource>> sources) {
+  return std::make_shared<SceneSecondarySinkFactory>(std::move(sources));
 }
 
 // Declared out of line so none of this has to appear in a public header.

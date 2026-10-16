@@ -201,6 +201,11 @@ class AVBASE_PLAYER_EXPORT SceneSource
   // shown. True does NOT mean displayed: a frame still in the slot when a
   // newer one arrives is superseded, which for a picture is the right thing
   // to drop. frames_superseded() is how a producer finds out.
+  //
+  // In docs/14 stage 3 this is the ONLY way a second picture reaches the
+  // scene: the player builds the secondary leg's demuxer/decoder itself and
+  // routes its sink through here, so a host no longer creates a second Player
+  // and calls MakePublisherFactory() -- that path was retired.
   bool Publish(base::scoped_refptr<media::VideoFrame> frame);
 
   uint64_t frames_published() const;
@@ -212,27 +217,6 @@ class AVBASE_PLAYER_EXPORT SceneSource
   friend class SceneFrame;
   SceneSource(std::string name, int z);
 
- public:
-  // A video sink factory whose sinks publish whatever they render into this
-  // source instead of displaying it. Hand it to a second Player's Deps and
-  // that player's output becomes an input to this scene:
-  //
-  //   auto second = player.scene()->AddSource("camera", 10);
-  //   deps->video_sink_factory = second->MakePublisherFactory();
-  //
-  // Needed because a second pipeline is a whole pipeline -- its own demuxer,
-  // decoder and clock -- and it still has to present SOMEWHERE, because that
-  // is the only way its frames get pulled. A sink that accepts the pull and
-  // drops the frames in this source's mailbox is what "N independent decoders"
-  // has to mean in a library whose renderer is single-source, and until this
-  // existed the only way to build one was to hold a media::GlLayerSource and
-  // write the sink out longhand.
-  //
-  // Frames published while nothing is plumbed in are dropped, which is what
-  // starting the second pipeline before the first one has prepared has to mean.
-  std::shared_ptr<media::VideoRendererSinkFactory> MakePublisherFactory();
-
- private:
   // Takes ownership of the engine-side source this one is plumbed into, or
   // clears it when there is no engine. Called by Scene, which is the only
   // object that knows when a pipeline started and stopped existing.
