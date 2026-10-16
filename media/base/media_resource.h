@@ -101,6 +101,26 @@ class AVBASE_MEDIA_EXPORT MediaResource {
     return {};
   }
 
+  // The stream whose identity is |stream_index| (of |type|), or nullptr when
+  // this resource has none. The default is today's container-order scan, so a
+  // single-source resource answers exactly what it always did.
+  //
+  // Added for aggregates (docs/14 stage 4) because an aggregate's index space
+  // IS NOT its children's: each child numbers its streams in its own container
+  // order, so source 1's first text stream and source 0's share an index and
+  // the comparison above stops being able to tell them apart. Looking a
+  // stream up by going through HERE rather than open-coding
+  // `stream_index() == index` is the whole point -- the code that needs to
+  // change is the comparison, and it lives in one place again.
+  virtual DemuxerStream* FindStream(DemuxerStreamType type, int stream_index) {
+    for (DemuxerStream* stream : GetStreams(type)) {
+      if (stream->stream_index() == stream_index) {
+        return stream;
+      }
+    }
+    return nullptr;
+  }
+
   // How many sources this resource carries (docs/14, stage 1). 1 is the
   // default and the truth for every resource that is not an aggregate: a
   // single Demuxer is one source, and the stage-0 test fakes are one source

@@ -315,27 +315,233 @@ TEST(CompositeDemuxerTest, SingleSourceDemuxerAxisDefaultsToPlainStream) {
 }
 
 // ---------------------------------------------------------------------------
-// MUTATION PROOF (docs/14, stage 0, §3.7). The assertions above must TURN RED
-// under the following edits, proving the axis is genuinely consumed:
+// The aggregate index space (docs/14 stage 4).
 //
+// Each child numbers its streams from its own container order, so source 1's
+// text stream and source 0's share an integer. The point of these four tests
+// is that the aggregate's numbering is observed DOWNSTREAM of every hop:
+// resolution answers a POINTER (that is which child owns the index), routing
+// answers which CHILD was told, and the info snapshot answers the number a
+// host would have to type to get either.
+// ---------------------------------------------------------------------------
+
+// Valid means "carries a codec name" for a text config (TextDecoderConfig::
+// IsValidConfig()); the streams below are never decoded, but a half-built one
+// would fail for a reason unrelated to what these tests are about.
+TextDecoderConfig MakeSubripConfig() {
+  TextDecoderConfig config;
+  config.codec_name = "subrip";
+  return config;
+}
+
+// A child with two text streams whose container indices are deliberately NOT
+// zero-based, because that is the case that produces the collision: both
+// children answer index 2, and only the aggregate can tell them apart.
+class TextFakeDemuxer : public Demuxer {
+ public:
+  explicit TextFakeDemuxer(int32_t first_index) {
+    for (int i = 0; i < 2; ++i) {
+      FakeDemuxerStream* s = new FakeDemuxerStream(
+          DemuxerStreamType::kText, MakeValidAudioConfig(),
+          MakeValidVideoConfig(), MakeSubripConfig());
+      s->set_stream_index(first_index + i);
+      streams_.push_back(std::unique_ptr<FakeDemuxerStream>(s));
+      StreamInfo info;
+      info.index = first_index + i;
+      info.kind = StreamKind::kText;
+      info.codec_name = "subrip";
+      media_info_.streams.push_back(std::move(info));
+    }
+  }
+
+  DemuxerStream* GetStream(DemuxerStreamType type) override {
+    const std::vector<DemuxerStream*> all = GetStreams(type);
+    return all.empty() ? nullptr : all[0];
+  }
+  std::vector<DemuxerStream*> GetStreams(DemuxerStreamType type) override {
+    std::vector<DemuxerStream*> out;
+    for (auto& s : streams_) {
+      if (s->type() == type) {
+        out.push_back(s.get());
+      }
+    }
+    return out;
+  }
+  void SetActiveStream(DemuxerStreamType type, int stream_index) override {
+    last_active_type_ = type;
+    last_active_index_ = stream_index;
+    ++active_calls_;
+  }
+  const MediaInfo& media_info() const override { return media_info_; }
+
+  // The unimplemented rest.
+  void Initialize(const DataSourceDescriptor&, const DemuxerOptions&, Host*,
+                  base::scoped_refptr<base::SequencedTaskRunner>,
+                  InitializeCB cb) override {
+    std::move(cb).Run(Status());
+  }
+  void StartPlayingFrom(base::TimeDelta, SeekCB cb) override {
+    std::move(cb).Run(Status(), base::TimeDelta());
+  }
+  void Flush(base::OnceClosure cb) override { std::move(cb).Run(); }
+  void Reset(base::OnceClosure cb) override { std::move(cb).Run(); }
+  void Stop() override {}
+  base::TimeDelta GetStartTime() const override { return base::TimeDelta(); }
+  bool IsLive() const override { return false; }
+  bool IsSeekable() const override { return true; }
+  DemuxerStats GetStats() const override { return DemuxerStats(); }
+  const char* name() const override { return "TextFakeDemuxer"; }
+
+  DemuxerStream* stream(size_t i) const { return streams_[i].get(); }
+  DemuxerStreamType last_active_type() const { return last_active_type_; }
+  int last_active_index() const { return last_active_index_; }
+  int active_calls() const { return active_calls_; }
+
+ private:
+  std::vector<std::unique_ptr<FakeDemuxerStream>> streams_;
+  MediaInfo media_info_;
+  DemuxerStreamType last_active_type_{DemuxerStreamType::kUnknown};
+  int last_active_index_{-1};
+  int active_calls_{0};
+};
+
+CompositeDemuxer::Source MakeSource(std::unique_ptr<Demuxer> d) {
+  CompositeDemuxer::Source s;
+  s.demuxer = std::move(d);
+  return s;
+}
+
+// Two children, each numbering its subtitle tracks 2 and 3 (the shape a real
+// file has once it also carries video=0 and audio=1).
+class TwoTextSourcesTest : public ::testing::Test {
+ protected:
+  TwoTextSourcesTest() {
+    auto a = std::make_unique<TextFakeDemuxer>(/*first_index=*/2);
+    auto b = std::make_unique<TextFakeDemuxer>(/*first_index=*/2);
+    s0_ = a.get();
+    s1_ = b.get();
+    std::vector<CompositeDemuxer::Source> v;
+    v.push_back(MakeSource(std::move(a)));
+    v.push_back(MakeSource(std::move(b)));
+    comp_ = std::make_unique<CompositeDemuxer>(std::move(v));
+  }
+
+  // max(container index) + 1 == 4, so source 1 starts at 4.
+  static constexpr int kStride = 4;
+  std::unique_ptr<CompositeDemuxer> comp_;
+  TextFakeDemuxer* s0_{nullptr};
+  TextFakeDemuxer* s1_{nullptr};
+};
+
+TEST_F(TwoTextSourcesTest, SourceZeroKeepsItsOwnNumbering) {
+  EXPECT_EQ(comp_->FindStream(DemuxerStreamType::kText, 2), s0_->stream(0));
+  EXPECT_EQ(comp_->FindStream(DemuxerStreamType::kText, 3), s0_->stream(1));
+  // Nothing at these numbers belongs to a source that does not exist.
+  EXPECT_EQ(comp_->FindStream(DemuxerStreamType::kText, 8), nullptr);
+  EXPECT_EQ(comp_->FindStream(DemuxerStreamType::kText, -1), nullptr);
+}
+
+TEST_F(TwoTextSourcesTest, ASecondaryTextStreamIsReachableByNumber) {
+  // The index that selected nothing at all before stage 4: source 1's first
+  // subtitle track is 1 * stride + 2, and only the aggregate can resolve it.
+  EXPECT_EQ(comp_->FindStream(DemuxerStreamType::kText, kStride + 2),
+            s1_->stream(0));
+  EXPECT_EQ(comp_->FindStream(DemuxerStreamType::kText, kStride + 3),
+            s1_->stream(1));
+  // The local number alone still answers source 0's, never "one of them".
+  EXPECT_EQ(comp_->FindStream(DemuxerStreamType::kText, 2), s0_->stream(0));
+}
+
+TEST_F(TwoTextSourcesTest, RoutingReachesTheChildThatOwnsTheIndex) {
+  comp_->SetActiveStream(DemuxerStreamType::kText, kStride + 2);
+  // Translated back: the child sees its OWN number, which is what its packets
+  // carry and what its demux loop compares.
+  EXPECT_EQ(s1_->last_active_index(), 2);
+  EXPECT_EQ(s1_->last_active_type(), DemuxerStreamType::kText);
+  EXPECT_EQ(s1_->active_calls(), 1);
+  // The other source was told nothing -- routing is point-to-point, not a
+  // broadcast that happens to be harmless.
+  EXPECT_EQ(s0_->active_calls(), 0);
+}
+
+TEST_F(TwoTextSourcesTest, MergedInfoNumbersEverySourceAndMarksWhichIsWhich) {
+  const MediaInfo& info = comp_->media_info();
+  ASSERT_EQ(info.streams.size(), 4u);
+  // Source-major: a kind's first stream is still source 0's.
+  EXPECT_EQ(info.FirstStreamOfKind(StreamKind::kText), 2);
+  EXPECT_EQ(info.streams[3].index, kStride + 3);
+  const auto owner = info.streams[3].metadata.find("avbase:source");
+  ASSERT_NE(owner, info.streams[3].metadata.end());
+  EXPECT_EQ(owner->second, "1");
+}
+
+// The guard contract this whole change is shaped around: RendererImpl::
+// IsPrimaryStream() answers "is it SOURCE 0's stream" by walking GetStreams().
+// It is the reason the all-sources question became a separate call instead of
+// a widened one -- widening it would let a secondary source's stream into the
+// primary leg's track switch.
+TEST_F(TwoTextSourcesTest, EnumerationStillAnswersSourceZeroAlone) {
+  const std::vector<DemuxerStream*> all =
+      comp_->GetStreams(DemuxerStreamType::kText);
+  ASSERT_EQ(all.size(), 2u);
+  EXPECT_EQ(all[0], s0_->stream(0));
+  EXPECT_EQ(all[1], s0_->stream(1));
+}
+
+// A wrapped single source must number its streams exactly as the bare demuxer
+// does, which is what makes stage 4 invisible to every existing caller.
+TEST(CompositeDemuxerTest, WrappingOneSourceDoesNotRenumberIt) {
+  auto a = std::make_unique<TextFakeDemuxer>(/*first_index=*/2);
+  DemuxerStream* owned = a->stream(1);
+  std::vector<CompositeDemuxer::Source> v;
+  v.push_back(MakeSource(std::move(a)));
+  CompositeDemuxer comp(std::move(v));
+
+  EXPECT_EQ(comp.FindStream(DemuxerStreamType::kText, 3), owned);
+  EXPECT_EQ(comp.media_info().streams.size(), 2u);
+  EXPECT_EQ(comp.media_info().streams[1].index, 3);
+}
+
+// ---------------------------------------------------------------------------
+// MUTATION PROOF (docs/14). The assertions in this file must TURN RED under the
+// following edits, proving each axis is genuinely consumed, not merely present.
+// Grouped by the stage that introduced the code under test:
+//
+//   addressing axis (stage 0):
 //   M1: in composite_demuxer.cc, change GetStream(id, type) to return
 //       sources_[1 - id].demuxer->GetStream(type). The two addressing asserts
 //       (GetStream(0,..)==s0 and GetStream(1,..)==s1) invert and fail. Restore.
-//
 //   M2: in demuxer.h, change Demuxer::GetStream(int, type) to
-//       `return nullptr;`.
-//       SingleSourceDemuxerAxisDefaultsToPlainStream calls the base default
-//       (d.GetStream(0,VIDEO) == d.GetStream(VIDEO)); with the base returning
-//       null, that equality fails. NOTE: CompositeDemuxer's own GetStream(int,
-//       type) override is NOT on this path -- it routes to the child's
-//       GetStream(type) -- so the addressing test is unaffected; M2 targets the
-//       base default specifically. Restore.
+//       `return nullptr;`. SingleSourceDemuxerAxisDefaultsToPlainStream calls
+//       the base default (d.GetStream(0,VIDEO) == d.GetStream(VIDEO)); with the
+//       base returning null, that equality fails. NOTE: CompositeDemuxer's own
+//       GetStream(int, type) override routes to the child's GetStream(type), so
+//       the addressing test is unaffected; M2 targets the base default
+//       specifically. Restore.
 //
-//   M3 (stage 2): in composite_demuxer.cc, write the AGGREGATE into every
-//       slot -- `seek_actuals_[i] = seek_actual_` after the max, or drop the
-//       index from the bound callback and fill all slots with the same value.
+//   per-source seek landings (stage 2):
+//   M3: in composite_demuxer.cc, write the AGGREGATE into every slot --
+//       `seek_actuals_[i] = seek_actual_`, or drop the index from the bound
+//       callback and fill all slots with the same value.
 //       SeekLandingsAreIndexedNotOrdered fails on the slot that differs from
 //       the max (source 1 lands 2.5 s before source 0). Restore.
+//
+//   aggregate index space (stage 4 -- this revision):
+//   M4: revert FindStream to route by source 0 only --
+//       `return sources_[0].demuxer->FindStream(type, stream_index);`.
+//       ASecondaryTextStreamIsReachableByNumber fails on both secondary-stream
+//       lookups (FindStream(stride+2/3) answers null), and
+//       RoutingReachesTheChildThatOwnsTheIndex fails too because
+//       SetActiveStream validates the index through FindStream first. Restore.
+//   M5: drop the boundary translation in SetActiveStream -- pass `stream_index`
+//       instead of `stream_index - source_id * stride`. The child is told its
+//       own number, so RoutingReachesTheChildThatOwnsTheIndex fails
+//       (expects the child saw 2, it saw stride+2). Restore.
+//   M6: stop offsetting in MergeMediaInfo -- `info.index = info.index;` and
+//       drop the `"avbase:source"` metadata.
+//       MergedInfoNumbersEverySourceAndMarksWhichIsWhich fails
+//       (streams[3].index is 3 not stride+3, and the source owner lookup is
+//       absent). Restore.
 //
 // All mutations were run, seen red, reverted, and re-verified green.
 // ---------------------------------------------------------------------------

@@ -5,12 +5,22 @@
 #include "media/base/composite_demuxer.h"
 
 #include <algorithm>
+#include <string>
 #include <utility>
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "media/base/demuxer_stream.h"
 
 namespace avbase::media {
+namespace {
+
+// Everything that can be selected. Enough here to bound how high a child's
+// own numbering can go, which is all the stride's definition needs.
+constexpr DemuxerStreamType kSelectableTypes[] = {DemuxerStreamType::kVideo,
+                                                  DemuxerStreamType::kAudio,
+                                                  DemuxerStreamType::kText};
+}  // namespace
 
 CompositeDemuxer::CompositeDemuxer(std::vector<Source> sources) {
   sources_.reserve(sources.size());
@@ -42,9 +52,71 @@ CompositeDemuxer::GetStreams(DemuxerStreamType type) {
 
 void CompositeDemuxer::SetActiveStream(DemuxerStreamType type,
                                        int stream_index) {
-  if (!sources_.empty()) {
-    sources_[0].demuxer->SetActiveStream(type, stream_index);
+  const DemuxerStream* target = FindStream(type, stream_index);
+  if (!target) {
+    // Not ours -- including "no such index in any child". Silently routing it
+    // is not an option: whichever source owns that number is the only one that
+    // can route packets to it, so a misrouted index here would show up as
+    // "the track switched and nothing arrived", with no error anywhere.
+    LOG(WARNING) << "CompositeDemuxer: no " << GetDemuxerStreamTypeName(type)
+                 << " stream " << stream_index
+                 << " is among this resource's sources";
+    return;
   }
+  const int stride = IndexStride();
+  const int source_id = stream_index / stride;
+  sources_[static_cast<size_t>(source_id)].demuxer->SetActiveStream(
+      type, stream_index - source_id * stride);
+}
+
+DemuxerStream* CompositeDemuxer::FindStream(DemuxerStreamType type,
+                                            int stream_index) {
+  const int stride = IndexStride();
+  if (stream_index < 0 || stride <= 0) {
+    return nullptr;
+  }
+  const int source_id = stream_index / stride;
+  if (source_id >= static_cast<int>(sources_.size())) {
+    return nullptr;
+  }
+  // Translated at the boundary: the child sees its OWN index, because that is
+  // what its packets carry and what its routing predicate compares.
+  return sources_[source_id].demuxer->FindStream(type, stream_index -
+                                                           source_id * stride);
+}
+
+int CompositeDemuxer::IndexStride() const {
+  // Derived, not a constant: a fixed stride would be a promise about how many
+  // streams a container can carry, and breaking it would produce a collision
+  // between two sources' streams -- exactly the silent ambiguity this numbering
+  // exists to remove. max+1 cannot collide by construction.
+  int max_child_index = -1;
+  for (const auto& child : sources_) {
+    for (DemuxerStreamType type : kSelectableTypes) {
+      for (DemuxerStream* stream : child.demuxer->GetStreams(type)) {
+        max_child_index = std::max(max_child_index, stream->stream_index());
+      }
+    }
+  }
+  return max_child_index + 1;
+}
+
+MediaInfo CompositeDemuxer::MergeMediaInfo() const {
+  const int stride = IndexStride();
+  MediaInfo merged = sources_[0].demuxer->media_info();
+  merged.streams.clear();
+  for (size_t i = 0; i < sources_.size(); ++i) {
+    const int offset = static_cast<int>(i) * stride;
+    for (StreamInfo info : sources_[i].demuxer->media_info().streams) {
+      info.index = info.index + offset;
+      // Which source this stream belongs to, for a host offering "source 1's
+      // subtitles": the presence of a second source is invisible otherwise,
+      // since two sources' identical-looking track lists differ only by this.
+      info.metadata["avbase:source"] = std::to_string(i);
+      merged.streams.push_back(std::move(info));
+    }
+  }
+  return merged;
 }
 
 Demuxer* CompositeDemuxer::source(int id) const {
@@ -187,12 +259,18 @@ void CompositeDemuxer::Stop() {
 const MediaInfo& CompositeDemuxer::media_info() const {
   // Computed on demand: child 0's MediaResource reports its real (post-
   // Initialize) stream configs and duration here, so the aggregate mirrors a
-  // single demuxer exactly for source 0 instead of returning the default
-  // MediaInfo cached at construction.
+  // single demuxer for source 0 instead of returning the MediaInfo cached at
+  // construction. Called from OnDemuxerInitialized (once) and through the
+  // pipeline's own snapshot from there -- never per packet -- so composing
+  // the merged answer here costs nothing that matters.
   if (sources_.empty()) {
     return media_info_;
   }
-  return sources_[0].demuxer->media_info();
+  if (sources_.size() == 1) {
+    return sources_[0].demuxer->media_info();
+  }
+  media_info_ = MergeMediaInfo();
+  return media_info_;
 }
 
 base::TimeDelta CompositeDemuxer::GetStartTime() const {

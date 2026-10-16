@@ -69,11 +69,33 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   }
   DemuxerStream* GetStream(int source_id, DemuxerStreamType type) override;
 
-  // Forwarded to source 0 so a single wrapped demuxer behaves exactly as it did
-  // when used directly: multi-stream sources expose all their streams for track
-  // selection, and the active-stream choice reaches the real demuxer.
+  // Deliberately still source 0's answer. RendererImpl::IsPrimaryStream()
+  // uses this to ask "is it one of SOURCE 0's streams" -- that is what keeps a
+  // secondary source's video or audio stream out of the primary leg's track
+  // switch. Widening this list would silently widen that guard, so the
+  // all-sources question is a different call (FindStream below).
   std::vector<DemuxerStream*> GetStreams(DemuxerStreamType type) override;
   void SetActiveStream(DemuxerStreamType type, int stream_index) override;
+
+  // ---- The aggregate index space (docs/14 stage 4) ----------------------
+  //
+  // Each child numbers its streams from its own container order, so source 1's
+  // text stream #2 and source 0's are the same integer. Two children, one
+  // index space: the aggregate numbers its streams
+  //
+  //     aggregate_index = source_id * stride + child_index
+  //
+  // where |stride| is one more than the largest container index any child
+  // reports. Source 0's offset is therefore 0 and its indices are literally
+  // unchanged -- which is what makes the single-source path identical to
+  // handing the child over unwrapped, and what makes the two spaces provably
+  // disjoint rather than probably so.
+  //
+  // This is why every stream has TWO numbers: the child answers its own, and
+  // only the aggregate boundary translates. Nothing below it changes -- the
+  // demux loop compares the stream index the CONTAINER wrote on the packet,
+  // so a child still receives its own numbering.
+  DemuxerStream* FindStream(DemuxerStreamType type, int stream_index) override;
 
   // Demuxer lifecycle, fanned out to every child. Each child carries its own
   // open parameters in its Source bundle; the single |source|/|options| from
@@ -89,6 +111,13 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   void Reset(base::OnceClosure reset_cb) override;
   void Stop() override;
 
+  // Every source's streams, numbered in the aggregate space above. Source 0's
+  // scalars describe source 0's container -- duration included: an aggregate
+  // has no single format_name, bit_rate or duration, and inventing one would
+  // be worse than saying whose it is. (SetDuration() separately reports the
+  // LONGEST child's duration upstream, for the playback clock; that number is
+  // deliberately not the one this snapshot carries.)
+  // Source-major order, so FirstStreamOfKind still answers a source-0 stream.
   const MediaInfo& media_info() const override;
   base::TimeDelta GetStartTime() const override;
   bool IsLive() const override;
@@ -130,6 +159,12 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   };
 
   void OnChildInitialized(Status status);
+  // docs/14 stage 4: the aggregate index space, and the merged MediaInfo built
+  // in it. Both are derived from the children rather than cached in one, so
+  // a child that grows its stream list at Initialize is not answering from
+  // a stale answer taken at construction -- GetStreams is a live query.
+  int IndexStride() const;
+  MediaInfo MergeMediaInfo() const;
   // |source_id| is the child's index, bound FIRST by StartPlayingFrom
   // (base::BindOnce passes pre-bound arguments ahead of the callback's), so
   // the landing point is recorded against the child that reported it.
@@ -139,7 +174,10 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
 
   std::vector<Child> sources_;
   base::raw_ptr<Host> host_ = nullptr;
-  MediaInfo media_info_;
+  // mutable: media_info() is const and the multi-source answer is composed on
+  // demand (path above for why it cannot be cached once at construction), and
+  // SetDuration() -- non-const -- writes the longest child's duration here.
+  mutable MediaInfo media_info_;
 
   // Initialize fan-out state.
   size_t pending_inits_ = 0;
