@@ -55,13 +55,14 @@ void PipelineImpl::DoSelectTrack(DemuxerStreamType type, int stream_index,
     std::move(cb).Run(PipelineStatus::kTrackSwitchError);
     return;
   }
-  DemuxerStream* target = nullptr;
-  for (DemuxerStream* stream : composite_->GetStreams(type)) {
-    if (stream->stream_index() == stream_index) {
-      target = stream;
-      break;
-    }
-  }
+  // Asked of the resource rather than answered here: an aggregate source's
+  // indices are per source (docs/14 stage 4 -- two children both count their
+  // streams from their own container order), so "the stream whose index is N"
+  // has no answer a comparison in THIS loop could reach. The loop used to read
+  // `composite_->GetStreams(type)`, which answers SOURCE 0 alone: a secondary
+  // source's subtitle track was not merely unselectable, selecting its index
+  // silently matched nothing and returned kTrackSwitchError.
+  DemuxerStream* target = composite_->FindStream(type, stream_index);
   if (!target) {
     std::move(cb).Run(PipelineStatus::kTrackSwitchError);
     return;
