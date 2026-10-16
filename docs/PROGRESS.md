@@ -4656,3 +4656,95 @@ M3（`Reset` 不清次源注册）**全绿** —— 补了第五条后才红。�
   使用者是 `GlLayerSource`，退役 = 内联 + 删 9 条跨线程记账直测，不划算。
 - **每源文本腿仍未做**（阶段 1 同项）：次源字幕经管线不可达。
 - **提交未推送**：本轮四个 + 文档切片，origin/main 仍停在第七十六轮之前。
+
+## 第七十八轮 —— docs/14 阶段 4：聚合索引空间 + 每源文本腿（补记）
+
+> 本条为**补记**：阶段 4 的落地当时只更新了 docs/14 与 memory，PROGRESS 条目遗漏，
+> 第七十九轮收尾时按三个提交（`ed84ab3` / `ff98d3c` / `d51ff95` + 两个文档提交）补上。
+
+阶段 1 的偏差记着「次源文本流经管线不可达」（`SetActiveStream` 只路由源 0）。本轮
+把它修完，分两半：先让次源流**可寻址、可被 `SelectTrack` 选中**，再让渲染器**按源
+索引文本腿、真解码次源字幕**。
+
+### 切片与提交（五个）
+
+1. `ed84ab3` **聚合索引空间**（media）：`MediaResource` 加 `FindStream(type, index)`
+   （默认扫 `GetStreams`，单源逐字节不变）；`CompositeDemuxer` 按
+   `source_id = index / stride` 路由（`stride = max 子本地索引 + 1`，源 0 偏移 0 →
+   编号不变，`GetStreams`/`IsPrimaryStream` 契约不破）；`SetActiveStream` 先
+   FindStream 校验再按源翻译编号；`media_info()` 聚合偏移 + 标
+   `metadata["avbase:source"]`。测试 `TwoTextSourcesTest` 5 例 + 突变 M4/M5/M6。
+2. `ff98d3c` **`SelectTrack` 走聚合索引空间**：`DoSelectTrack` 改问
+   `composite_->FindStream`，删本层循环 `GetStreams` 比对（旧循环只读源 0，次源
+   字幕轨既不可选、选中又静默回 `kTrackSwitchError`）。
+3. `d51ff95` **每源文本 overlay 渲染**（单提交，不切片）：去默认参把
+   `pipeline_track_select` 与 `renderer.h` 锁死，拆开中间提交不编译。
+   `RendererImpl` 文本腿 `text_stream_` → `vector<TextLeg>`；`OnTracksChanged(kText,
+   ..., source_id)` 选腿（越界 ReportError）；`PumpText`/`OnTextRead` 带 source_id；
+   `Flush`/`StartPlayingFrom` 逐腿自增 generation / 重起泵；`OnTextRead` 写
+   `cue.source_id` 再上行。新增 `MediaResource::SourceIdForIndex`（与 FindStream
+   对称，同一 stride）。`TimedTextCue` 加 `source_id`。
+4/5. `a7e2db0` / `0b559aa` 文档切片：docs/14「阶段 4」节、§7 第 6 条改「宿主侧
+   分流未做」、memory。
+
+### 门禁与突变
+
+media_unittests 384 → **386**；check_invariants 471 全过；clang-format / clang-tidy
+（无 PCH scratch）改动文件 0；cpplint 0 新违规（余者基线 AVBASE_ 头卫士，逐文件
+head vs base 比对证实）。突变 M4/M5/M6/M7/M-render 五处全实跑过红后恢复绿。
+allowlist：`renderer_impl.cc` 590→598、`renderer_impl_controls.cc` 690→693。
+
+### clang-tidy 抓到的接口缺陷（零测试能发现）
+
+`OnTracksChanged` 尾参初写 `int source_id = 0` —— virtual / override 方法带默认参
+违反 `google-default-arguments`（tidy 18.1.8 报 error）。**build + 386 测试全绿**，
+纯 tidy 拦下。去默认参改必需形参，三处单源调用点显式传 `0`。教训：接口加参别图
+省事挂默认值在 virtual 上——这是编译期规则，行为测试永远看不见它。
+
+## 第七十九轮 —— 阶段 4 审查 + 清理：一个楔死的 bug 和四处收敛（未推送）
+
+对 `origin/main..HEAD`（阶段 4 五个提交）同时跑 code-review（Standards + Spec
+两轴）与 simplify-code（reuse / quality / efficiency / altitude 四路）六个只读
+子代理。用户的问法是「有没有冗余和 bug」——两个都有，各按风险分层处置。
+
+### 真 bug：`DoSelectTrack` 先路由后拒绝，无回滚
+
+`pipeline_track_select.cc` 原先**先** `SetActiveStream`（已经改路子 demuxer 的
+激活流）**后**把请求交给渲染器，而渲染器对次源 video/audio 的拒绝路径没有回滚。
+选中次源视频轨的那一刻：旧流停收包、新流无人读、demux 循环楔死，而上层收到
+`kOk`。这正是阶段 4 要消灭的「可选但静默失败」换形复活——换成另一种形状回来了。
+修为路由前按 `SourceIdForIndex` 拒绝（video/audio 仅源 0，§4.2；文本腿按设计
+每源可选）。突变 M-C5 钉住：去掉预检 → 测试断言收到 `kOk`。
+
+### 第二处 CAREFUL：`media_info_` 一身二役
+
+多源 `media_info()` 整体覆写 `media_info_` 成员（它承载合并快照），而
+`SetDuration()` 历来在同一成员上维护「最长时长」高水位 → 一次快照静默冲掉高水位。
+高水位拆到新成员 `reported_duration_`，头注释同步。突变 M8 钉住（5s 时长被二次
+上报）。
+
+### 四处冗余收敛（SAFE）
+
+- `DecodeIndex` 私有方法：索引解码唯一机制，替掉 composite 三处开放编码，每次
+  select 还少算一次 stride。
+- `text_leg(int)` 访问器：镜像既有 `video_renderer(int)`，一处边界检查替三处；
+  header 净零行数（加 4 压 4）。
+- `MakeAnySource`：`MakeSource` 的重载陷阱（unique_ptr 重载在调用点有歧义）改名。
+- `pipeline_impl_start` 双次 `composite_->media_info()` 合一。
+- 另修 docs/03 接口签名漂移（`OnTracksChanged` 3→4 参）与 check_invariants 注释
+  里不存在的 "PumpAllTextLegs"。
+
+### 测试补齐 7 例 + 五处突变反证
+
+kText 越界守卫（M9：删守卫以**进程崩溃**形式红——边界检查类突变的预期形态）、
+flush 逐腿重武装（M10）、时长高水位（M8）、次源 video/audio 选轨拒判且无错误
+事件（M-C5）、次源文本端到端 `cue.source_id == 1`（M-C6）。
+`TextFakeDemuxer` 从单测提升到 `tests/support/`（管线测试建纯文本源所需）。
+
+### 门禁与登记
+
+media_unittests 386 → **393/393**；check_invariants 473 全过；clang-format 13 文件
+全 clean；cpplint 0 新违规；clang-tidy（无 PCH scratch）0 finding。两条潜在不
+对称登记 docs/14 §7 第 7/8 条（stream-id 查询轴 vs 聚合编号空间；stride 走
+GetStreams 而 merge 走 media_info().streams）——今天无调用方踩到，属记录而非
+修复。本轮改动未提交（两个文档/记忆提交待切）。
