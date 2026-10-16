@@ -50,21 +50,30 @@ bool RendererImpl::IsCueStale(const TimedTextCue& cue) const {
   return now.master - cue.pts > max_cue_age_;
 }
 
-void RendererImpl::PumpText() {
-  if (!text_stream_ || !text_decoder_ || text_read_outstanding_ ||
-      text_ended_) {
+void RendererImpl::PumpText(int source_id) {
+  if (source_id < 0 || static_cast<size_t>(source_id) >= text_legs_.size()) {
     return;
   }
-  text_read_outstanding_ = true;
-  const int generation = text_generation_;
-  text_stream_->Read(1, base::BindOnce(&RendererImpl::OnTextRead,
-                                       weak_factory_.GetWeakPtr(), generation));
+  TextLeg& leg = text_legs_[static_cast<size_t>(source_id)];
+  if (!leg.stream || !leg.decoder || leg.read_outstanding || leg.ended) {
+    return;
+  }
+  leg.read_outstanding = true;
+  const int generation = leg.generation;
+  leg.stream->Read(1, base::BindOnce(&RendererImpl::OnTextRead,
+                                     weak_factory_.GetWeakPtr(), source_id,
+                                     generation));
 }
 
-void RendererImpl::OnTextRead(int generation, DemuxerStream::Status status,
+void RendererImpl::OnTextRead(int source_id, int generation,
+                              DemuxerStream::Status status,
                               DemuxerStream::DecoderBufferVector buffers) {
-  text_read_outstanding_ = false;
-  if (generation != text_generation_) {
+  if (source_id < 0 || static_cast<size_t>(source_id) >= text_legs_.size()) {
+    return;
+  }
+  TextLeg& leg = text_legs_[static_cast<size_t>(source_id)];
+  leg.read_outstanding = false;
+  if (generation != leg.generation) {
     return;  // Reply from a leg that was switched away or flushed.
   }
   if (status == DemuxerStream::Status::kAborted) {
@@ -82,14 +91,14 @@ void RendererImpl::OnTextRead(int generation, DemuxerStream::Status status,
   }
   for (auto& buffer : buffers) {
     if (buffer->IsEndOfStream()) {
-      text_ended_ = true;
+      leg.ended = true;
       return;
     }
-    if (text_stream_ && buffer->serial() < text_stream_->serial()) {
+    if (leg.stream && buffer->serial() < leg.stream->serial()) {
       continue;  // Pre-seek generation; docs/04 §4 R1.
     }
     std::vector<TimedTextCue> cues;
-    if (const Status decode = text_decoder_->Decode(*buffer, &cues); !decode) {
+    if (const Status decode = leg.decoder->Decode(*buffer, &cues); !decode) {
       LOG(ERROR) << "avbase.text: decode failed: " << decode.error().ToString();
       continue;
     }
@@ -102,11 +111,14 @@ void RendererImpl::OnTextRead(int generation, DemuxerStream::Status status,
           ++stale_cues_dropped_;
           continue;
         }
+        // Tag the cue with the source it was decoded from so a multi-source
+        // host can route it to the right subtitle surface (docs/14 stage 4).
+        cue.source_id = source_id;
         client_->OnTimedText(cue);
       }
     }
   }
-  PumpText();
+  PumpText(source_id);
 }
 
 }  // namespace avbase::media

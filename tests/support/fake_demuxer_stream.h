@@ -78,6 +78,9 @@ class FakeDemuxerStream final : public DemuxerStream {
   const VideoDecoderConfig& video_decoder_config() const override {
     return video_config_;
   }
+  const TextDecoderConfig& text_decoder_config() const override {
+    return text_config_;
+  }
   DemuxerStreamType type() const override { return type_; }
   int32_t stream_index() const override { return stream_index_; }
   bool SupportsConfigChanges() const override {

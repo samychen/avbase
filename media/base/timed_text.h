@@ -16,6 +16,11 @@ namespace avbase::media {
 // time only" (avbase upgrade plan §Phase 4.2): layout and rendering belong to
 // the host, which is why both a plain string and the raw markup are carried.
 struct AVBASE_MEDIA_EXPORT TimedTextCue {
+  // Which source this cue belongs to (docs/14 stage 4). The host's subtitle
+  // overlay keys its surface on this, so a secondary source's track renders on
+  // its own layer instead of over the primary. 0 for single-source and for any
+  // pre-stage-4 consumer that never set it.
+  int source_id = 0;
   base::TimeDelta pts;
   base::TimeDelta duration;
   std::string text;  // Plain text, all cue lines joined with '\n'.

@@ -71,6 +71,10 @@ void PipelineImpl::DoSelectTrack(DemuxerStreamType type, int stream_index,
   // draining its stream, that stream's queue would wedge the demux loop on
   // its own watermark and starve the very track we are switching to.
   composite_->SetActiveStream(type, stream_index);
+  // Which source this index belongs to, so the renderer wires the right text
+  // leg (docs/14 stage 4). Derived from the same aggregate numbering FindStream
+  // used, so the two never disagree about the source.
+  const int source_id = composite_->SourceIdForIndex(type, stream_index);
   // The renderer reports a failed handover through Client::OnError and still
   // runs the completion closure; that closure only means "the attempt
   // finished and the pipeline is consistent".
@@ -79,6 +83,7 @@ void PipelineImpl::DoSelectTrack(DemuxerStreamType type, int stream_index,
                                  [](PipelineStatusCallback cb) {
                                    std::move(cb).Run(PipelineStatus::kOk);
                                  },
-                                 std::move(cb)));
+                                 std::move(cb)),
+                             source_id);
 }
 }  // namespace avbase::media

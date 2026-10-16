@@ -97,6 +97,12 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   // so a child still receives its own numbering.
   DemuxerStream* FindStream(DemuxerStreamType type, int stream_index) override;
 
+  // The source a stream index belongs to, under the same aggregate numbering as
+  // FindStream. Answers index / stride (see FindStream); an out-of-range index
+  // falls back to 0 so a caller that already failed FindStream gets a harmless
+  // source rather than an invalid one.
+  int SourceIdForIndex(DemuxerStreamType type, int stream_index) override;
+
   // Demuxer lifecycle, fanned out to every child. Each child carries its own
   // open parameters in its Source bundle; the single |source|/|options| from
   // Demuxer::Initialize do not apply to a multi-source resource and are

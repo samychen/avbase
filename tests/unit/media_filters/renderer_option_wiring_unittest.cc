@@ -319,7 +319,8 @@ TEST_F(MaxFpsOptionTest, TheCapSurvivesAVideoTrackSwitch) {
   bool switch_done = false;
   renderer_->OnTracksChanged(
       DemuxerStreamType::kVideo, second,
-      base::BindOnce([](bool* flag) { *flag = true; }, &switch_done));
+      base::BindOnce([](bool* flag) { *flag = true; }, &switch_done),
+      /*source_id=*/0);
   ASSERT_TRUE(WaitFor([&switch_done] { return switch_done; }))
       << "the video track switch never completed";
 

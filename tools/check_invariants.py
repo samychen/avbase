@@ -59,12 +59,15 @@ LINE_LIMIT_ALLOWLIST = {
     # liveness cannot be discovered by the renderer, which is the non-obvious
     # part.
     "media/filters/renderer_impl_controls.cc": (
-        690, "Renderer control surface: the Set* family, GetMediaTime, the "
+        693, "Renderer control surface: the Set* family, GetMediaTime, the "
              "accurate-seek window, the audio AND video track switches (with "
              "the multi-source foreign-stream guards, docs/14 stage 1) and "
              "the renderer type. The video switch added ~170 lines (docs/12 "
              "4.1); splitting the track switches into their own TU is the "
-             "pending fix."),
+             "pending fix. docs/14 stage 4 added a bounds-check to the kText "
+             "branch of OnTracksChanged (reject a source_id that names no "
+             "registered source before indexing text_legs_), raising it "
+             "690 -> 693."),
     "player/player_impl.cc": (
         500, "The facade: config validation, the source/pipeline lifecycle, "
              "track selection, options and the public event surface. Its "
@@ -111,14 +114,17 @@ LINE_LIMIT_ALLOWLIST = {
              "before/after numbers live in the comment on CanPerformWsola(). "
              "See the LENGTH note in the file header."),
     "media/filters/renderer_impl.cc": (
-        590, "Sub-renderer lifecycle plumbing: the initialize/flush/ended "
+        598, "Sub-renderer lifecycle plumbing: the initialize/flush/ended "
              "fan-out across the video and audio halves plus the "
              "buffering-verdict wiring from M9's starvation work. The two "
              "halves mirror each other call for call; splitting video from "
              "audio would duplicate the state machine instead of naming a "
              "seam. Sub-renderer construction and callback wiring moved to "
              "renderer_impl_sources.cc (docs/14 stage 1, C1 split) and the "
-             "ceiling moved down with it (600 -> 590). Revisit when M9 "
+             "ceiling moved down with it (600 -> 590). docs/14 stage 4 added "
+             "the per-source text-leg fan-out to Flush and StartPlayingFrom "
+             "(one Reset/PumpAllTextLegs loop per source instead of the old "
+             "single PumpText), raising it 590 -> 598. Revisit when M9 "
              "BufferController absorbs CheckBufferingTransitions()."),
 }
 

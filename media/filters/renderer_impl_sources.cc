@@ -49,6 +49,10 @@ void RendererImpl::CreateSubRenderers(
   video_renderers_.resize(sources.size());
   video_initialized_.assign(sources.size(), true);
   video_ended_.assign(sources.size(), true);
+  // One text leg per source (docs/14 stage 4); a leg stays empty until a text
+  // track is selected for that source via OnTracksChanged(kText, ..., id).
+  // resize (not assign) because TextLeg holds a unique_ptr and is non-copyable.
+  text_legs_.resize(sources.size());
 
   // The host sink goes to the FIRST source that has a video leg. With source 0
   // carrying video -- every single-source pipeline, and the common
@@ -200,8 +204,8 @@ void RendererImpl::SetSourceOffset(int source_id, base::TimeDelta offset) {
 // |source_index| picks which of the three video callbacks are wired. The
 // frame-presented hook is source 0's alone: it feeds the master video clock
 // and the accurate-seek window, both of which are source-0 concepts until
-// stage 2 (docs/14 §4.1: "合成仍走源 0 主层"). A secondary leg's frames still
-// reach its sink -- they just do not move the clock.
+// stage 2 (docs/14 §4.1): secondary-leg frames reach their sink; they just do
+// not move the master clock.
 void RendererImpl::WireVideoCallbacks(int source_index) {
   VideoRendererImpl* v =
       video_renderers_[static_cast<size_t>(source_index)].get();

@@ -488,6 +488,19 @@ TEST_F(TwoTextSourcesTest, EnumerationStillAnswersSourceZeroAlone) {
   EXPECT_EQ(all[1], s0_->stream(1));
 }
 
+// The index-to-source map the renderer consumes to wire the right text leg
+// (docs/14 stage 4). Source 0 keeps its own numbers; source 1's aggregate
+// numbers (stride + child index) resolve to source 1; out-of-range indices are
+// not a source the composite knows, so they fall back to 0 rather than
+// fabricating an invalid one.
+TEST_F(TwoTextSourcesTest, SourceIdForIndexRoutesToTheOwningSource) {
+  EXPECT_EQ(comp_->SourceIdForIndex(DemuxerStreamType::kText, 2), 0);
+  EXPECT_EQ(comp_->SourceIdForIndex(DemuxerStreamType::kText, 3), 0);
+  EXPECT_EQ(comp_->SourceIdForIndex(DemuxerStreamType::kText, kStride + 2), 1);
+  EXPECT_EQ(comp_->SourceIdForIndex(DemuxerStreamType::kText, kStride + 3), 1);
+  EXPECT_EQ(comp_->SourceIdForIndex(DemuxerStreamType::kText, 8), 0);
+}
+
 // A wrapped single source must number its streams exactly as the bare demuxer
 // does, which is what makes stage 4 invisible to every existing caller.
 TEST(CompositeDemuxerTest, WrappingOneSourceDoesNotRenumberIt) {
@@ -542,6 +555,10 @@ TEST(CompositeDemuxerTest, WrappingOneSourceDoesNotRenumberIt) {
 //       MergedInfoNumbersEverySourceAndMarksWhichIsWhich fails
 //       (streams[3].index is 3 not stride+3, and the source owner lookup is
 //       absent). Restore.
+//   M7: in composite_demuxer.cc, make SourceIdForIndex always return 0
+//       (`return 0;`). SourceIdForIndexRoutesToTheOwningSource fails on the
+//       two secondary lookups (kStride+2/3 resolve to 0 not 1) -- the very
+//       number the renderer consumes to wire the right text leg. Restore.
 //
 // All mutations were run, seen red, reverted, and re-verified green.
 // ---------------------------------------------------------------------------

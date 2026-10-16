@@ -203,7 +203,8 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   base::TimeDelta GetMediaTime() override;
   void OnTracksChanged(DemuxerStreamType track_type,
                        DemuxerStream* enabled_track,
-                       base::OnceClosure change_completed_cb) override;
+                       base::OnceClosure change_completed_cb,
+                       int source_id) override;
   RendererType GetRendererType() override;
   void TakeSnapshot(base::TimeDelta at,
                     Renderer::SnapshotFrameCallback callback) override;
@@ -280,8 +281,8 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
                                   PipelineStatus status);
   // Text leg pump (Phase 4.2). All S1; Read replies are posted there by the
   // demuxer stream.
-  void PumpText();
-  void OnTextRead(int generation, DemuxerStream::Status status,
+  void PumpText(int source_id);
+  void OnTextRead(int source_id, int generation, DemuxerStream::Status status,
                   DemuxerStream::DecoderBufferVector buffers);
   // True when |cue| is too far behind the media clock to be worth showing, per
   // the live-edge policy SetSourceLiveness() installed. Always false when the
@@ -397,18 +398,17 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // contract as the stream pointers; the foreign-stream guard in
   // OnTracksChanged asks it LIVE (IsPrimaryStream carries the snapshot lesson).
   base::raw_ptr<MediaResource> media_resource_{nullptr};
-  // Text leg (Phase 4.2): the base renders nothing -- it decodes subtitle
-  // packets on S1 and hands cues to the client. |text_generation_| invalidates
-  // in-flight Read replies across switches and flushes (the stream aborts
-  // them, but only the generation knows which reply belongs to which leg).
-  DemuxerStream* text_stream_{nullptr};
-  std::unique_ptr<TextDecoder> text_decoder_;
-  bool text_read_outstanding_{false};
-  bool text_ended_{false};
-  int text_generation_{0};
-  // Live-edge text policy (Renderer::SetSourceLiveness). S1-only: the setter is
-  // called on the media sequence before playback starts, and IsCueStale() runs
-  // on S1 from OnTextRead.
+  // Text legs (docs/14 stage 4): one per source, indexed by source_id; source 0
+  // is the old single text_stream_; |TextLeg::generation| invalidates reads.
+  struct TextLeg {
+    DemuxerStream* stream = nullptr;
+    std::unique_ptr<TextDecoder> decoder;
+    bool read_outstanding = false;
+    bool ended = false;
+    int generation = 0;
+  };
+  std::vector<TextLeg> text_legs_;
+  // Live-edge text policy (Renderer::SetSourceLiveness), applied to every leg.
   bool source_is_live_{false};
   base::TimeDelta max_cue_age_{base::TimeDelta()};
   // Counted so the policy is observable rather than merely correct: a live

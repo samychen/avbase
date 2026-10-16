@@ -25,6 +25,7 @@
 
 #include "media/filters/renderer_impl.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -54,6 +55,7 @@
 #include "tests/support/fake_demuxer_stream.h"
 #include "tests/support/fake_renderer_sinks.h"
 #include "tests/support/fake_sink_factories.h"
+#include "tests/support/fake_text_decoder.h"
 #include "tests/support/mock_renderer_client.h"
 
 namespace avbase::media {
@@ -114,6 +116,24 @@ class RendererMultiSourceTest : public ::testing::Test {
       audio->set_stream_index(source * 2 + 1);
       resource_.set_stream(source, DemuxerStreamType::kAudio, audio.get());
       audio_streams_.push_back(std::move(audio));
+    }
+  }
+
+  // Adds a text leg to each of the two sources (docs/14 stage 4): every source
+  // gets a scriptable text stream with a valid subtitle codec config, so the
+  // per-source text leg can be exercised without a second pipeline. The index
+  // is distinct from the video/audio ones but the numbering is source-local.
+  void SetTwoSourcesWithText() {
+    SetTwoSources();
+    for (int source = 0; source < 2; ++source) {
+      TextDecoderConfig text_config;
+      text_config.codec_name = "srt";
+      auto text = std::make_unique<test::FakeDemuxerStream>(
+          DemuxerStreamType::kText, test::MakeValidAudioConfig(),
+          test::MakeValidVideoConfig(), text_config);
+      text->set_stream_index(source * 2 + 1);
+      resource_.set_stream(source, DemuxerStreamType::kText, text.get());
+      text_streams_.push_back(std::move(text));
     }
   }
 
@@ -311,6 +331,7 @@ class RendererMultiSourceTest : public ::testing::Test {
   test::FakeMediaResource resource_;
   std::vector<std::unique_ptr<test::FakeDemuxerStream>> video_streams_;
   std::vector<std::unique_ptr<test::FakeDemuxerStream>> audio_streams_;
+  std::vector<std::unique_ptr<test::FakeDemuxerStream>> text_streams_;
   std::unique_ptr<RendererImpl> renderer_;
   test::FakeRendererClient client_;
   std::unique_ptr<AudioBus> audio_bus_;
@@ -459,7 +480,8 @@ TEST_F(RendererMultiSourceTest, SwitchingToAnotherSourcesVideoTrackIsRefused) {
   bool switch_done = false;
   renderer_->OnTracksChanged(
       DemuxerStreamType::kVideo, video_streams_[1].get(),
-      base::BindOnce([](bool* flag) { *flag = true; }, &switch_done));
+      base::BindOnce([](bool* flag) { *flag = true; }, &switch_done),
+      /*source_id=*/0);
 
   // Refused, not crashed and not silently wired into source 0's renderer:
   // the caller's callback still runs (a wait on it must not hang), the error
@@ -494,7 +516,8 @@ TEST_F(RendererMultiSourceTest, SwitchingToAnotherSourcesAudioTrackIsRefused) {
   bool switch_done = false;
   renderer_->OnTracksChanged(
       DemuxerStreamType::kAudio, audio_streams_[1].get(),
-      base::BindOnce([](bool* flag) { *flag = true; }, &switch_done));
+      base::BindOnce([](bool* flag) { *flag = true; }, &switch_done),
+      /*source_id=*/0);
 
   ASSERT_TRUE(WaitFor([&switch_done] { return switch_done; }));
   EXPECT_TRUE(client_.Has("error"));
@@ -669,6 +692,41 @@ TEST_F(RendererMultiSourceTest, SecondaryLegRoutesThroughSourceAwareSink) {
     EXPECT_EQ(frame->serial(), kSecondaryVideoSerial)
         << "the source-aware sink received a frame that is not source 1's";
   }
+}
+
+// Per-source text leg (docs/14 stage 4). Source 1's subtitle track must be
+// decoded and delivered tagged with source 1, not collapsed onto source 0's
+// leg.
+// The cue's source_id is what lets a multi-source host route it to the right
+// subtitle surface; without it every source's subtitles would pile onto the
+// primary overlay.
+TEST_F(RendererMultiSourceTest, SecondarySourceTextCueCarriesSourceId) {
+  SetTwoSourcesWithText();
+  auto text_factory = base::MakeRefCounted<test::FakeTextDecoderFactory>();
+  text_factory->set_text("secondary");
+  RendererImpl::Deps deps = MakeDeps();
+  deps.text_decoder_factory = text_factory;
+  CreateRendererWith(std::move(deps));
+  Initialize();
+  ASSERT_TRUE(WaitFor([this] { return init_done_; }));
+  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+
+  // Script a cue into source 1's text stream, then select it AS source 1.
+  text_streams_[1]->AppendBuffer(
+      test::MakeDataBuffer(DemuxerStreamType::kText, /*serial=*/0));
+  std::atomic<bool> changed{false};
+  renderer_->OnTracksChanged(
+      DemuxerStreamType::kText, text_streams_[1].get(),
+      base::BindOnce([](std::atomic<bool>* c) { c->store(true); }, &changed),
+      /*source_id=*/1);
+  // The pump reads the scripted buffer and delivers the cue synchronously
+  // (FakeDemuxerStream completes Read inline), so by now a cue has arrived.
+  EXPECT_TRUE(changed.load());
+  ASSERT_FALSE(client_.cues().empty())
+      << "no subtitle cue was delivered for source 1's text track";
+  EXPECT_EQ(client_.cues().back().source_id, 1)
+      << "the delivered cue was not tagged with the source it came from";
+  EXPECT_FALSE(client_.Has("error")) << client_.last_error().ToString();
 }
 
 }  // namespace

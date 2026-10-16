@@ -445,7 +445,13 @@ void RendererImpl::StartPlayingFrom(base::TimeDelta time) {
                        weak_factory_.GetWeakPtr()),
         kStatsInterval);
   }
-  PumpText();
+  // Re-arm every source's text leg (docs/14 stage 4); the per-leg generation
+  // was bumped by the seek's Flush, so each active leg starts a fresh read.
+  for (size_t i = 0; i < text_legs_.size(); ++i) {
+    if (text_legs_[i].stream) {
+      PumpText(static_cast<int>(i));
+    }
+  }
 }
 
 // The class's other seams, all C1 line-count splits: sub-renderer
@@ -470,12 +476,14 @@ void RendererImpl::Flush(base::OnceClosure flush_cb) {
   ended_ = false;
   std::fill(video_ended_.begin(), video_ended_.end(), false);
   audio_ended_ = false;
-  // The text leg's pending Read is aborted by the demuxer flush; the
-  // generation bump makes the reply a no-op, and the pump re-arms at
-  // StartPlayingFrom.
-  ++text_generation_;
-  text_read_outstanding_ = false;
-  text_ended_ = false;
+  // The text legs' pending Reads are aborted by the demuxer flush; the
+  // generation bump makes each reply a no-op, and the pump re-arms at
+  // StartPlayingFrom (docs/14 stage 4: one leg per source).
+  for (auto& leg : text_legs_) {
+    ++leg.generation;
+    leg.read_outstanding = false;
+    leg.ended = false;
+  }
   // A flush empties every queue by definition, so the starvation edge is
   // deterministic here -- emitting it directly rather than letting the 10 ms
   // sampler race the demuxer's refill (a sub-10ms dry window is invisible to

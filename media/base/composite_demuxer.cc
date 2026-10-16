@@ -85,6 +85,20 @@ DemuxerStream* CompositeDemuxer::FindStream(DemuxerStreamType type,
                                                            source_id * stride);
 }
 
+int CompositeDemuxer::SourceIdForIndex(DemuxerStreamType type,
+                                       int stream_index) {
+  (void)type;  // |stride| is type-agnostic.
+  const int stride = IndexStride();
+  if (stream_index < 0 || stride <= 0) {
+    return 0;
+  }
+  const int source_id = stream_index / stride;
+  if (source_id >= static_cast<int>(sources_.size())) {
+    return 0;
+  }
+  return source_id;
+}
+
 int CompositeDemuxer::IndexStride() const {
   // Derived, not a constant: a fixed stride would be a promise about how many
   // streams a container can carry, and breaking it would produce a collision

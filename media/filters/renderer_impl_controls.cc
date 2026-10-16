@@ -225,11 +225,20 @@ base::TimeDelta RendererImpl::GetMediaTime() {
 
 void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
                                    DemuxerStream* enabled_track,
-                                   base::OnceClosure change_completed_cb) {
+                                   base::OnceClosure change_completed_cb,
+                                   int source_id) {
   if (track_type == DemuxerStreamType::kText) {
-    // Phase 4.2 text leg: the base renders nothing, it decodes cue packets on
-    // S1 and hands TimedTextCues to the client (kTimedText events). Disabling
-    // (|enabled_track| == nullptr) tears the leg down.
+    // Per-source text leg (docs/14 stage 4): decode cues on S1, deliver them
+    // tagged with |source_id|; a null |enabled_track| tears the leg down.
+    if (source_id < 0 || static_cast<size_t>(source_id) >= text_legs_.size()) {
+      ReportError(MediaError(
+          ErrorCode::kInvalidArgument, "text track names an unknown source",
+          "source_id " + std::to_string(source_id) + " but " +
+              std::to_string(text_legs_.size()) + " source(s) exist",
+          "select a track whose media_info index maps to a registered source"));
+      std::move(change_completed_cb).Run();
+      return;
+    }
     if (!deps_.text_decoder_factory) {
       ReportError(MediaError(
           ErrorCode::kNotImplemented, "text track selection is not available",
@@ -239,11 +248,11 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
       std::move(change_completed_cb).Run();
       return;
     }
-    ++text_generation_;
-    text_read_outstanding_ = false;
-    text_ended_ = false;
-    text_stream_ = enabled_track;
-    text_decoder_.reset();
+    auto& leg = text_legs_[static_cast<size_t>(source_id)];
+    ++leg.generation;
+    leg.read_outstanding = leg.ended = false;
+    leg.stream = enabled_track;
+    leg.decoder.reset();
     if (enabled_track) {
       const TextDecoderConfig& config = enabled_track->text_decoder_config();
       if (!config.IsValidConfig()) {
@@ -255,8 +264,8 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
         std::move(change_completed_cb).Run();
         return;
       }
-      text_decoder_ = deps_.text_decoder_factory->CreateTextDecoder(config);
-      if (!text_decoder_) {
+      leg.decoder = deps_.text_decoder_factory->CreateTextDecoder(config);
+      if (!leg.decoder) {
         ReportError(MediaError(
             ErrorCode::kNotImplemented,
             "cannot decode that subtitle codec (\"" + config.codec_name + "\")",
@@ -267,9 +276,7 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
         std::move(change_completed_cb).Run();
         return;
       }
-      PumpText();
-    } else {
-      text_decoder_.reset();
+      PumpText(source_id);
     }
     std::move(change_completed_cb).Run();
     return;

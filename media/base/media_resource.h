@@ -121,6 +121,17 @@ class AVBASE_MEDIA_EXPORT MediaResource {
     return nullptr;
   }
 
+  // The source a stream index belongs to, under the SAME aggregate numbering as
+  // FindStream (docs/14 stage 4). The default answers 0: a single-source
+  // resource has exactly one source, so every index is source 0's. Aggregates
+  // override to return index / stride. This is what lets a track switch name
+  // WHICH source's leg to (re)wire without the caller recomputing the stride.
+  virtual int SourceIdForIndex(DemuxerStreamType type, int stream_index) {
+    (void)type;
+    (void)stream_index;
+    return 0;
+  }
+
   // How many sources this resource carries (docs/14, stage 1). 1 is the
   // default and the truth for every resource that is not an aggregate: a
   // single Demuxer is one source, and the stage-0 test fakes are one source

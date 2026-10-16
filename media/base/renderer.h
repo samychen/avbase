@@ -205,10 +205,13 @@ class AVBASE_MEDIA_EXPORT Renderer {
   virtual base::TimeDelta GetMediaTime() = 0;
 
   // Track selection changed. |enabled_track| is nullptr to disable that track
-  // type entirely (config.video.disabled / config.audio.disabled).
+  // type entirely (config.video.disabled / config.audio.disabled). |source_id|
+  // names the source this track belongs to (0 for the primary source; a
+  // secondary source id when the pipeline is fed by CompositeDemuxer).
   virtual void OnTracksChanged(DemuxerStreamType track_type,
                                DemuxerStream* enabled_track,
-                               base::OnceClosure change_completed_cb) = 0;
+                               base::OnceClosure change_completed_cb,
+                               int source_id) = 0;
 
   // Both added when M8 wired the pipeline (docs/PROGRESS.md, playback round).
   // They are pure additions with default no-ops, so no existing renderer had
