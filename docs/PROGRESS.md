@@ -5,7 +5,7 @@
 
 ## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）· 4.6 覆盖率链路本机闭环复现（见第三十五轮）· docs/07 §5 计数三例两例转绿、顺线修掉一个真死锁（见第三十六轮）· docs/07 §5 计数三例**全部转&#x7EFF;**、顺线修掉解码器丢包（见第三十七轮）** · 抽出 AudioConverter 与 VideoConverter 对称（见第四十九轮）\**
 
-最后更新：**2026-10-10（第四十九轮）** —— 摘要见下方「第四十九 / 四十八 / 四十六轮」几节。
+最后更新：**2026-10-16（第七十六轮）** —— 摘要见下方「第七十六 / 七十五 / 七十四轮」几节；更早里程碑见下。
 
 > 第四十八轮：**`EncodedPacket` 归位到值类型层**（`media/filters/encoded_packet.h` →  
 > `media/base/`）。它是 `DecoderBuffer` 在**编码侧**的同形状镜像（一个压缩包 + 时间戳 +  
@@ -4492,3 +4492,98 @@ operations.md 有记）。重建后实跑 90/90。
   `media/filters` 与 tests，未碰 `media/ffmpeg`（无 PCH scratch 库才看得见它，
   operations.md 有命令）；CI 在 Ubuntu 上没这个问题。
 - **提交未推送**：本轮三个 + 文档切片，origin/main 仍停在第七十四轮之前。
+
+## 第七十六轮 —— docs/14 阶段 2：时钟多轴（每源偏移表 + 渲染器接线 + seek 落点差导出）
+
+承接第七十五轮（阶段 1 渲染多路）：本轮落地 docs/14 **阶段 2**（时钟多轴）。
+切片 A/B/C 三个提交（51c2692 / 4c280c6 / 74596dd）；落地进度与门禁见 docs/14。
+
+### 设计契约（docs/14 §5 / §7.2）
+- **主时钟** = 主源（source 0）音频钟，沿用今天（`av_sync_controller.h` 不变）；
+  次源不再各自持 `AvSyncController`——次源解码由主时钟以 pull 模型拽帧，次源帧
+  以其自身 pts + 每源**播放偏移**映射到主时间轴。
+- **偏移语义**：`SourceTime(id, pts) = pts + offset(id)`；源 0 恒身份元且偏移
+  **不可设**（主钟就是源 0 音频钟，再移一次等于同一 skew 修正两遍）；未注册源
+  同样恒身份元；`kNoTimestamp` 直穿。
+- **每腿时钟推送**：`PushMasterClock` 按腿推 `master - source_offset(i)`——
+  合成器把帧 pts 与所给钟比较，故腿 i 按「master - offset_i」pacing ⟺ 帧在主钟
+  到达 `SourceTime(i, pts)` 时呈现。这是 `SourceTime` 的反向，即设计书 §5.1 公式。
+- **逐源 offset 由 seek 落点差产出**（§7.2）：每个源的 seek 落在它自己的 keyframe
+  几何上，落点之差就是让两条时间轴对齐到同一主钟时刻所需的偏移。
+
+### 切片A 每源偏移表（51c2692）
+`AvSyncController` 新增 `RegisterSource(id)` / `SetSourceOffset(id, delta)` /
+`SourceTime(id, media_pts)` / `source_offset(id)`；私有 `source_offsets_` 向量受
+`source_lock_` 保护（阶段 3 合成器将从渲染序列读 `SourceTime`）。`SetSourceOffset`
+对 `id<=0` 文档化 no-op；未注册走 `DCHECK(false)` 后 return。7 条单测，突变：
+- **M-A1**：`SourceTime` 忽略 offset（返回原 pts）→ 3 红。
+- **M-A2**：源 0 加入偏移表 → 先补 `RegisterSource(0)`（生产里 Initialize 注册
+  所有源）后 2 红。
+
+### 切片B 偏移接进渲染器（4c280c6）
+三段式接线：① **注册**——`RendererImpl::Initialize` 每源（含纯音频源）向时钟
+控制器 `RegisterSource(id)`，否则后续 `SetSourceOffset` 被静默忽略；② **每腿推送**
+——`renderer_impl_reporting.cc` 的 `PushMasterClock` 按腿推 `master - offset(i)`；
+③ **接口**——`Renderer::SetSourceOffset` 默认 no-op（与 `SetPaused` /
+`BeginAccurateSeek` 同族），实现住在 `renderer_impl_sources.cc`（它是关于「源」的
+陈述，由逐源 seek 落点产出 §7.2，不是播放控制）。
+读回面：`VideoFrameCompositor::master_clock()` 与 `VideoRendererImpl` 转发；
+compositor 的 `master_clock_` 默认值 **0 → kNoTimestamp**——0 是合法媒体时间（每
+个文件第一秒），默认 0 会谎称已推送；所有读者 gate 在 `master_clock_valid_`，故
+中性。顺带删掉 .cc 匿名命名空间重复的 `IsNoTimestamp`（与新 include 二义，行为
+逐字节相同）。测试两半（renderer_multi_source_unittest.cc）：结构性读回两腿钟差
+2s + 行为性偏移 2s 挂住次源帧（窗口按主钟位置定界，测试主钟跑得比墙钟快）；
+`CohereGenerations()` 把两源所有流打到同一 serial（合成器 serial 守卫）。
+突变：
+- **M-B1**：推送不减 offset → 两条阶段 2 测试全红（读回差≈0 + 挂钟失效）。
+- **M-B2**：不注册源 → debug 下 `DCHECK FATAL`；按纪律去掉 DCHECK 后验证断言
+  自身同样抓住（五处 Failure）——不是只靠断言宏兜底。
+C1 拆分：`SetSourceOffset` 从 `renderer_impl_controls.cc` 迁至 `sources.cc`
+（结构性理由），`renderer_impl.h` 509→500、`renderer_impl.cc` 591→590（棘轮只降不升）。
+
+### 切片C seek 落点差导出偏移（74596dd）
+- **CompositeDemuxer 记录逐源落点**：`StartPlayingFrom` 扇出循环带索引，
+  `OnChildSeeked` 以 `int source_id` 作为 `BindOnce` 前绑参数，把落点写进
+  `seek_actuals_[source_id]`（聚合 max 仍保留作管线续播回答）；新增
+  `seek_actuals()` 只读访问，向量由 `StartPlayingFrom` 按源数重建（早于 seek 的读者
+  见空向量）。
+- **PipelineImpl 从落点差导出**：新增 `ApplySourceOffsets()`，在 `OnSeekDemuxerDone`
+  成功分支、`FinishSeek` 之前调用（首帧必须先按带偏移的腿钟 pacing）；
+  `offset_i = actual_0 - actual_i`（i≥1，源 0 跳过）。
+- **测试夹具 `BuildGraph()` 提取**（pipeline_fixture.h）：纯提取，双源测试复用，
+  行为不变（全量回归绿即证）。
+- 测试：composite 单测三例（逐源落点 + 逆序钉索引 `SeekLandingsAreIndexed
+  NotOrdered` 专抓「聚合写满所有槽」+ 单源每次 seek 重录不追加）；
+  新建 `pipeline_multi_source_unittest.cc` 三例（落点差导出 / 二次 seek 重导 /
+  单源无偏移）。双源刻意用**不同 GOP**（源1 90 帧 vs 源0 30 帧）：同间隔则差恒零、
+  所有断言真空通过。
+- 突变：M-C1（聚合差代替逐源差 → 红）、M-C2（符号反向 → 红）、M-C3（偏移陈述
+  到错误腿 `SetSourceOffset(0,…)` → 红）、M-C4（composite 聚合写满所有槽 → 多源
+  偏移 0 红，composite 逆序测试同层抓住）。**诚实发现**：「去掉 size()<2 守卫」
+  突变**不红**——`for i=1` 循环天然跳过单源，守卫真正的职责是空向量越界保护
+  （已在代码注释与测试反证注释里如实写明，不列为反证）。
+
+### 门禁（全绿）
+- media 377/377、player 40/40（切片 C 夹具提取后全量回归）；切片 B 多源套件
+  7/7 且 10 连跑零抖动。
+- clang-format 18.1.3 / cpplint 1.6.1（CI 口径：不扫 legacy/tests）/ clang-tidy
+  18.1.8 零发现；`check_invariants` 全绿（C23 两行超长来自 baseline）。
+- ffmpeg 套件 90/90（注意 `build/ffmpeg` 是 ninja 目录，跑错生成器会被管道吞
+  退出码、对旧二进制假绿——见 operations.md 与第六十五轮同形陷阱）。
+
+### 纪律复盘（本轮两次撞到的坑）
+- **突变必须真跑一遍看有没有红**：M-C3「去掉守卫」若不实跑，会以为有反证，
+  实则循环跳过、断言真空通过——写了假反证注释。已改用真能抓住的错腿突变。
+- **限频截断会让还原命令不执行**：第七十六轮中途撞 429，最后一步 `cp` 还原
+  composite 被吞，磁盘残留 M-C4 突变（写入聚合到所有槽），下一轮复跑 3 测试红才
+  暴露——先 `git diff` 核验工作树只剩意图改动，再继续，避免带突变提交。
+
+### 留下的问题
+- **阶段 3 待做**：合成器升格（`GlSceneEngine` 收各源 sink 帧）并退役 L5「第二路
+  Player + 邮箱」绕行（`SceneSource::MakePublisherFactory()` 废弃）；§2 的 SDK 场景
+  门面（第二路 Player + 邮箱）在阶段 3 才退役。见 docs/14 §6。
+- **每源文本腿仍未做**（阶段 1 同项）：次源字幕经管线不可达。
+- **本机 clang-tidy 对 `media/ffmpeg` 的 PCH 陷阱依旧**：本轮 tidy 只跑
+  `media/base` 与 `media/filters`，未碰 `media/ffmpeg`（无 PCH scratch 库才看得见，
+  operations.md 有命令）；CI 在 Ubuntu 上没这个问题。
+- **提交未推送**：本轮三个 + 文档切片，origin/main 仍停在第七十五轮之前。
