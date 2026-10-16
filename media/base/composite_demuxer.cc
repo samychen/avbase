@@ -95,6 +95,7 @@ void CompositeDemuxer::StartPlayingFrom(base::TimeDelta time,
   seek_cb_ = std::move(cb);
   seek_status_ = Status();
   seek_actual_ = base::TimeDelta();
+  seek_actuals_.assign(sources_.size(), base::TimeDelta());
   pending_seeks_ = sources_.size();
   if (pending_seeks_ == 0) {
     if (seek_cb_) {
@@ -102,19 +103,29 @@ void CompositeDemuxer::StartPlayingFrom(base::TimeDelta time,
     }
     return;
   }
-  for (auto& child : sources_) {
-    child.demuxer->StartPlayingFrom(
+  for (size_t i = 0; i < sources_.size(); ++i) {
+    sources_[i].demuxer->StartPlayingFrom(
         time, base::BindOnce(&CompositeDemuxer::OnChildSeeked,
-                             weak_factory_.GetWeakPtr()));
+                             weak_factory_.GetWeakPtr(), static_cast<int>(i)));
   }
 }
 
-void CompositeDemuxer::OnChildSeeked(Status status, base::TimeDelta actual) {
+void CompositeDemuxer::OnChildSeeked(int source_id, Status status,
+                                     base::TimeDelta actual) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK_GE(source_id, 0);
+  DCHECK_LT(static_cast<size_t>(source_id), seek_actuals_.size());
   if (!status.has_value() && seek_status_.has_value()) {
     seek_status_ = status;
   }
   seek_actual_ = std::max(seek_actual_, actual);
+  // Recorded whatever the child returned: the AGGREGATE above is what the
+  // callback sees, and a failed seek's landing is not a position anything
+  // should align to -- the pipeline applies the offsets only when the
+  // aggregate status is ok (stage 2). Recording it anyway keeps the vector
+  // the complete answer to "where did each child land", which is what a
+  // diagnostic needs after a partial failure.
+  seek_actuals_[static_cast<size_t>(source_id)] = actual;
   if (--pending_seeks_ == 0 && seek_cb_) {
     std::move(seek_cb_).Run(seek_status_, seek_actual_);
   }

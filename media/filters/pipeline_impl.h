@@ -154,6 +154,10 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
                      PipelineStatusCallback cb);
   void FinishStop();
   void OnSeekDemuxerDone(Status status, base::TimeDelta actual);
+  // Stage 2 (docs/14 §7.2): derives each secondary source's playback offset
+  // from where its seek landed relative to source 0's, and states it to the
+  // renderer. Runs on a SUCCESSFUL seek only, before rendering restarts.
+  void ApplySourceOffsets();
   void OnRendererFlushed();
   void FinishSeekIfBothDone();
   void DoStop();

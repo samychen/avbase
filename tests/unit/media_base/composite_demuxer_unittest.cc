@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// CompositeDemuxer (docs/14 stage 0): the addressing axis and the lifecycle
-// fan-out. These tests exist so that the axis is PROVEN to be consumed, not
-// merely present -- see the mutation notes at the bottom of the file.
+// CompositeDemuxer (docs/14): the addressing axis and the lifecycle fan-out
+// (stage 0), plus the per-source seek landings the stage-2 playback offsets
+// are derived from. These tests exist so that the axis is PROVEN to be
+// consumed, not merely present -- see the mutation notes at the bottom of the
+// file.
 
 #include "media/base/composite_demuxer.h"
 
@@ -51,7 +53,7 @@ class FakeDemuxer : public Demuxer {
   }
   void StartPlayingFrom(base::TimeDelta, SeekCB cb) override {
     ++seek_count_;
-    std::move(cb).Run(Status(), base::TimeDelta());
+    std::move(cb).Run(Status(), seek_actual_);
   }
   void Flush(base::OnceClosure cb) override {
     ++flush_count_;
@@ -70,6 +72,8 @@ class FakeDemuxer : public Demuxer {
   const char* name() const override { return "FakeDemuxer"; }
 
   FakeDemuxerStream* video_stream() const { return video_stream_.get(); }
+  // Where this child's seek lands. Default zero, like a seek to the start.
+  void set_seek_actual(base::TimeDelta actual) { seek_actual_ = actual; }
   int init_count() const { return init_count_; }
   int seek_count() const { return seek_count_; }
   int flush_count() const { return flush_count_; }
@@ -79,6 +83,7 @@ class FakeDemuxer : public Demuxer {
  private:
   std::unique_ptr<FakeDemuxerStream> video_stream_;
   MediaInfo media_info_;
+  base::TimeDelta seek_actual_;
   int init_count_ = 0;
   int seek_count_ = 0;
   int flush_count_ = 0;
@@ -175,6 +180,79 @@ TEST(CompositeDemuxerTest, StartPlayingFromFansOutToAllChildren) {
   EXPECT_EQ(p1->seek_count(), 1);
 }
 
+// ---- per-source seek landings (docs/14 stage 2) ---------------------------
+
+// The aggregate callback keeps reporting the MAX landing -- unchanged since
+// stage 0 -- while seek_actuals() answers the per-source question the stage-2
+// playback offset is derived from. Two different questions: the max is where
+// the pipeline resumes, the per-child values are which moment of each source
+// is on screen at that resume.
+TEST(CompositeDemuxerTest, SeekRecordsEachChildsLanding) {
+  auto d0 = MakeFakeDemuxer();
+  auto d1 = MakeFakeDemuxer();
+  d0->set_seek_actual(base::Seconds(1));
+  d1->set_seek_actual(base::Seconds(3) + base::Milliseconds(500));
+  CompositeDemuxer comp(MakeSources(std::move(d0), std::move(d1)));
+
+  base::TimeDelta aggregate;
+  comp.StartPlayingFrom(
+      base::Seconds(10),
+      base::BindOnce([](base::TimeDelta* out, Status,
+                        base::TimeDelta actual) { *out = actual; },
+                     &aggregate));
+
+  EXPECT_EQ(aggregate, base::Seconds(3) + base::Milliseconds(500))
+      << "the aggregate landing changed: it is the max, as it has always been";
+  const std::vector<base::TimeDelta>& actuals = comp.seek_actuals();
+  ASSERT_EQ(actuals.size(), 2u);
+  EXPECT_EQ(actuals[0], base::Seconds(1));
+  EXPECT_EQ(actuals[1], base::Seconds(3) + base::Milliseconds(500));
+}
+
+// The same, with the landing order REVERSED: source 1 lands before source 0.
+// A per-source table implemented as "whatever the last callback saw", or as
+// "the aggregate copied into every slot", can pass the test above by luck of
+// the ordering; this one pins the index.
+TEST(CompositeDemuxerTest, SeekLandingsAreIndexedNotOrdered) {
+  auto d0 = MakeFakeDemuxer();
+  auto d1 = MakeFakeDemuxer();
+  d0->set_seek_actual(base::Seconds(4));
+  d1->set_seek_actual(base::Seconds(1) + base::Milliseconds(500));
+  CompositeDemuxer comp(MakeSources(std::move(d0), std::move(d1)));
+
+  comp.StartPlayingFrom(base::Seconds(10),
+                        base::BindOnce([](Status, base::TimeDelta) {}));
+
+  const std::vector<base::TimeDelta>& actuals = comp.seek_actuals();
+  ASSERT_EQ(actuals.size(), 2u);
+  EXPECT_EQ(actuals[0], base::Seconds(4));
+  EXPECT_EQ(actuals[1], base::Seconds(1) + base::Milliseconds(500));
+}
+
+// A lone wrapped demuxer reports exactly ONE landing, and a second seek
+// re-records rather than appending -- the vector is sized per seek, so a
+// reader never mistakes a stale landing from an earlier seek for the current
+// one. This is also the single-source shape the pipeline sees, where
+// ApplySourceOffsets finds fewer than two entries and states no offset.
+TEST(CompositeDemuxerTest, SingleSourceSeekRecordsOneLandingPerSeek) {
+  auto d = MakeFakeDemuxer();
+  FakeDemuxer* p = d.get();
+  std::vector<CompositeDemuxer::Source> v;
+  v.push_back(MakeSource(std::move(d)));
+  CompositeDemuxer comp(std::move(v));
+
+  comp.StartPlayingFrom(base::Seconds(2),
+                        base::BindOnce([](Status, base::TimeDelta) {}));
+  ASSERT_EQ(comp.seek_actuals().size(), 1u);
+  EXPECT_EQ(comp.seek_actuals()[0], base::TimeDelta());
+
+  p->set_seek_actual(base::Seconds(7));
+  comp.StartPlayingFrom(base::Seconds(9),
+                        base::BindOnce([](Status, base::TimeDelta) {}));
+  ASSERT_EQ(comp.seek_actuals().size(), 1u) << "a second seek appended";
+  EXPECT_EQ(comp.seek_actuals()[0], base::Seconds(7));
+}
+
 TEST(CompositeDemuxerTest, FlushFansOutToAllChildren) {
   auto d0 = MakeFakeDemuxer();
   auto d1 = MakeFakeDemuxer();
@@ -253,7 +331,13 @@ TEST(CompositeDemuxerTest, SingleSourceDemuxerAxisDefaultsToPlainStream) {
 //       GetStream(type) -- so the addressing test is unaffected; M2 targets the
 //       base default specifically. Restore.
 //
-// Both mutations were run, seen red, reverted, and re-verified green.
+//   M3 (stage 2): in composite_demuxer.cc, write the AGGREGATE into every
+//       slot -- `seek_actuals_[i] = seek_actual_` after the max, or drop the
+//       index from the bound callback and fill all slots with the same value.
+//       SeekLandingsAreIndexedNotOrdered fails on the slot that differs from
+//       the max (source 1 lands 2.5 s before source 0). Restore.
+//
+// All mutations were run, seen red, reverted, and re-verified green.
 // ---------------------------------------------------------------------------
 
 }  // namespace

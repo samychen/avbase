@@ -368,9 +368,42 @@ void PipelineImpl::OnSeekDemuxerDone(Status status, base::TimeDelta actual) {
     LOG(WARNING) << "avbase.pipeline: seek reported "
                  << status.error().summary() << " at " << actual.InSecondsF()
                  << "s";
+  } else {
+    // Before FinishSeekIfBothDone, which restarts rendering: the first
+    // post-seek frames must already pace against the per-leg clocks, or
+    // they would be scheduled against clocks the offsets have not reached.
+    ApplySourceOffsets();
   }
   seek_demuxer_done_ = true;
   FinishSeekIfBothDone();
+}
+
+void PipelineImpl::ApplySourceOffsets() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!renderer_ || !composite_) {
+    return;
+  }
+  // Stage 2 (docs/14 §7.2): every source's seek lands where ITS keyframe
+  // geometry says, and those landings differ -- a secondary source's
+  // interval is its own. The landing DIFFERENCE is the playback offset: the
+  // moment source i's own timeline calls actual_i must composite as the same
+  // master moment as source 0's actual_0, and SourceTime(i, pts) = pts +
+  // offset_i, so offset_i = actual_0 - actual_i makes the two agree.
+  //
+  // Source 0 is never stated: it IS the master timeline, and shifting it
+  // would correct the same skew twice (the controller refuses it anyway).
+  const std::vector<base::TimeDelta>& actuals = composite_->seek_actuals();
+  // The loop below starts at i=1, so a single source is skipped WITHOUT this
+  // guard; its real job is to keep the actuals[0] read (the primary landing,
+  // just below) off the end of an empty vector. Source 0's offset is zero by
+  // construction in both cases, so returning early here changes nothing for it.
+  if (actuals.size() < 2) {
+    return;
+  }
+  const base::TimeDelta primary = actuals[0];
+  for (size_t i = 1; i < actuals.size(); ++i) {
+    renderer_->SetSourceOffset(static_cast<int>(i), primary - actuals[i]);
+  }
 }
 
 void PipelineImpl::FinishSeekIfBothDone() {

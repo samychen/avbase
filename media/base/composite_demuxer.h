@@ -106,6 +106,16 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   }
   Demuxer* source(int id) const;
 
+  // Where the last StartPlayingFrom landed EACH child, indexed by source id;
+  // empty before the first seek. The pipeline derives the per-source playback
+  // offsets (docs/14 stage 2, §7.2) from these: a secondary source's seek
+  // lands where ITS keyframe geometry says, and the difference against source
+  // 0's landing is what maps the two timelines onto one master moment. The
+  // aggregate landing stays available through the SeekCB.
+  const std::vector<base::TimeDelta>& seek_actuals() const {
+    return seek_actuals_;
+  }
+
   // Demuxer::Host: forward child events to the pipeline host.
   void SetDuration(base::TimeDelta duration) override;
   void OnBufferedTimeUpdate(base::TimeDelta buffered,
@@ -120,7 +130,10 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   };
 
   void OnChildInitialized(Status status);
-  void OnChildSeeked(Status status, base::TimeDelta actual);
+  // |source_id| is the child's index, bound FIRST by StartPlayingFrom
+  // (base::BindOnce passes pre-bound arguments ahead of the callback's), so
+  // the landing point is recorded against the child that reported it.
+  void OnChildSeeked(int source_id, Status status, base::TimeDelta actual);
   void OnChildFlushed();
   void OnChildReset();
 
@@ -137,6 +150,14 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   size_t pending_seeks_ = 0;
   Status seek_status_ = Status();
   base::TimeDelta seek_actual_;
+  // Where EACH child's seek landed, indexed by source id (docs/14 stage 2).
+  // The aggregate |seek_actual_| above is the max of these and answers the
+  // pipeline's own resume question; the per-child values answer a different
+  // one -- "which moment of source i is on screen when source 0 shows moment
+  // T" -- which is what the playback offset is derived from. Sized by
+  // StartPlayingFrom, so a reader that arrives before any seek sees an empty
+  // vector rather than stale landings.
+  std::vector<base::TimeDelta> seek_actuals_;
   Demuxer::SeekCB seek_cb_;
 
   // Flush / Reset fan-out state.
