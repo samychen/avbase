@@ -206,9 +206,18 @@ L1 可观测性 / L2 FBO 合成 / L3 多源场景层 / L4 硬件零拷贝 / L5 �
 - **`DoSelectTrack` 改向 `composite_->FindStream` 问**，删掉本层循环 `GetStreams` 比对。
 - **突变 M4/M5/M6 全钉住**：FindStream 退回源 0 / SetActiveStream 不翻译 /
   MergeMediaInfo 不偏移 → 对应测试转红，恢复后绿。
-- **只做了一半**：次源流现在「可寻址、可被 SelectTrack 选中」，但 `RendererImpl`
-  文本腿仍只服务源 0（每源 `text_renderers_` 未建）——选中的次源字幕暂无 overlay
-  渲染，仍登记为开放项（docs/14 §7 第 6 条）。
+- **渲染半已补齐（commit `d51ff95`，续本轮）**：`RendererImpl` 文本腿改
+  `std::vector<TextLeg>`（每源一项），`OnTracksChanged(kText, ..., source_id)` 选腿、
+  `PumpText`/`OnTextRead` 带 `source_id`、`Flush`/`StartPlayingFrom` 逐腿自增 generation /
+  重起泵；`OnTextRead` 写 `cue.source_id` 再 `OnTimedText` 上行。新增
+  `MediaResource::SourceIdForIndex`（= `index/stride`，与 `FindStream` 对称），
+  `DoSelectTrack` 据此把聚合索引翻译回源号再交给 `OnTracksChanged`。突变 M7 / M-render 钉住。
+- **`renderer.h` 的 `OnTracksChanged` 尾参 `source_id` 是必需形参、无默认值**：
+  virtual / override 方法带默认参违反 `google-default-arguments`（clang-tidy 18.1.8 报 error）。
+  **编译期规则，零测试能发现**——初版写 `int source_id = 0`，build + 386 测试全绿，是 tidy
+  拦下的。调用点全显式传 `0`/源号。教训：接口加参别图省事挂默认值在 virtual 上。
+- **仍开放**：只剩宿主侧把不同源的 cue 分流到各自 overlay 字幕面（渲染原语已备齐，产品集成
+  不在本设计范围）。
 
 ## RendererImpl 多源（第七十五轮，docs/14 阶段 1）
 `video_renderers_` 按源索引（视频缺失的源留空项占位），`video_initialized_`/
