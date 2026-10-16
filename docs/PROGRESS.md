@@ -4605,9 +4605,9 @@ L5 的「第二路完整 Player + 邮箱」绕行正式退役。第二幅画面�
    name, z)` 注册次源并返回 `SceneSource`；`PrepareAsync` 建 N 个 demuxer 并派生
    `extra_video_sink_factory`（按源 id 索引，次腿发一个 `PublisherSink`）。
    `SceneSource::MakePublisherFactory()` 删除，`PublisherSink` 保留作管线内适配器。
-3. `2db8c9a` **示例去绕行**：删 `StartSecondSource` / `StopSecondSource` /
+3. `14b8e7d` **示例去绕行**：删 `StartSecondSource` / `StopSecondSource` /
    `g_second_player`，`SceneDemo::Install` 改调 `Player::AddSource()`。
-4. 文档切片：docs/14 §6 阶段 3、本轮记录、memory。
+4. `d414dc1` 文档切片：docs/14 §6 阶段 3、本轮记录、memory。
 
 ### 测试与突变（都实跑过红/绿两遍）
 
