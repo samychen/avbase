@@ -74,6 +74,21 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
   「绿是因为没跑」）。改用 `xargs` + 故意畸形的探针文件做**阳性对照**。`set -u` 下空数组
   写 `"${arr[@]+"${arr[@]}"}"`。
 - 后台命令末尾别用 `grep -c` 收尾（计数 0 → exit 1 → 整条任务被误报 failed）。
+- **clang-format 只跑源文件，绝不对 `.md` 跑**（第七十七轮）：对设计书跑会把标题
+  `Pipeline Multi-Source` 重排成 `Pipeline Multi - Source`，并把代码块注释对齐与
+  英文散文一并重排，产出 178 增/75 删的纯噪声 diff。发现后：`cp` 备份 →
+  `git checkout --` 还原 → 手工重贴新增段落。
+- **中间提交的「编译面」可能比默认预设宽**（第七十七轮）：删掉某个 API（本轮是
+  `SceneSource::MakePublisherFactory()`）会立刻断掉 `examples/`，而示例只在开
+  SDL2/GLFW 的预设里编译 —— 默认 `build/`（无 SDL2）**全绿会让人以为树是好的**。
+  一个系列改完之后必跑一次 `-DAVBASE_WERROR=ON` 的含示例预设，否则要等 CI 才发现。
+- **zsh 不像 bash 那样对未加引号的变量做分词**（第七十七轮）：
+  `FILES=$(git ls-files …); "$CP" $FILES` 会把整个清单当成**一个**文件名（症状是
+  `Can't open for reading` 后面跟着所有文件名）。统一用 `| xargs`。
+- **测试 fixture 的成员声明顺序 = 析构倒序**（第七十七轮，同类第二次）：一个对象
+  向另一个注册了 `base::Unretained` 回调时（如 `GlSceneEngine::
+  SetTeardownCallback`），被注册方必须先死。顺序错了的表现是**毫不相关**的
+  `mutex lock failed: Invalid argument` 抛在 fixture 析构里，而不是任何有用的信息。
 - clang-format 与构建**不能并发**跑同一批文件。改 include 路径必然影响排序。
 - 清大目录不要 `rm -rf`（撞批量删除守卫）→ `mv` 到 `/tmp` 再 `mkdir`。
   macOS sed 用 `-i.bak` 再删；批量改名要用词边界。

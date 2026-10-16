@@ -5,7 +5,7 @@
 
 ## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）· 4.6 覆盖率链路本机闭环复现（见第三十五轮）· docs/07 §5 计数三例两例转绿、顺线修掉一个真死锁（见第三十六轮）· docs/07 §5 计数三例**全部转&#x7EFF;**、顺线修掉解码器丢包（见第三十七轮）** · 抽出 AudioConverter 与 VideoConverter 对称（见第四十九轮）\**
 
-最后更新：**2026-10-16（第七十六轮）** —— 摘要见下方「第七十六 / 七十五 / 七十四轮」几节；更早里程碑见下。
+最后更新：**2026-10-16（第七十七轮）** —— 摘要见下方「第七十七 / 七十六 / 七十五 / 七十四轮」几节；更早里程碑见下。
 
 > 第四十八轮：**`EncodedPacket` 归位到值类型层**（`media/filters/encoded_packet.h` →  
 > `media/base/`）。它是 `DecoderBuffer` 在**编码侧**的同形状镜像（一个压缩包 + 时间戳 +  
@@ -4587,3 +4587,72 @@ C1 拆分：`SetSourceOffset` 从 `renderer_impl_controls.cc` 迁至 `sources.cc
   `media/base` 与 `media/filters`，未碰 `media/ffmpeg`（无 PCH scratch 库才看得见，
   operations.md 有命令）；CI 在 Ubuntu 上没这个问题。
 - **提交未推送**：本轮三个 + 文档切片，origin/main 仍停在第七十五轮之前。
+
+---
+
+## 第七十七轮 —— docs/14 阶段 3：一个 Player 吃 N 个 URL（退役第二路 Player 绕行）
+
+L5 的「第二路完整 Player + 邮箱」绕行正式退役。第二幅画面不再是第二个 Player，
+而是同一条管线里的第二个 demuxer。屏幕上一模一样，底下少了一个要对表的时钟。
+
+### 切片与提交（四个）
+
+1. `c06ccac` **管线每源 descriptor**（media）：`SetSource` 收 vector，与 `Start()`
+   收的 demuxer 序列索引配对；缺则补默认（不报错）。顺带 C1 拆分：新版次源
+   descriptor 处理把 `pipeline_impl.cc` 顶到 508 行，启动半迁到新建的
+   `pipeline_impl_start.cc`（沿用 `_host`/`_properties`/`_track_select` 的既有接缝）。
+2. `5c0aff7` **Player 多源 SDK + 接线**（player）：`Player::AddSource(descriptor,
+   name, z)` 注册次源并返回 `SceneSource`；`PrepareAsync` 建 N 个 demuxer 并派生
+   `extra_video_sink_factory`（按源 id 索引，次腿发一个 `PublisherSink`）。
+   `SceneSource::MakePublisherFactory()` 删除，`PublisherSink` 保留作管线内适配器。
+3. `2db8c9a` **示例去绕行**：删 `StartSecondSource` / `StopSecondSource` /
+   `g_second_player`，`SceneDemo::Install` 改调 `Player::AddSource()`。
+4. 文档切片：docs/14 §6 阶段 3、本轮记录、memory。
+
+### 测试与突变（都实跑过红/绿两遍）
+
+新增 `tests/unit/player/player_multi_source_unittest.cc` 五例。起初只有四例，跑
+M3（`Reset` 不清次源注册）**全绿** —— 补了第五条后才红。这是本轮最值钱的一条记录：
+第一次写出来的四例里有三例能靠「工厂存在」蒙混过关，真正区别对错的是
+「这条腿的帧进了**哪个**图层」（`EXPECT_EQ(layers_[1]->frames_published(), 0u)`）。
+
+- M1 不派生工厂 → 2 红；M2 每条腿都接 `sources_[0]` → 路由断言红；M3 `Reset` 不清
+  注册 → 第 5 条红。
+
+### 踩到的三个坑（都不是拼写/类型，是语义）
+
+- **clang-tidy 抓到一个真 bug**：`WrapRetry` 里 `retry` 先 move 进 descriptor、再
+  move 进 `retry_source_` —— use-after-move，`ReconnectNow()` 因此永远拿空句柄。
+  **没有任何测试发现它**（唯一的观测是 ReconnectNow 的日志）。按第六十五轮先例：
+  不为测试扩大内部接口，登记「已知未钉住」。工具救了这一处，说明 tidy 门禁是真门禁。
+- **测试 fixture 的成员析构顺序**：`engine_` 声明在 `impl_` 之前 → Scene 先死、
+  engine 析构的 teardown 回调打到已释放对象，表现为毫不相关的
+  `mutex lock failed: Invalid argument`。成员声明顺序 = 析构倒序，这是第二次栽。
+- **`Plumb()` 必须在 StopSync 之后**：`Scene::Bind()` 也被管线自己调用（经
+  `Deps::scene_observer`），而 `pipeline->Start()` 只是 post —— 那条调用会在
+  `PrepareAsync` 返回**之后**到达，把测试的绑定覆盖掉。
+
+### 门禁（全绿）
+
+- macos-sdl2-werror 预设 **ctest 769/769**（含 FFmpeg/DCHECK/Werror/示例）；
+  no-ffmpeg `build/` 全绿（media 378 + player 40 + base 137）。
+- clang-format 18.1.3 / cpplint 1.6.1 / clang-tidy 18.1.8 零发现；
+  `check_invariants` 471 文件全过。
+- 两套生成器都跑过：`build/` 是 Makefiles，`build/ffmpeg` 与 preset 目录是 ninja。
+
+### 顺手记下的操作教训
+
+- **clang-format 不要对 `.md` 跑**：它会把 `Pipeline Multi-Source` 重排成
+  `Pipeline Multi - Source`，并把设计书里的代码块与英文散文一并重排（178 增/75 删
+  的「无关」diff）。发现后 `cp` 备份 → `git checkout --` 还原 → 手工重贴新增段落。
+- **中间提交的编译面**：删 `MakePublisherFactory()` 会立刻断掉示例，而示例只在开
+  SDL2/GLFW 的预设里编译 —— 默认 `build/` 全绿会让人以为树是好的。一个系列改完之后
+  必须再跑一次 `-DAVBASE_WERROR=ON` 的含示例预设才能确认。
+
+### 留下的问题
+
+- **阶段 3 全部完成**，docs/14 的阶段 0–3 到此收官。线路图 L1–L5 全部落地。
+- **`LatestFrameQueue` 决定不退役**（§6.3 默认退役，本轮改保留）：它唯一的生产
+  使用者是 `GlLayerSource`，退役 = 内联 + 删 9 条跨线程记账直测，不划算。
+- **每源文本腿仍未做**（阶段 1 同项）：次源字幕经管线不可达。
+- **提交未推送**：本轮四个 + 文档切片，origin/main 仍停在第七十六轮之前。

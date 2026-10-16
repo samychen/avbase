@@ -117,20 +117,19 @@ matrix 解析、被 `Player::video_rotation()` 上报，但**没有一帧真正�
   `Deps` 给 `NullVideoSink` —— 在那里是 UB，示例原来就是这么写的。
 - **引擎自报死亡**（`GlSceneEngine::SetTeardownCallback`，析构时**锁外**跑）。不能等
   Player 通知：管线还被自己的错误处理和轨切换拆掉，那些路径 Player 不一定有机会说话。
-- **`SceneSource::MakePublisherFactory()`** 把一整个 Player 的输出变成场景的输入。
-  第二路管线仍必须 present 到某处（那是它的帧被拉出来的唯一途径）；此前唯一做法是
-  宿主手写 sink（`examples/publisher_sink.h`，本轮删除）。
 - **`update_` 曾是全类唯一没有 `GUARDED_BY` 的共享状态** —— 「hook 必须 before
   Start()」= 给数据竞争穿的外衣，真代价是 `RepeatingCallback` 的引用计数。
   SDK **没有**照抄这条契约。
+- **`MakePublisherFactory()` 已于阶段 3（第七十七轮）删除**，「第二路完整 Player」
+  的语义随它一块走。`SceneSource::Publish()` 现在是第二幅画面进场景的**唯一**入口，
+  喂食者从「第二条管线的视频渲染器」换成「同一条管线的次源视频渲染器」。
 
 **单源硬限制的修复已开工（第七十四轮，docs/14 阶段 0 落地）**：
 `MediaResource`/`Demuxer` 有 `source_id` 寻址轴（无轴版=source 0，子类零改动），
 `CompositeDemuxer` 聚合 N 源，`Pipeline::Start` 收 `vector<unique_ptr<Demuxer>>`
 （PipelineImpl 持 composite 而非裸 vector——与设计书 §3.4 的有意偏差，逐源访问走
-`source_count()`/`source(id)`）。**RendererImpl 仍只消费 source 0**——阶段 1–3
-（渲染多路 / 时钟多轴 / GlSceneEngine 升格退役 L5 绕行）待做。§2 的 SDK 场景门面
-（第二路 Player + 邮箱）在阶段 3 才废弃。
+`source_count()`/`source(id)`）。**阶段 0–3 全部落地（第七十四～七十七轮）**：
+一个 Player 吃 N 个 URL，L5 的「第二路 Player + 邮箱」绕行已退役。见下节。
 
 ## player 层可观测性与 clang-tidy 环境陷阱（第七十二轮，TODO §5c/§5d）
 
@@ -163,8 +162,33 @@ matrix 解析、被 `Player::video_rotation()` 上报，但**没有一帧真正�
 
 ## 路线图
 L1 可观测性 / L2 FBO 合成 / L3 多源场景层 / L4 硬件零拷贝 / L5 多源编排 —— **全部完成**。
-播放器层「管线多源」改造（docs/14）：**阶段 1–2 已落地（第七十五～七十六轮）**，
-阶段 3 待做；L5 的「第二路 Player + 邮箱」绕行在阶段 3 退役。
+播放器层「管线多源」改造（docs/14）：**阶段 0–3 全部落地（第七十四～七十七轮）**。
+
+## docs/14 阶段 3：一个 Player 吃 N 个 URL（第七十七轮）
+
+`Player::AddSource(descriptor, name, z)` 注册次源返 `SceneSource`；
+`PrepareAsync` 建 N 个 demuxer + 同样长度的 descriptor 序列交给 `Pipeline::Start`，
+并从注册次源派生 `extra_video_sink_factory`（按源 id 索引，次腿发 `PublisherSink`）。
+
+- **注册必须在 PrepareAsync 之前** —— 那才是 demuxer 被造出来的时刻。之后再注册无处
+  可接，所以返回 null 拒绝，**而不是收录一个永远不会被喂的实现**：「图层存在但全黑」
+  正是这一类 API 最贵的失败模式。
+- **事件顺序比调用顺序难缠**：`Scene::Bind()` 也被管线自己调用（经
+  `Deps::scene_observer`），而 `pipeline->Start()` 只是 post —— 那条调用会在
+  `PrepareAsync` 返回**之后**到达。测试里先 `StopSync()` 再绑定的就是这个。
+- **`SetSource` 缺 descriptor 时补默认，不报错。** 阶段 0 的多源测试从不调
+  `SetSource`，而缺席的 descriptor 对合成 demuxer 是有意义的（数据自带）；真需要它的
+  demuxer 会在 Initialize 里用真错误失败 —— 补默认藏不住一次坏打开。
+- **突变的分水岭是「这条腿的帧进了哪个图层」。** 五条新例起初写四条时有三条能被
+  「工厂存在」蒙混过去（M3 Reset 不清注册全绿），补第五条后才红。
+- **`LatestFrameQueue` 决定不退役**（§6.3 默认退役）：唯一生产使用者是
+  `GlLayerSource`，退役 = 内联并删掉 9 条跨线程记账直测。
+
+### 已知未钉住（新增一条）
+`WrapRetry` 的 `retry_source_` 句柄曾经被写成 use-after-move（ReconnectNow 拿到空
+句柄），**clang-tidy 的 `bugprone-use-after-move` 抓到，零测试发现**。唯一的观测手段
+是 ReconnectNow 的日志。按第六十五轮先例：不为测试扩大内部接口，登记未钉住。
+这也确认了「tidy 必须配无 PCH scratch 库」那条——否则这处会静默通过。
 
 ## RendererImpl 多源（第七十五轮，docs/14 阶段 1）
 `video_renderers_` 按源索引（视频缺失的源留空项占位），`video_initialized_`/
