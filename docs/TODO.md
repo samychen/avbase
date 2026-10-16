@@ -16,10 +16,14 @@ L1–L5（可观测性 / FBO 合成地基 / 多源场景层 / 硬件零拷贝 / 
 |---|---|
 | `render/gl/`（零依赖 GL） | ✅ 已闭合 |
 | `media/gl/`（渲染编排） | ✅ 已闭合（第六十八轮 §4：属性 + 转场）。未做的四项（混合模式 / 镜像 / 色彩调整 / 图层名）属「未要」，见 §4 末尾 |
-| `media/filters/`（播放器管线） | ✅ 已闭合（第七十轮）：**「单源」不是缺陷，是抽象的边界** —— 见下方说明 |
+| `media/filters/`（播放器管线） | ✅ 已闭合（第七十轮 点名 + 第七十四～七十七轮**原生多源落地**）：一条管线现在能吃 N 个 URL —— 见下方说明 |
 | `player/public/`（SDK 门面） | ✅ 已闭合（第六十九轮，§2） |
 
 ### 为什么「单源」不算缺口（第七十轮的判定）
+
+> **第七十七轮补充**：上面的判定没过时，但「单源」已不再描述现状 —— docs/14
+> 阶段 0–3 把多源做进了管线本身。保留这段是因为它解释的那件事（`AddVideoStream(int)`
+> 为什么是死接口）到今天仍然成立，而它当初给出的「绕过」方案已经退役，见本节末尾。
 
 表里这一格一直是 🔶「单源硬限制」，第六十九轮 §2 又用「第二路完整 Player +
 邮箱」绕过去，读起来像是两轮都在回避。**查证之后结论相反：那条边界是真的，
@@ -40,8 +44,13 @@ L1–L5（可观测性 / FBO 合成地基 / 多源场景层 / 硬件零拷贝 / 
 3 条测试钉住「调用后零副作用」（突变反证 3/3 红）、`docs/05` 里两条把落点写成
 `AddVideoStream` / `AddTextStream` 的迁移对照（后者还标了 ✅）已更正。
 
-**多画面的正解是 §2 那条**：N 个 Player + `GlSceneEngine` 邮箱，第六十九轮实测
-可用（224 帧发布 / 113 消费 / 111 取代）。
+**多画面的正解是 §2 那条**：第六十九轮用 N 个 Player + `GlSceneEngine` 邮箱实测
+可用（224 帧发布 / 113 消费 / 111 取代），**第七十七轮（docs/14 阶段 3）已下沉到
+管线本身** —— `Player::AddSource(descriptor, name, z)` 注册次源，一条管线开 N 个
+demuxer，第二幅画面不再需要第二个 Player。`SceneSource::MakePublisherFactory()`
+与其驱动的「第二路完整 Player」一并删除（见下方 §2 的表格更正）。上面的论证没有
+被推翻，变的是它的适用范围：`AddVideoStream(int)` 那 6 个仍是死接口，因为多源的
+轴是 `GetStream(source_id, type)`，**不是**「同一资源的第 id 路同类型流」。
 
 ---
 
@@ -115,9 +124,10 @@ SDK 用户没有。
 | 接口 | 作用 |
 |---|---|
 | `Player::scene()` | 场景句柄。跟随 Player，跨 Prepare 自动重绑 |
-| `Scene::AddSource(name, z)` / `RemoveSource` / `FindSource` | 注册第二个（第 N 个）输入 |
+| `Scene::AddSource(name, z)` / `RemoveSource` / `FindSource` | 注册一个「外部推帧」的输入：不经解码器，谁 `Publish()` 谁负责画面来源 |
 | `SceneSource::Publish(frame)` | 任何线程推帧；`frames_published/consumed/superseded` 三计数 |
-| `SceneSource::MakePublisherFactory()` | 把一个完整 `Player` 的**输出**变成这个场景的输入 |
+| `Player::AddSource(descriptor, name, z)` | **第七十七轮新增**：注册一个次 URL，由管线自己开第二个 demuxer 解码并喂进对应图层。必须在 `PrepareAsync` 之前调用 |
+| ~~`SceneSource::MakePublisherFactory()`~~ | **已删除（第七十七轮）**。它把一整个 Player 的输出变成场景输入，是「第二路 Player」绕行的产物；`PublisherSink` 本身保留作管线内适配器 |
 | `Scene::SetUpdateCallback(hook)` | 每显示帧一次的摆放回调 |
 | `SceneFrame::main_layer()` / `AddLayer` / `layer_of` / `layer_with_id` | 回调内取图层句柄 |
 | `SceneLayer::SetRect` / `SetZ` / `SetOpacity` / `SetVisible` / `SetRotation` / `SetSourceRect` / `SetContentMode` | rect / opacity / z 等属性 |
@@ -154,11 +164,14 @@ SDK 用户没有。
 
 - ✅ 示例不再绕过 `Player`：`g_scene->Install(player)`，工厂只写
   `std::make_shared<Sdl2VideoSinkFactory>()`。
-- ✅ `examples/publisher_sink.h` **已删除**（被 `MakePublisherFactory()` 完全取代）。
+- ✅ `examples/publisher_sink.h` **已删除**（被当时的 `MakePublisherFactory()` 取代，
+  后者在第七十七轮也删了，见上表）。
 - ✅ 实跑：`--scene pip` → `scene: hook placed 48 frame(s), scene now bound,
   0 source(s), hook installed`；`--scene fade --second <url>` →
   `scene now bound, 1 source(s), hook installed` +
   `--second: published=108 consumed=108 superseded=0`。
+  **第七十七轮重跑同一条命令行为不变**，但底下已不是第二个 Player，而是同一条
+  管线的第二个 demuxer（`Player::AddSource()`）。
 - ✅ `tests/unit/player/scene_unittest.cc`（10 条）+ `gl_multi_source_unittest.cc`
   补 2 条 hook 替换测试；**8 条突变反证真跑过、全红**。
 
@@ -383,6 +396,7 @@ DCHECK 跑测试。6 处显式化后 debug 全量 ctest 663/663。
 | §3 滤镜 × 零拷贝（改明确拒绝） | ✅ 完成 | 第六十七轮 |
 | §4 图层属性（背景色 / crop / aspect-fit）与多转场 | ✅ 完成 | 第六十八轮 |
 | CI 风格门禁存量红灯（clang-tidy 800 条 / cpplint 4 条） | ✅ 完成 | 第七十轮 |
+| §0 播放器层多源（docs/14 阶段 0–3：一条管线吃 N 个 URL） | ✅ 完成（第二路 Player 绕行退役） | 第七十四～七十七轮 |
 
 ---
 
