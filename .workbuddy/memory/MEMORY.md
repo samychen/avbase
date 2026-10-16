@@ -162,7 +162,7 @@ matrix 解析、被 `Player::video_rotation()` 上报，但**没有一帧真正�
 
 ## 路线图
 L1 可观测性 / L2 FBO 合成 / L3 多源场景层 / L4 硬件零拷贝 / L5 多源编排 —— **全部完成**。
-播放器层「管线多源」改造（docs/14）：**阶段 0–3 全部落地（第七十四～七十七轮）**。
+播放器层「管线多源」改造（docs/14）：**阶段 0–4 全部落地（第七十四～七十八轮）**。
 
 ## docs/14 阶段 3：一个 Player 吃 N 个 URL（第七十七轮）
 
@@ -189,6 +189,26 @@ L1 可观测性 / L2 FBO 合成 / L3 多源场景层 / L4 硬件零拷贝 / L5 �
 句柄），**clang-tidy 的 `bugprone-use-after-move` 抓到，零测试发现**。唯一的观测手段
 是 ReconnectNow 的日志。按第六十五轮先例：不为测试扩大内部接口，登记未钉住。
 这也确认了「tidy 必须配无 PCH scratch 库」那条——否则这处会静默通过。
+
+## docs/14 阶段 4：每源文本腿 / 聚合索引空间（第七十八轮）
+
+`CompositeDemuxer` 之前 `GetStreams`/`SetActiveStream`/`media_info` 只转发源 0，
+`SelectTrack` 因此够不到次源流（次源字幕轨选中其 index 静默回 `kTrackSwitchError`）。
+
+- **聚合索引空间**：`stream_index = source_id * stride + child_index`，
+  `stride = max(各子本地 index) + 1` → 源 0 偏移为 0、编号逐字节不变（保
+  `GetStreams`/`IsPrimaryStream` 契约）。子只认自己的编号。
+- **`MediaResource::FindStream(type, index)`**（新虚方法，默认扫 `GetStreams`）：
+  composite 按 `source_id = index/stride` 路由、`index - source_id*stride` 交给子。
+- **`SetActiveStream` 先 `FindStream` 校验**再按源路由翻译编号；`media_info()` 聚合
+  各源流、按 `source_id*stride` 偏移并标 `metadata["avbase:source"]`。
+  `GetStreams(type)` **仍只答源 0**（守卫就此成立，不可拓宽）。
+- **`DoSelectTrack` 改向 `composite_->FindStream` 问**，删掉本层循环 `GetStreams` 比对。
+- **突变 M4/M5/M6 全钉住**：FindStream 退回源 0 / SetActiveStream 不翻译 /
+  MergeMediaInfo 不偏移 → 对应测试转红，恢复后绿。
+- **只做了一半**：次源流现在「可寻址、可被 SelectTrack 选中」，但 `RendererImpl`
+  文本腿仍只服务源 0（每源 `text_renderers_` 未建）——选中的次源字幕暂无 overlay
+  渲染，仍登记为开放项（docs/14 §7 第 6 条）。
 
 ## RendererImpl 多源（第七十五轮，docs/14 阶段 1）
 `video_renderers_` 按源索引（视频缺失的源留空项占位），`video_initialized_`/
