@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <memory>
+#include <vector>
 
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
@@ -61,9 +62,13 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   PipelineImpl& operator=(const PipelineImpl&) = delete;
   ~PipelineImpl() override;
 
-  // Concrete-side parameters, set before Start(). |clock| must outlive the
-  // pipeline (Player::Impl owns it via Deps).
-  void SetSource(DataSourceDescriptor source, DemuxerOptions options);
+  // Concrete-side parameters, set before Start(). One descriptor per source,
+  // parallel to the demuxer vector passed to Start(): descriptor[i] opens
+  // sources_[i]. A single-source Start passes a one-element vector, which
+  // reproduces the old single-descriptor path exactly (docs/14 stage 3).
+  // |clock| must outlive the pipeline (Player::Impl owns it via Deps).
+  void SetSource(std::vector<DataSourceDescriptor> sources,
+                 DemuxerOptions options);
   void SetTickClock(const base::TickClock* clock);
   // Self-initiated live-edge fast-forward (docs/12 §2.1): when a live
   // source's playhead falls further behind the edge than the latency hint,
@@ -190,7 +195,10 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   base::scoped_refptr<base::SequencedTaskRunner>
   GetOverlayTaskRunner() override;
 
-  DataSourceDescriptor source_;
+  // One descriptor per source, parallel to |sources_|. SetSource() fills it;
+  // DoStart pairs each composite child with descriptors_[i]. Empty until
+  // SetSource() is called.
+  std::vector<DataSourceDescriptor> descriptors_;
   DemuxerOptions options_;
   base::raw_ptr<const base::TickClock> tick_clock_ = nullptr;
   base::scoped_refptr<base::SequencedTaskRunner> media_runner_;

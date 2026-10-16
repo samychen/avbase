@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// The M8 pipeline wiring. What "ready" means here is deliberately minimal:
-// the demuxer probed and the renderer's decoders initialized. Buffering
-// high-water marks (M9), accurate-seek framing (M9) and track switching are
-// still ahead; the corresponding interface methods fail loudly rather than
-// pretending.
+// The M8 pipeline wiring: the transport controls (play/pause/snapshot), seek
+// and teardown. The starting half -- SetSource/Start/DoStart and the two init
+// callbacks -- lives in pipeline_impl_start.cc (C1 split).
+//
+// What "ready" means here is deliberately minimal: the demuxer probed and the
+// renderer's decoders initialized. Buffering high-water marks (M9),
+// accurate-seek framing (M9) and track switching are still ahead; the
+// corresponding interface methods fail loudly rather than pretending.
 
 #include "media/filters/pipeline_impl.h"
 
@@ -16,7 +19,6 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
-#include "base/time/default_tick_clock.h"
 #include "media/base/native_display.h"
 #include "media/filters/live_edge_policy.h"
 
@@ -30,157 +32,6 @@ PipelineImpl::~PipelineImpl() {
   // here would race the demux thread and the sink callbacks.
   DCHECK(state_.load() == State::kNew || state_.load() == State::kStopped ||
          state_.load() == State::kError);
-}
-
-void PipelineImpl::SetSource(DataSourceDescriptor source,
-                             DemuxerOptions options) {
-  source_ = std::move(source);
-  options_ = std::move(options);
-}
-
-void PipelineImpl::SetTickClock(const base::TickClock* clock) {
-  tick_clock_ = clock ? clock : base::DefaultTickClock::GetInstance();
-}
-
-void PipelineImpl::SetClock(std::shared_ptr<AvSyncController> av_sync) {
-  av_sync_ = std::move(av_sync);
-}
-
-void PipelineImpl::Start(
-    std::vector<std::unique_ptr<Demuxer>> sources,
-    RendererFactory* renderer_factory, RendererType renderer_type,
-    base::scoped_refptr<base::SequencedTaskRunner> media_task_runner,
-    Client* client) {
-  DCHECK(!sources.empty());
-  DCHECK(renderer_factory);
-  DCHECK(client);
-  // The kNew -> kStarting transition happens HERE, on the calling thread,
-  // not inside DoStart. IsRunning() is the "safe to destroy" predicate every
-  // waiter polls -- Player::Impl::StopSync and the test teardowns -- and a
-  // pipeline whose Start() has been posted but not yet run reads kNew, which
-  // is NOT running. A host that prepares and immediately stops (open a URL,
-  // change your mind) would then be told "safe" before the media sequence has
-  // done anything: the teardown stops the media thread, DoStop is dropped
-  // from its queue, and the pipeline is destroyed mid-kStarting --
-  // ~PipelineImpl's DCHECK names exactly that.
-  //
-  // The exchange also keeps Start() start-once, the job DoStart's old kNew
-  // guard did: a second Start() on a pipeline that already moved on is
-  // refused before it can replace the members below.
-  State expected = State::kNew;
-  if (!state_.compare_exchange_strong(expected, State::kStarting)) {
-    return;
-  }
-  sources_ = std::move(sources);
-  renderer_factory_ = renderer_factory;
-  client_ = client;
-  media_runner_ = std::move(media_task_runner);
-  // Posted, not run inline: the caller may be on any thread, and every piece
-  // of media state below is media-sequence-exclusive.
-  media_runner_->PostTask(FROM_HERE, base::BindOnce(&PipelineImpl::DoStart,
-
-                                                    weak_factory_.GetWeakPtr(),
-                                                    renderer_type));
-}
-
-void PipelineImpl::DoStart(RendererType renderer_type) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // kStarting was set synchronously in Start(), so this is the "posted
-  // exactly once" guard now. Anything else -- stopping, stopped, errored --
-  // means starting would be wrong.
-  if (state_ != State::kStarting) {
-    return;
-  }
-
-  // The demuxer doubles as the renderer's MediaResource (Demuxer derives
-  // from it), and the renderer needs the probed stream configs, so the
-  // demuxer initializes first and the renderer only starts on success --
-  // firing both concurrently handed the renderer a demuxer with no streams.
-  renderer_ = renderer_factory_->CreateRenderer(renderer_type, media_runner_);
-  if (!renderer_) {
-    // No factory could serve this type; report through the client rather
-    // than leaving the pipeline half-started.
-    state_ = State::kError;
-    client_->OnError(
-        PipelineStatusToMediaError(PipelineStatus::kFailedToCreatePipeline));
-    return;
-  }
-  // Aggregate the N demuxers into a single MediaResource. Each child carries
-  // the shared descriptor/options for now (per-source descriptors arrive in a
-  // later stage); for a single-source Start this reproduces the old direct path
-  // exactly -- CompositeDemuxer fans Initialize/Seek to one child.
-  std::vector<CompositeDemuxer::Source> composite_sources;
-  composite_sources.reserve(sources_.size());
-  for (auto& demuxer : sources_) {
-    CompositeDemuxer::Source s;
-    s.demuxer = std::move(demuxer);
-    s.descriptor = source_;
-    s.options = options_;
-    composite_sources.push_back(std::move(s));
-  }
-  sources_.clear();
-  composite_ = std::make_unique<CompositeDemuxer>(std::move(composite_sources));
-
-  composite_->Initialize(source_, options_, this, media_runner_,
-                         base::BindOnce(&PipelineImpl::OnDemuxerInitialized,
-                                        weak_factory_.GetWeakPtr()));
-}
-
-void PipelineImpl::OnDemuxerInitialized(Status status) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  demuxer_ready_ = status.has_value();
-  if (!status) {
-    state_ = State::kError;
-    // The demuxer's Status carries the actionable MediaError already.
-    client_->OnError(status.error());
-    return;
-  }
-  // Demuxer ready: the renderer needs the probed stream configs, so only now
-  // can it initialize against the demuxer's MediaResource view.
-  //
-  // Liveness is stated HERE, before Initialize(), because it is the first point
-  // where it is known and the renderer cannot discover it: a MediaResource
-  // hands out streams and nothing else. One call, one decision, rather than a
-  // liveness flag threaded through the renderer's whole surface.
-  renderer_->SetSourceLiveness(composite_->IsLive(), live_cue_max_age_);
-  renderer_->Initialize(composite_.get(), this, media_runner_,
-                        base::BindOnce(&PipelineImpl::OnRendererInitialized,
-
-                                       weak_factory_.GetWeakPtr()));
-  {
-    base::AutoLock scoped(snapshot_lock_);
-    media_info_ = composite_->media_info();
-  }
-  const MediaInfo info = composite_->media_info();
-  if (info.duration != kNoTimestamp) {
-    duration_micros_.store(info.duration.InMicroseconds());
-    client_->OnDurationChange(info.duration);
-  }
-  seekable_.store(info.seekable && !info.is_live);
-  MaybeReady();
-}
-
-void PipelineImpl::OnRendererInitialized(PipelineStatus status) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  renderer_ready_ = status == PipelineStatus::kOk;
-  if (!renderer_ready_) {
-    state_ = State::kError;
-    client_->OnError(PipelineStatusToMediaError(status));
-    return;
-  }
-  MaybeReady();
-}
-
-void PipelineImpl::MaybeReady() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (state_ != State::kStarting || !demuxer_ready_ || !renderer_ready_) {
-    return;
-  }
-  state_ = State::kReady;
-  // Pipeline::Start()'s contract reports readiness through the client's first
-  // buffering/duration callbacks; kHaveMetadata is "probed, not yet playing".
-  client_->OnBufferingStateChange(BufferingState::kHaveMetadata,
-                                  base::TimeDelta());
 }
 
 void PipelineImpl::Play() {
