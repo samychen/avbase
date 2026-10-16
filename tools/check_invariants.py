@@ -123,8 +123,8 @@ LINE_LIMIT_ALLOWLIST = {
              "renderer_impl_sources.cc (docs/14 stage 1, C1 split) and the "
              "ceiling moved down with it (600 -> 590). docs/14 stage 4 added "
              "the per-source text-leg fan-out to Flush and StartPlayingFrom "
-             "(one Reset/PumpAllTextLegs loop per source instead of the old "
-             "single PumpText), raising it 590 -> 598. Revisit when M9 "
+             "(Flush resets every leg's generation; StartPlayingFrom re-arms "
+             "each leg's pump), raising it 590 -> 598. Revisit when M9 "
              "BufferController absorbs CheckBufferingTransitions()."),
 }
 

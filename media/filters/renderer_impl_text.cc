@@ -51,29 +51,27 @@ bool RendererImpl::IsCueStale(const TimedTextCue& cue) const {
 }
 
 void RendererImpl::PumpText(int source_id) {
-  if (source_id < 0 || static_cast<size_t>(source_id) >= text_legs_.size()) {
+  TextLeg* leg = text_leg(source_id);
+  if (!leg || !leg->stream || !leg->decoder || leg->read_outstanding ||
+      leg->ended) {
     return;
   }
-  TextLeg& leg = text_legs_[static_cast<size_t>(source_id)];
-  if (!leg.stream || !leg.decoder || leg.read_outstanding || leg.ended) {
-    return;
-  }
-  leg.read_outstanding = true;
-  const int generation = leg.generation;
-  leg.stream->Read(1, base::BindOnce(&RendererImpl::OnTextRead,
-                                     weak_factory_.GetWeakPtr(), source_id,
-                                     generation));
+  leg->read_outstanding = true;
+  const int generation = leg->generation;
+  leg->stream->Read(1, base::BindOnce(&RendererImpl::OnTextRead,
+                                      weak_factory_.GetWeakPtr(), source_id,
+                                      generation));
 }
 
 void RendererImpl::OnTextRead(int source_id, int generation,
                               DemuxerStream::Status status,
                               DemuxerStream::DecoderBufferVector buffers) {
-  if (source_id < 0 || static_cast<size_t>(source_id) >= text_legs_.size()) {
+  TextLeg* leg = text_leg(source_id);
+  if (!leg) {
     return;
   }
-  TextLeg& leg = text_legs_[static_cast<size_t>(source_id)];
-  leg.read_outstanding = false;
-  if (generation != leg.generation) {
+  leg->read_outstanding = false;
+  if (generation != leg->generation) {
     return;  // Reply from a leg that was switched away or flushed.
   }
   if (status == DemuxerStream::Status::kAborted) {
@@ -91,14 +89,14 @@ void RendererImpl::OnTextRead(int source_id, int generation,
   }
   for (auto& buffer : buffers) {
     if (buffer->IsEndOfStream()) {
-      leg.ended = true;
+      leg->ended = true;
       return;
     }
-    if (leg.stream && buffer->serial() < leg.stream->serial()) {
+    if (leg->stream && buffer->serial() < leg->stream->serial()) {
       continue;  // Pre-seek generation; docs/04 §4 R1.
     }
     std::vector<TimedTextCue> cues;
-    if (const Status decode = leg.decoder->Decode(*buffer, &cues); !decode) {
+    if (const Status decode = leg->decoder->Decode(*buffer, &cues); !decode) {
       LOG(ERROR) << "avbase.text: decode failed: " << decode.error().ToString();
       continue;
     }

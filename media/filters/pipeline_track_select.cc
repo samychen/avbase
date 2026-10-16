@@ -67,14 +67,28 @@ void PipelineImpl::DoSelectTrack(DemuxerStreamType type, int stream_index,
     std::move(cb).Run(PipelineStatus::kTrackSwitchError);
     return;
   }
+  // Which source this index belongs to, derived from the same aggregate
+  // numbering FindStream used, so the two never disagree about the source
+  // (docs/14 stage 4).
+  const int source_id = composite_->SourceIdForIndex(type, stream_index);
+  // Video and audio legs are source 0's alone (docs/14 §4.2: the video switch
+  // hands over source 0's renderer, sink and clock hook; the audio leg is
+  // source 0 only -- secondary audio is seen but not selected). Stage 4's
+  // aggregate numbering made a secondary source's video/audio index
+  // RESOLVABLE, so the refusal must happen BEFORE the routing below:
+  // SetActiveStream would re-point that child's active stream, the renderer
+  // would then refuse the handover with nothing to roll back, and the stream
+  // the leg still reads would go quiet -- "the track switched and nothing
+  // arrived", reported as kOk. The text leg is per-source by design (stage
+  // 4), which is why only video/audio are bounded here.
+  if (type != DemuxerStreamType::kText && source_id != 0) {
+    std::move(cb).Run(PipelineStatus::kTrackSwitchError);
+    return;
+  }
   // Re-point routing BEFORE the handover: the moment the old consumer stops
   // draining its stream, that stream's queue would wedge the demux loop on
   // its own watermark and starve the very track we are switching to.
   composite_->SetActiveStream(type, stream_index);
-  // Which source this index belongs to, so the renderer wires the right text
-  // leg (docs/14 stage 4). Derived from the same aggregate numbering FindStream
-  // used, so the two never disagree about the source.
-  const int source_id = composite_->SourceIdForIndex(type, stream_index);
   // The renderer reports a failed handover through Client::OnError and still
   // runs the completion closure; that closure only means "the attempt
   // finished and the pipeline is consistent".

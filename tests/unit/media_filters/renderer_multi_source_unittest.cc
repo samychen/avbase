@@ -461,10 +461,10 @@ TEST_F(RendererMultiSourceTest, EndedWaitsForEveryLegToDrain) {
 // The foreign-stream guard, video side. The handover machinery switches
 // source 0's alternates: it re-anchors against video_stream_, hands over
 // source 0's sink, and re-wires source 0's clock hook. Source 1's stream is
-// none of those things, and CompositeDemuxer::SetActiveStream only routes
-// source 0 today -- so this is unreachable through the pipeline, which is
-// exactly why it needs a direct test: a guard nothing exercises is a guard
-// nothing keeps correct.
+// none of those things. Stage 4's aggregate numbering made such a stream
+// RESOLVABLE by index and the pipeline now refuses it before routing, but the
+// guard is the renderer's own boundary -- which is exactly why it needs a
+// direct test: a guard nothing exercises is a guard nothing keeps correct.
 TEST_F(RendererMultiSourceTest, SwitchingToAnotherSourcesVideoTrackIsRefused) {
   SetTwoSources();
   // Plenty of data: the switch must happen mid-stream, not after EOS, or the
@@ -728,6 +728,123 @@ TEST_F(RendererMultiSourceTest, SecondarySourceTextCueCarriesSourceId) {
       << "the delivered cue was not tagged with the source it came from";
   EXPECT_FALSE(client_.Has("error")) << client_.last_error().ToString();
 }
+
+// The kText bounds guard (docs/14 stage 4): a source_id that names no
+// registered source is a caller bug, answered with an error rather than an
+// out-of-bounds leg. The callback still runs -- a host waiting on it must not
+// hang -- and the real legs are left alone, which the trailing select proves:
+// a corrupted leg would misbehave there.
+TEST_F(RendererMultiSourceTest, ATextTrackNamingAnUnknownSourceIsRefused) {
+  SetTwoSourcesWithText();
+  auto text_factory = base::MakeRefCounted<test::FakeTextDecoderFactory>();
+  RendererImpl::Deps deps = MakeDeps();
+  deps.text_decoder_factory = text_factory;
+  CreateRendererWith(std::move(deps));
+  Initialize();
+  ASSERT_TRUE(WaitFor([this] { return init_done_; }));
+  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+
+  std::atomic<bool> changed{false};
+  renderer_->OnTracksChanged(
+      DemuxerStreamType::kText, text_streams_[0].get(),
+      base::BindOnce([](std::atomic<bool>* c) { c->store(true); }, &changed),
+      /*source_id=*/2);
+  EXPECT_TRUE(changed.load());
+  // ReportError hops to the media sequence, so the event arrives during the
+  // pump rather than inline.
+  ASSERT_TRUE(WaitFor([this] { return client_.Has("error"); }));
+  EXPECT_EQ(client_.last_error().code(), ErrorCode::kInvalidArgument);
+  EXPECT_EQ(client_.Count("error"), 1);
+
+  // The refusal left both legs unwired: a legitimate select on source 0 still
+  // behaves exactly like a fresh one -- one cue, no further error.
+  text_streams_[0]->AppendBuffer(
+      test::MakeDataBuffer(DemuxerStreamType::kText, /*serial=*/0));
+  std::atomic<bool> changed_again{false};
+  renderer_->OnTracksChanged(
+      DemuxerStreamType::kText, text_streams_[0].get(),
+      base::BindOnce([](std::atomic<bool>* c) { c->store(true); },
+                     &changed_again),
+      /*source_id=*/0);
+  EXPECT_TRUE(changed_again.load());
+  ASSERT_FALSE(client_.cues().empty());
+  EXPECT_EQ(client_.cues().back().source_id, 0);
+  EXPECT_EQ(client_.Count("error"), 1);
+}
+
+// Flush disarms EVERY text leg (generation bump) and StartPlayingFrom
+// re-arms every one of them (docs/14 stage 4). A leg that stayed disarmed
+// after a seek would be a source whose subtitles never come back; a leg that
+// never disarmed would deliver pre-seek cues.
+TEST_F(RendererMultiSourceTest, FlushDisarmsEveryTextLegAndStartReArmsThem) {
+  SetTwoSourcesWithText();
+  auto text_factory = base::MakeRefCounted<test::FakeTextDecoderFactory>();
+  RendererImpl::Deps deps = MakeDeps();
+  deps.text_decoder_factory = text_factory;
+  CreateRendererWith(std::move(deps));
+  Initialize();
+  ASSERT_TRUE(WaitFor([this] { return init_done_; }));
+  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+
+  // Select BOTH sources' text tracks. Each leg pumps to EOS synchronously
+  // (FakeDemuxerStream completes Read inline), one cue per source.
+  for (int source = 0; source < 2; ++source) {
+    text_streams_[source]->AppendBuffer(
+        test::MakeDataBuffer(DemuxerStreamType::kText, /*serial=*/0));
+    std::atomic<bool> changed{false};
+    renderer_->OnTracksChanged(
+        DemuxerStreamType::kText, text_streams_[source].get(),
+        base::BindOnce([](std::atomic<bool>* c) { c->store(true); }, &changed),
+        source);
+    EXPECT_TRUE(changed.load());
+  }
+  ASSERT_EQ(client_.cues().size(), 2u);
+  EXPECT_EQ(client_.cues()[0].source_id, 0);
+  EXPECT_EQ(client_.cues()[1].source_id, 1);
+
+  // Data waiting for the post-seek read, on BOTH legs.
+  for (int source = 0; source < 2; ++source) {
+    text_streams_[source]->AppendBuffer(
+        test::MakeDataBuffer(DemuxerStreamType::kText, /*serial=*/0));
+  }
+  bool flushed = false;
+  renderer_->Flush(base::BindOnce([](bool* f) { *f = true; }, &flushed));
+  ASSERT_TRUE(WaitFor([&flushed] { return flushed; }));
+
+  // Disarmed: the pending buffers are NOT delivered between Flush and
+  // StartPlayingFrom.
+  EXPECT_EQ(client_.cues().size(), 2u);
+
+  renderer_->StartPlayingFrom(base::TimeDelta());
+
+  // ...and re-armed: both legs read again, each cue still tagged with its own
+  // source.
+  ASSERT_EQ(client_.cues().size(), 4u);
+  EXPECT_EQ(client_.cues()[2].source_id, 0);
+  EXPECT_EQ(client_.cues()[3].source_id, 1);
+}
+
+// ---------------------------------------------------------------------------
+// MUTATION PROOF (docs/14 stage 4). The per-source text-leg assertions above
+// must TURN RED under the following edits, proving each behaviour is genuinely
+// consumed, not merely present:
+//
+//   M-render: in renderer_impl_text.cc OnTextRead, tag every cue with source 0
+//         (`cue.source_id = 0;`). SecondarySourceTextCueCarriesSourceId fails
+//         on the cue's source_id (0 not 1) -- the number a multi-source host
+//         routes subtitles by. Restore.
+//   M9: in renderer_impl_controls.cc, remove the kText source bounds check
+//         (answer the OOB leg instead of reporting). The red arrives as a
+//         CRASH: the leg is indexed past text_legs_ and the next write
+//         corrupts the heap. ATextTrackNamingAnUnknownSourceIsRefused is the
+//         test that dies. Restore.
+//   M10: in renderer_impl.cc Flush, drop `leg.ended = false` from the
+//         per-leg loop. FlushDisarmsEveryTextLegAndStartReArmsThem fails on
+//         the post-seek cue count (2 not 4): every leg stayed ended, so
+//         StartPlayingFrom's re-arm read nothing. Restore.
+//
+// All mutations were run, seen red, reverted, and re-verified green.
+// ---------------------------------------------------------------------------
 
 }  // namespace
 }  // namespace avbase::media

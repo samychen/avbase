@@ -19,6 +19,11 @@
 // No Play(), no sink pumping: the subject is the seek completion path, and
 // pulling frames would only add a clock to race against. The waits are the
 // fixture's one-sided pumps, which drive S1 while they poll.
+//
+// The file also carries the stage-4 runtime track-selection tests: what the
+// pipeline does when a host selects a track whose aggregate index belongs to
+// a SECONDARY source (video/audio refused before routing; text selected and
+// delivered tagged with its source).
 
 #include <atomic>
 #include <memory>
@@ -29,11 +34,15 @@
 #include "base/time/time.h"
 #include "gtest/gtest.h"
 #include "media/base/demuxer.h"
+#include "media/base/demuxer_stream.h"
 #include "media/base/pipeline_status.h"
+#include "media/base/timed_text.h"
 #include "media/filters/legacy/av_sync_controller.h"
 #include "media/filters/pipeline_impl.h"
+#include "tests/support/fake_demuxer_stream.h"
 #include "tests/support/pipeline_fixture.h"
 #include "tests/support/synthetic_demuxer.h"
+#include "tests/support/text_fake_demuxer.h"
 
 namespace avbase::media {
 namespace {
@@ -88,8 +97,59 @@ class PipelineMultiSourceTest : public PipelineTestFixture {
                                      << client_.EventLog();
   }
 
+  // Starts the pipeline with a synthetic video+audio source 0 and a TEXT-ONLY
+  // source 1 (docs/14 stage 4): the shape whose subtitle track only the
+  // aggregate numbering can address. The text factory comes from the fixture
+  // (with_text_factory_ must be set before BuildGraph, which this does), and
+  // the text source stays observable so a test can script a cue into it.
+  void StartPipelineWithTextSecondSource() {
+    with_text_factory_ = true;
+    BuildGraph();
+    auto primary = std::make_unique<test::SyntheticDemuxer>(spec_);
+    auto second = std::make_unique<test::TextFakeDemuxer>(/*first_index=*/0);
+    text_demuxer_ = second.get();
+    std::vector<std::unique_ptr<Demuxer>> sources;
+    sources.push_back(std::move(primary));
+    sources.push_back(std::move(second));
+    pipeline_->Start(std::move(sources), renderer_factory_.get(),
+                     RendererType::kRendererImpl, runner_, &client_);
+  }
+
+  // One track select through the pipeline, waited out. The select is POSTED
+  // to the media sequence, so the callback arrives during the pump. Dispatches
+  // through the typed public wrappers (SelectTrack itself is private).
+  PipelineStatus SelectAndWait(DemuxerStreamType type, int index) {
+    std::atomic<bool> done{false};
+    PipelineStatus status = PipelineStatus::kOk;
+    auto cb = base::BindOnce(
+        [](std::atomic<bool>* d, PipelineStatus* s, PipelineStatus v) {
+          d->store(true);
+          *s = v;
+        },
+        &done, &status);
+    switch (type) {
+    case DemuxerStreamType::kVideo:
+      pipeline_->SelectVideoTrack(index, std::move(cb));
+      break;
+    case DemuxerStreamType::kAudio:
+      pipeline_->SelectAudioTrack(index, std::move(cb));
+      break;
+    case DemuxerStreamType::kText:
+      pipeline_->SelectTextTrack(index, std::move(cb));
+      break;
+    default:
+      ADD_FAILURE() << "no public select wrapper for this stream type";
+      return status;
+    }
+    EXPECT_TRUE(PumpUntil([&done] { return done.load(); }))
+        << "select callback never ran; events:\n"
+        << client_.EventLog();
+    return status;
+  }
+
   test::SyntheticDemuxer* demuxer0_ = nullptr;
   test::SyntheticDemuxer* demuxer1_ = nullptr;
+  test::TextFakeDemuxer* text_demuxer_ = nullptr;
   std::atomic<bool> seeked_{false};
 };
 
@@ -162,6 +222,87 @@ TEST_F(PipelineMultiSourceTest, SingleSourceSeeksNoOffset) {
 }
 
 // ---------------------------------------------------------------------------
+// Runtime track selection over the aggregate index space (docs/14 stage 4).
+// ---------------------------------------------------------------------------
+
+// Stage 4 made a secondary source's video/audio index RESOLVABLE (FindStream
+// answers it), but the renderer's video/audio legs are source 0's only
+// (§4.2). Selecting one must be refused BEFORE the composite re-points that
+// child's active stream: routing first and refusing after would leave the
+// leg reading a stream that no longer receives packets -- "the track
+// switched and nothing arrived", reported as kOk. The refusal is the
+// pipeline's own, so no renderer error event accompanies it.
+TEST_F(PipelineMultiSourceTest,
+       SelectingASecondarySourcesVideoTrackIsRefusedBeforeRouting) {
+  StartTwoSourcePipeline();
+  WaitUntilStarted();
+
+  // Two synthetic sources, video=0 and audio=1 each: stride 2, so source 1's
+  // video track is aggregate index 2 -- the number a host reads out of
+  // media_info().streams.
+  EXPECT_EQ(SelectAndWait(DemuxerStreamType::kVideo, 2),
+            PipelineStatus::kTrackSwitchError);
+  EXPECT_FALSE(client_.HasError()) << client_.error().ToString();
+}
+
+// The same refusal on the audio side (§4.2: the audio leg is source 0 only,
+// secondary audio is seen but not selected). Index 3 is source 1's audio
+// track under the same stride-2 numbering.
+TEST_F(PipelineMultiSourceTest,
+       SelectingASecondarySourcesAudioTrackIsRefusedBeforeRouting) {
+  StartTwoSourcePipeline();
+  WaitUntilStarted();
+
+  EXPECT_EQ(SelectAndWait(DemuxerStreamType::kAudio, 3),
+            PipelineStatus::kTrackSwitchError);
+  EXPECT_FALSE(client_.HasError()) << client_.error().ToString();
+}
+
+// The discrimination half: source 0's own tracks are NOT bounded by the
+// stage-4 pre-check. A same-track select is the renderer's no-op path, which
+// is what proves the refusals above are about the SOURCE and not about the
+// call itself.
+TEST_F(PipelineMultiSourceTest, SelectingThePrimarySourcesTracksStillWorks) {
+  StartTwoSourcePipeline();
+  WaitUntilStarted();
+
+  EXPECT_EQ(SelectAndWait(DemuxerStreamType::kVideo, 0), PipelineStatus::kOk);
+  EXPECT_EQ(SelectAndWait(DemuxerStreamType::kAudio, 1), PipelineStatus::kOk);
+  EXPECT_FALSE(client_.HasError()) << client_.error().ToString();
+}
+
+// The stage-4 glue, end to end: a secondary source's subtitle track is
+// selected through the pipeline's aggregate numbering, and the cue reaches
+// the host tagged with ITS source -- the number a host needs to route it to
+// the right overlay. The composite suite proves SourceIdForIndex answers 1
+// for this index and the renderer suite proves OnTracksChanged(..., 1) tags
+// the cue; this is the one that proves the pipeline passes the composite's
+// answer through instead of a hardcoded 0.
+TEST_F(PipelineMultiSourceTest,
+       ASecondarySourcesTextCueArrivesTaggedWithItsSource) {
+  StartPipelineWithTextSecondSource();
+  ASSERT_TRUE(PumpUntil([this] { return client_.HaveMetadata(); }))
+      << "pipeline never became ready; events:\n"
+      << client_.EventLog();
+
+  // Source 0 (synthetic): video 0, audio 1. Source 1 (text-only): text 0, 1.
+  // Stride = max child index + 1 = 2, so source 1's first subtitle track is
+  // aggregate index 2 -- the number media_info().streams advertises for it.
+  text_demuxer_->text_stream(0)->AppendBuffer(
+      test::MakeDataBuffer(DemuxerStreamType::kText, /*serial=*/0));
+
+  EXPECT_EQ(SelectAndWait(DemuxerStreamType::kText, 2), PipelineStatus::kOk);
+
+  // The leg pumps on the media sequence during the select's own post, so the
+  // cue has arrived by the time the callback has.
+  ASSERT_FALSE(client_.cues().empty())
+      << "no subtitle cue was delivered for source 1's text track";
+  ASSERT_EQ(client_.cues().size(), 1u);
+  EXPECT_EQ(client_.cues()[0].source_id, 1)
+      << "the cue was not tagged with the source it was decoded from";
+}
+
+// ---------------------------------------------------------------------------
 // MUTATION PROOF (docs/14 stage 2, §7.2). The assertions above must TURN RED
 // under the following edits, proving the offset is genuinely derived from the
 // per-source landings:
@@ -191,6 +332,19 @@ TEST_F(PipelineMultiSourceTest, SingleSourceSeeksNoOffset) {
 //         composite suite's SeekLandingsAreIndexedNotOrdered catches the same
 //         edit one layer down (that test asserts the per-index value, not the
 //         max, so it goes red where the ordered test would not).
+//
+//   runtime track selection (stage 4):
+//   M-C5: in pipeline_track_select.cc DoSelectTrack, delete the video/audio
+//         source pre-check (or move it below SetActiveStream).
+//         SelectingASecondarySources{Video,Audio}TrackIsRefusedBeforeRouting
+//         fails twice: the status comes back kOk (the renderer's late refusal
+//         is wrapped in one) and the error event that refusal reports is
+//         present. Restore.
+//   M-C6: in pipeline_track_select.cc DoSelectTrack, hardcode source_id 0 in
+//         the OnTracksChanged call.
+//         ASecondarySourcesTextCueArrivesTaggedWithItsSource fails on the
+//         cue's source_id (0 not 1) -- the glue neither half-test covers on
+//         its own. Restore.
 //
 // All mutations were run, seen red, reverted, and re-verified green.
 // ---------------------------------------------------------------------------

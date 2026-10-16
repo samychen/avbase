@@ -52,8 +52,11 @@ CompositeDemuxer::GetStreams(DemuxerStreamType type) {
 
 void CompositeDemuxer::SetActiveStream(DemuxerStreamType type,
                                        int stream_index) {
-  const DemuxerStream* target = FindStream(type, stream_index);
-  if (!target) {
+  int source_id = 0;
+  int child_index = 0;
+  if (!DecodeIndex(stream_index, &source_id, &child_index) ||
+      !sources_[static_cast<size_t>(source_id)].demuxer->FindStream(
+          type, child_index)) {
     // Not ours -- including "no such index in any child". Silently routing it
     // is not an option: whichever source owns that number is the only one that
     // can route packets to it, so a misrouted index here would show up as
@@ -63,40 +66,47 @@ void CompositeDemuxer::SetActiveStream(DemuxerStreamType type,
                  << " is among this resource's sources";
     return;
   }
-  const int stride = IndexStride();
-  const int source_id = stream_index / stride;
   sources_[static_cast<size_t>(source_id)].demuxer->SetActiveStream(
-      type, stream_index - source_id * stride);
+      type, child_index);
 }
 
 DemuxerStream* CompositeDemuxer::FindStream(DemuxerStreamType type,
                                             int stream_index) {
-  const int stride = IndexStride();
-  if (stream_index < 0 || stride <= 0) {
-    return nullptr;
-  }
-  const int source_id = stream_index / stride;
-  if (source_id >= static_cast<int>(sources_.size())) {
+  int source_id = 0;
+  int child_index = 0;
+  if (!DecodeIndex(stream_index, &source_id, &child_index)) {
     return nullptr;
   }
   // Translated at the boundary: the child sees its OWN index, because that is
   // what its packets carry and what its routing predicate compares.
-  return sources_[source_id].demuxer->FindStream(type, stream_index -
-                                                           source_id * stride);
+  return sources_[static_cast<size_t>(source_id)].demuxer->FindStream(
+      type, child_index);
 }
 
 int CompositeDemuxer::SourceIdForIndex(DemuxerStreamType type,
                                        int stream_index) {
   (void)type;  // |stride| is type-agnostic.
-  const int stride = IndexStride();
-  if (stream_index < 0 || stride <= 0) {
-    return 0;
-  }
-  const int source_id = stream_index / stride;
-  if (source_id >= static_cast<int>(sources_.size())) {
+  int source_id = 0;
+  int child_index = 0;
+  if (!DecodeIndex(stream_index, &source_id, &child_index)) {
     return 0;
   }
   return source_id;
+}
+
+bool CompositeDemuxer::DecodeIndex(int stream_index, int* source_id,
+                                   int* child_index) const {
+  const int stride = IndexStride();
+  if (stream_index < 0 || stride <= 0) {
+    return false;
+  }
+  const int source = stream_index / stride;
+  if (source >= static_cast<int>(sources_.size())) {
+    return false;
+  }
+  *source_id = source;
+  *child_index = stream_index - source * stride;
+  return true;
 }
 
 int CompositeDemuxer::IndexStride() const {
@@ -329,9 +339,13 @@ const char* CompositeDemuxer::name() const {
 }
 
 void CompositeDemuxer::SetDuration(base::TimeDelta duration) {
-  // Report the longest source duration to the pipeline host.
-  if (duration > media_info_.duration) {
-    media_info_.duration = duration;
+  // Report the longest source duration to the pipeline host. The high-water
+  // is kept apart from media_info_ (see the member's comment): that snapshot
+  // is overwritten wholesale by the next media_info() call, so a maximum
+  // living there would be silently reset -- after which a shorter-but-still-
+  // longest child duration would never be reported again.
+  if (duration > reported_duration_) {
+    reported_duration_ = duration;
     if (host_) {
       host_->SetDuration(duration);
     }

@@ -226,9 +226,7 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // 1" is a question about a specific leg, not the composited one.
   VideoRendererImpl* video_renderer(int source_index) const;
   // How many sources got a video leg: the structural half of the multi-source
-  // contract, asserted alongside the behavioural half in
-  // renderer_multi_source_unittest.cc (the mutation that drops a chain turns
-  // both red).
+  // contract (renderer_multi_source_unittest.cc asserts both halves).
   size_t video_renderer_count() const;
 
   // Cadence of the S1 clock/statistics push loops; shared by the start path
@@ -395,11 +393,9 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
   // (the audio one's contract, and VideoRendererImpl's own).
   DemuxerStream* video_stream_{nullptr};
   // The resource this renderer was initialized with. Raw, same lifetime
-  // contract as the stream pointers; the foreign-stream guard in
-  // OnTracksChanged asks it LIVE (IsPrimaryStream carries the snapshot lesson).
+  // contract as the stream pointers (the foreign-stream guard asks it LIVE).
   base::raw_ptr<MediaResource> media_resource_{nullptr};
-  // Text legs (docs/14 stage 4): one per source, indexed by source_id; source 0
-  // is the old single text_stream_; |TextLeg::generation| invalidates reads.
+  // Text legs (docs/14 stage 4): one per source, indexed by source_id.
   struct TextLeg {
     DemuxerStream* stream = nullptr;
     std::unique_ptr<TextDecoder> decoder;
@@ -408,6 +404,10 @@ class AVBASE_MEDIA_EXPORT RendererImpl final : public Renderer {
     int generation = 0;
   };
   std::vector<TextLeg> text_legs_;
+  // The text leg of |source_id| (docs/14 stage 4), or nullptr when the id
+  // names no source. Mirrors video_renderer(int): the bounds check lives in
+  // ONE accessor instead of at each of the three call sites.
+  TextLeg* text_leg(int source_id);
   // Live-edge text policy (Renderer::SetSourceLiveness), applied to every leg.
   bool source_is_live_{false};
   base::TimeDelta max_cue_age_{base::TimeDelta()};

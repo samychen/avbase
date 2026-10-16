@@ -159,11 +159,14 @@ void PipelineImpl::OnDemuxerInitialized(Status status) {
                         base::BindOnce(&PipelineImpl::OnRendererInitialized,
 
                                        weak_factory_.GetWeakPtr()));
+  // Composed ONCE and read twice: on a composite the answer is a full merge
+  // (every StreamInfo copied, a metadata string per stream), so calling it
+  // again for the snapshot below would pay for the same work twice.
+  const MediaInfo info = composite_->media_info();
   {
     base::AutoLock scoped(snapshot_lock_);
-    media_info_ = composite_->media_info();
+    media_info_ = info;
   }
-  const MediaInfo info = composite_->media_info();
   if (info.duration != kNoTimestamp) {
     duration_micros_.store(info.duration.InMicroseconds());
     client_->OnDurationChange(info.duration);

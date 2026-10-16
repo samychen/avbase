@@ -21,6 +21,7 @@
 #include "gtest/gtest.h"
 #include "media/base/demuxer_stream.h"
 #include "tests/support/fake_demuxer_stream.h"
+#include "tests/support/text_fake_demuxer.h"
 
 namespace avbase::media {
 namespace {
@@ -28,6 +29,7 @@ namespace {
 using test::FakeDemuxerStream;
 using test::MakeValidAudioConfig;
 using test::MakeValidVideoConfig;
+using test::TextFakeDemuxer;
 
 // A Demuxer whose only stream is a scripted video stream, returning a stable
 // pointer so the composite's addressing can be observed at the pointer level.
@@ -325,87 +327,11 @@ TEST(CompositeDemuxerTest, SingleSourceDemuxerAxisDefaultsToPlainStream) {
 // host would have to type to get either.
 // ---------------------------------------------------------------------------
 
-// Valid means "carries a codec name" for a text config (TextDecoderConfig::
-// IsValidConfig()); the streams below are never decoded, but a half-built one
-// would fail for a reason unrelated to what these tests are about.
-TextDecoderConfig MakeSubripConfig() {
-  TextDecoderConfig config;
-  config.codec_name = "subrip";
-  return config;
-}
-
-// A child with two text streams whose container indices are deliberately NOT
-// zero-based, because that is the case that produces the collision: both
-// children answer index 2, and only the aggregate can tell them apart.
-class TextFakeDemuxer : public Demuxer {
- public:
-  explicit TextFakeDemuxer(int32_t first_index) {
-    for (int i = 0; i < 2; ++i) {
-      FakeDemuxerStream* s = new FakeDemuxerStream(
-          DemuxerStreamType::kText, MakeValidAudioConfig(),
-          MakeValidVideoConfig(), MakeSubripConfig());
-      s->set_stream_index(first_index + i);
-      streams_.push_back(std::unique_ptr<FakeDemuxerStream>(s));
-      StreamInfo info;
-      info.index = first_index + i;
-      info.kind = StreamKind::kText;
-      info.codec_name = "subrip";
-      media_info_.streams.push_back(std::move(info));
-    }
-  }
-
-  DemuxerStream* GetStream(DemuxerStreamType type) override {
-    const std::vector<DemuxerStream*> all = GetStreams(type);
-    return all.empty() ? nullptr : all[0];
-  }
-  std::vector<DemuxerStream*> GetStreams(DemuxerStreamType type) override {
-    std::vector<DemuxerStream*> out;
-    for (auto& s : streams_) {
-      if (s->type() == type) {
-        out.push_back(s.get());
-      }
-    }
-    return out;
-  }
-  void SetActiveStream(DemuxerStreamType type, int stream_index) override {
-    last_active_type_ = type;
-    last_active_index_ = stream_index;
-    ++active_calls_;
-  }
-  const MediaInfo& media_info() const override { return media_info_; }
-
-  // The unimplemented rest.
-  void Initialize(const DataSourceDescriptor&, const DemuxerOptions&, Host*,
-                  base::scoped_refptr<base::SequencedTaskRunner>,
-                  InitializeCB cb) override {
-    std::move(cb).Run(Status());
-  }
-  void StartPlayingFrom(base::TimeDelta, SeekCB cb) override {
-    std::move(cb).Run(Status(), base::TimeDelta());
-  }
-  void Flush(base::OnceClosure cb) override { std::move(cb).Run(); }
-  void Reset(base::OnceClosure cb) override { std::move(cb).Run(); }
-  void Stop() override {}
-  base::TimeDelta GetStartTime() const override { return base::TimeDelta(); }
-  bool IsLive() const override { return false; }
-  bool IsSeekable() const override { return true; }
-  DemuxerStats GetStats() const override { return DemuxerStats(); }
-  const char* name() const override { return "TextFakeDemuxer"; }
-
-  DemuxerStream* stream(size_t i) const { return streams_[i].get(); }
-  DemuxerStreamType last_active_type() const { return last_active_type_; }
-  int last_active_index() const { return last_active_index_; }
-  int active_calls() const { return active_calls_; }
-
- private:
-  std::vector<std::unique_ptr<FakeDemuxerStream>> streams_;
-  MediaInfo media_info_;
-  DemuxerStreamType last_active_type_{DemuxerStreamType::kUnknown};
-  int last_active_index_{-1};
-  int active_calls_{0};
-};
-
-CompositeDemuxer::Source MakeSource(std::unique_ptr<Demuxer> d) {
+// Named apart from MakeSource above ON PURPOSE: two overloads distinguished
+// only by what the unique_ptr points at are an editing trap (a future
+// TextFakeDemuxer-derived-from-FakeDemuxer would make the call ambiguous),
+// and a trap in a test helper is a trap in every test that uses it.
+CompositeDemuxer::Source MakeAnySource(std::unique_ptr<Demuxer> d) {
   CompositeDemuxer::Source s;
   s.demuxer = std::move(d);
   return s;
@@ -421,8 +347,8 @@ class TwoTextSourcesTest : public ::testing::Test {
     s0_ = a.get();
     s1_ = b.get();
     std::vector<CompositeDemuxer::Source> v;
-    v.push_back(MakeSource(std::move(a)));
-    v.push_back(MakeSource(std::move(b)));
+    v.push_back(MakeAnySource(std::move(a)));
+    v.push_back(MakeAnySource(std::move(b)));
     comp_ = std::make_unique<CompositeDemuxer>(std::move(v));
   }
 
@@ -507,12 +433,60 @@ TEST(CompositeDemuxerTest, WrappingOneSourceDoesNotRenumberIt) {
   auto a = std::make_unique<TextFakeDemuxer>(/*first_index=*/2);
   DemuxerStream* owned = a->stream(1);
   std::vector<CompositeDemuxer::Source> v;
-  v.push_back(MakeSource(std::move(a)));
+  v.push_back(MakeAnySource(std::move(a)));
   CompositeDemuxer comp(std::move(v));
 
   EXPECT_EQ(comp.FindStream(DemuxerStreamType::kText, 3), owned);
   EXPECT_EQ(comp.media_info().streams.size(), 2u);
   EXPECT_EQ(comp.media_info().streams[1].index, 3);
+}
+
+// ---------------------------------------------------------------------------
+// The duration high-water (Demuxer::Host::SetDuration) is kept in its OWN
+// member, not in media_info_.duration: the multi-source snapshot overwrites
+// that member wholesale, so a maximum living there would be silently reset by
+// the next media_info() call -- after which a shorter-but-still-longest child
+// duration would never be reported again, and the aggregate would advertise a
+// duration SHORTER than one already sent upstream.
+// ---------------------------------------------------------------------------
+
+// A Host that records only durations: the composite forwards child events to
+// it, and the test drives SetDuration the way a child would.
+class RecordingHost : public Demuxer::Host {
+ public:
+  void SetDuration(base::TimeDelta duration) override {
+    durations.push_back(duration);
+  }
+  void OnBufferedTimeUpdate(base::TimeDelta, base::TimeDelta) override {}
+  void OnDemuxerError(MediaError) override {}
+
+  std::vector<base::TimeDelta> durations;
+};
+
+TEST(CompositeDemuxerTest, TheLongestDurationSurvivesAMediaInfoSnapshot) {
+  auto a = MakeFakeDemuxer();
+  auto b = MakeFakeDemuxer();
+  RecordingHost host;
+  std::vector<CompositeDemuxer::Source> v;
+  v.push_back(MakeSource(std::move(a)));
+  v.push_back(MakeSource(std::move(b)));
+  CompositeDemuxer comp(std::move(v));
+  // The fakes answer Initialize inline, so host_ is armed by the time this
+  // returns; the runner is unused by them.
+  comp.Initialize(DataSourceDescriptor{}, DemuxerOptions{}, &host, nullptr,
+                  base::BindOnce([](Status) {}));
+
+  comp.SetDuration(base::Seconds(10));
+  ASSERT_EQ(host.durations.size(), 1u);
+
+  // Two sources take the merge path, which overwrites media_info_ -- the line
+  // that used to lose the high-water.
+  comp.media_info();
+
+  comp.SetDuration(base::Seconds(5));   // Shorter than reported: no event.
+  comp.SetDuration(base::Seconds(20));  // Longer than the high-water: event.
+  EXPECT_EQ(host.durations, (std::vector<base::TimeDelta>{base::Seconds(10),
+                                                          base::Seconds(20)}));
 }
 
 // ---------------------------------------------------------------------------
@@ -559,6 +533,13 @@ TEST(CompositeDemuxerTest, WrappingOneSourceDoesNotRenumberIt) {
 //       (`return 0;`). SourceIdForIndexRoutesToTheOwningSource fails on the
 //       two secondary lookups (kStride+2/3 resolve to 0 not 1) -- the very
 //       number the renderer consumes to wire the right text leg. Restore.
+//
+//   duration high-water split (stage 4 cleanup):
+//   M8: in composite_demuxer.cc SetDuration, compare against
+//       media_info_.duration again (revert the reported_duration_ split).
+//       TheLongestDurationSurvivesAMediaInfoSnapshot fails on the second
+//       event: media_info() has reset the member to source 0's duration
+//       (zero), so SetDuration(5 s) is reported a second time. Restore.
 //
 // All mutations were run, seen red, reverted, and re-verified green.
 // ---------------------------------------------------------------------------

@@ -170,6 +170,14 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   // a child that grows its stream list at Initialize is not answering from
   // a stale answer taken at construction -- GetStreams is a live query.
   int IndexStride() const;
+  // The ONE place an aggregate index is taken apart into (source_id,
+  // child_index). Every public entry point that answers "which stream is
+  // index N" must go through here: the disjointness of the two numbering
+  // spaces (FindStream's contract above) is a property of this arithmetic,
+  // and three open-coded copies of it would be three chances to drift --
+  // which is the silent ambiguity the aggregate index exists to remove.
+  // Returns false when the index names no stream in any source.
+  bool DecodeIndex(int stream_index, int* source_id, int* child_index) const;
   MediaInfo MergeMediaInfo() const;
   // |source_id| is the child's index, bound FIRST by StartPlayingFrom
   // (base::BindOnce passes pre-bound arguments ahead of the callback's), so
@@ -181,9 +189,18 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   std::vector<Child> sources_;
   base::raw_ptr<Host> host_ = nullptr;
   // mutable: media_info() is const and the multi-source answer is composed on
-  // demand (path above for why it cannot be cached once at construction), and
-  // SetDuration() -- non-const -- writes the longest child's duration here.
+  // demand (path above for why it cannot be cached once at construction).
+  // Carries the MERGED snapshot only -- never a running maximum: the longest
+  // child duration SetDuration() reports upstream lives in
+  // |reported_duration_| below, because this member is overwritten wholesale
+  // by the next media_info() call and a high-water kept here would be
+  // silently reset by it.
   mutable MediaInfo media_info_;
+  // The longest duration any child has reported (Demuxer::Host::SetDuration).
+  // Deliberately NOT media_info_.duration: the snapshot above is source 0's
+  // scalars by design (see the media_info() comment), and the header there
+  // promises the two numbers stay separate.
+  base::TimeDelta reported_duration_;
 
   // Initialize fan-out state.
   size_t pending_inits_ = 0;

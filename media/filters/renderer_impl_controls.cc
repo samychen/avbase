@@ -230,7 +230,8 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
   if (track_type == DemuxerStreamType::kText) {
     // Per-source text leg (docs/14 stage 4): decode cues on S1, deliver them
     // tagged with |source_id|; a null |enabled_track| tears the leg down.
-    if (source_id < 0 || static_cast<size_t>(source_id) >= text_legs_.size()) {
+    TextLeg* leg = text_leg(source_id);
+    if (!leg) {
       ReportError(MediaError(
           ErrorCode::kInvalidArgument, "text track names an unknown source",
           "source_id " + std::to_string(source_id) + " but " +
@@ -248,11 +249,10 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
       std::move(change_completed_cb).Run();
       return;
     }
-    auto& leg = text_legs_[static_cast<size_t>(source_id)];
-    ++leg.generation;
-    leg.read_outstanding = leg.ended = false;
-    leg.stream = enabled_track;
-    leg.decoder.reset();
+    ++leg->generation;
+    leg->read_outstanding = leg->ended = false;
+    leg->stream = enabled_track;
+    leg->decoder.reset();
     if (enabled_track) {
       const TextDecoderConfig& config = enabled_track->text_decoder_config();
       if (!config.IsValidConfig()) {
@@ -264,8 +264,8 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
         std::move(change_completed_cb).Run();
         return;
       }
-      leg.decoder = deps_.text_decoder_factory->CreateTextDecoder(config);
-      if (!leg.decoder) {
+      leg->decoder = deps_.text_decoder_factory->CreateTextDecoder(config);
+      if (!leg->decoder) {
         ReportError(MediaError(
             ErrorCode::kNotImplemented,
             "cannot decode that subtitle codec (\"" + config.codec_name + "\")",
@@ -318,12 +318,12 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
     }
     // FOREIGN-STREAM GUARD (docs/14 stage 1). The handover machinery below
     // switches source 0's alternates: it re-anchors against video_stream_,
-    // hands over source 0's sink, and re-wires source 0's clock-feeding
-    // frame hook. A stream belonging to another source is none of those
-    // things, and reaching it would silently build a replacement renderer
-    // for the wrong leg. CompositeDemuxer::SetActiveStream only routes source
-    // 0 today, so this is unreachable through the pipeline -- it is a guard
-    // with a direct unit test, not a speculation.
+    // hands over source 0's sink and clock hook. A stream belonging to
+    // another source is none of those things, and reaching it would silently
+    // build a replacement renderer for the wrong leg. Stage 4 made such a
+    // stream RESOLVABLE by index, so the pipeline refuses it before routing
+    // (pipeline_track_select.cc); this guard is the renderer's own boundary,
+    // kept honest by a direct unit test, not a speculation.
     if (!IsPrimaryStream(DemuxerStreamType::kVideo, enabled_track)) {
       ReportError(MediaError(
           ErrorCode::kNotImplemented,
@@ -376,7 +376,7 @@ void RendererImpl::OnTracksChanged(DemuxerStreamType track_type,
   }
   // FOREIGN-STREAM GUARD (docs/14 §4.2): the audio leg is source 0 only, so a
   // stream from another source has no renderer to switch INTO. Same shape and
-  // same unreachable-through-the-pipeline status as the video one above.
+  // status as the video guard above: the pipeline pre-checks it.
   if (!IsPrimaryStream(DemuxerStreamType::kAudio, enabled_track)) {
     ReportError(MediaError(
         ErrorCode::kNotImplemented,

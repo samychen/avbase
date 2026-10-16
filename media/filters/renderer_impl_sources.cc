@@ -175,6 +175,16 @@ VideoRendererImpl* RendererImpl::video_renderer(int source_index) const {
   return video_renderers_[static_cast<size_t>(source_index)].get();
 }
 
+RendererImpl::TextLeg* RendererImpl::text_leg(int source_id) {
+  // Same contract as video_renderer(int): the index IS the source id, so an
+  // out-of-range one is a caller bug -- answered null, without reading past
+  // the vector.
+  if (source_id < 0 || static_cast<size_t>(source_id) >= text_legs_.size()) {
+    return nullptr;
+  }
+  return &text_legs_[static_cast<size_t>(source_id)];
+}
+
 void RendererImpl::SetSourceOffset(int source_id, base::TimeDelta offset) {
   // Stated to the clock controller, not applied here: the clock push
   // (renderer_impl_reporting.cc) consumes it, pacing each leg against the
