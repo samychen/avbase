@@ -8,6 +8,16 @@ Chromium 风格分层 C++ 媒体播放器。目录即 target（`docs/06 §7.6`�
 `platform/` 只装「被宿主选中」的代码；可移植代码不进（FFmpeg→`media/ffmpeg/`、
 GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base`/`player/`。**
 
+## 硬规矩
+- **提交信息一律中文**（2026-10-18 用户要求，含正文；此前英文历史已整体改写）。
+- **`max-buffer-size` 是「全播放器」预算**，不是每条流的额度：ijk 比的是
+  audio+video+subtitle 三队列之和。按流拆分走 `SplitQueueBudget()`（`media/base`），
+  直接写进每条队列会让 A/V 默认内存翻倍（15→30 MiB），且没有测试读回上限 →
+  改这里先看 `ByteBudgetIsSplitAcrossStreams`。`max_buffers=256` 是每条队列各自的全额，
+  **不参与**拆分。
+- **子代理/工具的审查报告要逐条复核**：第九十五轮 11 条里 3 条是误报（加锁的跨线程读、
+  不存在的锁序表、把表格行当成缺失章节）。误报也要写进当轮记忆，否则会被反复重查。
+
 ## 五条「写下来会静默失效」的约定（都真踩过）
 - **朝向**：从渲染目标采样回来的 pass 都要 `flip_vertical=true`。搞反 = 上下颠倒、
   无 GL 错误 → 有朝向的代码必须配像素断言。
