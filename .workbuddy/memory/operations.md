@@ -4,6 +4,14 @@
 ```sh
 python3 tools/check_invariants.py --root .     # C1/C4/C5/C16/C22-C28
 python3 tools/check_binary_freshness.py --root .  # 构建树新鲜度，跑 ctest/基准前
+tools/gate_local.sh            # 本地复刻 CI 门禁序列（sandbox 看不到 GitHub，用它替代）
+tools/gate_local.sh --list     # 看 job -> CI job 映射
+tools/gate_local.sh --jobs e2e,core   # 只跑指定 job；--all 跑全部（慢）
+# 八十八轮后把它接进门禁：CI 在 GitHub Actions（sandbox 代理拦 api.github.com/
+# HTTPS git，看不到结果）。gate_local.sh 用同一套命令在本地出相同信号：
+# inv(check_invariants) fmt(check-format) lint(check-cpplint) macos(macos-sdl2)
+# capi(e2e C ABI) core(no-ffmpeg) ffmpeg e2e(headless 播到 kCompleted) + 沙箱
+# 跑不起的 tidy/asan/tsan/ubsan/coverage 标为 --all 可选。
 # 三个静态工具都只在 venv 里，都不在 PATH（裸调 exit=127 → 门禁看起来绿）
 CF=~/.workbuddy/binaries/python/envs/default/bin/clang-format   # 18.1.3
 CT=~/.workbuddy/binaries/python/envs/tidy18/bin/clang-tidy      # 18.1.8，对齐 CI
