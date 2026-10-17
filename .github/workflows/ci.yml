@@ -180,6 +180,13 @@ jobs:
       - run: cmake --preset ${{ matrix.preset }}
       - run: cmake --build build/${{ matrix.preset }}
       - run: python3 tools/check_invariants.py --root .
+      # Before ctest, not after: a green test run over a stale binary is a
+      # green run over code that no longer exists, and it stays green forever.
+      # The tell is the test COUNT -- a tree that gained tests but reports the
+      # old, smaller number was measured with yesterday's binary. Ninja does
+      # not track a static library's contents, so `cmake --build` can leave an
+      # executable older than the library it links while reporting success.
+      - run: python3 tools/check_binary_freshness.py --root build/${{ matrix.preset }}
       - run: ctest --test-dir build/${{ matrix.preset }} --output-on-failure
       - if: matrix.label == 'coverage'
         run: |
@@ -331,6 +338,10 @@ jobs:
       - run: cmake --preset macos-sdl2
       - run: cmake --build --preset macos-sdl2
       - run: python3 tools/check_invariants.py --root .
+      # Same reason as the matrix job: this is the one build that enables the
+      # VideoToolbox hardware decoder, so "the hardware path is broken" is a
+      # claim you want backed by a binary that is actually current.
+      - run: python3 tools/check_binary_freshness.py --root build/macos-sdl2
       - run: ctest --test-dir build/macos-sdl2 --output-on-failure
       - name: The player binary exists and is a real executable
         run: |

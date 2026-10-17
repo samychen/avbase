@@ -335,6 +335,9 @@ cpplint / corpus / soak / fuzz 等共 17 个 job，见 §7）：
 # 架构与风格不变量（C1–C27，395 个文件）
 python3 tools/check_invariants.py --root .
 
+# 构建树新鲜度：可执行文件是否早于它链接的库
+python3 tools/check_binary_freshness.py --root build/ffmpeg
+
 # 移植常量三方交叉校验：ffplay #define ⟷ avbase 代码 ⟷ docs/05 表 7
 python3 tools/extract_constants.py --root . --selftest            # 不需要 ijkplayer 源码
 python3 tools/extract_constants.py --root . --ijkplayer /path/to/ijkplayer   # 三方
@@ -346,6 +349,19 @@ python3 tools/gen_options.py --root . --coverage
 python3 tools/gen_options.py --root . --selftest
 python3 tools/gen_options.py --root . --emit     # 生成 player/option_registry.inc
 ```
+
+> ⚠️ **`ctest` 报绿之前，先跑 `check_binary_freshness`。**
+> ninja 不跟踪静态库**内容**的变化：库重建了而可执行文件没跟着重新链接时，
+> `cmake --build` 会输出 `no work to do` 并**报成功**。此时 `ctest` 的
+> "N/N passed" 描述的是已经不存在的代码，而且它会一直绿下去。
+> **测试条数就是破绽** —— 一个这两天新增了用例的树，却报出旧的、更小的 N，
+> 说明跑的是旧二进制。修法是按目标重建：
+> `cmake --build build/<preset> --target <name>`（或删掉该二进制让下次构建重链）。
+>
+> ⚠️ **诊断任何"产品有 bug"之前，先确认二进制是当前的。** 本项目真踩过：
+> 拿一个早两轮的 `headless` 诊断出「VideoToolbox 硬解播不完」，
+> 重链后同一命令 3/3 正常 —— 那个 bug 从来不存在，而为它花掉了一整轮。
+> 见 `tools/check_binary_freshness.py` 与 `.workbuddy/memory/operations.md`。
 
 > ⚠️ **改完 `tools/option_map.py` 或 `tools/ported_constants.py` 后先
 > `rm -rf tools/__pycache__` 再跑。** 这两个是数据模块；`cp` 还原时若文件大小相同
