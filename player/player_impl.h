@@ -106,7 +106,7 @@ class PlayerImpl final : public media::Pipeline::Client {
 
   const PlayerConfig& config() const { return config_; }
 
-  // ---- the one test seam (docs/TODO §5c) ----------------------------------
+  // ---- the one test seam (see player_deps_wiring_unittest.cc) ----------
   // PrepareAsync translates PlayerConfig into DefaultRendererFactory::Deps,
   // and until this existed nothing observed that translation. The cost was
   // concrete, not theoretical: wiring "max-fps" in round 71, an edit deleted

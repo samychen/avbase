@@ -4,7 +4,7 @@
 //
 // The PlayerConfig -> DefaultRendererFactory::Deps translation, pinned down.
 //
-// WHY THIS EXISTS (docs/TODO §5c). Nothing in the tree observed what
+// WHY THIS EXISTS. Nothing in the tree observed what
 // PrepareAsync hands the renderer factory. The consequence was concrete,
 // not theoretical: wiring "max-fps" in round 71, an edit accidentally
 // deleted `factory_deps.video_disabled = config_.video.disabled;` (the

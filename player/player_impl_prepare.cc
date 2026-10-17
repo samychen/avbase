@@ -8,12 +8,13 @@
 // a line-count one (C1), and the seam is "the player being given a source
 // and prepared" versus "the player being driven once prepared".
 //
-// The split was made to open a seam, not for its own sake: docs/TODO §5c
-// wants an assertion on what PrepareAsync hands the renderer factory, and
-// player_impl.cc sat one line under its 500-line ceiling with no room for
-// it. The comments inside PrepareAsync are load-bearing (they record which
-// config field became behaviour in which round, and why), so they moved
-// here verbatim rather than being compressed to fit.
+// The split was made to open a seam, not for its own sake: asserting what
+// PrepareAsync hands the renderer factory (tests/unit/player/
+// player_deps_wiring_unittest.cc) needed room, and player_impl.cc sat one
+// line under its 500-line ceiling. The comments inside PrepareAsync are
+// load-bearing (they record which config field became behaviour in which
+// round, and why), so they moved here verbatim rather than being compressed
+// to fit.
 
 #include "player/player_impl.h"
 

@@ -20,7 +20,7 @@
 |---|---|
 | 录制（播放侧落盘） | ❌ 无。仅 `media/transcode/` 离线转码（输入是文件） |
 | 推流 / RTMP publish | ❌ 无。`rtmp` 仅作**输入**协议 |
-| 缩略图 / seek preview | ❌ 无。`get_frame_mode` 是死选项（config 有、registry 有，media 零命中） |
+| 缩略图 / seek preview | ❌ 无。`get_frame_mode` 未接线（config 与 DRAFT `.inc` 有，构建注册表无，media 零命中——见 §2） |
 | HDR / tone mapping | ❌ 无。`hdr_tone_mapping` 在 media/render 零命中；`kHdrUnsupported` 从未 emit |
 | PBO 上传 | ❌ 未实现（`render_perf_stats.h:28` 标 "not built"） |
 | 真色彩管理 | ❌ 无。仅 YUV→RGB 矩阵，无 gamut/EOTF/ICC/HDR→SDR |
@@ -86,12 +86,16 @@ FORMAT/CODEC 透传项。它们的 `PlayerConfig` 字段同样多数无人读；
 
 | 项 | 阻塞原因 |
 |---|---|
-| RTMP / RTSP / SRT 播放验收 | 需真实 peer（本机 MediaMTX 已可跑，见 operations.md） |
 | 真 `tc netem` 弱网 | 需 root；macOS 无 |
 | Linux 显示侧零拷贝（VAAPI→EGL） | 需 Linux + VAAPI 设备 |
 | Windows 显示侧零拷贝（D3D11-GL） | 需 Windows + D3D11 环境 |
 | 硬解性能对照（4K CPU < 15%） | 需 4K 样本入库 |
 | Qt 门面 / soak 48h | Phase 4 剩余（见 12 §2） |
+
+> **已从本节移出**：RTMP / RTSP / SRT 播放验收（第八十二轮实测全绿，MediaMTX v1.21.2
+> loopback、exit 0，RTMP L≈3.97s / RTSP L≈2.99s / SRT L≈3.54s；工具
+> `tools/check_live_protocols.py`，数字与判据见 [12 §2.4](12-剩余工作清单.md)）。它搬走前
+> 指向的 `operations.md` 从未记过这件事，是行文里的假指针。
 
 ---
 

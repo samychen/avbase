@@ -13,7 +13,7 @@
 
 **M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧零拷贝 ⬜ · Phase 5 转码代码全落地（E5 硬编未实测）· macOS 窗口播放器 ✅ · CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅**
 
-最后更新：**2026-10-17**
+最后更新：**2026-10-18**
 
 ---
 
@@ -29,6 +29,7 @@
 - **M15 C ABI**：`player/public/c/avbase_c.h` 真通用门面（60 导出函数 + 门禁）—— ✅
 - **管线原生多源（docs/14）**：`CompositeDemuxer` 聚合 N 源 / 每源一对渲染腿 / 时钟多轴 —— ✅
 - **CI 风格门禁**：`check_invariants` / `clang-format` / `cpplint` / `check_binary_freshness` 全绿；`macos-player` 已修 `buildPresets.targets` 截断陷阱（只编 `play_sdl2` 漏掉 `player_unittests`，CI 长期隐形红）。
+- **选项面**：构建注册表内 **9 个 key 全部有下游读取者（死选项 0）**——4 个 buffer key（第九十一轮）与 `nodisp`/`enable-accurate-seek`（第九十二轮）都是先写读取者再注册回来的；仍未接线的只是 DRAFT `.inc` 里的 spec key，见 [TODO](TODO.md) §2。
 
 ---
 
@@ -47,4 +48,4 @@
 | 决策项 | — | LL-HLS 自研 vs 接受 ~3s、M12 原生后端是否启动、版权主体、golden 基线锁版本，见 [12-剩余工作清单](12-剩余工作清单.md) §6 |
 
 > 完整开放项、降级项、死选项、环境项见 [12-剩余工作清单](12-剩余工作清单.md) 与 [TODO](TODO.md)；
-> 已修关键缺陷（关闭竞态 / VOD 死锁 / 解码器丢包 / corpus 三崩溃）记录在 [12-剩余工作清单](12-剩余工作清单.md) §3。
+> 已修关键缺陷（关闭竞态 / VOD 死锁 / 解码器丢包 / corpus 三崩溃 / EOF 后 seek 永不回调）记录在 [12-剩余工作清单](12-剩余工作清单.md) §3。

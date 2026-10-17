@@ -113,7 +113,7 @@ base::scoped_refptr<VideoEncoderFactory> CreateNvencEncoderFactory();
 // transcode explicitly). Moving the list out would delete the working
 // platform default and leave prefer_hardware inert unless every caller
 // assembled factories itself — the "configured but not effective" shape
-// TODO §5b exists to hunt. When a transcode consumer above media/ appears,
+// docs/TODO §2 exists to hunt. When a transcode consumer above media/ appears,
 // the split becomes mechanical; until then the flags are the honest middle.
 AVBASE_MEDIA_EXPORT
 std::vector<base::scoped_refptr<VideoEncoderFactory>>
