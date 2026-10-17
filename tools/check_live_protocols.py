@@ -70,6 +70,9 @@ MEDIA_MTX_PORTS = {
     "rtsp": 8554,
     "srt": 8890,
 }
+# RTMP/RTSP listen on TCP; SRT listens on UDP. wait_for_port() is a TCP connect,
+# so it can only gate the TCP protocols -- SRT is validated by the play attempt.
+TCP_PROTOCOLS = {"rtmp", "rtsp"}
 # Ports used by the ffmpeg-listener backend (kept off the MediaMTX range so the
 # two backends never collide if both happen to be present).
 FFMPEG_PORTS = {
@@ -99,6 +102,23 @@ def find_mediamtx_config():
     return candidate if os.path.exists(candidate) else None
 
 
+def _position_seconds(rest):
+    """Parse the media time out of one `position: <t> / <dur>` fragment.
+
+    Returns None when the fragment does not start with a number. headless
+    writes a bare "ms" for sub-millisecond positions ("0.231000ms"), so the
+    "ms" suffix is a plain no-op rather than something to scale.
+    """
+    rest = rest.strip()
+    if not rest:
+        return None
+    head = rest.split()[0].rstrip("s")
+    try:
+        return float(head)
+    except ValueError:
+        return None
+
+
 def parse_media_time(text):
     """Return the largest media time (seconds) reported by headless, or 0.0.
 
@@ -107,27 +127,30 @@ def parse_media_time(text):
     and on a finished VOD
         completed at media time 3.009570s
     The largest timestamp seen is the clock the player actually advanced to.
+
+    The position updates are written with a carriage return and NO newline, so
+    one physical line can hold a dozen of them (a live RTMP run reported
+    0.23s..11s all on one line). Scanning with a single find() per line would
+    therefore only ever see the first fragment and report ~0s -- which reads as
+    "the player never advanced" for a stream that in fact played fine. Hence
+    the repeated find() below, not a per-line parse.
     """
     best = 0.0
     for line in text.splitlines():
-        idx = line.find("position:")
-        if idx >= 0:
-            rest = line[idx + len("position:"):].strip()
-            head = rest.split()[0] if rest.split() else ""
-            head = head.rstrip("s")
-            try:
-                best = max(best, float(head))
-            except ValueError:
-                pass
-            continue
+        cursor = 0
+        while True:
+            idx = line.find("position:", cursor)
+            if idx < 0:
+                break
+            cursor = idx + len("position:")
+            value = _position_seconds(line[cursor:])
+            if value is not None:
+                best = max(best, value)
         idx = line.find("completed at media time")
         if idx >= 0:
-            head = line[idx + len("completed at media time"):].strip()
-            head = head.rstrip("s")
-            try:
-                best = max(best, float(head))
-            except ValueError:
-                pass
+            value = _position_seconds(line[idx + len("completed at media time"):])
+            if value is not None:
+                best = max(best, value)
     return best
 
 
@@ -139,19 +162,28 @@ def publish_command_mediamtx(ffmpeg, source, protocol, port):
     """ffmpeg CLI command that publishes |source| to MediaMTX over |protocol|.
 
     ``-re`` publishes at the clip's native rate (so a live reader sees a real
-    stream), ``-stream_loop 2`` repeats the 3 s clip so the source outlives the
-    read budget. ``-c copy`` keeps it a pure protocol test -- no transcode.
+    stream) and ``-c copy`` keeps it a pure protocol test -- no transcode.
+
+    ``-stream_loop -1`` loops forever: the read side is bounded by headless's
+    own ``--timeout``, and a *finite* loop would restart the clip underneath a
+    reader that is still attached. RTMP/SRT readers do not survive that well --
+    sequence numbers reset mid-stream -- and the result would be attributed to
+    the player rather than to the publisher's loop count.
     """
     base = [
         ffmpeg, "-hide_banner", "-loglevel", "error", "-re",
-        "-stream_loop", "2", "-i", source, "-c", "copy",
+        "-stream_loop", "-1", "-i", source, "-c", "copy",
     ]
     if protocol == "rtmp":
         return base + ["-f", "flv", "rtmp://%s:%d/%s" % (HOST, port, STREAM)]
     if protocol == "rtsp":
         return base + ["-f", "rtsp", "rtsp://%s:%d/%s" % (HOST, port, STREAM)]
     if protocol == "srt":
-        url = "srt://%s:%d?streamid=publish/%s" % (HOST, port, STREAM)
+        # MediaMTX addresses SRT paths through the streamid, and the two
+        # directions are separated by a COLON ("publish:foo" / "read:foo").
+        # A slash makes MediaMTX reject the handshake ("Peer rejected
+        # connection"), which looks exactly like a player failure.
+        url = "srt://%s:%d?streamid=publish:%s" % (HOST, port, STREAM)
         return base + ["-f", "mpegts", url]
     raise ValueError("unknown protocol: %s" % protocol)
 
@@ -162,8 +194,41 @@ def play_url_mediamtx(protocol, port):
     if protocol == "rtsp":
         return "rtsp://%s:%d/%s" % (HOST, port, STREAM)
     if protocol == "srt":
-        return "srt://%s:%d?streamid=read/%s" % (HOST, port, STREAM)
+        return "srt://%s:%d?streamid=read:%s" % (HOST, port, STREAM)
     raise ValueError("unknown protocol: %s" % protocol)
+
+
+def wait_until_readable(ffmpeg, url, timeout):
+    """Wait until |url| actually serves data, or return False.
+
+    A fixed sleep between publisher and reader is a race: RTMP needs a publish
+    handshake before MediaMTX will serve the path at all, and the time that
+    takes is not bounded by anything we control. Reading it back with ffprobe
+    turns "is it ready yet?" into an observable condition.
+
+    This is deliberately ffprobe and not headless: the question here is whether
+    the *peer* is serving, and only then is it fair to hold headless's clock
+    against it. A peer that never comes up is an environment gap
+    (SERVER_MISSING), not a player regression.
+    """
+    probe = os.path.join(os.path.dirname(ffmpeg), "ffprobe")
+    if not os.path.exists(probe):
+        probe = ffmpeg  # degrade to a bounded open attempt
+    deadline = time.time() + timeout
+    while True:
+        try:
+            done = subprocess.run(
+                [probe, "-v", "error", "-rw_timeout", "3000000",
+                 "-show_entries", "format=format_name",
+                 "-of", "default=nw=1", url],
+                capture_output=True, text=True, timeout=6)
+            if done.returncode == 0 and "format_name" in done.stdout:
+                return True
+        except subprocess.TimeoutExpired:
+            pass
+        if time.time() >= deadline:
+            return False
+        time.sleep(0.3)
 
 
 def run_case_mediamtx(headless, ffmpeg, source, protocol, port, play_budget,
@@ -178,8 +243,10 @@ def run_case_mediamtx(headless, ffmpeg, source, protocol, port, play_budget,
     try:
         # The reader must come after the writer is up: MediaMTX only serves a
         # path once something is publishing to it.
-        time.sleep(1.5)
         url = play_url_mediamtx(protocol, port)
+        if not wait_until_readable(ffmpeg, url, timeout=15.0):
+            return ("SERVER_MISSING", 0.0, 0.0,
+                    "publisher never made %s readable" % url)
         t0 = time.time()
         try:
             result = subprocess.run(
@@ -401,13 +468,16 @@ def main():
 
     server = None
     if backend == "mediamtx":
-        server = subprocess.Popen([mediamtx, "--config", config],
+        server = subprocess.Popen([mediamtx, config],
                                   stdout=subprocess.DEVNULL,
                                   stderr=subprocess.DEVNULL)
-        first_port = ports[protocols[0]]
-        if not wait_for_port(first_port, timeout=10.0):
+        # MediaMTX brings up all listeners at once; wait on the first TCP
+        # listener requested (skipped entirely if only SRT is requested -- a UDP
+        # port cannot be probed with a TCP connect).
+        tcp_protos = [p for p in protocols if p in TCP_PROTOCOLS]
+        if tcp_protos and not wait_for_port(ports[tcp_protos[0]], timeout=10.0):
             print("check_live_protocols: MediaMTX did not come up on port %d" %
-                  first_port)
+                  ports[tcp_protos[0]])
             server.terminate()
             return 2
 
@@ -415,7 +485,8 @@ def main():
         results = []
         for protocol in protocols:
             port = ports[protocol]
-            if backend == "mediamtx" and not wait_for_port(port, timeout=10.0):
+            if (backend == "mediamtx" and protocol in TCP_PROTOCOLS
+                    and not wait_for_port(port, timeout=10.0)):
                 results.append((protocol, "FAIL", 0.0, 0.0,
                                 "port %d not listening" % port))
                 continue

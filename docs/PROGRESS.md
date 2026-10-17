@@ -5,7 +5,7 @@
 
 ## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 ✅(协议覆盖验收含 RTMP/RTSP/SRT,见第八十轮;VOD 完成链死锁修掉,见第八十轮) · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）· 4.6 覆盖率链路本机闭环复现（见第三十五轮）· docs/07 §5 计数三例两例转绿、顺线修掉一个真死锁（见第三十六轮）· docs/07 §5 计数三例**全部转&#x7EFF;**、顺线修掉解码器丢包（见第三十七轮）** · 抽出 AudioConverter 与 VideoConverter 对称（见第四十九轮）\**
 
-最后更新：**2026-10-17（第八十一轮）** —— 摘要见下方「第八十一 / 八十 / 七十九 / 七十七 / 七十六 / 七十五 / 七十四轮」几节；更早里程碑见下。
+最后更新：**2026-10-17（第八十二轮）** —— 摘要见下方「第八十二 / 八十一 / 八十 / 七十九 / 七十七 / 七十六 / 七十五 / 七十四轮」几节；更早里程碑见下。
 
 > 第四十八轮：**`EncodedPacket` 归位到值类型层**（`media/filters/encoded_packet.h` →  
 > `media/base/`）。它是 `DecoderBuffer` 在**编码侧**的同形状镜像（一个压缩包 + 时间戳 +  
@@ -4812,3 +4812,48 @@ LL-HLS demuxer,测量已固化进 `check_live_protocols.py`)。本轮改动未�
 **诚实说明**:MediaMTX 下载仍被沙箱代理(502)拦截,故 RTMP/RTSP 经 MediaMTX 的实跑、
 以及真 `tc netem` 弱网跑,仍待有网络/root 的机器补跑;但工具已就绪、SRT 已真验证、
 客户端接线已确证。本轮改动未提交(待切)。
+
+---
+
+## 第八十二轮(2026-10-17):Phase 2 直播协议三协议首次全绿,修掉验收工具自身三处假 FAIL
+
+**成果**:`tools/check_live_protocols.py` 在 macOS 本机跑出 **RTMP/RTSP/SRT 全 PASS、
+exit 0**——docs/12 §2.4 直播侧从"工具就绪、待补跑"变成"有实测证据"。
+
+1. **MediaMTX 二进制其实本机已有**:上轮遗留进程暴露路径 `/private/tmp/mediamtx/mediamtx`
+   (v1.21.2),并非需要下载。沙箱网络从 502 变为"通但限速",下载不再必要。
+
+2. **验收工具三处缺陷(合起来让 RTMP/SRT 报假 FAIL,而播放器是好的)**:
+   - **`position` 解析漏读同一行内的多次更新**。headless 用 `\r` 覆盖式打印位置更新,
+     一条物理行可含十余个 `position:` 片段;原实现每行只 `find` 第一个 → 明明推进到
+     11s 却解析成 0.000s 判 FAIL。**这正是"用算术正确但形状不对的解析器伪造失败"**。
+     改为在一行内用 `find` 循环扫全部片段。
+   - **MediaMTX 的 SRT streamid 分隔符是冒号**(`publish:avbase` / `read:avbase`),
+     写成斜杠会被 MediaMTX 拒绝握手("Peer rejected connection")——症状与播放器失败
+     一模一样。**同一份症状、两个完全不同的原因**,这是诊断成本最高的一类。
+   - **固定 `sleep(1.5)` 是竞态**:RTMP 要先完成 publish 握手才可读,而握手时长不受我方
+     控制。改为 ffprobe **轮询路径是否真的可读**,顺带把"peer 没就绪"与"播放器失败"
+     拆成 `SERVER_MISSING` / `FAIL` 两种结论(本工具判定纪律的核心)。
+   - 另把发布侧 `-stream_loop 2` 改 `-1`:有限的循环会在读取中途重启 clip、
+     RTMP/SRT 序号回绕,而读取预算本就由 headless 的 `--timeout` 控制。
+
+3. **实测数据(macOS x86_64,MediaMTX v1.21.2 loopback,12s 读取预算)**:
+   RTMP 10.009s/L≈3.97s · RTSP 10.008s/L≈2.99s · SRT 10.032s/L≈3.54s,三协议全 PASS。
+
+4. **docs/12 §2.6 的决策结论被实测数据推翻并修正**:此前"倾向挂 SRT 绕开 LL-HLS"基于
+   "SRT 时延在亚秒级"的推测;实测三协议**都在 3s 上下,没有一条进入亚秒**——"挂 SRT
+   就能拿到 <1s"不成立。若业务真要 <1s,三条都绕不开,仍须自研 LL-HLS。
+
+**诊断方法上的一条**:`ffmpeg_demuxer.cc` 给所有网络协议无条件加 `reconnect*` 选项,我一度
+判定这导致 RTMP 打开失败;**实验证伪了它**——给 rtmp 传未知选项时 ffprobe 照常打开
+(`reconnect*` 其实是 http/https 的私有选项,但未知键不会让 open 失败)。没有这次实测,
+就会照着错误结论改产品代码。
+
+**环境诊断**:本机 Homebrew ffmpeg 8.0.1 CLI 在本轮后段**除 `-version` 外任何调用都挂死**
+(连 `lavfi testsrc` 都不返回),load 4.95 但 `ps` 看不到进程(沙箱限制)。对照实验证明**与
+avbase 无关**:headless 读同一 VOD 文件正常完成(`completed at media time 3.045792s`,
+exit 0),`media_unittests` 393/393 通过。故 `check_protocols.py`(VOD 侧,需 ffmpeg CLI
+生成 HLS)在本轮无法复跑,但它未被本轮改动触及,第二十三轮已通过且已接 `protocols` CI job。
+
+**门禁**:media_unittests **393/393**;VOD 各测试片终态正常;验收工具自身验证了三条
+前置分支(缺 mediamtx/headless/未知协议 → exit 2)与判定鉴别力(读错路径 → 0.000s FAIL)。
