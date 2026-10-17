@@ -27,18 +27,42 @@
 
 ---
 
-## 2. 已配置但未生效的选项（14 个死选项，需清理或接通）
+## 2. 已配置但未生效的选项（已清理）
 
-`docs/05-迁移对照表.md` 曾标 22 个 ✅，逐字段追「谁读了它」后 16 个不成立（配置有
-字段、registry 有条目、`SetOption` 不报错、`GetOption` 能原样读回，但无一处变成行为）。
-`max-fps` / `framedrop` 已于第七十一轮接通，剩 **14 个无读取者**：
+`OptionRegistry` 的可配置面是手写的 `player/option_registry.cc`（**9 个 key**），不是
+`option_registry.inc`（后者是 DRAFT，未进构建，由 `tools/gen_options.py` 从
+`tools/option_map.py` 的 63 个 spec key 生成）。所以「已配置」指的是这 9 个；其余 54 个
+spec key 从未进过构建，属「未接线」而非「构建内死选项」。
 
-`fast` · `rdftspeed` · `min-frames` · `packet-buffering` · `sync-av-start` · `infbuf` ·
-`video-pictq-size`（仅被区间校验读到）· `no-time-adjust` · `preset-5-1-center-mix-level` ·
-`get-frame-mode` · `video-mime-type` · `ijkmeta-delay-init` · `nodisp` · `render-wait-start`
+**实测逐字段追「谁读了它」的结论（2026-10-17）**：9 个 key 里 3 个字段被下游读到（生效），
+6 个字段写了但无人读（静默 no-op）。那 6 个就是「看起来支持、实际无效」的高危类别——
+`SetOption` 不报错、却什么都不做。已按 TODO 原定的「要么接通、要么移除」处置为 **移除**
+（2026-10-17 提交）：从 `option_registry.cc` 删掉这 6 个 key，使它们现在被 `SetOption`
+**拒绝**（unknown key error），而非假装支持。底层 `PlayerConfig` 字段保留（typed API 仍可
+直接设），只是不再有 string key 这个假入口。
 
-> 处置：要么接通（写读取者），要么从 config/registry 移除并更正迁移表。属「看起来支持、
-> 实际无效」的高危类别——不会报错，但误导配置者。
+| 已移除的 key | 写入字段 | 为何是 no-op | 接线的真实代价 |
+|---|---|---|---|
+| `packet-buffering` | `buffer.enabled` | `BufferController` 从不读 `config.buffer.*` | 需让缓冲控制器消费 `BufferConfig`（行为变更，需回归） |
+| `max-buffer-size` | `buffer.max_bytes` | 同上（仅 `ffmpeg_demuxer.cc:405` 引用作报错文案） | 同上 |
+| `min-frames` | `buffer.min_frames` | 同上 | 同上 |
+| `infbuf` | `buffer.unlimited` | 同上 | 同上 |
+| `nodisp` | `render.disable_video_output` | 无 sink 选择逻辑读它（`pipeline_status.cc:155` 文案承诺了它，但代码没接） | 在 renderer factory 选 `NullVideoSink`（小改动，待做） |
+| `enable-accurate-seek` | `seek.accurate` | 无 seek 路径 gate 它（`player_impl_accurate_seek.cc` 只读 `accurate_timeout`） | 把精确 seek 改成可关（但当前是默认常开，关掉会变行为） |
+
+**仍生效的 3 个 key**：`max-fps` / `framedrop`（→ `video.max_fps`/`max_frame_drop` →
+renderer deps）、`start-on-prepared`（→ `player_impl_prepare.cc` 自动起播）。
+
+**spec 里「未接线」的 key（不在构建注册表，仅 DRAFT `.inc` / `docs/05 §4`）**：`fast` ·
+`rdftspeed` · `sync-av-start` · `video-pictq-size` · `no-time-adjust` ·
+`preset-5-1-center-mix-level` · `get-frame-mode` · `video-mime-type` · `ijkmeta-delay-init` ·
+`render-wait-start` · 以及全部 `mediacodec-*` / `videotoolbox-*` / `opensles` / `soundtouch` /
+FORMAT/CODEC 透传项。它们的 `PlayerConfig` 字段同样多数无人读；接线时每个都要先写读取者，
+不要只加注册表条目。
+
+> 处置原则（沿用 TODO 原意）：注册表条目要么有下游读取者（生效），要么移除并让 `SetOption`
+> 报错。不保留「接受但不做事」的 key。缓冲区类如果真要做，应让 `BufferController` 消费
+> `BufferConfig` 并把 key 接回，而不是现在这样假装。
 
 ---
 

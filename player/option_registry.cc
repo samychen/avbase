@@ -95,61 +95,19 @@ OptionRegistry::OptionRegistry() : impl_(std::make_unique<Impl>()) {
   auto& e = impl_->entries;
   const auto P = OptionCategory::kPlayer;
 
-  e.push_back(
-      {"packet-buffering", P, Type::kBool, "buffer.enabled",
-       [](PlayerConfig* c, const OptionValue& v) -> Status {
-         const bool* b = std::get_if<bool>(&v);
-         if (!b)
-           return TypeMismatch("packet-buffering", "a boolean");
-         c->buffer.enabled = *b;
-         return OkStatus();
-       },
-       [](const PlayerConfig& c) -> OptionValue { return c.buffer.enabled; },
-       "pause output until enough packets have been read after stalling"});
-
-  e.push_back({"max-buffer-size", P, Type::kInt64, "buffer.max_bytes",
-               [](PlayerConfig* c, const OptionValue& v) -> Status {
-                 const int64_t* i = std::get_if<int64_t>(&v);
-                 if (!i)
-                   return TypeMismatch("max-buffer-size", "an integer");
-                 if (*i < 0)
-                   return OutOfRange("max-buffer-size", std::to_string(*i),
-                                     ">= 0");
-                 c->buffer.max_bytes = static_cast<size_t>(*i);
-                 return OkStatus();
-               },
-               [](const PlayerConfig& c) -> OptionValue {
-                 return static_cast<int64_t>(c.buffer.max_bytes);
-               },
-               "max buffer size that should be pre-read, in bytes"});
-
-  e.push_back({"min-frames", P, Type::kInt64, "buffer.min_frames",
-               [](PlayerConfig* c, const OptionValue& v) -> Status {
-                 const int64_t* i = std::get_if<int64_t>(&v);
-                 if (!i)
-                   return TypeMismatch("min-frames", "an integer");
-                 if (*i < 2 || *i > 50)
-                   return OutOfRange("min-frames", std::to_string(*i),
-                                     "[2, 50]");
-                 c->buffer.min_frames = static_cast<size_t>(*i);
-                 return OkStatus();
-               },
-               [](const PlayerConfig& c) -> OptionValue {
-                 return static_cast<int64_t>(c.buffer.min_frames);
-               },
-               "minimal frames to stop pre-reading"});
-
-  e.push_back(
-      {"infbuf", P, Type::kBool, "buffer.unlimited",
-       [](PlayerConfig* c, const OptionValue& v) -> Status {
-         const bool* b = std::get_if<bool>(&v);
-         if (!b)
-           return TypeMismatch("infbuf", "a boolean");
-         c->buffer.unlimited = *b;
-         return OkStatus();
-       },
-       [](const PlayerConfig& c) -> OptionValue { return c.buffer.unlimited; },
-       "do not limit the input buffer size (useful with realtime streams)"});
+  // Only options whose PlayerConfig field is actually read downstream are
+  // registered. The other docs/05 §4 keys fall into two buckets:
+  //   * generated-but-not-wired: player/option_registry.inc (DRAFT, not built);
+  //   * dead no-ops: their field is written by SetOption but nothing reads it,
+  //     so the key was a silent no-op. Those string keys were deliberately
+  //     dropped (packet-buffering / max-buffer-size / min-frames / infbuf write
+  //     buffer.* fields the buffer controller never reads; nodisp writes
+  //     render.disable_video_output which no sink selection consults;
+  //     enable-accurate-seek writes seek.accurate which no seek path gates on).
+  //     Rejecting them is honest: a typo'd or unsupported key now errors
+  //     instead of looking supported. The underlying PlayerConfig fields stay
+  //     (settable via the typed API); wiring them is a per-subsystem feature,
+  //     tracked in docs/TODO.md §2.
 
   e.push_back({"framedrop", P, Type::kInt64, "video.max_frame_drop",
                [](PlayerConfig* c, const OptionValue& v) -> Status {
@@ -183,19 +141,6 @@ OptionRegistry::OptionRegistry() : impl_(std::make_unique<Impl>()) {
                },
                "drop frames from video whose fps is greater than max-fps"});
 
-  e.push_back({"nodisp", P, Type::kBool, "render.disable_video_output",
-               [](PlayerConfig* c, const OptionValue& v) -> Status {
-                 const bool* b = std::get_if<bool>(&v);
-                 if (!b)
-                   return TypeMismatch("nodisp", "a boolean");
-                 c->render.disable_video_output = *b;
-                 return OkStatus();
-               },
-               [](const PlayerConfig& c) -> OptionValue {
-                 return c.render.disable_video_output;
-               },
-               "disable graphical display"});
-
   e.push_back(
       {"start-on-prepared", P, Type::kBool, "start_on_prepared",
        [](PlayerConfig* c, const OptionValue& v) -> Status {
@@ -207,22 +152,6 @@ OptionRegistry::OptionRegistry() : impl_(std::make_unique<Impl>()) {
        },
        [](const PlayerConfig& c) -> OptionValue { return c.start_on_prepared; },
        "automatically start playing on prepared"});
-
-  e.push_back(
-      {"enable-accurate-seek", P, Type::kBool, "seek.accurate",
-       [](PlayerConfig* c, const OptionValue& v) -> Status {
-         const bool* b = std::get_if<bool>(&v);
-         if (!b)
-           return TypeMismatch("enable-accurate-seek", "a boolean");
-         c->seek.accurate = *b;
-         return OkStatus();
-       },
-       [](const PlayerConfig& c) -> OptionValue { return c.seek.accurate; },
-       "decode from the previous keyframe and drop until the target is "
-       "reached"});
-
-  // NOTE: this hand-written table covers a representative subset. The full
-  // 60+ key table from docs/05 §4 is generated by tools/gen_options.py at M1.
 }
 
 OptionRegistry::~OptionRegistry() = default;
