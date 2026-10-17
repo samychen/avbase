@@ -111,5 +111,49 @@ TEST(ValidateConfigBufferTest, DefaultConfigHasNoIssues) {
   EXPECT_TRUE(ValidateConfig(config).empty());
 }
 
+// ---- the two keys that were the last dead no-ops --------------------------
+// Both write a field that now has a reader: nodisp reaches the renderer
+// factory's sink selection, enable-accurate-seek is the veto SeekTo consults.
+// The reader itself is asserted in default_renderer_factory_unittest.cc and
+// player_seek_config_unittest.cc; here the question is only whether the string
+// key reaches the field, which is the half that used to be silently absent.
+
+TEST(OptionRegistryRenderTest, NoDispSetsDisableVideoOutput) {
+  PlayerConfig config;
+  EXPECT_TRUE(Registry()
+                  .SetInt(&config, OptionCategory::kPlayer, "nodisp", 1)
+                  .has_value());
+  EXPECT_TRUE(config.render.disable_video_output);
+  // "vn" is a different question (hide the stream) and must not move with it.
+  EXPECT_FALSE(config.video.disabled);
+  EXPECT_TRUE(Registry()
+                  .SetString(&config, OptionCategory::kPlayer, "nodisp", "off")
+                  .has_value());
+  EXPECT_FALSE(config.render.disable_video_output);
+}
+
+TEST(OptionRegistrySeekTest, EnableAccurateSeekSetsTheFlag) {
+  PlayerConfig config;
+  EXPECT_TRUE(config.seek.accurate)
+      << "the default must keep kAccurate working";
+  EXPECT_TRUE(
+      Registry()
+          .SetInt(&config, OptionCategory::kPlayer, "enable-accurate-seek", 0)
+          .has_value());
+  EXPECT_FALSE(config.seek.accurate);
+  // The timeout is a separate key and must survive its neighbour being set.
+  EXPECT_FALSE(config.seek.accurate_timeout.is_negative());
+}
+
+TEST(OptionRegistrySeekTest, NonBooleanValueIsRejected) {
+  PlayerConfig config;
+  const bool before = config.seek.accurate;
+  const Status s = Registry().SetString(&config, OptionCategory::kPlayer,
+                                        "enable-accurate-seek", "sometimes");
+  EXPECT_FALSE(s.has_value()) << "a non-boolean string must be refused";
+  EXPECT_EQ(config.seek.accurate, before)
+      << "a rejected value must leave the config untouched";
+}
+
 }  // namespace
 }  // namespace avbase

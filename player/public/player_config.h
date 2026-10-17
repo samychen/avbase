@@ -78,7 +78,16 @@ struct AVBASE_PLAYER_EXPORT BufferConfig {
 };
 
 struct AVBASE_PLAYER_EXPORT SeekConfig {
-  bool accurate{false};  // "enable-accurate-seek"
+  // "enable-accurate-seek": whether SeekMode::kAccurate may land on the frame
+  // you asked for. Defaults to TRUE here, unlike ijkplayer's 0, because the
+  // opt-in already happened per call -- kAccurate is a first-class argument,
+  // where ijkplayer only had this switch. So the field reads as a veto: leave
+  // it alone and kAccurate behaves exactly as before, switch it off and every
+  // kAccurate request degrades to the keyframe landing (with a warning) --
+  // which is what an ijk application passing enable-accurate-seek=0 expects.
+  // The default *playback* behaviour is still keyframe seek: that comes from
+  // SeekMode's default, not from this field.
+  bool accurate{true};  // "enable-accurate-seek"
   base::TimeDelta accurate_timeout{
       base::Seconds(5)};          // "accurate-seek-timeout"
   base::TimeDelta seek_at_start;  // "seek-at-start"

@@ -263,6 +263,22 @@ TEST(PlayerDepsWiringTest, InjectedSinkFactoryReachesTheFactory) {
   EXPECT_EQ(sink_factory->creates.load(), 1);
 }
 
+TEST(PlayerDepsWiringTest, NoDispReachesTheFactory) {
+  // "nodisp" is not "vn": the stream still decodes and the video sink still
+  // paces the clock, only the picture is dropped. So it travels on its own
+  // field, and setting it must leave the vn/an pair alone -- the same mistake
+  // that made the round-71 regression invisible would look identical here if
+  // this test only checked the one flag.
+  PlayerConfig config;
+  config.render.disable_video_output = true;
+  const Captured c = PrepareAndCapture(config, nullptr);
+  EXPECT_TRUE(c.deps.disable_video_output);
+  EXPECT_FALSE(c.deps.video_disabled);
+  EXPECT_FALSE(c.deps.audio_disabled);
+  // What the factory does with the flag is asserted where it happens
+  // (default_renderer_factory_unittest.cc): this hop only carries it.
+}
+
 TEST(PlayerDepsWiringTest, DecoderFallbackChainReachesTheFactory) {
   // A hand-built Deps starts with no factories; the constructor appends
   // the FFmpeg tail, and the platform's hardware head when the preference

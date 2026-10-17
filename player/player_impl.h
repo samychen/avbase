@@ -309,6 +309,11 @@ class PlayerImpl final : public media::Pipeline::Client {
   std::atomic<bool> muted_{false};
   std::atomic<int> loop_count_{1};
   std::atomic<int64_t> next_request_id_{1};
+  // Latches the one warning a vetoed accurate seek deserves. SeekTo runs on
+  // the caller's thread and may be called in a rapid-seek loop, so this is an
+  // atomic exchange rather than a plain bool: only the first degraded request
+  // says anything, and the rest stay silent instead of drowning the log.
+  std::atomic<bool> accurate_seek_veto_logged_{false};
 
   // Snapshots written on the media sequence (through the pipeline client
   // callbacks) and read from any thread.

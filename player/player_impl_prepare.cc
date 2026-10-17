@@ -350,6 +350,11 @@ Status PlayerImpl::PrepareAsync() {
   factory_deps.av_sync = std::move(av_sync);
   factory_deps.video_disabled = config_.video.disabled;
   factory_deps.audio_disabled = config_.audio.disabled;
+  // "nodisp", and why it is not video_disabled: this keeps the video leg
+  // decoding (av sync, cadence and the sink stats stay meaningful) and drops
+  // only the picture. The factory makes the swap, so an injected backend sink
+  // cannot reintroduce a window the host asked not to have.
+  factory_deps.disable_video_output = config_.render.disable_video_output;
   // "max-fps"/"framedrop": the setters had no caller in the tree until now, so
   // the cap never reached the compositor. The default (31) is what turns it on.
   factory_deps.video_max_fps = config_.video.max_fps;

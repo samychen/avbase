@@ -86,6 +86,14 @@ class AVBASE_MEDIA_EXPORT DefaultRendererFactory final
     // is hidden from the renderer, exactly as if the container had none.
     bool video_disabled = false;
     bool audio_disabled = false;
+    // config.render.disable_video_output ("nodisp"): a different question from
+    // video_disabled -- the stream is still decoded (composition, av sync and
+    // the frame statistics all run), only the presentation is dropped. Set it
+    // and every sink this factory creates is a NullVideoSink in discard mode,
+    // injected factory or not: "audio only" is a decision the config makes,
+    // and it must not be silently overridden by whichever backend the host
+    // happened to pass.
+    bool disable_video_output = false;
     // config.video.max_fps ("max-fps") and config.video.max_frame_drop
     // ("framedrop"). Both default to 0 here, which is the compositor's own
     // default and means "no cap / no dropping" -- so a host that builds a

@@ -71,7 +71,14 @@ std::unique_ptr<VideoRendererSink>
 DefaultRendererFactory::CreateVideoRendererSink(
     base::scoped_refptr<NativeDisplay> display) {
   std::unique_ptr<VideoRendererSink> sink;
-  if (deps_.video_sink_factory) {
+  if (deps_.disable_video_output) {
+    // "nodisp": present nowhere, and say so in the stats. The display is
+    // dropped on the floor rather than forwarded -- NullVideoSink treats a
+    // valid target as "shown" and would count every discarded frame as
+    // presented, which is the one number this sink exists to report honestly.
+    sink = std::make_unique<NullVideoSink>();
+    sink->SetOutputTarget(nullptr);
+  } else if (deps_.video_sink_factory) {
     sink = deps_.video_sink_factory->Create(std::move(display));
   } else {
     sink = std::make_unique<NullVideoSink>();

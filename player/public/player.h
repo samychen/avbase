@@ -103,6 +103,10 @@ class AVBASE_PLAYER_EXPORT Player {
   // Runs |cb| on the event sequence when the seek finishes; never inline.
   // Returns the request id, which also appears in SeekCompletedPayload so a
   // caller doing rapid seeks can match results to requests.
+  // SeekMode::kAccurate is additionally gated by config.seek.accurate
+  // ("enable-accurate-seek"). With that switched off an accurate request does
+  // not fail: it lands on the keyframe, and requested-vs-actual in the
+  // completion is how you tell.
   Result<int64_t> SeekTo(base::TimeDelta position, SeekMode mode, SeekCB cb);
   void SeekTo(base::TimeDelta position);
   void StepOnce();                    // Single-frame advance while paused.

@@ -176,9 +176,21 @@ Result<int64_t> PlayerImpl::SeekTo(base::TimeDelta position, SeekMode mode,
         "SeekTo was called before PrepareAsync", "call PrepareAsync first"));
   }
   const int64_t id = next_request_id_.fetch_add(1);
+  // "enable-accurate-seek" is the global veto over the per-call opt-in, and
+  // this is the only place both halves are visible at once. A vetoed request
+  // is not an error: it lands on the keyframe the way kPreviousKeyframe does,
+  // and requested-vs-actual in SeekCompletedPayload is what tells the caller
+  // it did not reach the frame it named. Warn once, because a rapid-seek loop
+  // would otherwise write this line for every request.
+  const bool accurate = mode == SeekMode::kAccurate && config_.seek.accurate;
+  if (mode == SeekMode::kAccurate && !accurate &&
+      !accurate_seek_veto_logged_.exchange(true)) {
+    LOG(WARNING) << "avbase: SeekMode::kAccurate degraded to the keyframe "
+                    "landing; config.seek.accurate is false";
+  }
   {
     base::AutoLock scoped(seek_lock_);
-    if (mode == SeekMode::kAccurate) {
+    if (accurate) {
       // M9: land on the requested position, not on the keyframe before it.
       // The drop window (Renderer::BeginAccurateSeek) is opened before the
       // keyframe seek so the new generation is already framed when decoding
@@ -192,17 +204,16 @@ Result<int64_t> PlayerImpl::SeekTo(base::TimeDelta position, SeekMode mode,
   // Posted in order: on the media sequence the wait bookkeeping (and the
   // supersede of any running wait) lands before the pipeline seek does.
   media_thread_.task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](PlayerImpl* self, int64_t seek_id, base::TimeDelta target,
-             bool accurate) {
-            if (accurate) {
-              self->BeginAccurateWaitOnMedia(seek_id, target);
-            } else {
-              self->EndAccurateWaitOnMedia();
-            }
-          },
-          base::Unretained(this), id, position, mode == SeekMode::kAccurate));
+      FROM_HERE, base::BindOnce(
+                     [](PlayerImpl* self, int64_t seek_id,
+                        base::TimeDelta target, bool accurate) {
+                       if (accurate) {
+                         self->BeginAccurateWaitOnMedia(seek_id, target);
+                       } else {
+                         self->EndAccurateWaitOnMedia();
+                       }
+                     },
+                     base::Unretained(this), id, position, accurate));
   const base::TimeDelta requested = position;
   pipeline->Seek(requested,
                  base::BindOnce(&PlayerImpl::OnMediaSeekDone,
