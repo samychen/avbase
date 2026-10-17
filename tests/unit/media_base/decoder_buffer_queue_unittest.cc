@@ -300,14 +300,14 @@ TEST_F(DecoderBufferQueueTest, PopStatusNames) {
 // ijkplayer "infbuf": max_bytes == 0 removes the byte cap. The packet-count cap
 // still bounds the queue, so this is not literally unbounded memory.
 TEST(DecoderBufferQueueLimitsTest, MaxBytesZeroMeansUnlimited) {
-  DecoderBufferQueue queue{"q", BufferQueueLimits{100, 0, 0}, nullptr};
+  DecoderBufferQueue queue{"q", BufferQueueLimits{100, 0}, nullptr};
   for (int i = 0; i < 10; ++i) {
     EXPECT_TRUE(queue.TryPush(MakeBuffer(i, 1024)));
   }
 }
 
 TEST(DecoderBufferQueueLimitsTest, MaxBytesCapsTheQueue) {
-  DecoderBufferQueue queue{"q", BufferQueueLimits{100, 100, 0}, nullptr};
+  DecoderBufferQueue queue{"q", BufferQueueLimits{100, 100}, nullptr};
   // 60 + 60 bytes crosses the 100-byte mark; the third push is refused.
   EXPECT_TRUE(queue.TryPush(MakeBuffer(0, 60)));
   EXPECT_TRUE(queue.TryPush(MakeBuffer(1, 60)));
@@ -315,13 +315,8 @@ TEST(DecoderBufferQueueLimitsTest, MaxBytesCapsTheQueue) {
   EXPECT_GE(queue.bytes(), 100u);
 }
 
-TEST(DecoderBufferQueueLimitsTest, MinBuffersIsCarried) {
-  DecoderBufferQueue queue{"q", BufferQueueLimits{256, 0, 5}, nullptr};
-  EXPECT_EQ(queue.min_buffers(), 5u);
-}
-
 TEST(DecoderBufferQueueLimitsTest, CountCapStillBoundsTheQueue) {
-  DecoderBufferQueue queue{"q", BufferQueueLimits{2, 0, 0}, nullptr};
+  DecoderBufferQueue queue{"q", BufferQueueLimits{2, 0}, nullptr};
   EXPECT_TRUE(queue.TryPush(MakeBuffer(0)));
   EXPECT_TRUE(queue.TryPush(MakeBuffer(1)));
   EXPECT_FALSE(queue.TryPush(MakeBuffer(2)));
@@ -347,6 +342,26 @@ TEST_F(DecoderBufferQueueTest, MarkEndOfStreamIsIdempotent) {
   EXPECT_EQ(queue_.Pop(&second), DecoderBufferQueue::PopStatus::kEndOfStream);
   EXPECT_FALSE(second) << "a second EOS marker buffer was delivered";
   EXPECT_EQ(queue_.size(), 0u);
+}
+// The byte budget belongs to the player, not to each queue: wiring
+// BufferConfig::max_bytes straight into every stream doubled the default
+// envelope for an A/V file (15 MiB each). These are the edges that make the
+// split safe -- 0 is the unlimited sentinel and must survive, and a tiny
+// budget must not round down into it.
+TEST(BufferQueueLimitsTest, SplitQueueBudgetSharesThePlayerBudget) {
+  const BufferQueueLimits eight_k{/*max_buffers=*/256, /*max_bytes=*/8192};
+
+  EXPECT_EQ(SplitQueueBudget(eight_k, 2).max_bytes, 4096u);
+  // One stream: the whole budget, unchanged.
+  EXPECT_EQ(SplitQueueBudget(eight_k, 1).max_bytes, 8192u);
+  // Unlimited stays unlimited, or "infbuf" would become a 1-byte cap.
+  EXPECT_EQ(SplitQueueBudget(BufferQueueLimits{256, 0}, 2).max_bytes, 0u);
+  // Never round down to 0, which means the same as unlimited.
+  EXPECT_EQ(SplitQueueBudget(BufferQueueLimits{256, 3}, 4).max_bytes, 1u);
+  // Unknown count: hand the budget back untouched.
+  EXPECT_EQ(SplitQueueBudget(eight_k, 0).max_bytes, 8192u);
+  // The packet-count cap is NOT a budget: every queue gets all of it.
+  EXPECT_EQ(SplitQueueBudget(eight_k, 2).max_buffers, 256u);
 }
 
 }  // namespace

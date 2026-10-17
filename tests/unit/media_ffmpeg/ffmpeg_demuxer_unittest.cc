@@ -48,6 +48,12 @@ class FFmpegDemuxerTest : public ::testing::Test {
   Status Open(const std::string& path, DemuxerOptions options = {}) {
     return OpenDescriptor(DataSourceDescriptor::FromUri(path), options);
   }
+  // Same, but with the queue envelope the player would pass down. SetUp built a
+  // demuxer with the defaults, so this replaces it before opening.
+  Status OpenWithLimits(const std::string& path, BufferQueueLimits limits) {
+    demuxer_ = std::make_unique<FFmpegDemuxer>(media_log_, limits);
+    return Open(path);
+  }
   Status OpenDescriptor(const DataSourceDescriptor& descriptor,
                         DemuxerOptions options = {}) {
     Status result = Err(ErrorCode::kNotImplemented, "not run", {}, {});
@@ -60,15 +66,28 @@ class FFmpegDemuxerTest : public ::testing::Test {
                                *flag = true;
                              },
                              &result, &done));
-    for (int i = 0; i < 2000 && !done; ++i) {
-      task_environment_.RunUntilIdle();
-      if (!done) {
-        // The demux thread does the blocking open; give it a moment.
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-      }
-    }
-    EXPECT_TRUE(done) << "Initialize() never reported back";
+    // The demux thread does the blocking open; give it a moment.
+    EXPECT_TRUE(
+        PumpUntil([&done] { return done; }, 2000, std::chrono::milliseconds(5)))
+        << "Initialize() never reported back";
     return result;
+  }
+
+  // The demux thread is a real thread, not a task-queue sequence, so pumping
+  // the test runner once observes nothing. Every wait in this file has this
+  // shape and it used to be written out eight times, in three different
+  // (attempts, sleep) pairs -- which made "this test is slow" impossible to
+  // tell apart from "this test is flaky".
+  template <typename Predicate>
+  bool PumpUntil(Predicate predicate, int max_attempts,
+                 std::chrono::milliseconds step) {
+    for (int i = 0; i < max_attempts; ++i) {
+      if (predicate())
+        return true;
+      task_environment_.RunUntilIdle();
+      std::this_thread::sleep_for(step);
+    }
+    return predicate();
   }
 
   base::test::TaskEnvironment task_environment_;
@@ -240,11 +259,8 @@ TEST_F(FFmpegDemuxerTest, TruncatedFileReachesEndOfStream) {
                          }
                        },
                        &answered, &eos, &buffers));
-    for (int i = 0; i < 200 && !answered; ++i) {
-      task_environment_.RunUntilIdle();
-      if (!answered)
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    }
+    PumpUntil([&answered] { return answered; }, 200,
+              std::chrono::milliseconds(2));
     ASSERT_TRUE(answered) << "Read() never called back";
   }
   EXPECT_TRUE(eos) << "a truncated file must still reach EOS, not hang";
@@ -294,11 +310,8 @@ TEST_F(FFmpegDemuxerTest, ReadsWholeFileWithMonotonicTimestamps) {
                        },
                        &answered, &eos, &frames, &non_monotonic,
                        &previous_valid, &previous, expected_serial));
-    for (int i = 0; i < 400 && !answered; ++i) {
-      task_environment_.RunUntilIdle();
-      if (!answered)
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    }
+    PumpUntil([&answered] { return answered; }, 400,
+              std::chrono::milliseconds(2));
     ASSERT_TRUE(answered);
     ASSERT_FALSE(non_monotonic) << "video pts went backwards";
   }
@@ -330,11 +343,8 @@ TEST_F(FFmpegDemuxerTest, SeekBumpsSerialAndReportsCompletion) {
           },
           &seek_done, &seek_status));
 
-  for (int i = 0; i < 1000 && !seek_done; ++i) {
-    task_environment_.RunUntilIdle();
-    if (!seek_done)
-      std::this_thread::sleep_for(std::chrono::milliseconds(2));
-  }
+  PumpUntil([&seek_done] { return seek_done; }, 1000,
+            std::chrono::milliseconds(2));
   ASSERT_TRUE(seek_done) << "the seek callback never ran";
   ASSERT_TRUE(seek_status) << seek_status.error().ToString();
   EXPECT_EQ(demuxer_->GetStats().seek_count, 1u);
@@ -345,12 +355,8 @@ TEST_F(FFmpegDemuxerTest, SeekBumpsSerialAndReportsCompletion) {
 TEST_F(FFmpegDemuxerTest, StopIsPromptEvenWhileBlockedInRead) {
   ASSERT_TRUE(Open(TestFile("small_h264_aac_3s.mp4")));
   // Nothing is consuming, so the demux thread will block on a full queue.
-  for (int i = 0; i < 100; ++i) {
-    task_environment_.RunUntilIdle();
-    if (demuxer_->GetStats().packets_demuxed > 200)
-      break;
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
+  PumpUntil([this] { return demuxer_->GetStats().packets_demuxed > 200; }, 100,
+            std::chrono::milliseconds(5));
   const base::TimeTicks before = base::TimeTicks::Now();
   demuxer_->Stop();
   const base::TimeDelta elapsed = base::TimeTicks::Now() - before;
@@ -383,11 +389,8 @@ TEST_F(FFmpegDemuxerTest, SeekAfterEndOfStreamIsAnsweredAndResumesReads) {
                          }
                        },
                        &answered, &eos));
-    for (int i = 0; i < 200 && !answered; ++i) {
-      task_environment_.RunUntilIdle();
-      if (!answered)
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    }
+    PumpUntil([&answered] { return answered; }, 200,
+              std::chrono::milliseconds(2));
     ASSERT_TRUE(answered) << "Read() never called back";
   }
   ASSERT_TRUE(eos) << "the fixture must reach EOS, or this test proves nothing";
@@ -402,11 +405,8 @@ TEST_F(FFmpegDemuxerTest, SeekAfterEndOfStreamIsAnsweredAndResumesReads) {
             *out = std::move(s);
           },
           &seek_done, &seek_status));
-  for (int i = 0; i < 500 && !seek_done; ++i) {
-    task_environment_.RunUntilIdle();
-    if (!seek_done)
-      std::this_thread::sleep_for(std::chrono::milliseconds(2));
-  }
+  PumpUntil([&seek_done] { return seek_done; }, 500,
+            std::chrono::milliseconds(2));
   ASSERT_TRUE(seek_done) << "a seek issued after EOF was never answered";
   ASSERT_TRUE(seek_status) << seek_status.error().ToString();
 
@@ -430,14 +430,55 @@ TEST_F(FFmpegDemuxerTest, SeekAfterEndOfStreamIsAnsweredAndResumesReads) {
                }
              },
              &answered, &buffers, &resumed_eos));
-  for (int i = 0; i < 500 && !answered; ++i) {
-    task_environment_.RunUntilIdle();
-    if (!answered)
-      std::this_thread::sleep_for(std::chrono::milliseconds(2));
-  }
+  PumpUntil([&answered] { return answered; }, 500,
+            std::chrono::milliseconds(2));
   ASSERT_TRUE(answered);
   EXPECT_GT(buffers, 0) << "the demuxer reported the seek but never read again";
   EXPECT_FALSE(resumed_eos) << "EOS came back after a successful seek";
+}
+
+TEST_F(FFmpegDemuxerTest, ByteBudgetIsSplitAcrossStreams) {
+  // max-buffer-size is one budget for the whole player, not one per stream:
+  // ijkplayer compares MAX_QUEUE_SIZE against the SUM of the
+  // audio/video/subtitle queues. Wiring the config straight into every stream's
+  // queue doubled the default envelope for the usual A/V file (15 MiB became
+  // 30), which no test noticed because nothing reads the cap back. This one
+  // does. Small enough that the BYTE cap binds before the 256-packet cap: this
+  // fixture's packets are ~150 bytes, so 16 KiB is ~110 packets.
+  constexpr size_t kBudget = 16 * 1024;
+  ASSERT_TRUE(OpenWithLimits(TestFile("long_lowbr_40s.mp4"),
+                             BufferQueueLimits{/*max_buffers=*/256, kBudget}));
+  DemuxerStream* video = demuxer_->GetStream(DemuxerStreamType::kVideo);
+  DemuxerStream* audio = demuxer_->GetStream(DemuxerStreamType::kAudio);
+  ASSERT_TRUE(video);
+  ASSERT_TRUE(audio);
+
+  // Nothing consumes, so the demux thread runs until both queues hit their
+  // caps. Three equal samples in a row means it has stopped making progress.
+  size_t previous = 0;
+  int stable = 0;
+  PumpUntil(
+      [&] {
+        const size_t total = video->buffered_bytes() + audio->buffered_bytes();
+        stable = (total == previous && total > 0) ? stable + 1 : 0;
+        previous = total;
+        return stable >= 3;
+      },
+      400, std::chrono::milliseconds(5));
+
+  const size_t video_bytes = video->buffered_bytes();
+  const size_t audio_bytes = audio->buffered_bytes();
+  ASSERT_GT(video_bytes + audio_bytes, 0u)
+      << "the demuxer never queued anything";
+  // The demux thread blocks on whichever queue fills first, so the observable
+  // is the PER-STREAM cap, not the sum: with the full budget handed to every
+  // stream the winner sits just under kBudget, while a shared budget caps it at
+  // kBudget / 2. The slack is one in-flight packet.
+  const size_t largest = video_bytes > audio_bytes ? video_bytes : audio_bytes;
+  EXPECT_LT(largest, kBudget / 2 + 2 * 1024)
+      << "one stream took the whole budget (video=" << video_bytes
+      << ", audio=" << audio_bytes << "); max-buffer-size is a whole-player "
+      << "budget, not a per-stream one";
 }
 
 TEST_F(FFmpegDemuxerTest, StageEventsAreLogged) {

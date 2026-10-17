@@ -52,8 +52,13 @@
 后 4 个 buffer key 早前因「`BufferController` 从不读 `config.buffer.*`」被判为静默 no-op 并
 移除；第九十一轮把 `BufferConfig` 真正接进三条下游后重新注册，语义对齐 ijkplayer：
 - 时间域：`BufferController(config.buffer)` 由 `first/next/last_high_water_mark` 推导三级
-  mark，`enabled` 来自 `packet-buffering`；`Evaluate` 首次成为真实门控。
-- 字节域：`DecoderBufferQueue` 走 `BufferQueueLimits`（`max_bytes` / 0=无限 / `min_buffers`）。
+  mark，`enabled` 来自 `packet-buffering`，对外供出 `current_mark()` 与 `progress_percent()`。
+  **门控本身在 `PipelineImpl`**；`BufferController::Evaluate` 是同一策略的纯函数模型，
+  生产路径上无人调用（只有单测），别把它当成门控——第九十四轮核对时把这句话改准了。
+- 字节域：`DecoderBufferQueue` 走 `BufferQueueLimits`（`max_buffers` 包数上限 / `max_bytes`
+  字节上限，0 = **字节**不设上限而包数仍封顶 256）。`max-buffer-size` 是**全播放器**预算，
+  由 `SplitQueueBudget()` 按流数拆分——直接传给每条队列会让 A/V 文件的默认内存翻倍
+  （第九十一轮留下的口径，第九十四轮修正并有单测钉住）。
 - 门控：`PipelineImpl` 在 `OnBufferingStateChange(kHaveEnough)` 处按「已缓冲时长 ≥ mark
   且 包数 ≥ min-frames」推迟上报；`min-frames` 报 0（未跟踪的源）时以时长 mark 为准，避免卡死。
 

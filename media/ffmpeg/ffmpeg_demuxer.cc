@@ -509,7 +509,8 @@ Status FFmpegDemuxer::OpenOnDemuxThread(const DataSourceDescriptor& source,
 }
 
 void FFmpegDemuxer::AddStream(void* av_stream_raw, uint32_t index,
-                              StreamLiveness liveness) {
+                              StreamLiveness liveness,
+                              const BufferQueueLimits& limits) {
   AVStream* av_stream = static_cast<AVStream*>(av_stream_raw);
   const DemuxerStreamType type =
       ToDemuxerStreamType(av_stream->codecpar->codec_type);
@@ -592,7 +593,7 @@ void FFmpegDemuxer::AddStream(void* av_stream_raw, uint32_t index,
 
   streams_.push_back(std::make_unique<FFmpegDemuxerStream>(
       type, static_cast<int32_t>(index), media_log_, media_runner_,
-      video_config, audio_config, text_config, liveness, buffer_limits_));
+      video_config, audio_config, text_config, liveness, limits));
 }
 
 void FFmpegDemuxer::BuildMediaInfo() {
@@ -620,8 +621,10 @@ void FFmpegDemuxer::BuildMediaInfo() {
   streams_.clear();
   const StreamLiveness liveness =
       media_info_.is_live ? StreamLiveness::kLive : StreamLiveness::kRecorded;
+  // A player budget, not a per-stream one: see SplitQueueBudget.
+  const auto per_stream = SplitQueueBudget(buffer_limits_, ctx->nb_streams);
   for (uint32_t i = 0; i < ctx->nb_streams; ++i) {
-    AddStream(ctx->streams[i], i, liveness);
+    AddStream(ctx->streams[i], i, liveness, per_stream);
   }
   // The default active streams are the first of each type -- the ones
   // GetStream() has always returned. A track switch re-points these.
@@ -773,11 +776,9 @@ FFmpegDemuxer::ReadStep FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw,
   //    would have done had it run a moment later;
   //  * SetActiveStream signals resume_event_ so the wait re-evaluates at once
   //    rather than at the next 10 ms tick.
-  bool dropped = false;
   while (!stream->EnqueueFromDemuxThread(buffer) && !stop_flag_.IsSet()) {
     if (!IsActiveRoutingTarget(index, stream->type())) {
       buffer.reset();  // The consumer is gone; nobody will ever read this.
-      dropped = true;
       break;
     }
     resume_event_.TimedWait(base::Milliseconds(10));
@@ -787,7 +788,6 @@ FFmpegDemuxer::ReadStep FFmpegDemuxer::ReadAndRouteOnePacket(void* ctx_raw,
       break;
     }
   }
-  (void)dropped;
   return ReadStep::kContinue;
 }
 

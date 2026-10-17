@@ -73,10 +73,12 @@ DefaultRendererFactory::CreateVideoRendererSink(
   std::unique_ptr<VideoRendererSink> sink;
   if (deps_.disable_video_output) {
     // "nodisp": present nowhere, and say so in the stats. The display is
-    // dropped on the floor rather than forwarded -- NullVideoSink treats a
-    // valid target as "shown" and would count every discarded frame as
-    // presented, which is the one number this sink exists to report honestly.
-    sink = std::make_unique<NullVideoSink>();
+    // dropped on the floor rather than forwarded, and the sink is built in
+    // always-discard mode: NullVideoSink treats a valid target as "shown", so
+    // without both halves a later Player::SetVideoSurface() would flip the
+    // flag back and count every discarded frame as presented -- the one number
+    // this sink exists to report honestly.
+    sink = std::make_unique<NullVideoSink>(/*always_discard=*/true);
     sink->SetOutputTarget(nullptr);
   } else if (deps_.video_sink_factory) {
     sink = deps_.video_sink_factory->Create(std::move(display));

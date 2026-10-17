@@ -29,14 +29,34 @@ namespace avbase::media {
 // terms so it can be derived from a player BufferConfig without media/ ever
 // seeing that type (invariant C22). Mirrors ijkplayer's packet-queue controls:
 //   max_buffers -- hard cap on packet count (bounds RAM use);
-//   max_bytes   -- byte cap ("max-buffer-size"); 0 means unlimited ("infbuf");
-//   min_buffers -- packet-count floor the buffering gate waits for
-//                  ("min-frames"). Informational here; the gate reads it.
+//   max_bytes   -- byte cap ("max-buffer-size"); 0 means unlimited ("infbuf").
+//
+// "min-frames" is deliberately NOT here. The packet-count floor it expresses is
+// a gate the PIPELINE waits on before reporting kHaveEnough, and the pipeline
+// reads it from its own config; carrying a copy through every queue made it
+// look like the queue enforced something, while nothing ever read it (it had
+// one reader: a test accessor).
 struct AVBASE_MEDIA_EXPORT BufferQueueLimits {
   size_t max_buffers = 256;
   size_t max_bytes = 0;
-  size_t min_buffers = 0;
 };
+
+// |limits| describes a budget for a PLAYER, not for one stream: ijkplayer
+// compares MAX_QUEUE_SIZE against the sum of the audio, video and subtitle
+// queues. Split it across |stream_count| queues so a file with two streams does
+// not get two full budgets -- that silent doubling is what wiring the config
+// straight into every queue produced. A byte cap of 0 stays 0 (unlimited), and
+// a non-zero cap never rounds down to 0, which would mean the same thing.
+// stream_count == 0 means "not known yet": hand the budget back unchanged.
+inline BufferQueueLimits SplitQueueBudget(const BufferQueueLimits& limits,
+                                          size_t stream_count) {
+  BufferQueueLimits per_stream = limits;
+  if (per_stream.max_bytes > 0 && stream_count > 1) {
+    const size_t share = limits.max_bytes / stream_count;
+    per_stream.max_bytes = share > 0 ? share : 1;
+  }
+  return per_stream;
+}
 
 // Bounded, serial-aware queue of compressed samples between a demuxer and a
 // decoder.
@@ -81,8 +101,7 @@ class AVBASE_MEDIA_EXPORT DecoderBufferQueue {
 
   DecoderBufferQueue(std::string name, BufferQueueLimits limits,
                      base::scoped_refptr<MediaLog> media_log);
-  // Legacy overload kept for callers that only cap by count + bytes. Equivalent
-  // to the limits form with min_buffers = 0.
+  // Legacy overload kept for callers that only cap by count + bytes.
   DecoderBufferQueue(std::string name, size_t max_buffers, size_t max_bytes,
                      base::scoped_refptr<MediaLog> media_log);
   DecoderBufferQueue(const DecoderBufferQueue&) = delete;
@@ -125,7 +144,6 @@ class AVBASE_MEDIA_EXPORT DecoderBufferQueue {
   // Last timestamp minus first timestamp; the value BufferController uses to
   // decide whether the three-tier high water mark has been reached.
   base::TimeDelta buffered_duration() const;
-  size_t min_buffers() const { return limits_.min_buffers; }
   Stats GetStats() const;
   const std::string& name() const { return name_; }
 

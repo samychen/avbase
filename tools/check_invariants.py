@@ -98,7 +98,12 @@ LINE_LIMIT_ALLOWLIST = {
              "provenance comments that map each branch to the original. "
              "LGPL-2.1 quarantine, see media/filters/legacy/README.md."),
     "player/option_registry.cc": (
-        700, "Generated table at M1; hand-written until then."),
+        394, "One lambda pair per registered option: the parser, the range "
+             "check, the config write and the read-back. The 700 that used to "
+             "sit here was the M1 placeholder for a generated table that never "
+             "arrived, and it had drifted 306 lines above the real file -- an "
+             "allowlist nobody re-reads is not a ceiling, it is a hole. "
+             "Ratcheted to the current size: it may only move down."),
     "media/filters/audio_renderer_algorithm.cc": (
         665, "WSOLA buffering, index bookkeeping and the three FillBuffer "
              "modes. It was 756 lines before wsola_internals and "

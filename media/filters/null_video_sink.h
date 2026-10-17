@@ -39,7 +39,14 @@ namespace avbase::media {
 // back to container-timestamp-driven cadence.
 class AVBASE_MEDIA_EXPORT NullVideoSink final : public VideoRendererSink {
  public:
-  NullVideoSink();
+  // |always_discard| answers a different question from
+  // SetOutputTarget(nullptr): "this sink must never count a frame as shown,
+  // whatever target it is handed". The nodisp option needs that, because the
+  // host can still call Player::SetVideoSurface() at runtime and
+  // VideoRendererImpl forwards it straight to the sink -- without the flag, a
+  // valid display flips discard_ off and every dropped frame is then reported
+  // as presented.
+  explicit NullVideoSink(bool always_discard = false);
   NullVideoSink(const NullVideoSink&) = delete;
   NullVideoSink& operator=(const NullVideoSink&) = delete;
   ~NullVideoSink() override;
@@ -69,6 +76,9 @@ class AVBASE_MEDIA_EXPORT NullVideoSink final : public VideoRendererSink {
   // owner (the sink outlives every callback via VideoRendererImpl::Stop()).
   std::atomic<bool> playing_{false};
   std::atomic<bool> discard_{false};
+  // Set once at construction and never written again, so a plain const bool is
+  // enough: it is read on the render thread only through the discard_ update.
+  const bool always_discard_{false};
 
   // Shared with the two sinks that have a display -- see
   // media/base/present_stats.h. A sink that renders nowhere still has to

@@ -112,6 +112,26 @@ class DefaultRendererFactoryTest : public ::testing::Test {
     return NativeDisplay::FromSdl2Window(nullptr);
   }
 
+  // Renders exactly one tick and returns the stats it produced. Start() runs
+  // one tick inline before returning, so this needs neither polling nor sleeps.
+  // Both discard assertions below go through here: written twice they had
+  // already started to drift, and "presented == 0" only means something if the
+  // frame really reached the sink (frames_dropped says it did).
+  static VideoSinkStats RenderOneTick(VideoRendererSink* sink) {
+    // 16x16 so the allocation is trivial; the sink never reads a pixel.
+    const base::scoped_refptr<VideoFrame> frame = VideoFrame::CreateBlackFrame(
+        VideoFormat::kI420, Size(16, 16), Size(16, 16), Rational(1, 1),
+        base::TimeDelta(), base::Milliseconds(16), /*serial=*/1);
+    EXPECT_NE(frame, nullptr);
+    AlwaysFrameCallback callback(frame);
+    sink->Initialize(&callback);
+    sink->Play();   // RenderOne() only counts while playing.
+    sink->Start();  // One tick, inline.
+    const VideoSinkStats stats = sink->GetStats();
+    sink->Stop();
+    return stats;
+  }
+
   base::test::TaskEnvironment env_;
   base::Thread video_thread_;
   base::Thread audio_thread_;
@@ -154,22 +174,34 @@ TEST_F(DefaultRendererFactoryTest, NoDispSinkDiscardsEvenWithAValidTarget) {
   const auto sink = factory.CreateVideoRendererSink(ValidDisplay());
   ASSERT_TRUE(sink);
 
-  // 16x16 so the allocation is trivial; the sink never reads a pixel.
-  const base::scoped_refptr<VideoFrame> frame = VideoFrame::CreateBlackFrame(
-      VideoFormat::kI420, Size(16, 16), Size(16, 16), Rational(1, 1),
-      base::TimeDelta(), base::Milliseconds(16), /*serial=*/1);
-  ASSERT_TRUE(frame);
-  AlwaysFrameCallback callback(frame);
-  sink->Initialize(&callback);
-  sink->Play();   // RenderOne() only counts while playing.
-  sink->Start();  // Runs one tick inline before returning.
-  const VideoSinkStats stats = sink->GetStats();
-  sink->Stop();
-
+  const VideoSinkStats stats = RenderOneTick(sink.get());
   EXPECT_EQ(stats.frames_presented, 0u)
       << "a frame that was never displayed must not be counted as presented";
   EXPECT_GT(stats.frames_dropped, 0u)
       << "the frame reached the sink, so it has to be counted as a drop";
+}
+
+TEST_F(DefaultRendererFactoryTest,
+       NoDispSinkStaysDiscardingWhenASurfaceArrives) {
+  // The host can call Player::SetVideoSurface() long after prepare, and that
+  // path reaches the sink through VideoRendererImpl::SetOutputTarget -- which
+  // forwards the display unconditionally. A sink that only learned "discard"
+  // from the nullptr it was created with would flip to counting frames as
+  // presented at that moment. "nodisp" is a config decision, so it has to
+  // outrank a target that shows up later.
+  DefaultRendererFactory::Deps deps = MakeDeps();
+  deps.disable_video_output = true;
+  DefaultRendererFactory factory(std::move(deps));
+
+  const auto sink = factory.CreateVideoRendererSink(nullptr);
+  ASSERT_TRUE(sink);
+
+  sink->SetOutputTarget(ValidDisplay());  // What SetVideoSurface does.
+  const VideoSinkStats stats = RenderOneTick(sink.get());
+  EXPECT_EQ(stats.frames_presented, 0u)
+      << "nodisp must not start reporting frames as shown once a surface "
+         "arrives; the option is about the configuration, not about timing";
+  EXPECT_GT(stats.frames_dropped, 0u);
 }
 
 }  // namespace

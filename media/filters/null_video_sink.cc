@@ -11,7 +11,10 @@
 
 namespace avbase::media {
 
-NullVideoSink::NullVideoSink() = default;
+NullVideoSink::NullVideoSink(bool always_discard)
+    : always_discard_(always_discard) {
+  discard_.store(always_discard);
+}
 
 NullVideoSink::~NullVideoSink() {
   // Stop() joins the render thread before any member is torn down, so no
@@ -57,8 +60,9 @@ void NullVideoSink::SetOutputTarget(
     base::scoped_refptr<NativeDisplay> display) {
   // A null (or None) display means "render nowhere" -- which is what this sink
   // always does. Keeping the flag makes the stats honest: a discarded frame is
-  // not a presented one.
-  discard_.store(!display || !display->valid());
+  // not a presented one. |always_discard_| is the config-level version of the
+  // same statement and outranks whatever target arrives later (nodisp).
+  discard_.store(always_discard_ || !display || !display->valid());
 }
 
 bool NullVideoSink::IsRunning() const {

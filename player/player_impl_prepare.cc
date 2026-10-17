@@ -144,12 +144,12 @@ PlayerImpl::CreateDemuxerFor(const media::DataSourceDescriptor& descriptor) {
   // PipelineImpl::DoStart), which is where an open actually happens.
   //
   // BufferConfig -> BufferQueueLimits (invariant C22: media/ never sees
-  // PlayerConfig). infbuf makes the byte cap unlimited; min-frames is carried
-  // for the PipelineImpl pre-buffer gate; max-buffer-size is the byte cap.
+  // PlayerConfig). infbuf makes the byte cap unlimited, max-buffer-size is that
+  // cap, and both are whole-player budgets the demuxer divides across streams.
+  // min-frames is NOT carried here: the gate that reads it is in PipelineImpl.
   media::BufferQueueLimits limits;
   limits.max_buffers = 256;  // count cap; a byte cap or infbuf governs memory
   limits.max_bytes = config_.buffer.unlimited ? 0 : config_.buffer.max_bytes;
-  limits.min_buffers = config_.buffer.min_frames;
   return std::make_unique<media::FFmpegDemuxer>(media_log_, limits);
 #else
   (void)descriptor;

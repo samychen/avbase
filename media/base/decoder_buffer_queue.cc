@@ -43,7 +43,7 @@ DecoderBufferQueue::DecoderBufferQueue(std::string name, size_t max_buffers,
                                        size_t max_bytes,
                                        base::scoped_refptr<MediaLog> media_log)
     : DecoderBufferQueue(std::move(name),
-                         BufferQueueLimits{max_buffers, max_bytes, 0},
+                         BufferQueueLimits{max_buffers, max_bytes},
                          std::move(media_log)) {}
 
 DecoderBufferQueue::~DecoderBufferQueue() {

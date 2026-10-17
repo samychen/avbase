@@ -45,7 +45,7 @@ namespace avbase::media {
 // so callers that do not pass limits (tests) see the same backpressure as
 // before; PlayerImpl passes limits derived from BufferConfig.
 inline constexpr BufferQueueLimits kDefaultDemuxerQueueLimits{
-    256, kDefaultMaxBufferBytes / 2, 0};
+    256, kDefaultMaxBufferBytes / 2};
 
 // One elementary stream. Owns the DecoderBufferQueue the demux thread fills.
 class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
@@ -152,8 +152,12 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   bool IsSeekable() const override { return media_info_.seekable; }
   DemuxerStats GetStats() const override;
   // Total compressed packets queued across all streams; the PipelineImpl
-  // buffering gate uses it to enforce the ijkplayer "min-frames" floor. Inline
-  // here (not in the .cc) to keep the translation unit under its line ratchet.
+  // buffering gate uses it to enforce the ijkplayer "min-frames" floor.
+  //
+  // Inline on purpose. It is a trivial fold over |streams_| with no libav type
+  // and no lifetime, which is exactly what does not need the .cc; moving it
+  // there would either raise the C1 ratchet or evict a function with real
+  // ownership semantics to make room for an accessor.
   size_t GetBufferedPacketCount() const override {
     size_t total = 0;
     for (const auto& stream : streams_) {
@@ -187,7 +191,10 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   enum class ReadStep {
     kContinue,  // A packet was routed or dropped; read again.
     kEof,       // Nothing more to read until someone seeks.
-    kError,     // Unrecoverable; leave the loop.
+    kError,     // The read failed. The loop ends -- unless a seek is already
+                // waiting, in which case that seek repositions the source and
+                // the loop goes on (one outcome per step, but the exit is not
+                // unconditional; see DemuxLoop).
   };
   // One iteration of the read/backpressure step.
   // void* rather than AVFormatContext*/AVPacket*: no libav* type may appear in
@@ -195,8 +202,12 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   ReadStep ReadAndRouteOnePacket(void* ctx, void* packet);
   void HandleSeekRequestOnDemuxThread(const SeekRequest& request);
   void BuildMediaInfo();
-  // Fills one StreamInfo and creates the matching FFmpegDemuxerStream.
-  void AddStream(void* av_stream, uint32_t index, StreamLiveness liveness);
+  // Fills one StreamInfo and creates the matching FFmpegDemuxerStream. |limits|
+  // is already divided across the file's streams (see BuildMediaInfo): the
+  // caller's BufferQueueLimits is a whole-player budget, and handing it to
+  // every stream would multiply the default memory envelope by stream count.
+  void AddStream(void* av_stream, uint32_t index, StreamLiveness liveness,
+                 const BufferQueueLimits& limits);
   // Runs and erases the SeekCB registered for |request_id|.
   void CompleteSeek(int64_t request_id, Status status, base::TimeDelta actual);
 
