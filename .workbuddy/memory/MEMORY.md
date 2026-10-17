@@ -105,6 +105,19 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
    `c++` 驱动，否则缺 libc++（`std::__1::__shared_weak_count` 未定义）。
 8. **`/bin/sh` 没有 `PIPESTATUS`** —— 验收脚本不能用管道取退出码。
 
+**写「新鲜度/一致性」类门禁必知（第八十六轮，四路 review 交叉验证）**
+- **CMake 多输出边**：一行 lhs 可有**两个**输出（`build bin/X tests/X[1]_tests.cmake`
+  既链接测试程序又生成 ctest 注册文件）。只取第一个输出的解析器会**静默丢掉全部
+  unittest 二进制**，`no-ffmpeg` 树 0 个都查却报绿。**被丢的边和新鲜的边长得一样。**
+- **门禁必须报「比了多少」**：比较数 0 不能报绿；`.ninja_log` 缺行/只有 header 不能
+  当「都新鲜」；不可读 ≠ 陈旧（别让 OSError 落到 exit 1）。**静默 `continue` 是假绿的
+  头号来源。**
+- **剪枝集合不能照抄邻居**：`check_invariants.py` 剪 `build*` 因为它要**源码**；
+  照抄过来会把本工具唯一要找的构建树也剪掉（我真踩了当场抓回）。
+- **陈旧的真因是「只构建部分目标」**（`--target lib.a`、preset 的 `targets:` 收窄），
+  **不是**「ninja 不跟踪静态库内容」——ninja 行为是对的。写机制时别把用户的猜测
+  当结论，那会让真正该修的地方（preset 收窄）不被修。
+
 **验证**：`tools/check_capi.sh` 17 项全过 exit 0（真实纯 C 程序播到 kCompleted、
 事件到达、缓冲区契约正确、非法参数被拒、null 销毁不崩）；单测 393/393；
 `check_invariants` 479 文件全过。
@@ -187,6 +200,33 @@ python3 tools/check_binary_freshness.py --root build/<preset>   # exit 0/1/2
 - **恢复变异文件后必须 `touch`**，否则 ninja 会跑上一个突变的二进制
   （`cp` 会连 mtime 一起还原）。第八十五轮做 pull_frames 的鉴别力验证时
   实打实踩到。
+- **裸 `c++`/`cc`（Xcode toolchain）不带 SDK** → `'cstdio' file not found`，
+  **像代码坏了其实是环境坏了**。写临时探针时补 `-isysroot
+  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk -mmacosx-version-min=15.7`。
+  （同族：别把 `/Library/Developer/CommandLineTools/usr/bin` 加进 PATH 再跑 `cc`。）
+
+## 写单测前必须知道的（第八十七轮）
+
+1. **测试绝不能依赖工作目录。** ctest 从**构建树**跑，`"tests/testdata/x.mp4"`
+   在 `./bin/xxx` 下能跑、在 ctest 下必然失败 → 症状是
+   **同一二进制直接跑全绿、ctest 全红**。用编译期宏 `AVBASE_TESTDATA_DIR`
+   （`tests/CMakeLists.txt` 逐 target 定义）。**新单测第一次红，先查 cwd，别怀疑代码。**
+2. **`PlayerImpl::PrepareSync` 没有默认参数**（`player.h` 有）——override/virtual
+   不挂默认参。单测里必须显式 `PrepareSync(base::Seconds(30))`。
+3. **`tests/unit/<dir>/*.cc` 是 glob 收集的**，新文件无需改 CMakeLists；但
+   `check_invariants` 的文件数会 +1（**别把文件数记死**）。
+4. **`Signal()` 持锁，所以「信号后紧跟的动作」几乎不会被等待者抢跑。**
+   `base::WaitableEvent::Signal()` 在**持有 mutex 时** notify（为的是不让等待者
+   销毁 event 时 notify 还在跑），`TimedWait()` 返回必须拿同一把 mutex。
+   → **别把 `Signal()` 和它后面的代码当成一个竞态**，实测等待者 20/20 都在后面
+   那个动作之后才醒。想真正制造竞态得加钩子，不要靠重复循环去撞。
+
+**写「这个测试能抓住 X」的注释之前，先跑一次变异验证**（第八十八轮最贵的一课）。
+我在测试注释里写「把顺序改回去这个单测会红」——**改回去，它全绿**。那条承诺是我
+**凭意图写的、没验证过**，且读起来完全像事实。
+**「注释声称能抓住」与「真能抓住」是两件事**；注释里的鉴别力声明同样会假绿，
+而且比代码里的假绿更难发现（没人会跑测试来检查注释）。真去改一次、跑一次，
+再决定这句话要不要留——三处注释因此改写成了实测陈述。
 
 ## 路线图
 L1–L5 全部完成；docs/14 阶段 0–4 全部落地；Phase 2 协议覆盖验收（HLS/HTTP + RTMP/RTSP/
