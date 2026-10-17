@@ -1,7 +1,7 @@
 # TODO · 未完成工作
 
 > 与 [12-剩余工作清单](12-剩余工作清单.md)（剩余工作权威清单）和
-> [PROGRESS.md](PROGRESS.md)（轮次活文档）互补。
+> [PROGRESS.md](PROGRESS.md)（当前状态速览）互补。
 > 本文件只收**未完成**工作；已完成项已移出，详见 12 / PROGRESS。
 
 ---
@@ -55,24 +55,7 @@
 
 ---
 
-## 4. 已完成里程碑速览
-
-| 项 | 落地 |
-|---|---|
-| 旋转渲染消费 | 第六十六轮 |
-| SDK 场景 API | 第六十九轮 |
-| 滤镜 × 零拷贝明确拒绝 | 第六十七轮 |
-| 图层属性 + 多转场 | 第六十八轮 |
-| CI 风格门禁（tidy/cpplint/format） | 第七十轮 |
-| 管线原生多源（一条管线吃 N URL） | 第七十四～七十七轮 |
-| 次源字幕流 + 阶段 4 审查清理 | 第七十八～七十九轮 |
-| player 层 deps 接线测试 + 拆除竞态 | 第七十二轮 |
-| 本机 clang-tidy 对 ffmpeg 静默零发现 / strict 不可构建 | 第七十二轮已修 |
-| M15 C ABI（avbase_c.h） | 第八十三～八十四轮 |
-
----
-
-## 5. 记录更正（evergreen 教训）
+## 4. 记录更正（evergreen 教训）
 
 - **门禁「绿」可能是「没跑」**：check-clang-tidy 三处失效（header-filter 负向前瞻不支持 /
   platform 可选后端不在编译库 / HeaderFilterRegex 未锚定 vendored glad）；exit=127 让门禁
