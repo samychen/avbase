@@ -153,7 +153,43 @@ CI `capi` job），并删掉了 `tools/check_capi.sh`。**先看这一节再动 
 3. **peer 是否就绪要用 ffprobe 轮询，不能固定 `sleep`** —— RTMP 要先完成 publish 握手；
    轮询还能把「peer 没就绪」与「播放器失败」拆成 `SERVER_MISSING` / `FAIL` 两种结论。
 
+## 诊断任何「产品有 bug」之前：先跑新鲜度门禁（第八十五轮最贵的一课）
+
+```sh
+python3 tools/check_binary_freshness.py --root build/<preset>   # exit 0/1/2
+```
+
+**为什么这条排在所有诊断之前**：第八十五轮我拿 `build/macos-sdl2/bin/headless`
+（10/15 的旧二进制，库是 10/17）诊断出「**VideoToolbox 硬解 EOS 卡死**」，
+逐层排查 Deps / SDL2 / sink / EOS、还写了临时探针程序对比日志 —— 重链后
+**3/3 正常播完，那个 bug 从来不存在**。同一轮我报的「ctest 736/736 全绿」
+也是旧数据，**真数据 784/784，差的 48 个用例就是铁证**。
+
+- **触发条件比想象中窄**：`touch <某个库源文件> && ninja -C <dir>` 会正确
+  重链全部下游。落坑的是「库重建了但当轮没走链接边」。
+- **ninja 不跟踪静态库内容**，此时 `cmake --build` 输出 `no work to do`
+  **并报成功**。已接进 CI 的 `full` / `macos-player`，**位置在 ctest 之前**。
+- **判新鲜度必须读 `.ninja_log`，不能读 `stat`**：静态库内容没变时 ninja
+  restat 会把 mtime 回退；且每个二进制只能跟**它自己链接的库**比
+  （依赖取自 `build.ninja` 显式输入段，**不含 `||` 后的 order-only 段**）。
+  我按 stat 判过一次，误报成「10 个二进制过期」。
+
+## 三条工具/构建纪律（第八十五轮）
+
+- **`--preset X` 不会把已存在的 `build/X` 目录「洗成」X 的定义** —— CMake 只更新
+  preset 显式声明的变量，其它缓存值原样留存。实测 `build/ffmpeg` 里
+  `AVBASE_ENABLE_CAPI=ON`（ffmpeg preset 根本没声明它，是 `capi` preset 的选项），
+  症状是 `bin/` 下多出一个 `avbase_capi_smoke`。**验证 preset 是否纯净必须用全新
+  `-B` 目录对照**，看老目录不算数。
+- **取 CMakeCache 字段用 `sed -n 's/^KEY:BOOL=//p'`，不要 `grep -oP`** —— macOS 的
+  BSD grep 无 `-P`，**静默返回空串**，表格里整列消失像「缓存里没这个变量」。
+  （同族已有两条：BRE 的 `\|`、toybox shim 的 `\b`。）
+- **恢复变异文件后必须 `touch`**，否则 ninja 会跑上一个突变的二进制
+  （`cp` 会连 mtime 一起还原）。第八十五轮做 pull_frames 的鉴别力验证时
+  实打实踩到。
+
 ## 路线图
 L1–L5 全部完成；docs/14 阶段 0–4 全部落地；Phase 2 协议覆盖验收（HLS/HTTP + RTMP/RTSP/
 SRT）已闭合并有三协议实测数据（第八十二轮）；M15 C ABI 已落地**并接入门禁**（第八十四轮）。
-全部提交已推送 `origin/main`。
+第八十五轮：修好 `pull_frames` 的 Start 非法转换；新增 `check_binary_freshness.py`
+门禁并接进 CI；**推翻了自己上一轮报出的「VideoToolbox 硬解 bug」（它不存在）**。

@@ -183,3 +183,36 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
   `uint8_t**` → `void*` 是合法隐式转换（`uint8_t*` 本身是对象类型），编译器和人都
   容易放过，但 `bugprone-multi-level-implicit-pointer-conversion` 认它 —— 且
   **`static_cast` 不消这个 check**，它要最强的承认（`reinterpret_cast`）。
+
+## 「可执行文件比库旧」——诊断前必查，否则整个诊断都是假的
+
+**实测(第八十五轮，两次翻车)**：
+- `build/macos-sdl2/bin/*` 停在 10/15，库是 10/17 14:32。
+- 我拿那个 `headless` 诊断出「**VideoToolbox 硬解播不完**」，
+  逐层排查(Deps/SDL2/sink/EOS)、写了临时探针程序、对比日志 —— **全部基于旧代码**。
+- 重链后同一命令 **3/3 正常**。**那个bug 从来不存在。** 为它花掉一整轮。
+- 更早一轮我报的 `ctest --test-dir build/macos-sdl2` **736/736 全绿** 也是旧二进制
+  的数据。真数据是**784/784** —— **差的 48 个用例就是铁证**。
+
+**门禁(第八十五轮新增)**：`python3 tools/check_binary_freshness.py --root build/<preset>`
+已接进 CI 的 `full` 与 `macos-player` 两个 job，**位置在 ctest 之前**。
+退出码 0/1/2 与 `check_protocols.py` 对齐。鉴别力已验证(只变异 headless → 只报 headless)。
+
+**判新鲜度必须用 `.ninja_log`，不能用 `stat`** —— 我用 `stat` 判过一次，**误报成
+「10 个二进制过期」**，其中 `base_unittests` 根本不链接 `libavbase_player.a`。
+两个原因让 `stat` 不可靠：
+1. 静态库内容没变时 **ninja restat 会把 mtime 回退** → 新的链接看起来比输入旧；
+2. 一个二进制只能跟**它自己链接的库**比，不能跟「最新的库」比。
+正确做法见 `tools/check_binary_freshness.py`：从 `.ninja_log` 取 ninja 自己
+记录的 mtime，从 `build.ninja` 取每条边的显式链接输入（**不含 `||` 后的
+order-only 段**，那一段只是构建顺序，混进去会让每个消费者看起来依赖所有库）。
+
+**触发条件比想象的窄**：`touch player/player_impl.cc && ninja -C build/macos-sdl2`
+会**正确重链**全部下游（headless/pull_frames/play_*/player_unittests 全部更新）。
+落进 stale 状态的是「库重建了但当轮没走链接边」——典型是只跑了
+`ninja -C <dir> lib/xxx.a` 或者中途改 preset 配置后只重建了库。
+**所以它不是每次都会咬人，但它咬人时不报错，这是它危险的地方。**
+
+**教训(与「构建失败那轮跑的是上一个二进制」「恢复突变后必须 touch」同族)**：
+这三条都是**构建系统报了成功、你测的东西却不是最新的**。
+共用一条防御：**任何测量开始前，先确认被测物的 mtime 晚于它的输入。**
