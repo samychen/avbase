@@ -78,6 +78,13 @@ file(GLOB AVBASE_PLAYER_UNITTEST_SOURCES CONFIGURE_DEPENDS
 avbase_add_unittest(player_unittests
     SOURCES ${AVBASE_PLAYER_UNITTEST_SOURCES}
     DEPS avbase::player avbase::base_test_support)
+# prepare_autostart_unittest.cc prepares a REAL container, so it needs the
+# testdata directory resolved at compile time -- ctest runs from the build
+# tree, where a relative "tests/testdata/..." does not exist. Same macro the
+# media/ffmpeg suites use, and the same reason: the working directory of a
+# test is not a thing a test may depend on.
+target_compile_definitions(player_unittests PRIVATE
+    AVBASE_TESTDATA_DIR="${CMAKE_SOURCE_DIR}/tests/testdata")
 
 # ---- platform/sdl2: CPU-side pieces of the SDL2 backend (the text
 # rasterizer). Runs headless; the GL presentation itself has no window in CI.

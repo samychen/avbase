@@ -400,8 +400,11 @@ Status PlayerImpl::PrepareSync(base::TimeDelta timeout) {
         "raise the timeout, or use PrepareAsync and wait for kPrepared"));
   }
   prepared_event_.Reset();
-  // start_on_prepared (the default) means Start() already ran by the time
-  // the event fired, so kStarted is a successful answer too.
+  // OnPipelineReady signals prepared_event_ only AFTER its autostart, so with
+  // the default start_on_prepared=true this read is kStarted, not kPrepared.
+  // Accept all three anyway: start_on_prepared=false leaves kPrepared, and a
+  // caller may also have raced ahead and started us ourselves. The three are
+  // exactly the states that mean "ready"; anything else is reported below.
   const PlayerState s = state();
   if (s == PlayerState::kPrepared || s == PlayerState::kStarted ||
       s == PlayerState::kCompleted) {
@@ -453,10 +456,27 @@ void PlayerImpl::OnPipelineReady() {
   event_hub_.Post(EventType::kPrepared, std::move(payload), GetMediaTime());
   event_hub_.PostStateChanged(PlayerState::kPreparing, PlayerState::kPrepared,
                               GetMediaTime());
-  prepared_event_.Signal();
+  // BEFORE the signal, deliberately, so that "PrepareSync() returned" and
+  // "the autostart has happened" are the same statement rather than two events
+  // a caller has to hope land in order. Start() is cheap and non-blocking here
+  // (a state_lock_ transition plus a PostTask), so there is nothing to gain
+  // from signalling first.
+  //
+  // Honest caveat, because the first version of this comment overclaimed: the
+  // old order was NOT reliably observable as a bug. Signal() holds the
+  // WaitableEvent mutex and the waiter needs that same mutex, so the autostart
+  // had already won in 20/20 measured runs even with the signal first
+  // (see tests/unit/player/prepare_autostart_unittest.cc). The reorder is
+  // therefore a correctness-by-construction change, not a visible-bug fix --
+  // which is exactly why the old comment could sit here claiming the opposite
+  // of what the code did. The ordering that DOES matter for consumers is the
+  // two PostStateChanged calls above: kPreparing->kPrepared is published
+  // before any kStarted, so an event consumer never sees a start before the
+  // prepare it belongs to.
   if (config_.start_on_prepared) {
     Start();
   }
+  prepared_event_.Signal();
 }
 
 }  // namespace avbase

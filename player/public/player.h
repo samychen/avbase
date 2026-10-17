@@ -78,6 +78,17 @@ class AVBASE_PLAYER_EXPORT Player {
   Status SetDataSource(const DataSourceDescriptor& descriptor);
   Status PrepareAsync();
   Status PrepareSync(base::TimeDelta timeout = base::Seconds(30));
+  // Legal only from kPrepared, kPaused and kCompleted; from any other state
+  // it logs "Player::Start in state <s> is not legal" and returns without
+  // changing anything (that rejection is deliberate, see
+  // player/state_machine.h).
+  //
+  // WATCH OUT: with the default start_on_prepared=true, the autostart runs
+  // inside PrepareSync() before it returns, so the Start() you write right
+  // after PrepareSync() is the ILLEGAL one, not the missing one. Guard it
+  // (examples/pull_frames.cc) or set start_on_prepared=false if you mean to
+  // start playback yourself. ijkplayer cannot hit this at all: its start
+  // only clears pause_req and is not a state transition.
   void Start();
   void Pause();
   void Stop();  // Non-blocking.
