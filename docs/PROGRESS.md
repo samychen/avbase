@@ -5,7 +5,7 @@
 
 ## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 ✅(协议覆盖验收含 RTMP/RTSP/SRT,见第八十轮;VOD 完成链死锁修掉,见第八十轮) · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）· 4.6 覆盖率链路本机闭环复现（见第三十五轮）· docs/07 §5 计数三例两例转绿、顺线修掉一个真死锁（见第三十六轮）· docs/07 §5 计数三例**全部转&#x7EFF;**、顺线修掉解码器丢包（见第三十七轮）** · 抽出 AudioConverter 与 VideoConverter 对称（见第四十九轮）\**
 
-最后更新：**2026-10-17（第八十二轮）** —— 摘要见下方「第八十二 / 八十一 / 八十 / 七十九 / 七十七 / 七十六 / 七十五 / 七十四轮」几节；更早里程碑见下。
+最后更新：**2026-10-17（第八十三轮）** —— 摘要见下方「第八十三 / 八十二 / 八十一 / 八十 / 七十九 / 七十七 / 七十六 / 七十五 / 七十四轮」几节；更早里程碑见下。
 
 > 第四十八轮：**`EncodedPacket` 归位到值类型层**（`media/filters/encoded_packet.h` →  
 > `media/base/`）。它是 `DecoderBuffer` 在**编码侧**的同形状镜像（一个压缩包 + 时间戳 +  
@@ -4857,3 +4857,55 @@ exit 0),`media_unittests` 393/393 通过。故 `check_protocols.py`(VOD 侧,需 
 
 **门禁**:media_unittests **393/393**;VOD 各测试片终态正常;验收工具自身验证了三条
 前置分支(缺 mediamtx/headless/未知协议 → exit 2)与判定鉴别力(读错路径 → 0.000s FAIL)。
+
+---
+
+## 第八十三轮(2026-10-17):M15 C ABI 落地 —— 比绑任何 UI 框架更通用的跨语言门面
+
+**缘起**:问「Qt 之外还有什么通用门面适合 C++ 跨平台」。查仓库后发现**已经有更好的**:
+`media/base/native_display.h` 是一个类型擦除的窗口句柄契约(12 种宿主 + `Wrap()` 逃生口),
+SDL2/GLFW/EGL 三个 sink 已经这么接了。故不引入 Qt/JUCE,而落地 docs/08 **M15 已选定**
+的 C ABI——它服务 JNI/ObjC/Swift/纯 C 宿主,覆盖面比任一 UI 框架绑定都广。
+
+**交付**
+- `player/public/c/avbase_c.h` — 436 行 / **60 个导出函数**,`cc -std=c99 -Wall -Wextra
+  -Werror` 零警告(C++ 编译能过但什么都证明不了,只有 C 编译器能证明它是合法 C)。
+- 实现按职责拆三份(受 C1 500 行上限约束):`avbase_c_player.cc` 473 /
+  `avbase_c_display.cc` 179 / `avbase_c_events.cc` 51,共享部分进 `avbase_c_internal.h`。
+- 独立 target `avbase_cabi`,`-DAVBASE_ENABLE_CAPI=ON`(默认 OFF,沿用 docs/06 §971 既有
+  接线约定)。**独立而非并入 avbase_player**:C 宿主不能被迫吃 C++ 头。
+- 验收 `tools/check_capi.{c,sh}`。
+
+**关键设计**
+- **事件走 legacy 四元组 `(what,arg1,arg2,obj)`**,直接复用既有 `ToLegacyEvent()`
+  (`player/player_event.cc:142`)——docs/05 承诺的「Java 侧零改动」靠它。ABI 头里注释
+  列全了 what 码(200/300/100/400/500-502/600/700/800/900/1000/10001),
+  **这些数字是 ABI 契约,不能猜**。新事件无 legacy 对应时报 what==0 而非静默丢弃。
+- **导出宏复用项目既有范式**:`avbase_c_export.h` 由 `AVBASE_C_IMPLEMENTATION` 驱动
+  (同 `player_export.h`),**不写 `_WIN32`**——既让 C 头在任何 host 可编译,又避开
+  invariant C5「platform macro in a core file」。
+
+**踩到的坑(值得记住)**
+1. **全树 `-fno-exceptions`**(Chromium 风格)。我第一版给每个入口包 `try/catch`
+   (怕异常穿透 C frame),编译直接失败。**C ABI 因此不需要防异常**,反而更简单。
+2. `Status` 是 `base::expected<void, MediaError>`——**没有 `.code()`**,要 `.error()`
+   且成功时先 `has_value()` 守卫。
+3. `base::BindOnce(f, arg)` **不能**直接构造 `OnceCallback<void(void*)>`:绑定后签名
+   变成 `void(void*, arg)`。用 lambda 显式区分「捕获」与「参数」。
+4. **`MediaInfo` 字段与直觉相反**:是 `duration`/`bit_rate`/`streams[]`(用
+   `StreamKind` 而非 `DemuxerStreamType`),**没有 `title`/`video_size`/`rotation`**——
+   视频尺寸与旋转在 `StreamInfo` 上。第一版照猜的写,连错 3 处。
+5. **C1 的 500 行上限连注释都算**:第八十轮给 `decoder_stream.cc` 加注释时把它推到
+   501 行,本轮门禁才报出来(超 1 行,压缩一行注释修好)。**上一轮的"绿灯"可能只是
+   没跑到这个检查。**
+6. 纯 C 消费者链接:C 源码用 `cc` 编成 `.o`(这才是真 C 边界),但**链接必须用 `c++`
+   驱动**,否则缺 libc++(`std::__1::__shared_weak_count` 未定义)。
+7. `/bin/sh` **没有 `PIPESTATUS`**——验收脚本不能用管道取退出码,否则拿到的永远是
+   `grep` 的。
+
+**门禁**:`tools/check_capi.sh` **17 项全过 exit 0**——真实纯 C 程序完成
+create→set_data_source→prepare→**播放到 kCompleted**(state=9)→ 10 个事件(含 what=200/300)
+→ 缓冲区契约(需 133 字节、给 8 字节正确报截断且 NUL 正确、无缓冲区探测返回同尺寸)
+→ 非法参数被拒(null uri / null player / 未知 stream 都 =2)→ null 销毁不崩。
+`media_unittests` **393/393**;`check_invariants` **479 文件全过**(本轮 C ABI 的 4 项
+违规 + 上一轮遗留的 decoder_stream 501 行全部清零)。

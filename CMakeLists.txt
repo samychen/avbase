@@ -60,6 +60,12 @@ add_subdirectory(base)
 add_subdirectory(render)
 add_subdirectory(media)
 add_subdirectory(player)
+# The C ABI (docs/08 M15) is its own optional target: a C/JNI host links it
+# without acquiring the C++ headers. Off by default -- see docs/06 for the
+# wiring contract.
+if(AVBASE_ENABLE_CAPI)
+  add_subdirectory(player/public/c)
+endif()
 # platform/ supplies the window systems that plug into both of the above, so it
 # comes last.
 add_subdirectory(platform)

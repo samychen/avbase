@@ -492,9 +492,8 @@ void DecoderStream<Traits>::OnResetDone(FlushCB closure) {
 }
 
 // No AVBASE_MEDIA_EXPORT here: the attribute belongs on the `extern template`
-// declarations in the header, where the type is still being introduced.
-// Repeating it on an instantiation definition is ignored by GCC and rejected
-// under -Werror=attributes.
+// declarations in the header. Repeating it on an instantiation definition is
+// ignored by GCC and rejected under -Werror=attributes.
 template class DecoderStream<VideoDecoderStreamTraits>;
 template class DecoderStream<AudioDecoderStreamTraits>;
 
