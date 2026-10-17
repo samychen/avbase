@@ -4909,3 +4909,82 @@ create→set_data_source→prepare→**播放到 kCompleted**(state=9)→ 10 个
 → 非法参数被拒(null uri / null player / 未知 stream 都 =2)→ null 销毁不崩。
 `media_unittests` **393/393**;`check_invariants` **479 文件全过**(本轮 C ABI 的 4 项
 违规 + 上一轮遗留的 decoder_stream 501 行全部清零)。
+
+---
+
+## 第八十四轮(2026-10-17):M15 接门禁 —— 把「只有一台开发机能跑的验收」变成每次 push 都回答
+
+**缘起**:上一轮把 C ABI 落地并推送了。推送之后回头看接线,发现**它没有任何门禁**——
+不是「门禁不够严」,是**一个都没有**。三件事同时成立:
+
+1. `AVBASE_ENABLE_CAPI=ON` **不在任何 preset 里** → CI 上没有任何一个 job 构建过
+   `avbase_cabi`,那三个 `.cc` 从未被任何门禁编译过。
+2. 唯一的验收 `tools/check_capi.sh` **是 macOS-only**:里面写死了
+   `-mmacosx-version-min=15.7` 和七个指向 `tools/build/lib/*.dylib` 的路径
+   (本机 pinned FFmpeg 的产物目录)。它**在 Linux CI 上根本跑不起来**——不是会红,
+   是连编译那一步都过不去。
+3. 于是 `avbase_c.h` 可以在不触发任何红灯的情况下腐化。
+
+**为什么这件事的优先级高于它看起来的样子**:C ABI 是**兼容层**。它腐化的方式
+恰好是最安静的那种——往公共头里塞一个 C++ 默认参数,**所有既有 C++ 调用方照常工作**,
+只有第一个 C / JNI 宿主会编不过。门禁缺位的代价不是「早发现」,而是「第一个真实用户
+替我们发现」。
+
+**交付**
+- `player/public/c/capi_smoke_test.c`(原 `tools/check_capi.c` **移进 C ABI 目录**,
+  目录即 target,invariant C25 的形状)。真 C 源码、CTest 用例 `capi_smoke_test`。
+- `player/public/c/CMakeLists.txt` 新增该目标:`C_STANDARD 99` + `C_STANDARD_REQUIRED`
+  + `C_EXTENSIONS OFF`,**`-Werror` 由 `avbase_configure_target` 带进来**。
+- `capi` preset(ffmpeg + CAPI=ON)+ CI `capi` job(ubuntu-24.04)。
+- **删掉 `tools/check_capi.sh`**。它的职责(用 C 编译器编 + 跑)现在由构建系统承担,
+  而**构建系统不会忘记自己配置过的 flag**——脚本会,这就是它该退场的理由。
+- CI 里额外跑一次**裸 `cc -std=c99 -Wall -Wextra -Werror -pedantic -fsyntax-only`**:
+  上面的编译带项目自己的 flag,这一条证明同一个头在「另一套工具链的 C 宿主」那里也成立。
+
+**顺手修掉三处真实缺陷**(全部是「把 C ABI 真的编进一次构建」才暴露的)
+1. **`avbase_c_internal.h` 里 6 个函数定义缺 `inline`** → 三个 TU 各只用其中一部分,
+   未用的那个每次都报 `-Wunused-function`。**而且这在 C++ 里本身就是错的**:非 inline
+   的定义被三个 TU 包含 = 重复符号,只是静态库链接恰好容忍了(同 TU 内先声明后定义
+   时不重复发射)。补 `inline` 后 6 个警告归零。
+2. **`avbase_c_export.h` 与 `capi_smoke_test.c` 缺行尾换行** → `-Wnewline-eof`,
+   **在 `-Werror` 下就是硬错误**。上一轮写这两个文件时从没被 `-Werror` 编过,所以没报。
+3. **`avbase_cabi` 缺 `avbase::` 别名** —— 全树其它 target 都有(`avbase::player` /
+   `avbase::media` / `avbase::gl` / `avbase::ffmpeg`)。第一次配置就报
+   "target not found",而报错信息指向「拼错了」而不是「少了个别名」。
+
+**一个静默失效:`add_test()` 落在 `enable_testing()` 之前**
+`player/public/c` 原本在顶层 `CMakeLists.txt:67` 被 `add_subdirectory`,而
+`enable_testing()` 在第 76 行。CMake 里**在测试系统启用前处理的子目录里调 `add_test`
+会被静默丢弃**:configure 成功、构建成功、`ctest` 报 **"No tests were found!!!"**
+且**退出码为 0**。即「看起来装了门禁,其实一次都没跑」。修法是把该目录挪到
+`enable_testing()` 之后(仅当 `AVBASE_BUILD_TESTS`),并在原处留注释说明为什么。
+**这类缺陷的特征是:它不会以失败的形式出现,只会以「门禁不存在」的形式出现。**
+
+**验证(先证明门禁能红,再证明它绿)**
+- **变异 1**(断言反向):把缓冲区契约断言 `>` 改成 `<=` → `capi_smoke_test` 红。
+- **变异 2**(本轮最有说服力的一条):往 `avbase_c.h` 塞一个 C++ 默认参数
+  (`int flags = 0`) →
+  `cc -std=c99` 报 **`error: C does not support default arguments`**,
+  而 `c++ -std=c++20` **通过**。
+  这就是旧形状下那个 bug 的完整样子:**C++ 侧全绿,只有 C 宿主会断**。
+  变异已还原(实测 `git diff` 为空)。
+- 还原后:`cmake --preset capi` → `capi_smoke_test` **Passed 3.80s**(播到 kCompleted);
+  `cc -std=c99 -Wall -Wextra -Werror -pedantic` 语法检查 exit 0;
+  `check_invariants` **479 文件 all rules pass**;裸 C 编译零警告。
+
+**设计决定(不是默认,是实测)**
+把 C 目标接进 `avbase_configure_target` 之前先做了三个一次性探针工程,而不是读代码猜:
+1. **那套 C++ warning flag 对 C99 TU 是否安全** → 安全(`cxx_std_20`、
+   `-fno-exceptions -fno-rtti`、`-Wpedantic`、`-Werror` 全部原样通过编译)。
+2. **纯 C 目标链接 C++ 静态库时用哪个驱动** → **CMake 自动切到 C++ 驱动**;
+   而纯 C 目标(不链任何 C++ 库)会用 `cc` 链接。上一轮脚本里「链接必须手写 `c++` 驱动」
+   那段 workaround 因此**不再需要**。
+3. 库清单交给 `target_link_libraries`,脚本里那七个硬编码 dylib 路径一并消失
+   —— **这才是它能在 Linux CI 上跑的原因**,不是移植时抄一遍路径。
+
+**踩到的坑**
+- `C_STANDARD 99` 之外必须给 **`C_EXTENSIONS OFF`**,否则 `-std=c99` 实际是 `gnu99`,
+  GNU 扩展会静默地让某些 C++ 才有的写法编过。
+- 我给 `capi` 的 **build preset 误加了 `targets: ["avbase_capi_smoke"]`**,
+  结果全量 `ctest` 里其余 5 个单测二进制没被构建 → 报 `Not Run` 且退出码非零。
+  **preset 的 build targets 限制会静默缩小 `ctest` 的可见范围**,已去掉。

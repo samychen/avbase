@@ -138,6 +138,10 @@ option(AVBASE_ENABLE_LINUX_NATIVE "Build the native Linux backend (GL/EGL/X11/Wa
 option(AVBASE_ENABLE_ANDROID      "Build the Android backend"                    OFF)
 option(AVBASE_ENABLE_IOS          "Build the iOS backend"                        OFF)
 option(AVBASE_ENABLE_CAPI         "Build the C ABI compatibility layer"          OFF)
+# ↑ 默认 OFF,但**必须出现在某个 preset 里**否则它没有门禁:`capi` preset
+# (ffmpeg + CAPI=ON)构建 target `avbase_cabi` 与 `avbase_capi_smoke`,并由 CI 的
+# `capi` job 跑 `capi_smoke_test`。`capi_smoke_test.c` 是纯 C 源码,以 C99 + `-Werror`
+# 编译 —— 这是唯一能证明 `avbase_c.h` 仍是合法 C 的检查(C++ 编译通过证明不了任何事)。
 option(AVBASE_BUILD_SHARED        "Build shared libraries instead of static"     OFF)
 
 # ---------- Linux 原生后端的细分开关（全部默认 dlopen，弱依赖） ----------
@@ -968,8 +972,20 @@ if(AVBASE_BUILD_SHARED)
   avbase_hide_vendor_symbols(avbase_shared)
 endif()
 
-if(AVBASE_ENABLE_CAPI) add_subdirectory(player/public/c) endif()
+if(AVBASE_BUILD_TESTS)
+  enable_testing()
+  # player/public/c registers a CTest case, so it must be added AFTER
+  # enable_testing(). CMake silently drops add_test() in a subdirectory
+  # processed before testing is enabled -- configure succeeds and ctest then
+  # reports "No tests were found!!!" with exit code 0, so the gate looks
+  # installed while never having run. See docs/PROGRESS round 84.
+  if(AVBASE_ENABLE_CAPI) add_subdirectory(player/public/c) endif()
+endif()
 ```
+
+> **注**:上面这段是顶层 `CMakeLists.txt` 的**实际形状**。该目录原本在此处之前被
+> `add_subdirectory`,即在 `enable_testing()` 之前——于是 `add_test()` 静默失效,
+> C ABI 的验收从未真正注册过(CI 里 `ctest` 退出码为 0,不报任何错)。
 
 ### 7.5 `examples/CMakeLists.txt`
 

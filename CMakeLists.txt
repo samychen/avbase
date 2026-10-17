@@ -62,8 +62,9 @@ add_subdirectory(media)
 add_subdirectory(player)
 # The C ABI (docs/08 M15) is its own optional target: a C/JNI host links it
 # without acquiring the C++ headers. Off by default -- see docs/06 for the
-# wiring contract.
-if(AVBASE_ENABLE_CAPI)
+# wiring contract. Its smoke test is registered further down, after
+# enable_testing(); the directory itself is added there.
+if(AVBASE_ENABLE_CAPI AND NOT AVBASE_BUILD_TESTS)
   add_subdirectory(player/public/c)
 endif()
 # platform/ supplies the window systems that plug into both of the above, so it
@@ -74,6 +75,15 @@ if(AVBASE_BUILD_EXAMPLES)
 endif()
 if(AVBASE_BUILD_TESTS)
   enable_testing()
+  # After enable_testing() on purpose. The C ABI directory is added far above,
+  # and add_test() in a subdirectory processed BEFORE testing was enabled is
+  # silently dropped: the configure succeeds, ctest reports "No tests were
+  # found", and the gate that looks present is not running anywhere. Adding it
+  # here is the only spot that is both after enable_testing() and next to the
+  # other test registration.
+  if(AVBASE_ENABLE_CAPI)
+    add_subdirectory(player/public/c)
+  endif()
 endif()
 # The fuzz targets live beside the tests and reuse their support; building
 # them alone (AVBASE_BUILD_FUZZ with AVBASE_BUILD_TESTS=OFF) is a valid

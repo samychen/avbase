@@ -80,6 +80,15 @@
       }
     },
     {
+      "name": "capi",
+      "inherits": "default",
+      "displayName": "C ABI enabled (docs/08 M15); ctest proves the C boundary",
+      "cacheVariables": {
+        "AVBASE_ENABLE_FFMPEG": "ON",
+        "AVBASE_ENABLE_CAPI": "ON"
+      }
+    },
+    {
       "name": "linux-native",
       "inherits": "default",
       "cacheVariables": {
@@ -190,6 +199,10 @@
       "targets": [
         "play_sdl2"
       ]
+    },
+    {
+      "name": "capi",
+      "configurePreset": "capi"
     },
     {
       "name": "linux-native",

@@ -382,6 +382,51 @@ jobs:
           name: corpus-metrics
           path: ${{ runner.temp }}/corpus_baseline.json
 
+  # The C ABI (docs/08 M15). Until this job existed the C ABI had no gate at
+  # all: AVBASE_ENABLE_CAPI was in no preset, so no runner ever compiled
+  # avbase_cabi, and the only acceptance was tools/check_capi.sh -- which
+  # carried -mmacosx-version-min and seven hardcoded paths into one developer's
+  # pinned-FFmpeg build tree, so it could not have run here even if a job had
+  # called it. The consequence was a header that could rot into "compiles under
+  # C++ only" without anything going red, which for a compatibility layer is
+  # the one failure that matters: it would still work for every existing C++
+  # caller and break the first C or JNI host.
+  #
+  # What this asserts is the boundary, not a branch: capi_smoke_test.c is
+  # compiled by the C compiler at C99 with -Werror (a C++-ism reaching
+  # avbase_c.h fails here), linked against avbase::cabi, and run to
+  # kCompleted. It needs FFmpeg because the test plays a real file.
+  capi:
+    needs: ffmpeg
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain and FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config \
+            libavformat-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev
+      - run: cmake --preset capi
+      - run: python3 tools/check_invariants.py --root .
+      - run: cmake --build --preset capi
+      - name: The C boundary holds (compiled by cc, run to kCompleted)
+        run: |
+          # Anchored on purpose: a bare -R capi_smoke_test would also match
+          # VideoFrameCompositorTest.FpsCapIgnoredBeforeFirstPresent, so the
+          # "C ABI gate" would quietly grow a second, unrelated test every
+          # time somebody named something with "capi" inside it. $ and ^ are
+          # what pin it to this one test.
+          ctest --test-dir build/capi -R '^capi_smoke_test$' --output-on-failure
+      - name: The header is C, not just C++
+        run: |
+          # The compile above already proves it, but with the project's own
+          # flags. This is the same header against a bare, warning-clean C99
+          # command so the claim does not rest on one configuration: a C host
+          # on another toolchain gets this and nothing else.
+          cc -std=c99 -Wall -Wextra -Werror -pedantic \
+            -I. -fsyntax-only player/public/c/capi_smoke_test.c
+
   # Soak. minutes: 48 is the deliverable; the CI job runs 10 because a GitHub
   # job cannot be trusted to still be alive in 48 hours, and a gate that times
   # out teaches nothing. The 48-hour run is a local or self-hosted invocation
@@ -449,7 +494,19 @@ jobs:
           # shape ijkplayer had), option_registry.inc is generated, and
           # render/gl/third_party/ is the vendored glad output -- all three are
           # text the formatter is not entitled to rewrite.
-          mapfile -t FILES < <(git ls-files '*.cc' '*.h' \
+          #
+          # 'player/public/c/*.c' is here because of capi_smoke_test.c, not
+          # because the tree is suddenly C: the C ABI's whole gate is that its
+          # header is valid C, and a file nothing formats drifts until someone
+          # notices it in a review. Scoped to that ONE directory on purpose --
+          # the only other .c in the tree is cmake/FFmpegVersionProbe.c, a
+          # CMake try_run() probe that is build scaffolding rather than project
+          # source. Widening this to '*.c' for the sake of one file turned the
+          # gate red on its first run (R12: a gate that arrives red teaches
+          # people to ignore gates), and "fix" the probe would be editing
+          # text nobody owns. If a second real C source appears, add its
+          # directory here rather than the whole extension.
+          mapfile -t FILES < <(git ls-files '*.cc' '*.h' 'player/public/c/*.c' \
             | grep -v 'media/filters/legacy/' \
             | grep -v 'player/option_registry.inc' \
             | grep -v 'third_party/')

@@ -17,12 +17,15 @@
 //     it needed, and
 //   * a "no info yet" case that answers AVBASE_OK with zeroed fields.
 //
-// The C source is compiled with `cc`; only the LINK step uses the C++ driver,
-// because the engine underneath is C++. The object file is genuine C, so the
-// boundary being tested is real.
+// THIS FILE IS COMPILED BY THE C COMPILER, not by a hand-rolled shell line
+// (see player/public/c/CMakeLists.txt): the compile step is the whole point of
+// the test, and a flag the build system does not know about is a flag that
+// silently stops applying. CMAKE_C_STANDARD 99 is set there and the warnings
+// are -Werror, so a C++-ism reaching avbase_c.h turns this target red instead
+// of turning the header into something only C++ callers can use.
 //
 // USAGE
-//   tools/check_capi.sh [source.mp4] [build_dir]
+//   capi_smoke_test [source.mp4]
 
 #include <stdio.h>
 #include <string.h>
@@ -60,8 +63,7 @@ static void Check(int condition, const char* what) {
 }
 
 int main(int argc, char** argv) {
-  const char* uri =
-      argc > 1 ? argv[1] : "tests/testdata/small_h264_aac_3s.mp4";
+  const char* uri = argc > 1 ? argv[1] : "tests/testdata/small_h264_aac_3s.mp4";
 
   printf("c_abi=%s engine=%s\n", avbase_c_version(), avbase_engine_version());
 
@@ -74,7 +76,8 @@ int main(int argc, char** argv) {
 
   Check(avbase_player_set_data_source(player, uri) == AVBASE_OK,
         "set_data_source on a real file");
-  Check(avbase_player_set_data_source(player, NULL) == AVBASE_ERR_INVALID_ARGUMENT,
+  Check(avbase_player_set_data_source(player, NULL) ==
+            AVBASE_ERR_INVALID_ARGUMENT,
         "set_data_source rejects a NULL uri");
   Check(avbase_player_set_data_source(NULL, uri) == AVBASE_ERR_INVALID_ARGUMENT,
         "set_data_source rejects a NULL player");
@@ -84,8 +87,7 @@ int main(int argc, char** argv) {
   // zero-duration stream.
   AvbaseMediaInfo info;
   memset(&info, 0xAB, sizeof(info));
-  Check(avbase_player_get_media_info(player, &info) ==
-            AVBASE_ERR_INVALID_STATE,
+  Check(avbase_player_get_media_info(player, &info) == AVBASE_ERR_INVALID_STATE,
         "media_info before prepare is kInvalidState, not zeros-with-OK");
 
   Check(avbase_player_prepare_sync(player, 15000) == AVBASE_OK,
@@ -113,8 +115,8 @@ int main(int argc, char** argv) {
   // second guess.
   char small[8];
   memset(small, 'Z', sizeof(small));
-  const int32_t needed = avbase_player_dump_diagnostics(player, small,
-                                                        (int32_t)sizeof(small));
+  const int32_t needed =
+      avbase_player_dump_diagnostics(player, small, (int32_t)sizeof(small));
   Check(needed > (int32_t)sizeof(small) - 1,
         "dump_diagnostics reports the size it needs");
   Check(small[sizeof(small) - 1] == '\0',
@@ -122,7 +124,8 @@ int main(int argc, char** argv) {
   Check(avbase_player_dump_diagnostics(player, NULL, 0) == needed,
         "probing with no buffer returns the same size");
 
-  Check(avbase_player_select_track(player, 999, 0) == AVBASE_ERR_INVALID_ARGUMENT,
+  Check(avbase_player_select_track(player, 999, 0) ==
+            AVBASE_ERR_INVALID_ARGUMENT,
         "an unknown stream type is rejected, not forwarded");
 
   // Destroying null must be a no-op so cleanup paths can be unconditional.
@@ -133,6 +136,6 @@ int main(int argc, char** argv) {
   avbase_global_init();
 
   printf("%s\n", failures == 0 ? "check_capi: all checks passed"
-                              : "check_capi: FAILED");
+                               : "check_capi: FAILED");
   return failures == 0 ? 0 : 1;
 }

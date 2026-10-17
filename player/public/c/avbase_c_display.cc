@@ -15,7 +15,7 @@
 // ---------------------------------------------------------------------------
 
 extern "C" AvbaseNativeDisplay* avbase_display_from_x11(void* x_display,
-                                                          uintptr_t window) {
+                                                        uintptr_t window) {
   if (x_display == nullptr || window == 0) {
     return nullptr;
   }
@@ -28,8 +28,10 @@ extern "C" AvbaseNativeDisplay* avbase_display_from_x11(void* x_display,
   return WrapDisplay(avbase::media::NativeDisplay::FromX11Window(handle));
 }
 
-extern "C" AvbaseNativeDisplay* avbase_display_from_wayland(
-    void* wl_display, void* wl_surface, int32_t width, int32_t height) {
+extern "C" AvbaseNativeDisplay* avbase_display_from_wayland(void* wl_display,
+                                                            void* wl_surface,
+                                                            int32_t width,
+                                                            int32_t height) {
   if (wl_display == nullptr || wl_surface == nullptr) {
     return nullptr;
   }
@@ -54,8 +56,7 @@ extern "C" AvbaseNativeDisplay* avbase_display_from_glfw(void* glfw_window) {
   if (glfw_window == nullptr) {
     return nullptr;
   }
-  return WrapDisplay(
-      avbase::media::NativeDisplay::FromGlfwWindow(glfw_window));
+  return WrapDisplay(avbase::media::NativeDisplay::FromGlfwWindow(glfw_window));
 }
 
 extern "C" AvbaseNativeDisplay* avbase_display_from_egl(void* egl_surface) {
@@ -76,18 +77,17 @@ extern "C" AvbaseNativeDisplay* avbase_display_from_hwnd(void* hwnd) {
       hwnd, avbase::media::NativeDisplayKind::kHwnd, nullptr));
 }
 
-extern "C" AvbaseNativeDisplay* avbase_display_from_android_native_window(
-    void* window) {
+extern "C" AvbaseNativeDisplay*
+avbase_display_from_android_native_window(void* window) {
   if (window == nullptr) {
     return nullptr;
   }
   return WrapDisplay(avbase::media::NativeDisplay::Wrap(
-      window, avbase::media::NativeDisplayKind::kAndroidNativeWindow,
-      nullptr));
+      window, avbase::media::NativeDisplayKind::kAndroidNativeWindow, nullptr));
 }
 
-extern "C" AvbaseNativeDisplay* avbase_display_from_android_surface(
-    void* surface) {
+extern "C" AvbaseNativeDisplay*
+avbase_display_from_android_surface(void* surface) {
   if (surface == nullptr) {
     return nullptr;
   }
@@ -95,8 +95,7 @@ extern "C" AvbaseNativeDisplay* avbase_display_from_android_surface(
       surface, avbase::media::NativeDisplayKind::kAndroidSurface, nullptr));
 }
 
-extern "C" AvbaseNativeDisplay* avbase_display_from_cametal_layer(
-    void* layer) {
+extern "C" AvbaseNativeDisplay* avbase_display_from_cametal_layer(void* layer) {
   if (layer == nullptr) {
     return nullptr;
   }
@@ -112,9 +111,10 @@ extern "C" AvbaseNativeDisplay* avbase_display_from_caeagl_layer(void* layer) {
       layer, avbase::media::NativeDisplayKind::kCaEaglLayer, nullptr));
 }
 
-extern "C" AvbaseNativeDisplay* avbase_display_wrap(
-    void* raw, int kind, void (*release)(void* raw, void* user_data),
-    void* user_data) {
+extern "C" AvbaseNativeDisplay*
+avbase_display_wrap(void* raw, int kind,
+                    void (*release)(void* raw, void* user_data),
+                    void* user_data) {
   if (raw == nullptr) {
     return nullptr;
   }
@@ -139,8 +139,8 @@ extern "C" AvbaseNativeDisplay* avbase_display_wrap(
 }
 
 extern "C" AvbaseNativeDisplay* avbase_display_none(void) {
-  std::unique_ptr<AvbaseNativeDisplay> handle(
-      new (std::nothrow) AvbaseNativeDisplay());
+  std::unique_ptr<AvbaseNativeDisplay> handle(new (std::nothrow)
+                                                  AvbaseNativeDisplay());
   if (handle == nullptr) {
     return nullptr;
   }
@@ -168,8 +168,9 @@ extern "C" int avbase_display_is_valid(const AvbaseNativeDisplay* display) {
   return display->display->valid() ? 1 : 0;
 }
 
-extern "C" int32_t avbase_display_debug_string(
-    const AvbaseNativeDisplay* display, char* out, int32_t capacity) {
+extern "C" int32_t
+avbase_display_debug_string(const AvbaseNativeDisplay* display, char* out,
+                            int32_t capacity) {
   if (display == nullptr || display->display == nullptr) {
     return 0;
   }

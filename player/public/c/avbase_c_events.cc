@@ -32,8 +32,8 @@ extern "C" void avbase_player_set_event_callback(AvbasePlayer* player,
   bridge->callback = cb;
   bridge->user_data = user_data;
 
-  player->player->SetEventHandler(avbase::Player::EventHandler(
-      [bridge](const avbase::PlayerEvent& event) {
+  player->player->SetEventHandler(
+      avbase::Player::EventHandler([bridge](const avbase::PlayerEvent& event) {
         if (bridge->callback == nullptr) {
           return;
         }

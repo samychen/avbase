@@ -138,7 +138,7 @@ AVBASE_C_API void avbase_player_destroy(AvbasePlayer* player);
 
 // Bounded by PlayerConfig::shutdown_timeout; does not hang.
 AVBASE_C_API void avbase_player_stop_sync(AvbasePlayer* player,
-int64_t timeout_ms);
+                                          int64_t timeout_ms);
 
 // SetDataSource(uri). |uri| is copied; the caller keeps ownership.
 AVBASE_C_API AvbaseStatus avbase_player_set_data_source(AvbasePlayer* player,
@@ -146,7 +146,7 @@ AVBASE_C_API AvbaseStatus avbase_player_set_data_source(AvbasePlayer* player,
 
 AVBASE_C_API AvbaseStatus avbase_player_prepare(AvbasePlayer* player);
 AVBASE_C_API AvbaseStatus avbase_player_prepare_sync(AvbasePlayer* player,
-                                                      int64_t timeout_ms);
+                                                     int64_t timeout_ms);
 
 AVBASE_C_API void avbase_player_start(AvbasePlayer* player);
 AVBASE_C_API void avbase_player_pause(AvbasePlayer* player);
@@ -164,11 +164,11 @@ AVBASE_C_API void avbase_player_step_once(AvbasePlayer* player);
 // correlation is already carried by the event payload's request_id -- a host
 // that needs it should use the richer C++ API.
 AVBASE_C_API void avbase_player_seek_to(AvbasePlayer* player,
-                             int64_t position_ms);
+                                        int64_t position_ms);
 
 // |rate| is clamped to [0.25, 4.0] as the C++ API does.
 AVBASE_C_API void avbase_player_set_playback_rate(AvbasePlayer* player,
-                                                   double rate);
+                                                  double rate);
 
 // |volume| is clamped to [0.0, 1.0].
 AVBASE_C_API void avbase_player_set_volume(AvbasePlayer* player, double volume);
@@ -186,12 +186,12 @@ AVBASE_C_API AvbaseStatus avbase_player_select_track(AvbasePlayer* player,
 // Attaches |display| as the video output, or detaches when null (audio keeps
 // playing -- the documented background-playback case). The player holds a
 // reference; destroying the display handle afterwards is safe.
-AVBASE_C_API void avbase_player_set_video_surface(
-    AvbasePlayer* player, AvbaseNativeDisplay* display);
+AVBASE_C_API void avbase_player_set_video_surface(AvbasePlayer* player,
+                                                  AvbaseNativeDisplay* display);
 
 AVBASE_C_API AvbaseStatus avbase_player_take_snapshot(AvbasePlayer* player,
-                                                       int64_t at_ms,
-                                                       const char* file_path);
+                                                      int64_t at_ms,
+                                                      const char* file_path);
 
 // Forces the network retry path now. Replaces ijkplayer's write-only
 // FFP_PROP_INT64_IMMEDIATE_RECONNECT property.
@@ -219,13 +219,13 @@ AVBASE_C_API int avbase_player_muted(const AvbasePlayer* player);
 // the caller can size a buffer and retry -- guessing a size is how the legacy
 // path used to truncate paths silently.
 AVBASE_C_API int32_t avbase_player_title(AvbasePlayer* player, char* out,
-                                          int32_t capacity);
+                                         int32_t capacity);
 
 // Full internal state as JSON (~1 ms). The first thing to attach to a bug
 // report. Same copy-into-your-buffer contract as the title.
 AVBASE_C_API int32_t avbase_player_dump_diagnostics(const AvbasePlayer* player,
-                                                     char* out,
-                                                     int32_t capacity);
+                                                    char* out,
+                                                    int32_t capacity);
 
 // ---------------------------------------------------------------------------
 // Media info
@@ -253,8 +253,8 @@ typedef struct AvbaseMediaInfo {
 
 // Available only after avbase_player_prepare() has reported kPrepared;
 // returns AVBASE_ERR_INVALID_STATE before that.
-AVBASE_C_API AvbaseStatus avbase_player_get_media_info(
-    const AvbasePlayer* player, AvbaseMediaInfo* out);
+AVBASE_C_API AvbaseStatus
+avbase_player_get_media_info(const AvbasePlayer* player, AvbaseMediaInfo* out);
 
 // ---------------------------------------------------------------------------
 // Multi-source composition
@@ -267,16 +267,16 @@ AVBASE_C_API AvbaseStatus avbase_player_get_media_info(
 // must be released with avbase_source_release(). Source 0 is the player's own
 // avbase_player_set_data_source(); each call adds the next id.
 AVBASE_C_API AvbaseSource* avbase_player_add_source(AvbasePlayer* player,
-                                                     const char* uri,
-                                                     const char* name,
-                                                     int32_t z_order);
+                                                    const char* uri,
+                                                    const char* name,
+                                                    int32_t z_order);
 
 // Releases a source handle. Null is a no-op. Does not unregister the source;
 // it only drops this reference (matching the C++ shared_ptr semantics).
 AVBASE_C_API void avbase_source_release(AvbaseSource* source);
 
 AVBASE_C_API AvbaseStatus avbase_source_set_uri(AvbaseSource* source,
-                                                 const char* uri);
+                                                const char* uri);
 
 // ---------------------------------------------------------------------------
 // Native display
@@ -289,12 +289,14 @@ AVBASE_C_API AvbaseStatus avbase_source_set_uri(AvbaseSource* source,
 // X11: |display| is a `Display*`, |window| is an XID. The pointers are copied,
 // not retained: the window must outlive the display handle.
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_x11(void* x_display,
-                                                           uintptr_t window);
+                                                          uintptr_t window);
 
 // Wayland: |surface| is a `wl_surface*`. Wayland cannot report a surface size,
 // so |width|/|height| must be supplied by the embedder.
-AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_wayland(
-    void* wl_display, void* wl_surface, int32_t width, int32_t height);
+AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_wayland(void* wl_display,
+                                                              void* wl_surface,
+                                                              int32_t width,
+                                                              int32_t height);
 
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_sdl2(void* sdl_window);
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_glfw(void* glfw_window);
@@ -305,14 +307,14 @@ AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_egl(void* egl_surface);
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_hwnd(void* hwnd);
 
 // Android ANativeWindow / Surface.
-AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_android_native_window(
-    void* window);
-AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_android_surface(
-    void* surface);
+AVBASE_C_API AvbaseNativeDisplay*
+avbase_display_from_android_native_window(void* window);
+AVBASE_C_API AvbaseNativeDisplay*
+avbase_display_from_android_surface(void* surface);
 
 // iOS: a CAMetalLayer or CAEAGLLayer.
-AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_cametal_layer(
-    void* layer);
+AVBASE_C_API AvbaseNativeDisplay*
+avbase_display_from_cametal_layer(void* layer);
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_caeagl_layer(void* layer);
 
 // The generic door: |kind| is an AVBASE_DISPLAY_* value and |release| is an
@@ -325,9 +327,10 @@ AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_caeagl_layer(void* layer);
 // a C host that needs cleanup state has nowhere else to keep it, and deriving
 // it from |raw| would be a guess. It runs on the render sequence, so it must
 // not block.
-AVBASE_C_API AvbaseNativeDisplay* avbase_display_wrap(
-    void* raw, int kind, void (*release)(void* raw, void* user_data),
-    void* user_data);
+AVBASE_C_API AvbaseNativeDisplay*
+avbase_display_wrap(void* raw, int kind,
+                    void (*release)(void* raw, void* user_data),
+                    void* user_data);
 
 // A valid "render nowhere" target; the sink discards frames but audio keeps
 // playing.

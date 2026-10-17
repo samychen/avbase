@@ -42,54 +42,54 @@ extern "C" void avbase_global_init(void) {
 
 extern "C" const char* avbase_status_name(AvbaseStatus status) {
   switch (status) {
-    case AVBASE_OK:
-      return "kOk";
-    case AVBASE_ERR_INVALID_ARGUMENT:
-      return "kInvalidArgument";
-    case AVBASE_ERR_INVALID_STATE:
-      return "kInvalidState";
-    case AVBASE_ERR_NOT_IMPLEMENTED:
-      return "kNotImplemented";
-    case AVBASE_ERR_OUT_OF_MEMORY:
-      return "kOutOfMemory";
-    case AVBASE_ERR_ABORTED:
-      return "kAborted";
-    case AVBASE_ERR_TIMEOUT:
-      return "kTimeout";
-    case AVBASE_ERR_SOURCE_OPEN_FAILED:
-      return "kSourceOpenFailed";
-    case AVBASE_ERR_SOURCE_NOT_FOUND:
-      return "kSourceNotFound";
-    case AVBASE_ERR_SOURCE_READ_FAILED:
-      return "kSourceReadFailed";
-    case AVBASE_ERR_DECODER_NOT_FOUND:
-      return "kDecoderNotFound";
-    case AVBASE_ERR_DECODER_OPEN_FAILED:
-      return "kDecoderOpenFailed";
-    case AVBASE_ERR_DECODE_FAILED:
-      return "kDecodeFailed";
-    case AVBASE_ERR_DECODER_UNSUPPORTED_CODEC:
-      return "kDecoderUnsupportedCodec";
-    case AVBASE_ERR_SINK_NOT_ATTACHED:
-      return "kSinkNotAttached";
-    case AVBASE_ERR_STREAM_NOT_FOUND:
-      return "kStreamNotFound";
-    case AVBASE_ERR_TRACK_NOT_FOUND:
-      return "kTrackNotFound";
-    case AVBASE_ERR_CONFIG_INVALID:
-      return "kConfigInvalid";
-    case AVBASE_ERR_EOS:
-      return "kEos";
-    default:
-      return "kUnknown";
+  case AVBASE_OK:
+    return "kOk";
+  case AVBASE_ERR_INVALID_ARGUMENT:
+    return "kInvalidArgument";
+  case AVBASE_ERR_INVALID_STATE:
+    return "kInvalidState";
+  case AVBASE_ERR_NOT_IMPLEMENTED:
+    return "kNotImplemented";
+  case AVBASE_ERR_OUT_OF_MEMORY:
+    return "kOutOfMemory";
+  case AVBASE_ERR_ABORTED:
+    return "kAborted";
+  case AVBASE_ERR_TIMEOUT:
+    return "kTimeout";
+  case AVBASE_ERR_SOURCE_OPEN_FAILED:
+    return "kSourceOpenFailed";
+  case AVBASE_ERR_SOURCE_NOT_FOUND:
+    return "kSourceNotFound";
+  case AVBASE_ERR_SOURCE_READ_FAILED:
+    return "kSourceReadFailed";
+  case AVBASE_ERR_DECODER_NOT_FOUND:
+    return "kDecoderNotFound";
+  case AVBASE_ERR_DECODER_OPEN_FAILED:
+    return "kDecoderOpenFailed";
+  case AVBASE_ERR_DECODE_FAILED:
+    return "kDecodeFailed";
+  case AVBASE_ERR_DECODER_UNSUPPORTED_CODEC:
+    return "kDecoderUnsupportedCodec";
+  case AVBASE_ERR_SINK_NOT_ATTACHED:
+    return "kSinkNotAttached";
+  case AVBASE_ERR_STREAM_NOT_FOUND:
+    return "kStreamNotFound";
+  case AVBASE_ERR_TRACK_NOT_FOUND:
+    return "kTrackNotFound";
+  case AVBASE_ERR_CONFIG_INVALID:
+    return "kConfigInvalid";
+  case AVBASE_ERR_EOS:
+    return "kEos";
+  default:
+    return "kUnknown";
   }
 }
 
 extern "C" const char* avbase_status_message(AvbaseStatus status) {
   // The engine owns the sentences, so the C ABI never grows a second copy that
   // could drift from the C++ one. An unnamed code yields "" as promised.
-  const char* name = avbase::GetErrorCodeName(
-      static_cast<avbase::ErrorCode>(status));
+  const char* name =
+      avbase::GetErrorCodeName(static_cast<avbase::ErrorCode>(status));
   return name != nullptr ? name : "";
 }
 
@@ -106,8 +106,8 @@ extern "C" AvbasePlayer* avbase_player_create(void) {
   if (handle == nullptr) {
     return nullptr;
   }
-  handle->player = std::unique_ptr<avbase::Player>(new (std::nothrow)
-                                                        avbase::Player());
+  handle->player =
+      std::unique_ptr<avbase::Player>(new (std::nothrow) avbase::Player());
   if (handle->player == nullptr) {
     return nullptr;
   }
@@ -130,7 +130,7 @@ extern "C" void avbase_player_stop_sync(AvbasePlayer* player,
 }
 
 extern "C" AvbaseStatus avbase_player_set_data_source(AvbasePlayer* player,
-                                                     const char* uri) {
+                                                      const char* uri) {
   if (player == nullptr || player->player == nullptr || uri == nullptr) {
     return AVBASE_ERR_INVALID_ARGUMENT;
   }
@@ -225,8 +225,8 @@ extern "C" void avbase_player_set_loop_count(AvbasePlayer* player, int count) {
 }
 
 extern "C" AvbaseStatus avbase_player_select_track(AvbasePlayer* player,
-                                                    int stream_type,
-                                                    int stream_index) {
+                                                   int stream_type,
+                                                   int stream_index) {
   if (player == nullptr || player->player == nullptr) {
     return AVBASE_ERR_INVALID_ARGUMENT;
   }
@@ -241,8 +241,8 @@ extern "C" AvbaseStatus avbase_player_select_track(AvbasePlayer* player,
   return ToC(player->player->SelectTrack(type, stream_index));
 }
 
-extern "C" void avbase_player_set_video_surface(
-    AvbasePlayer* player, AvbaseNativeDisplay* display) {
+extern "C" void avbase_player_set_video_surface(AvbasePlayer* player,
+                                                AvbaseNativeDisplay* display) {
   if (player == nullptr || player->player == nullptr) {
     return;
   }
@@ -369,8 +369,7 @@ extern "C" int32_t avbase_player_title(AvbasePlayer* player, char* out,
 }
 
 extern "C" int32_t avbase_player_dump_diagnostics(const AvbasePlayer* player,
-                                                  char* out,
-                                                  int32_t capacity) {
+                                                  char* out, int32_t capacity) {
   if (player == nullptr || player->player == nullptr) {
     return 0;
   }
@@ -406,22 +405,22 @@ extern "C" AvbaseStatus avbase_player_get_media_info(const AvbasePlayer* player,
   // stream wins, which is the same rule MediaInfo::FirstStreamOfKind applies.
   for (const auto& stream : info->streams) {
     switch (stream.kind) {
-      case avbase::StreamKind::kVideo:
-        ++out->video_track_count;
-        if (out->video_width == 0 && out->video_height == 0) {
-          out->video_width = stream.natural_size.width;
-          out->video_height = stream.natural_size.height;
-          out->video_rotation = stream.rotation;
-        }
-        break;
-      case avbase::StreamKind::kAudio:
-        ++out->audio_track_count;
-        break;
-      case avbase::StreamKind::kText:
-        ++out->subtitle_track_count;
-        break;
-      case avbase::StreamKind::kUnknown:
-        break;
+    case avbase::StreamKind::kVideo:
+      ++out->video_track_count;
+      if (out->video_width == 0 && out->video_height == 0) {
+        out->video_width = stream.natural_size.width;
+        out->video_height = stream.natural_size.height;
+        out->video_rotation = stream.rotation;
+      }
+      break;
+    case avbase::StreamKind::kAudio:
+      ++out->audio_track_count;
+      break;
+    case avbase::StreamKind::kText:
+      ++out->subtitle_track_count;
+      break;
+    case avbase::StreamKind::kUnknown:
+      break;
     }
   }
   return AVBASE_OK;
@@ -440,8 +439,8 @@ extern "C" AvbaseSource* avbase_player_add_source(AvbasePlayer* player,
   }
   avbase::DataSourceDescriptor descriptor;
   descriptor.uri = std::string(uri);
-  auto source = player->player->AddSource(
-      descriptor, name != nullptr ? name : "", z_order);
+  auto source = player->player->AddSource(descriptor,
+                                          name != nullptr ? name : "", z_order);
   if (source == nullptr) {
     return nullptr;
   }
