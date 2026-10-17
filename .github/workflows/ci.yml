@@ -181,11 +181,10 @@ jobs:
       - run: cmake --build build/${{ matrix.preset }}
       - run: python3 tools/check_invariants.py --root .
       # Before ctest, not after: a green test run over a stale binary is a
-      # green run over code that no longer exists, and it stays green forever.
-      # The tell is the test COUNT -- a tree that gained tests but reports the
-      # old, smaller number was measured with yesterday's binary. Ninja does
-      # not track a static library's contents, so `cmake --build` can leave an
-      # executable older than the library it links while reporting success.
+      # green run over code that no longer exists. Building part of the tree
+      # leaves an executable older than the library it links while reporting
+      # success -- the tell is the test COUNT, since a tree that gained tests
+      # reports the old, smaller number. See docs/BUILDING.md §5.
       - run: python3 tools/check_binary_freshness.py --root build/${{ matrix.preset }}
       - run: ctest --test-dir build/${{ matrix.preset }} --output-on-failure
       - if: matrix.label == 'coverage'

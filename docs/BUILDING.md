@@ -326,9 +326,9 @@ Stop / SeekTo（按 request_id 回调）/ SelectTrack / TakeSnapshot / 音量 / 
 
 ---
 
-## 5. 不需要编译器就能跑的三个工具
+## 5. 不需要编译器就能跑的四个工具
 
-这三个是最常用的检查，只要有 Python 3 就能跑（CI 里另有 format / clang-tidy /
+这四个是最常用的检查，只要有 Python 3 就能跑（CI 里另有 format / clang-tidy /
 cpplint / corpus / soak / fuzz 等共 17 个 job，见 §7）：
 
 ```bash
@@ -351,15 +351,16 @@ python3 tools/gen_options.py --root . --emit     # 生成 player/option_registry
 ```
 
 > ⚠️ **`ctest` 报绿之前，先跑 `check_binary_freshness`。**
-> ninja 不跟踪静态库**内容**的变化：库重建了而可执行文件没跟着重新链接时，
-> `cmake --build` 会输出 `no work to do` 并**报成功**。此时 `ctest` 的
-> "N/N passed" 描述的是已经不存在的代码，而且它会一直绿下去。
+> 只构建**部分**目标时会出现这种情况：`cmake --build --target libxxx.a`，
+> 或 preset 里带 `targets:` 收窄，重建了库却不重新链接依赖它的可执行文件，
+> 然后**报成功**（它确实只做了你要求的事）。此时 `ctest` 的 "N/N passed"
+> 描述的是已经不存在的代码，而且它会一直绿下去。
 > **测试条数就是破绽** —— 一个这两天新增了用例的树，却报出旧的、更小的 N，
-> 说明跑的是旧二进制。修法是按目标重建：
-> `cmake --build build/<preset> --target <name>`（或删掉该二进制让下次构建重链）。
+> 说明跑的是旧二进制。修法是构建完整树：去掉 preset 的 `targets:` 收窄，
+> 或 `cmake --build build/<preset>`。
 >
-> ⚠️ **诊断任何"产品有 bug"之前，先确认二进制是当前的。** 本项目真踩过：
-> 拿一个早两轮的 `headless` 诊断出「VideoToolbox 硬解播不完」，
+> 同一门禁也管住第二个坑：**诊断任何"产品有 bug"之前，先确认二进制是当前的。**
+> 本项目真踩过：拿一个早两轮的 `headless` 诊断出「VideoToolbox 硬解播不完」，
 > 重链后同一命令 3/3 正常 —— 那个 bug 从来不存在，而为它花掉了一整轮。
 > 见 `tools/check_binary_freshness.py` 与 `.workbuddy/memory/operations.md`。
 

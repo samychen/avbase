@@ -3,6 +3,7 @@
 ## 门禁命令
 ```sh
 python3 tools/check_invariants.py --root .     # C1/C4/C5/C16/C22-C28
+python3 tools/check_binary_freshness.py --root .  # 构建树新鲜度，跑 ctest/基准前
 # 三个静态工具都只在 venv 里，都不在 PATH（裸调 exit=127 → 门禁看起来绿）
 CF=~/.workbuddy/binaries/python/envs/default/bin/clang-format   # 18.1.3
 CT=~/.workbuddy/binaries/python/envs/tidy18/bin/clang-tidy      # 18.1.8，对齐 CI
@@ -195,17 +196,30 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
   的数据。真数据是**784/784** —— **差的 48 个用例就是铁证**。
 
 **门禁(第八十五轮新增)**：`python3 tools/check_binary_freshness.py --root build/<preset>`
-已接进 CI 的 `full` 与 `macos-player` 两个 job，**位置在 ctest 之前**。
-退出码 0/1/2 与 `check_protocols.py` 对齐。鉴别力已验证(只变异 headless → 只报 headless)。
+退出码 0/1/2 与 `check_protocols.py` 对齐。已接进 CI 的 `full` 与 `macos-player`
+两个 job，**位置在 ctest 之前**；但**它真正防的是本地**——CI 每个 job 都从
+`actions/checkout` 全新构建、无缓存，从头构建不可能留下陈旧可执行文件。
+**每次在本地跑 ctest / 基准前先跑它**，或直接用 `--root .` 一次扫全部构建树。
+鉴别力已验证(只变异 headless → 只报 headless)。
 
 **判新鲜度必须用 `.ninja_log`，不能用 `stat`** —— 我用 `stat` 判过一次，**误报成
 「10 个二进制过期」**，其中 `base_unittests` 根本不链接 `libavbase_player.a`。
 两个原因让 `stat` 不可靠：
-1. 静态库内容没变时 **ninja restat 会把 mtime 回退** → 新的链接看起来比输入旧；
+1. CMake 的 archive 规则以 `cmake -E touch` 收尾，**每次重链 mtime 都前进**，
+   且 `.ninja_log` 记的值是纳秒精度，**不等于 `stat().st_mtime_ns`**；
 2. 一个二进制只能跟**它自己链接的库**比，不能跟「最新的库」比。
 正确做法见 `tools/check_binary_freshness.py`：从 `.ninja_log` 取 ninja 自己
-记录的 mtime，从 `build.ninja` 取每条边的显式链接输入（**不含 `||` 后的
+记录的 mtime，从 `build.ninja` 取每条边的隐式链接输入（**不含 `||` 后的
 order-only 段**，那一段只是构建顺序，混进去会让每个消费者看起来依赖所有库）。
+
+**解析 `build.ninja` 必须处理多输出边**（第八十五轮 review 查出的真 bug）：
+`build bin/base_unittests tests/base_unittests[1]_tests.cmake | ...` 一行有两个
+输出——CMake 用同一条边既链接测试程序又生成 ctest 的注册文件。**只取第一个
+输出的解析器会把全部 5 个 unittest 二进制静默丢掉**，`no-ffmpeg` 树更是 0 个都
+没检查还报绿。**被丢掉的边和新鲜的边长得一模一样**，这是最贵的一类静默失败。
+
+**门禁本身也会骗人，要盯它「比了多少」**：比较数为 0 时必须失败(exit 2)而不是
+报绿；`.ninja_log` 少一行(损坏/截断)也不能当作「都新鲜」。
 
 **触发条件比想象的窄**：`touch player/player_impl.cc && ninja -C build/macos-sdl2`
 会**正确重链**全部下游（headless/pull_frames/play_*/player_unittests 全部更新）。
