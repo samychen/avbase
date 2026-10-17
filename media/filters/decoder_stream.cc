@@ -212,7 +212,11 @@ void DecoderStream<Traits>::MaybeDeliver() {
       // Delivering is what frees watermark room, so resume decoding here.
       // DecodeNextBuffer() pulls from the demuxer itself when it runs out,
       // which keeps one authority for "how much work to have in flight".
-      if (decoded_outputs_.size() < kDecodeWatermark && !end_of_stream_) {
+      // Decoding is resumed here (after delivering a frame frees watermark
+      // room) without a !end_of_stream_ gate: after EOS the pending batch may
+      // still hold undecoded buffers INCLUDING the EOS marker itself, and
+      // DecodeNextBuffer's own tail gates the demuxer pull on !end_of_stream_.
+      if (decoded_outputs_.size() < kDecodeWatermark) {
         DecodeNextBuffer();
       }
       Deliver(std::move(read_cb), DecoderStatus(), std::move(output));
@@ -346,11 +350,10 @@ void DecoderStream<Traits>::DecodeNextBuffer() {
   if (decoded_outputs_.size() >= kDecodeWatermark) {
     return;
   }
-  // The watermark belongs in the loop condition, not only at function entry: a
-  // decoder that completes inline (every FFmpeg decoder here does) returns from
-  // Decode() with its output already queued, so an entry-only check lets the
-  // whole fetched batch decode past the limit. Measured before this fix: 32
-  // buffered outputs against a watermark of 16.
+  // The watermark is re-checked inside the loop, not only at entry: a decoder
+  // that completes inline (every FFmpeg decoder here does) returns from
+  // Decode() with its output already queued, so an entry-only check would let a
+  // whole fetched batch decode past the limit.
   while (pending_buffer_index_ < pending_buffers_.size() &&
          decoded_outputs_.size() < kDecodeWatermark) {
     base::scoped_refptr<DecoderBuffer> buffer =

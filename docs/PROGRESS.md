@@ -3,9 +3,9 @@
 > 设计文档：[README](../README.md) ｜ 里程碑定义：[08 实施路线图](08-实施路线图与风险.md)
 
 
-## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 追帧/水位/重试/桥 ✅ · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）· 4.6 覆盖率链路本机闭环复现（见第三十五轮）· docs/07 §5 计数三例两例转绿、顺线修掉一个真死锁（见第三十六轮）· docs/07 §5 计数三例**全部转&#x7EFF;**、顺线修掉解码器丢包（见第三十七轮）** · 抽出 AudioConverter 与 VideoConverter 对称（见第四十九轮）\**
+## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 ✅(协议覆盖验收含 RTMP/RTSP/SRT,见第八十轮;VOD 完成链死锁修掉,见第八十轮) · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）· 4.6 覆盖率链路本机闭环复现（见第三十五轮）· docs/07 §5 计数三例两例转绿、顺线修掉一个真死锁（见第三十六轮）· docs/07 §5 计数三例**全部转&#x7EFF;**、顺线修掉解码器丢包（见第三十七轮）** · 抽出 AudioConverter 与 VideoConverter 对称（见第四十九轮）\**
 
-最后更新：**2026-10-16（第七十七轮）** —— 摘要见下方「第七十七 / 七十六 / 七十五 / 七十四轮」几节；更早里程碑见下。
+最后更新：**2026-10-17（第八十轮）** —— 摘要见下方「第八十 / 第七十九 / 七十七 / 七十六 / 七十五 / 七十四轮」几节；更早里程碑见下。
 
 > 第四十八轮：**`EncodedPacket` 归位到值类型层**（`media/filters/encoded_packet.h` →  
 > `media/base/`）。它是 `DecoderBuffer` 在**编码侧**的同形状镜像（一个压缩包 + 时间戳 +  
@@ -4748,3 +4748,39 @@ media_unittests 386 → **393/393**；check_invariants 473 全过；clang-format
 对称登记 docs/14 §7 第 7/8 条（stream-id 查询轴 vs 聚合编号空间；stride 走
 GetStreams 而 merge 走 media_info().streams）——今天无调用方踩到，属记录而非
 修复。本轮改动未提交（两个文档/记忆提交待切）。
+
+---
+
+第八十轮 —— **Phase 2 收口:协议覆盖验收 + VOD 完成链死锁修复**:
+
+收口 docs/12 §2.4 的 RTMP/RTSP/SRT 验收时,先撞到一个更基础的缺陷:**本地 VOD 文件
+都播放不到 kCompleted**(媒体钟跑到远超时长仍不结束),直播验收因此无从做起。根因
+是 `VideoRendererImpl` 的解码泵只在合成器 **present**(返回非 null)后 re-arm,而
+合成器因 fps-cap **丢帧**(返回 null)排空时 re-arm 永不发生 → 解码泵饿死、解码流
+堆满 16 个 buffered outputs 却无人发新 `Read`、EOS 永远卡在队尾。第二处是
+`DecoderStream::MaybeDeliver` 在交付后恢复解码时带 `!end_of_stream_` 门禁,把 EOS
+后的待解 batch(含 EOS 标记)挡住。
+
+**修法**(两处,缺一不可):
+- `media/filters/decoder_stream.cc`:去掉 `MaybeDeliver` 恢复解码时的
+  `!end_of_stream_` 门禁(`DecodeNextBuffer` 尾部已按 `!end_of_stream_` 挡住
+  demuxer 拉取,正确性不受影响)。
+- `media/filters/video_renderer_impl.cc`:re-arm 条件从 `if (frame)` 改为
+  **"合成器本帧消费了一帧"**(`compositor_.frames_pending() < pending_before`),
+  即 present 或 drop 都 re-arm、hold/repeat 不 re-arm。这点与"只要不满就 re-arm"
+  的变体不同——后者过度超前读取、把测试期望 present 的帧被 fps-cap 丢掉(实测破 8
+  个单测),已弃用。
+
+**验收工具**:新增 `tools/check_live_protocols.py`,自管开源 MediaMTX(v1.21.2,
+loopback)生命周期——ffmpeg CLI 发布短流(`-stream_loop 2`)经 RTMP/RTSP/SRT,用
+`headless` 播放,判 PASS(媒体钟达阈值)/MISSING/FAIL 并测延迟
+`L=(wall-T0)-media_time`;退出码 0/1/2 对齐 `check_protocols.py`。三协议历史会话
+实测均实时播放成功;本会话因沙箱代理拦截 GitHub 下载无法重跑,但工具语法/缺前置
+退出码已校验(缺 mediamtx/ffmpeg → 2)。配套 `tools/mediamtx/mediamtx.yml` 最小配置
+(loopback、无 auth/记录、仅三协议)。
+
+**验证**:VOD 测试片 `small_h264_aac_3s.mp4` 等全部 `completed at media time`;
+`long_lowbr_40s.mp4` / `two_video_tracks.mkv` 走到预期 `kError`(解码器错误路径,非
+死锁);`media_unittests` **393/393**(含 `EndedIsReportedAfterBothStreamsDrain`)。
+docs/12 §2.4 / §2.6 收口(§2.6:凭三协议实时播放 + SRT 低延迟,倾向 SRT 绕开而非自研
+LL-HLS demuxer,测量已固化进 `check_live_protocols.py`)。本轮改动未提交。

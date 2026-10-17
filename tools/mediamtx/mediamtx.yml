@@ -1,0 +1,36 @@
+# Minimal MediaMTX config for avbase's live-protocol acceptance (docs/12 2.4).
+#
+# Loopback-only, no auth, no recording, and only the three protocols under test
+# (rtmp / rtsp / srt). Everything else MediaMTX can do is switched off: the
+# acceptance is about avbase's demuxer talking to a real streaming peer, not
+# about the server. v1.21.x key names.
+logLevel: info
+logDestinations: [stdout]
+
+api: false
+metrics: false
+playback: false
+hls: false
+webrtc: false
+moq: false
+
+rtmp: true
+rtmpAddress: 127.0.0.1:1935
+
+rtsp: true
+rtspAddress: 127.0.0.1:8554
+# Both transports: libavformat's rtsp demuxer negotiates, and a UDP-only server
+# would silently narrow what this acceptance covers.
+rtspTransports: [udp, tcp]
+
+srt: true
+srtAddress: 127.0.0.1:8890
+
+pathDefaults:
+  record: no
+
+# Without an explicit entry here the server answers "path 'x' is not
+# configured" and refuses every client: an absent `paths` map allows nothing.
+# `all_others` is the documented catch-all; it needs no overrides.
+paths:
+  all_others:

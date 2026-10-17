@@ -427,6 +427,7 @@ VideoRendererImpl::Render(base::TimeTicks deadline_min,
   // block, allocate or call back into Player: this runs on the sink's render
   // sequence, which for the SDL2 backend is the window's event loop (docs/04
   // §1, S6) -- stalling it freezes input handling as well as video.
+  const size_t pending_before = compositor_.frames_pending();
   base::scoped_refptr<VideoFrame> frame =
       compositor_.Render(deadline_min, deadline_max);
   // Feed the video clock from here, on S6: this is the one sequence that knows
@@ -437,10 +438,19 @@ VideoRendererImpl::Render(base::TimeTicks deadline_min,
     frame_presented_cb_.Run(frame->timestamp(), frame->serial());
   }
   // Consumer wake-up for the decode pump (counterpart of ffplay's
-  // frame_queue_signal): the pump stops at compositor back-pressure, and only
-  // a present frees watermark room. Posted to S3; PumpDecoder re-checks every
-  // condition there, so a spurious kick is a cheap no-op.
-  if (frame) {
+  // frame_queue_signal): the pump stops at compositor back-pressure, so it must
+  // be re-armed whenever the compositor *freed room* -- a present OR a drop --
+  // not only on a present. The original `if (frame)` alone let the pump starve
+  // when the compositor drained by dropping frames (e.g. the fps cap): a drop
+  // returns null and never re-armed PumpDecoder, so buffered decoder output
+  // was never drained, the decoder stream jammed at its watermark, and a file
+  // that played to its end never reached kCompleted. A hold/repeat leaves the
+  // pending count unchanged, so it correctly does NOT re-arm (this is what
+  // distinguishes the fix from the "re-arm whenever not full" variant, which
+  // over-reads and drops a frame the test expects to see presented).
+  // Posted to S3; PumpDecoder re-checks every condition there, so a spurious
+  // kick is a cheap no-op.
+  if (compositor_.frames_pending() < pending_before) {
     task_runner_->PostTask(FROM_HERE,
                            base::BindOnce(&VideoRendererImpl::PumpDecoder,
                                           base::Unretained(this)));

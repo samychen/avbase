@@ -183,6 +183,13 @@ dep_commit() {
 # error 20 minutes in).
 SUPPORTED_DEPS=" openssl mbedtls x264 fdk-aac opus librtmp srt libyuv "
 REQUESTED_DEPS="$(echo "${AVBASE_FFMPEG_DEPS:-}" | tr ',+' '  ')"
+# What the caller actually asked for, BEFORE the implicit requirements below
+# add anything. The distinction matters for FFmpeg's own TLS backend: mbedtls
+# auto-added for libsrt must NOT also become FFmpeg's --enable-mbedtls (that
+# switch pulls --enable-version3 and a GPLv3 licensing change for a library
+# FFmpeg does not even need in that configuration -- libsrt carries its own
+# crypto). Only an EXPLICIT openssl/mbedtls request turns on FFmpeg's TLS.
+EXPLICIT_DEPS="${REQUESTED_DEPS}"
 DEPS=""
 for dep in ${REQUESTED_DEPS}; do
   case "${SUPPORTED_DEPS}" in
@@ -344,8 +351,15 @@ EOF
       case " ${DEPS} " in
         *" openssl "*) enclib="openssl" ;;
       esac
+      # CMAKE_PREFIX_PATH is NOT optional: libsrt's find_package(MbedTLS) (and
+      # its openssl search) look for the TLS backend that this script builds
+      # into the SAME prefix, and without the path they find nothing -- the
+      # failure arrives as "'mbedtls/ctr_drbg.h' file not found" twenty minutes
+      # into the chain, with the include path as the visible symptom and the
+      # missing -D as the cause.
       (cd "${dest}" && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
            -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+           -DCMAKE_PREFIX_PATH="${PREFIX}" \
            -DENABLE_APPS=OFF -DENABLE_TEST=OFF -DENABLE_TESTTOOLS=OFF \
            -DUSE_ENCLIB="${enclib}" \
         && cmake --build build -j"${JOBS}" \
@@ -367,10 +381,14 @@ for dep in ${DEPS}; do
 done
 
 # FFmpeg flags contributed by the selected dependencies. TLS backend: at most
-# one reaches FFmpeg (openssl wins; mbedtls may still have been built for srt).
-case " ${DEPS} " in
+# one reaches FFmpeg (openssl wins), and ONLY when explicitly requested -- an
+# mbedtls that was auto-added for libsrt stays libsrt's private crypto and
+# never becomes FFmpeg's --enable-mbedtls (see EXPLICIT_DEPS above).
+case " ${EXPLICIT_DEPS} " in
   *" openssl "*) FF_EXTRA_FLAGS="${FF_EXTRA_FLAGS} --enable-openssl --enable-protocol=tls,https" ;;
-  *" mbedtls "*) FF_EXTRA_FLAGS="${FF_EXTRA_FLAGS} --enable-mbedtls --enable-protocol=tls,https" ;;
+esac
+case " ${EXPLICIT_DEPS} " in
+  *" mbedtls "*) FF_EXTRA_FLAGS="${FF_EXTRA_FLAGS} --enable-version3 --enable-mbedtls --enable-protocol=tls,https" ;;
 esac
 case " ${DEPS} " in
   *" x264 "*|*" fdk-aac "*) FF_EXTRA_FLAGS="${FF_EXTRA_FLAGS} --enable-muxer=mp4,matroska,adts --enable-encoder=aac" ;;
@@ -469,6 +487,12 @@ hwaccel_flags() {
   esac
 }
 
+# Live-streaming protocols (docs/12 2.4) are native and need no third-party
+# library: rtmpproto.c and rtsp.c (+ rtpdec -> rtp/udp/srtp). Note rtmp
+# conflicts with librtmp (rtmp_protocol_conflict in configure), so the librtmp
+# dep below replaces these names with librtmp:// -- keeping the native ones
+# here means rtmp:// works out of the box. SRT is the exception: libsrt is an
+# external dependency, so it stays opt-in via AVBASE_FFMPEG_DEPS="srt".
 configure_flags() {
   cat <<FLAGS
 --prefix="${PREFIX}"
@@ -482,7 +506,8 @@ configure_flags() {
 --disable-everything
 --enable-network
 --enable-protocol=file,http,tcp,httpproxy,crypto
---enable-demuxer=mov,matroska,mpegts,flv,mp3,wav,ogg,aac,h264,hevc,avi,mpegps,hls
+--enable-protocol=rtmp,rtmps,rtmpt,rtmpts,udp,rtp
+--enable-demuxer=mov,matroska,mpegts,flv,mp3,wav,ogg,aac,h264,hevc,avi,mpegps,hls,rtsp
 --enable-parser=h264,hevc,aac,mp3,vp9,opus,mpeg4video
 --enable-decoder=h264,hevc,aac,mp3,vp9,opus,mpeg4
 --enable-decoder=srt,ass,webvtt,mov_text,subrip
