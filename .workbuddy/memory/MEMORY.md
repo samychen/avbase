@@ -8,7 +8,7 @@ Chromium 风格分层 C++ 媒体播放器。目录即 target（`docs/06 §7.6`�
 `platform/` 只装「被宿主选中」的代码；可移植代码不进（FFmpeg→`media/ffmpeg/`、
 GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base`/`player/`。**
 
-## 四条「写下来会静默失效」的约定（都真踩过）
+## 五条「写下来会静默失效」的约定（都真踩过）
 - **朝向**：从渲染目标采样回来的 pass 都要 `flip_vertical=true`。搞反 = 上下颠倒、
   无 GL 错误 → 有朝向的代码必须配像素断言。
 - **stride**：`GL_UNPACK_ROW_LENGTH` 单位是 **texel 不是字节**；1080p 恰好相等把
@@ -16,6 +16,10 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
 - **GL 常量**：一个常量别在两个头世界各写一遍 → 后端用 `target()` 说出来。
 - **变换顺序**：顶点 shader 是 screen→source **反向映射**，观众最后看到的一步计算上
   最先做 → CROP 写在 ROTATE **之后**。别用算术顺序描述视觉顺序。
+- **demux 循环在 EOF 处结束**（不驻留，否则排队的 `Flush` 永远跑不到），由
+  `StartPlayingFrom` 重挂；所有权规则是「谁把 `LoopState` 置 `kRunning` 谁 `PostTask`」，
+  用状态机而不是两个布尔对读（两个布尔会产生**两个**循环任务 → 假 EOS）。
+  改这里先读 `docs/04 §2.1`「EOF 与 seek 的握手」。
 
 ## C ABI（M15）代码前必读
 - `avbase_c.h` 是 ABI 契约，`-DAVBASE_ENABLE_CAPI=ON` 默认 OFF；独立 target
@@ -32,8 +36,7 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
 - 鉴别力：往 `avbase_c.h` 塞 C++ 默认参数 → `cc -std=c99` 报「C does not support
   default arguments」，`c++` 通过 = 旧腐化形状（C++ 绿，C 宿主断）。
 
-## 诊断门禁（先跑这个，再怀疑产品 bug）
-`python3 tools/check_binary_freshness.py --root build/<preset>`（exit 0/1/2）。
+## 诊断门禁（先跑这个，再怀疑产品 bug）`python3 tools/check_binary_freshness.py --root build/<preset>`（exit 0/1/2）。
 **为什么排第一**：第八十五轮拿 10/15 旧二进制诊断出「VideoToolbox 硬解卡死」，重链后
 3/3 正常——**那个 bug 不存在**。判新鲜度读 `.ninja_log`（非 `stat`）；每个二进制只跟它
 自己链接的库比（依赖取 `build.ninja` 显式段，不含 `||` 后 order-only）。ninja 不跟踪

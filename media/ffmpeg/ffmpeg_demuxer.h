@@ -181,11 +181,18 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   static std::map<std::string, std::string>
   BuildOpenOptions(const DemuxerOptions& options, const std::string& uri);
   void DemuxLoop();
-  // One iteration of the read/backpressure step. Returns false when the loop
-  // should exit.
+  // What one read step tells the loop to do next. Three outcomes, not two:
+  // "the source ran out" and "the read failed" need different handling, and
+  // collapsing them into one bool is what let an EOF kill the loop for good.
+  enum class ReadStep {
+    kContinue,  // A packet was routed or dropped; read again.
+    kEof,       // Nothing more to read until someone seeks.
+    kError,     // Unrecoverable; leave the loop.
+  };
+  // One iteration of the read/backpressure step.
   // void* rather than AVFormatContext*/AVPacket*: no libav* type may appear in
   // a media/ header (invariant C4). The .cc casts via its local Ctx() helper.
-  bool ReadAndRouteOnePacket(void* ctx, void* packet);
+  ReadStep ReadAndRouteOnePacket(void* ctx, void* packet);
   void HandleSeekRequestOnDemuxThread(const SeekRequest& request);
   void BuildMediaInfo();
   // Fills one StreamInfo and creates the matching FFmpegDemuxerStream.
@@ -247,6 +254,20 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   // the request that produced it (docs/05 table 5).
   mutable base::Lock seek_cb_lock_;
   std::map<int64_t, SeekCB> pending_seek_cbs_ GUARDED_BY(seek_cb_lock_);
+  // "Is a demux loop task running now, or will one be?" The loop ends at EOF
+  // (and on error) instead of spinning, so StartPlayingFrom has to restart it;
+  // this state is what keeps "restart" from turning into TWO loops reading the
+  // same context -- a second loop would re-notify EOS after the seek had
+  // already flushed. Owner rule: whoever moves it to kRunning posts the task,
+  // and only one side can, because the move is compare-and-set under this
+  // lock (docs/04 §2.1). An unguarded flag loses a seek that arrives between
+  // the loop's last read and its return.
+  enum class LoopState { kGone, kRunning };
+  base::Lock loop_lock_;
+  LoopState loop_state_ GUARDED_BY(loop_lock_) = LoopState::kRunning;
+  // Called on the demux thread when the loop is about to end. Returns true when
+  // a seek is already waiting, i.e. this task must keep reading instead.
+  bool KeepLoopForAnArrivingSeek();
   base::AtomicFlag interrupt_flag_;
   base::AtomicFlag stop_flag_;
   base::AtomicFlag opened_ok_;

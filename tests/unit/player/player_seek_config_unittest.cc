@@ -48,12 +48,13 @@ namespace {
 #ifndef AVBASE_TESTDATA_DIR
 #error "player_unittests must define AVBASE_TESTDATA_DIR for this suite"
 #endif
-// Forty seconds, fully local. The LENGTH is load-bearing, not incidental: the
-// demuxer's read loop exits as soon as it reaches EOF, and a seek that arrives
-// after that is never picked up -- see the note on SeekAccurately() and
-// docs/TODO.md §5.1. Forty seconds keeps the loop alive, which is the state
-// every real seek happens in.
-const char* const kLocalUri = AVBASE_TESTDATA_DIR "/long_lowbr_40s.mp4";
+// The short fixture, deliberately. A 3 s file reaches EOF almost immediately,
+// which is the state a seek lands in whenever playback has run to the end --
+// and that state used to swallow the seek whole (docs/04 §2.1). It is now
+// fixed, so this fixture doubles as the regression net for it: with
+// FFmpegDemuxer::DemuxLoop() parking at EOF instead of returning, 200
+// consecutive runs of this suite are clean (they were 3/120 red before).
+const char* const kLocalUri = AVBASE_TESTDATA_DIR "/small_h264_aac_3s.mp4";
 
 // What the event stream and the callback reported. The handler runs on the
 // player's event sequence, so these outlive it and are read after the wait.
@@ -97,19 +98,18 @@ void OnSeekDone(Probe* probe, Status status) {
 // Seeking from kPrepared is a documented state for SeekTo, and it exercises
 // the same DoSeek path.
 //
-// THE EOF TRAP (why the fixture is 40 s and not the usual 3 s one). Measured,
-// not theorised: with small_h264_aac_3s.mp4 this helper hung in 3 of 120
-// runs -- the seek's renderer half completed, OnSeekDemuxerDone never fired,
-// and a stack sample showed avbase-media AND avbase-demux both idle, so
-// nothing was blocked, something was simply never done. Root cause is in the
-// demuxer, not here: FFmpegDemuxer::DemuxLoop() breaks when
-// ReadAndRouteOnePacket() returns false at AVERROR_EOF, while
-// StartPlayingFrom() only publishes pending_seek_ and signals resume_event_ --
-// so a seek that arrives after the loop has exited is never picked up and its
-// callback is held in pending_seek_cbs_ forever. A 3 s file reaches EOF almost
-// immediately, which is what makes the window wide. 40 s keeps the loop alive:
-// 200/200 clean. The bug is registered with its evidence in docs/TODO.md §5.1
-// and is NOT worked around here -- this helper only stops betting on it.
+// THE EOF WINDOW (why this helper's history matters). With the 3 s fixture it
+// used to hang in 3 of 120 runs: the seek's renderer half completed,
+// OnSeekDemuxerDone never fired, and a stack sample showed avbase-media AND
+// avbase-demux both idle -- nothing was blocked, something was simply never
+// done. The cause was in the demuxer, not here: FFmpegDemuxer::DemuxLoop()
+// broke out of its loop at AVERROR_EOF while StartPlayingFrom() only
+// publishes pending_seek_ and signals resume_event_, so a seek arriving after
+// the loop had returned was never picked up and its callback sat in
+// pending_seek_cbs_ forever. The loop now parks at EOF ("kEof") and waits for
+// the same signal, and the deterministic red test for it lives in
+// ffmpeg_demuxer_unittest.cc (SeekAfterEndOfStreamIsAnsweredAndResumesReads)
+// -- staying here would mean betting on the race instead of pinning it.
 void SeekAccurately(PlayerConfig config, base::TimeDelta position,
                     Probe* probe) {
   config.start_on_prepared = false;

@@ -359,6 +359,87 @@ TEST_F(FFmpegDemuxerTest, StopIsPromptEvenWhileBlockedInRead) {
   EXPECT_LT(elapsed, base::Seconds(2)) << "Stop() took " << elapsed.ToString();
 }
 
+// A seek issued AFTER the loop has seen EOF must still be answered. The loop
+// used to break out on AVERROR_EOF, and StartPlayingFrom() only publishes the
+// request and signals -- it never restarts the loop -- so the callback sat in
+// pending_seek_cbs_ forever and the caller waited for its own timeout
+// (docs/04 §2.1). Deterministic, unlike the 3 s-file race it replaces:
+// draining to the EOS tombstone proves av_read_frame already returned EOF.
+TEST_F(FFmpegDemuxerTest, SeekAfterEndOfStreamIsAnsweredAndResumesReads) {
+  ASSERT_TRUE(Open(TestFile("small_h264_aac_3s.mp4")));
+  DemuxerStream* video = demuxer_->GetStream(DemuxerStreamType::kVideo);
+  ASSERT_TRUE(video);
+
+  bool eos = false;
+  for (int attempt = 0; attempt < 400 && !eos; ++attempt) {
+    bool answered = false;
+    video->Read(8, base::BindOnce(
+                       [](bool* flag, bool* eos_flag, DemuxerStream::Status,
+                          DemuxerStream::DecoderBufferVector buffers) {
+                         *flag = true;
+                         for (const auto& buf : buffers) {
+                           if (buf->IsEndOfStream())
+                             *eos_flag = true;
+                         }
+                       },
+                       &answered, &eos));
+    for (int i = 0; i < 200 && !answered; ++i) {
+      task_environment_.RunUntilIdle();
+      if (!answered)
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    ASSERT_TRUE(answered) << "Read() never called back";
+  }
+  ASSERT_TRUE(eos) << "the fixture must reach EOS, or this test proves nothing";
+
+  bool seek_done = false;
+  Status seek_status = Err(ErrorCode::kNotImplemented, "unset", {}, {});
+  demuxer_->StartPlayingFrom(
+      base::Seconds(1),
+      base::BindOnce(
+          [](bool* done, Status* out, Status s, base::TimeDelta) {
+            *done = true;
+            *out = std::move(s);
+          },
+          &seek_done, &seek_status));
+  for (int i = 0; i < 500 && !seek_done; ++i) {
+    task_environment_.RunUntilIdle();
+    if (!seek_done)
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  ASSERT_TRUE(seek_done) << "a seek issued after EOF was never answered";
+  ASSERT_TRUE(seek_status) << seek_status.error().ToString();
+
+  // Answering the callback is only half of it: the loop must also be reading
+  // again. A seek that reports success while the demuxer stays parked would
+  // hand the pipeline an empty stream that never advances.
+  bool answered = false;
+  int buffers = 0;
+  bool resumed_eos = false;
+  video->Read(
+      8, base::BindOnce(
+             [](bool* flag, int* count, bool* eos_flag, DemuxerStream::Status,
+                DemuxerStream::DecoderBufferVector batch) {
+               *flag = true;
+               for (const auto& buf : batch) {
+                 if (buf->IsEndOfStream()) {
+                   *eos_flag = true;
+                 } else {
+                   ++*count;
+                 }
+               }
+             },
+             &answered, &buffers, &resumed_eos));
+  for (int i = 0; i < 500 && !answered; ++i) {
+    task_environment_.RunUntilIdle();
+    if (!answered)
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  ASSERT_TRUE(answered);
+  EXPECT_GT(buffers, 0) << "the demuxer reported the seek but never read again";
+  EXPECT_FALSE(resumed_eos) << "EOS came back after a successful seek";
+}
+
 TEST_F(FFmpegDemuxerTest, StageEventsAreLogged) {
   ASSERT_TRUE(Open(TestFile("small_h264_aac_3s.mp4")));
   const auto events = media_log_->GetEvents();

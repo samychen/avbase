@@ -95,49 +95,6 @@ FORMAT/CODEC 透传项。它们的 `PlayerConfig` 字段同样多数无人读；
 
 ---
 
-## 5. 已确认缺陷（未修）
-
-### 5.1 到达 EOF 之后 seek：回调永不返回，播放器挂到超时
-
-**症状**：`Player::SeekTo()` 返回了 request id，`kSeekCompleted` 从不出现，回调不跑，
-玩家一直等到自己的超时（测试里是 10s）。没有 GL 错误、没有媒体错误，日志停在
-`DoSeek` 之后。
-
-**证据（不是推测）**：
-- 探针（临时，已移除）：`DoSeek` 进、`renderer_->Flush` 进、`composite_->StartPlayingFrom`
-  进、`OnRendererFlushed` 回；`OnSeekDemuxerDone` **从不回**。
-- `sample` 采样挂起进程：`avbase-media` 与 `avbase-demux` **都**空闲在
-  `TaskQueue::Run()` 的 `wait()` 上。即：不是死锁，是**没有线程在等这件事**。
-- 复现率：3 秒素材 `small_h264_aac_3s.mp4`，prepare 后立即 seek，150 次里 2~3 次；
-  换 40 秒素材 `long_lowbr_40s.mp4` 后 200/200 干净。
-
-**根因**（`media/ffmpeg/ffmpeg_demuxer.cc`）：
-1. `DemuxLoop()` 的循环体是「先看 `pending_seek_`，再读一个包」，而
-   `ReadAndRouteOnePacket()` 在 `AVERROR_EOF` 时 `return false` → **循环 break，
-   demux 线程退出循环并空闲**。
-2. `StartPlayingFrom()`（:891-951）只做三件事：把回调存进 `pending_seek_cbs_`、
-   `pending_seek_.exchange(new SeekRequest{...})`、`interrupt_flag_.Set()` +
-   `resume_event_.Signal()`。**它不 post 任务、也不重启循环**。
-3. 于是 EOF 之后来的 seek 谁都不消费：`pending_seek_cbs_` 里那个回调被永久扣着。
-
-**为什么现在才发现**：真实长素材在播放中很少先到 EOF 再 seek；而 3 秒素材几乎瞬间 EOF。
-一旦某个用例 seek 到「播放已经结束」的位置，命中率就接近必然。
-
-**修法候选**（下一轮做，需配套一个确定性红测）：
-- (a) EOF 后不要退出循环：像 `:753-765` 的背压等待那样，在 EOF 分支里
-  `resume_event_.TimedWait()` 并继续轮询 `pending_seek_`，直到 `stop_flag_`；
-- (b) EOF 时置一个 `loop_exited_` 闩，`StartPlayingFrom` 看到它就重新
-  `PostTask(DemuxLoop)`（`av_seek_frame` 在 EOF 之后仍然可用）。
-- 确定性红测：prepare → 播到 `kCompleted` → `SeekTo(1s)`。这条在修好前应当 100% 红，
-  比「赌 3 秒素材的 EOF 竞争」可靠得多。
-
-**曾误判，记在这里免得重犯**：一度认为根因是「`DoSeek` 先 flush 渲染器、再让 demuxer
-seek，而 demux 线程正卡在 `DecoderBufferQueue::Push()` 的满队列上，唤醒它的 Flush 恰好
-排在它后面」。这个假设**被采样推翻**：两个线程都空闲，队列背压等待（`:759-764`）
-本来就会轮询 `pending_seek_`。别再从「谁持有锁」入手查这个 bug。
-
----
-
 ## 4. 记录更正（evergreen 教训）
 
 - **门禁「绿」可能是「没跑」**：check-clang-tidy 三处失效（header-filter 负向前瞻不支持 /
@@ -146,6 +103,12 @@ seek，而 demux 线程正卡在 `DecoderBufferQueue::Push()` 的满队列上，
   （`tools/check_binary_freshness.py` 已修）；`add_test()` 写在 `enable_testing()` 前被
   静默丢弃。数字必须当场跑出来。
 - **测试写了 ≠ 性质被钉住**：反证必须真跑一遍看有没有红的。
+- **「两个线程都空闲」不是死锁，是没有人做这件事**：挂起时先 `sample <pid> 1` 抓栈，比读
+  锁代码便宜一个数量级。第九十二轮拿「队列满、Flush 排在背压等待后面」解释了一个 seek 挂起，
+  采样一秒钟就把它推翻了 —— 两个线程都在 `TaskQueue::Run()` 的 `wait()` 上。修完的现场记录
+  在 [04](04-线程模型与数据流.md) §2.1「EOF 与 seek 的握手」。
+- **日志含 NUL 字节时 `grep -n` 会静默无输出**（不等于「无匹配」）：用 `grep -a` 或 `sed -n`。
+  同一类错误还有 `rg`/`grep` 把 `->Flush` 当成选项解析，需要 `-e`。
 - **抑制（NOLINT）会静默失效**，比不写更危险：诊断行与 `NOLINTNEXTLINE` 差一行、散文注释里
   出现 NOLINT 被当真指令。
 - **门禁「干净 ≠ CI 干净」**：本机 clang-tidy 读不了 Xcode PCH 会静默零发现；strict 在发布前
