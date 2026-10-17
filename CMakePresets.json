@@ -188,17 +188,11 @@
     },
     {
       "name": "linux-sdl2",
-      "configurePreset": "linux-sdl2",
-      "targets": [
-        "play_sdl2"
-      ]
+      "configurePreset": "linux-sdl2"
     },
     {
       "name": "macos-sdl2",
-      "configurePreset": "macos-sdl2",
-      "targets": [
-        "play_sdl2"
-      ]
+      "configurePreset": "macos-sdl2"
     },
     {
       "name": "capi",
@@ -206,10 +200,7 @@
     },
     {
       "name": "linux-native",
-      "configurePreset": "linux-native",
-      "targets": [
-        "play_native"
-      ]
+      "configurePreset": "linux-native"
     },
     {
       "name": "linux-all",

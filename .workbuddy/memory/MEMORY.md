@@ -38,7 +38,15 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
 3/3 正常——**那个 bug 不存在**。判新鲜度读 `.ninja_log`（非 `stat`）；每个二进制只跟它
 自己链接的库比（依赖取 `build.ninja` 显式段，不含 `||` 后 order-only）。ninja 不跟踪
 静态库内容，但 `cmake --build` 对部分目标会报成功却留旧可执行文件——**测量前先确认被测
-物的 mtime 晚于输入。**
+物的 mtime 晚于输入。
+
+**`buildPresets.targets` 截断陷阱（第九十轮已修）**：`macos-sdl2`/`linux-sdl2`/
+`linux-native` 的 buildPreset 曾带 `targets: ["play_sdl2"/"play_native"]`，导致
+`cmake --build --preset macos-sdl2`（CI `macos-player` 用的就是这条）**只建 play_sdl2，
+不建 player_unittests/headless** → 后续 `ctest` 因找不到可执行文件而红。沙箱看不到 CI，
+这条红一直隐形。已移除三处 `targets` 限制（`CMakePresets.json`），现在 `--preset` 与
+`cmake --build build/<dir>` 一致，构建全部目标。验证：删 player_unittests 后
+`cmake --build --preset macos-sdl2` 会重建它；macos 门禁 786/786。
 
 ## 写单测前必读（第八十七/八十八轮）
 - **测试绝不依赖工作目录**：用编译期宏 `AVBASE_TESTDATA_DIR`（`tests/CMakeLists.txt`
