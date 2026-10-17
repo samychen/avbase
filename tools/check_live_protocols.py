@@ -6,16 +6,25 @@
 
 docs/12 2.4. The HLS-VOD / HTTP-progressive half is covered by
 tools/check_protocols.py against a local httpd. The three *streaming* protocols
-cannot be served from a file, so they need a real streaming peer. MediaMTX is
-that peer: an open-source RTMP/RTSP/SRT server. This script owns its whole
-lifecycle for the duration of the run.
+cannot be served from a file, so they need a real streaming peer.
 
-For each protocol it:
-  1. publishes a short, looping clip to MediaMTX with the ffmpeg CLI
-     (``-stream_loop 2`` so a 3 s clip yields ~9 s of real-time source -- a live
-     source, by construction, never reaches kCompleted),
-  2. opens that published stream with ``headless`` and lets it play for a budget,
-  3. judges the result.
+Two backends are supported, selected by --backend (default: auto):
+
+  mediamtx  MediaMTX (open-source RTMP/RTSP/SRT server). The canonical peer:
+            it serves all three protocols from one process, and is the only
+            backend that can exercise RTMP (ffmpeg cannot act as an RTMP
+            server). Requires --mediamtx <binary>.
+
+  ffmpeg    The system ffmpeg CLI is used as a *listener* server for RTSP/SRT
+            (it publishes and serves the clip in one process). This needs no
+            download and is what lets the acceptance run in a bare sandbox.
+            RTMP is reported SERVER_MISSING (ffmpeg has no RTMP server); RTSP
+            is best-effort -- ffmpeg's built-in RTSP server is fragile across
+            versions, so if it fails to come up we report SERVER_MISSING rather
+            than a false FAIL.
+
+For each protocol the script publishes/serves a short, looping clip and opens it
+with ``headless``, then judges the result.
 
 JUDGEMENT
   PASS    ``headless`` reaches kCompleted, OR the media clock it reports advances
@@ -25,22 +34,26 @@ JUDGEMENT
   MISSING the output contains "Protocol not found" / "Unknown protocol" -- the
           protocol is not compiled into this FFmpeg build. An environment gap,
           not a player regression.
-  FAIL    anything else that did not PASS (a connection refused, a demux error, a
-          stall, a crash -- observed as headless not advancing the clock and
-          exiting with a non-zero / killed status).
+  SERVER_MISSING the chosen backend cannot provide a server for this protocol
+          (RTMP under the ffmpeg backend; RTSP if ffmpeg's listener fails to
+          bind). Also an environment gap -- re-run with --mediamtx to cover it.
+  FAIL    the server came up but ``headless`` did not advance the clock (a
+          connection refused after a good server, a demux error, a stall, a
+          crash). This is the only status that means a player/behaviour
+          regression.
 
 LATENCY
   For every PASS case the script also reports L = (wall elapsed - T0) - media
   time reached. That is the end-to-end one-way-ish latency of the protocol path
-  as seen by the player, and is the number docs/12 2.6 (the LL-HLS decision)
-  is actually about: how much latency each protocol carries, and whether SRT's
-  low figure makes a self-built LL-HLS demuxer unnecessary.
+  as seen by the player, and is the number docs/12 2.6 (the LL-HLS decision) is
+  actually about: how much latency each protocol carries, and whether SRT's low
+  figure makes a self-built LL-HLS demuxer unnecessary.
 
 EXIT CODES
     0  every targeted protocol reached PASS
     1  at least one protocol FAILED (a player/behaviour regression)
-    2  a prerequisite is missing (mediamtx binary, ffmpeg CLI, source media) or
-       one or more protocols report MISSING (not compiled into the build)
+    2  a prerequisite is missing, or one or more protocols report MISSING /
+       SERVER_MISSING (environment gaps, not player regressions)
 """
 
 import argparse
@@ -52,12 +65,20 @@ import sys
 import time
 
 # MediaMTX ports, matching tools/mediamtx/mediamtx.yml (loopback, v1.21.x).
-DEFAULT_PORTS = {
+MEDIA_MTX_PORTS = {
     "rtmp": 1935,
     "rtsp": 8554,
     "srt": 8890,
 }
+# Ports used by the ffmpeg-listener backend (kept off the MediaMTX range so the
+# two backends never collide if both happen to be present).
+FFMPEG_PORTS = {
+    "rtmp": 11935,
+    "rtsp": 18554,
+    "srt": 18990,
+}
 HOST = "127.0.0.1"
+STREAM = "avbase"
 
 
 def wait_for_port(port, timeout=10.0):
@@ -78,38 +99,6 @@ def find_mediamtx_config():
     return candidate if os.path.exists(candidate) else None
 
 
-def publish_command(ffmpeg, source, protocol, port, stream_name):
-    """ffmpeg CLI command that publishes |source| to MediaMTX over |protocol|.
-
-    ``-re`` publishes at the clip's native rate (so a live reader sees a real
-    stream), ``-stream_loop 2`` repeats the 3 s clip so the source outlives the
-    read budget. ``-c copy`` keeps it a pure protocol test -- no transcode.
-    """
-    base = [
-        ffmpeg, "-hide_banner", "-loglevel", "error", "-re",
-        "-stream_loop", "2", "-i", source, "-c", "copy",
-    ]
-    if protocol == "rtmp":
-        return base + ["-f", "flv", "rtmp://%s:%d/%s" % (HOST, port, stream_name)]
-    if protocol == "rtsp":
-        return base + ["-f", "rtsp", "rtsp://%s:%d/%s" % (HOST, port, stream_name)]
-    if protocol == "srt":
-        # MediaMTX SRT: the streamid carries the direction and path.
-        url = "srt://%s:%d?streamid=publish/%s" % (HOST, port, stream_name)
-        return base + ["-f", "mpegts", url]
-    raise ValueError("unknown protocol: %s" % protocol)
-
-
-def play_url(protocol, port, stream_name):
-    if protocol == "rtmp":
-        return "rtmp://%s:%d/%s" % (HOST, port, stream_name)
-    if protocol == "rtsp":
-        return "rtsp://%s:%d/%s" % (HOST, port, stream_name)
-    if protocol == "srt":
-        return "srt://%s:%d?streamid=read/%s" % (HOST, port, stream_name)
-    raise ValueError("unknown protocol: %s" % protocol)
-
-
 def parse_media_time(text):
     """Return the largest media time (seconds) reported by headless, or 0.0.
 
@@ -123,7 +112,6 @@ def parse_media_time(text):
     for line in text.splitlines():
         idx = line.find("position:")
         if idx >= 0:
-            # "position: 12.345678s / 3.000000s ..."
             rest = line[idx + len("position:"):].strip()
             head = rest.split()[0] if rest.split() else ""
             head = head.rstrip("s")
@@ -143,24 +131,55 @@ def parse_media_time(text):
     return best
 
 
-def run_case(headless, ffmpeg, source, mediamtx, config, protocol, port,
-             play_budget, media_threshold, stream_name):
-    """Publish over |protocol|, play it back, and judge the result.
+# --------------------------------------------------------------------------
+# MediaMTX backend
+# --------------------------------------------------------------------------
 
-    Returns (status, media_time, latency, detail) where status is one of
-    "PASS" / "MISSING" / "FAIL".
+def publish_command_mediamtx(ffmpeg, source, protocol, port):
+    """ffmpeg CLI command that publishes |source| to MediaMTX over |protocol|.
+
+    ``-re`` publishes at the clip's native rate (so a live reader sees a real
+    stream), ``-stream_loop 2`` repeats the 3 s clip so the source outlives the
+    read budget. ``-c copy`` keeps it a pure protocol test -- no transcode.
     """
-    pub = publish_command(ffmpeg, source, protocol, port, stream_name)
-    # Start the publisher first: MediaMTX only serves a path once something is
-    # publishing to it, so the reader must come after the writer is up.
+    base = [
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-re",
+        "-stream_loop", "2", "-i", source, "-c", "copy",
+    ]
+    if protocol == "rtmp":
+        return base + ["-f", "flv", "rtmp://%s:%d/%s" % (HOST, port, STREAM)]
+    if protocol == "rtsp":
+        return base + ["-f", "rtsp", "rtsp://%s:%d/%s" % (HOST, port, STREAM)]
+    if protocol == "srt":
+        url = "srt://%s:%d?streamid=publish/%s" % (HOST, port, STREAM)
+        return base + ["-f", "mpegts", url]
+    raise ValueError("unknown protocol: %s" % protocol)
+
+
+def play_url_mediamtx(protocol, port):
+    if protocol == "rtmp":
+        return "rtmp://%s:%d/%s" % (HOST, port, STREAM)
+    if protocol == "rtsp":
+        return "rtsp://%s:%d/%s" % (HOST, port, STREAM)
+    if protocol == "srt":
+        return "srt://%s:%d?streamid=read/%s" % (HOST, port, STREAM)
+    raise ValueError("unknown protocol: %s" % protocol)
+
+
+def run_case_mediamtx(headless, ffmpeg, source, protocol, port, play_budget,
+                      media_threshold):
+    """Publish to MediaMTX over |protocol|, play it back, judge the result.
+
+    Returns (status, media_time, latency, detail).
+    """
+    pub = publish_command_mediamtx(ffmpeg, source, protocol, port)
     publisher = subprocess.Popen(pub, stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL)
     try:
-        # Give the publisher a head start to open the stream before the reader
-        # connects -- a reader that beats the publisher gets "no one is
-        # publishing" and the whole case is mis-classified as a player bug.
+        # The reader must come after the writer is up: MediaMTX only serves a
+        # path once something is publishing to it.
         time.sleep(1.5)
-        url = play_url(protocol, port, stream_name)
+        url = play_url_mediamtx(protocol, port)
         t0 = time.time()
         try:
             result = subprocess.run(
@@ -171,10 +190,10 @@ def run_case(headless, ffmpeg, source, mediamtx, config, protocol, port,
             status = result.returncode
         except subprocess.TimeoutExpired:
             # A live loop never reaches kCompleted, so we drive the stop with our
-            # own budget; a timeout here is expected and is re-interpreted below.
+            # own budget; a timeout here is expected and re-interpreted below.
             elapsed = time.time() - t0
             out = ""
-            status = -9  # stand-in for "killed by budget", not a hard error
+            status = -9
 
         media_time = parse_media_time(out)
         latency = elapsed - media_time
@@ -182,18 +201,13 @@ def run_case(headless, ffmpeg, source, mediamtx, config, protocol, port,
         if "Protocol not found" in out or "Unknown protocol" in out:
             return ("MISSING", media_time, latency,
                     "protocol not compiled into this FFmpeg build")
-        if status == 0 and media_time >= media_threshold:
-            return ("PASS", media_time, latency,
-                    "kCompleted (media time %.3fs)" % media_time)
         if media_time >= media_threshold:
-            # Advanced far enough despite a non-zero exit (e.g. killed at the
-            # budget after reaching the threshold) -- still a pass.
             return ("PASS", media_time, latency,
                     "media clock advanced %.3fs" % media_time)
-        # Did not advance the clock: a real failure.
         lines = [l for l in out.splitlines() if l.strip()]
         detail = "\n      ".join(lines[-6:]) if lines else (
-            "no output; headless exit %s, media time %.3fs" % (status, media_time))
+            "no output; headless exit %s, media time %.3fs" %
+            (status, media_time))
         return ("FAIL", media_time, latency, detail)
     finally:
         publisher.terminate()
@@ -203,12 +217,120 @@ def run_case(headless, ffmpeg, source, mediamtx, config, protocol, port,
             publisher.kill()
 
 
+# --------------------------------------------------------------------------
+# ffmpeg-listener backend
+# --------------------------------------------------------------------------
+
+def start_ffmpeg_listener(ffmpeg, source, protocol, port):
+    """Start ffmpeg serving |source| as a listener for |protocol|.
+
+    Returns the Popen, or None if the protocol cannot be served this way
+    (RTMP -- ffmpeg has no RTMP server -- or RTSP if the listener fails to
+    bind). The returned process both publishes and serves; there is no separate
+    publisher.
+    """
+    if protocol == "rtmp":
+        return None
+    base = [
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-re",
+        "-stream_loop", "-1", "-i", source, "-c", "copy",
+    ]
+    if protocol == "srt":
+        # SRT is UDP; the listener binds a UDP socket. We cannot wait_for_port
+        # (TCP), so we just confirm the process survived its startup.
+        cmd = base + ["-f", "mpegts",
+                      "srt://%s:%d?mode=listener" % (HOST, port)]
+        p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        time.sleep(1.0)
+        if p.poll() is not None:
+            return None
+        return p
+    if protocol == "rtsp":
+        cmd = base + ["-f", "rtsp", "-rtsp_flags", "listen",
+                      "rtsp://%s:%d/%s" % (HOST, port, STREAM)]
+        p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        # RTSP is TCP; if the listener fails to bind (ffmpeg's built-in RTSP
+        # server is fragile) the process exits quickly -- detect that.
+        if not wait_for_port(port, timeout=5.0) or p.poll() is not None:
+            p.terminate()
+            try:
+                p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+            return None
+        return p
+    raise ValueError("unknown protocol: %s" % protocol)
+
+
+def play_url_ffmpeg(protocol, port):
+    if protocol == "srt":
+        return "srt://%s:%d" % (HOST, port)
+    if protocol == "rtsp":
+        return "rtsp://%s:%d/%s" % (HOST, port, STREAM)
+    raise ValueError("unknown protocol: %s" % protocol)
+
+
+def run_case_ffmpeg(headless, ffmpeg, source, protocol, port, play_budget,
+                    media_threshold):
+    """Serve |source| via ffmpeg-listener and play it back with headless."""
+    server = start_ffmpeg_listener(ffmpeg, source, protocol, port)
+    if server is None:
+        return ("SERVER_MISSING", 0.0, 0.0,
+                "ffmpeg cannot serve %s (use --mediamtx for a real server)" %
+                protocol)
+    try:
+        url = play_url_ffmpeg(protocol, port)
+        t0 = time.time()
+        try:
+            result = subprocess.run(
+                [headless, url, "--timeout", str(play_budget)],
+                capture_output=True, text=True, timeout=play_budget + 30)
+            elapsed = time.time() - t0
+            out = result.stdout + result.stderr
+            status = result.returncode
+        except subprocess.TimeoutExpired:
+            elapsed = time.time() - t0
+            out = ""
+            status = -9
+
+        media_time = parse_media_time(out)
+        latency = elapsed - media_time
+
+        if "Protocol not found" in out or "Unknown protocol" in out:
+            return ("MISSING", media_time, latency,
+                    "protocol not compiled into this FFmpeg build")
+        if media_time >= media_threshold:
+            return ("PASS", media_time, latency,
+                    "media clock advanced %.3fs" % media_time)
+        lines = [l for l in out.splitlines() if l.strip()]
+        detail = "\n      ".join(lines[-6:]) if lines else (
+            "no output; headless exit %s, media time %.3fs" %
+            (status, media_time))
+        return ("FAIL", media_time, latency, detail)
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server.kill()
+
+
+# --------------------------------------------------------------------------
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--headless", required=True)
-    parser.add_argument("--mediamtx", required=True,
-                        help="path to the mediamtx binary")
-    parser.add_argument("--ffmpeg", default="ffmpeg")
+    parser.add_argument("--mediamtx", default=None,
+                        help="path to the mediamtx binary (enables the "
+                             "mediamtx backend; required for RTMP)")
+    parser.add_argument("--ffmpeg", default="ffmpeg",
+                        help="ffmpeg CLI (default: resolved from PATH)")
+    parser.add_argument("--backend", default="auto",
+                        choices=["auto", "mediamtx", "ffmpeg"],
+                        help="server backend (default: auto -- mediamtx if "
+                             "present, else ffmpeg-listener)")
     parser.add_argument("--mediamtx-config", default=None,
                         help="mediamtx.yml (default: tools/mediamtx/mediamtx.yml)")
     parser.add_argument("--testdata", default="tests/testdata")
@@ -223,96 +345,123 @@ def main():
         print("check_live_protocols: headless binary not found: %s" %
               args.headless)
         return 2
-    mediamtx = shutil.which(args.mediamtx) or (
-        args.mediamtx if os.path.exists(args.mediamtx) else None)
-    if not mediamtx:
-        print("check_live_protocols: mediamtx binary not found: %s" %
-              args.mediamtx)
-        return 2
     ffmpeg = shutil.which(args.ffmpeg) or (
         args.ffmpeg if os.path.exists(args.ffmpeg) else None)
     if not ffmpeg:
         print("check_live_protocols: ffmpeg CLI not found (%s)" % args.ffmpeg)
         return 2
+
+    mediamtx = None
+    if args.mediamtx:
+        mediamtx = shutil.which(args.mediamtx) or (
+            args.mediamtx if os.path.exists(args.mediamtx) else None)
+        if not mediamtx:
+            print("check_live_protocols: mediamtx binary not found: %s" %
+                  args.mediamtx)
+            return 2
+
+    # Resolve backend.
+    if args.backend == "mediamtx":
+        if not mediamtx:
+            print("check_live_protocols: --backend=mediamtx requires "
+                  "--mediamtx <binary>")
+            return 2
+        backend = "mediamtx"
+    elif args.backend == "ffmpeg":
+        backend = "ffmpeg"
+    else:  # auto
+        backend = "mediamtx" if mediamtx else "ffmpeg"
+
     config = args.mediamtx_config or find_mediamtx_config()
-    if not config or not os.path.exists(config):
+    if backend == "mediamtx" and (not config or not os.path.exists(config)):
         print("check_live_protocols: mediamtx config not found: %s" % config)
         return 2
+
     source = os.path.join(args.testdata, "small_h264_aac_3s.mp4")
     if not os.path.exists(source):
         print("check_live_protocols: source media not found: %s" % source)
         return 2
 
     protocols = [p.strip().lower() for p in args.protocols.split(",") if p.strip()]
-    unknown = [p for p in protocols if p not in DEFAULT_PORTS]
+    unknown = [p for p in protocols if p not in MEDIA_MTX_PORTS]
     if unknown:
-        print("check_live_protocols: unknown protocol(s): %s" % ", ".join(unknown))
+        print("check_live_protocols: unknown protocol(s): %s" %
+              ", ".join(unknown))
         return 2
 
-    # Bring MediaMTX up.
-    print("check_live_protocols: docs/12 2.4 -- live protocol coverage (MediaMTX)")
-    print("  mediamtx : %s" % mediamtx)
-    print("  config   : %s" % config)
+    ports = MEDIA_MTX_PORTS if backend == "mediamtx" else FFMPEG_PORTS
+
+    print("check_live_protocols: docs/12 2.4 -- live protocol coverage")
+    print("  backend  : %s" % backend)
     print("  ffmpeg   : %s" % ffmpeg)
+    if backend == "mediamtx":
+        print("  mediamtx : %s" % mediamtx)
+        print("  config   : %s" % config)
     print("  source   : %s" % source)
 
-    server = subprocess.Popen([mediamtx, "--config", config],
-                              stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL)
-    try:
-        # Wait for the first enabled port to accept connections before trusting
-        # the server is listening on all of them.
-        first_port = DEFAULT_PORTS[protocols[0]]
+    server = None
+    if backend == "mediamtx":
+        server = subprocess.Popen([mediamtx, "--config", config],
+                                  stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+        first_port = ports[protocols[0]]
         if not wait_for_port(first_port, timeout=10.0):
             print("check_live_protocols: MediaMTX did not come up on port %d" %
                   first_port)
+            server.terminate()
             return 2
 
+    try:
         results = []
         for protocol in protocols:
-            port = DEFAULT_PORTS[protocol]
-            if not wait_for_port(port, timeout=10.0):
-                print("  %-8s %s" % (protocol.upper(),
-                                     "FAILED (port %d not listening)" % port))
+            port = ports[protocol]
+            if backend == "mediamtx" and not wait_for_port(port, timeout=10.0):
                 results.append((protocol, "FAIL", 0.0, 0.0,
                                 "port %d not listening" % port))
                 continue
-            status, media_time, latency, detail = run_case(
-                args.headless, ffmpeg, source, mediamtx, config, protocol, port,
-                args.play_budget, args.media_threshold, "avbase")
-            results.append((protocol, status, media_time, latency, detail))
+            if backend == "mediamtx":
+                r = run_case_mediamtx(args.headless, ffmpeg, source, protocol,
+                                      port, args.play_budget,
+                                      args.media_threshold)
+            else:
+                r = run_case_ffmpeg(args.headless, ffmpeg, source, protocol,
+                                    port, args.play_budget, args.media_threshold)
+            results.append((protocol,) + r)
 
         print("")
-        print("  %-8s %-8s %-10s %s" % ("PROTO", "STATUS", "MEDIA[s]", "LATENCY[s]"))
+        print("  %-8s %-14s %-10s %s" %
+              ("PROTO", "STATUS", "MEDIA[s]", "LATENCY[s]"))
         any_fail = False
-        any_missing = False
+        any_envgap = False
         for protocol, status, media_time, latency, detail in results:
-            print("  %-8s %-8s %-10.3f %.3f" %
+            print("  %-8s %-14s %-10.3f %.3f" %
                   (protocol.upper(), status, media_time, latency))
             if detail:
                 print("      %s" % detail)
             if status == "FAIL":
                 any_fail = True
-            elif status == "MISSING":
-                any_missing = True
+            elif status in ("MISSING", "SERVER_MISSING"):
+                any_envgap = True
 
         print("")
-        if not any_fail and not any_missing:
+        if not any_fail and not any_envgap:
             print("check_live_protocols: all targeted protocols played "
                   "(media clock advanced past %.1fs)" % args.media_threshold)
             return 0
-        if any_missing:
-            print("check_live_protocols: at least one protocol is MISSING from "
-                  "this FFmpeg build (see above)")
-            return 2
-        print("check_live_protocols: FAILED")
-        return 1
+        if any_fail:
+            print("check_live_protocols: FAILED (a player/behaviour regression)")
+            return 1
+        # only environment gaps remain
+        print("check_live_protocols: environment gaps only (MISSING / "
+              "SERVER_MISSING) -- re-run with --mediamtx to cover them")
+        return 2
     finally:
-        server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
+        if server is not None:
+            server.terminate()
+            try:
+                server.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.kill()
 
 
 if __name__ == "__main__":

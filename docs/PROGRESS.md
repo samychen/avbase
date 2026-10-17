@@ -5,7 +5,7 @@
 
 ## 当前状态：**M0–M11 ✅ · Phase 0/1/3 ✅ · Phase 2 ✅(协议覆盖验收含 RTMP/RTSP/SRT,见第八十轮;VOD 完成链死锁修掉,见第八十轮) · Phase 4 音·视频·字幕轨切换/fuzz/corpus 门禁/弱网与协议回归/覆盖率与 format 门禁 ✅ · macOS 窗口播放器 ✅ · 编码器层 E1/E2 ✅ · 转码 E3/E4/E5 ✅（铺设完毕，见第二十八轮）· C1 门禁五项违规全清（见第二十九轮）· 音频编码器通用化（见第三十轮）· 转码异步入口 E3b（见第三十一轮）· 全树 format 扫尾（见第三十二轮）· cpplint 修树轮 + 门禁（见第三十三轮）· corpus 加宽到 315 字条、揪出三个真崩溃并完成第二次 C1 拆分（见第三十四轮）· 4.6 覆盖率链路本机闭环复现（见第三十五轮）· docs/07 §5 计数三例两例转绿、顺线修掉一个真死锁（见第三十六轮）· docs/07 §5 计数三例**全部转&#x7EFF;**、顺线修掉解码器丢包（见第三十七轮）** · 抽出 AudioConverter 与 VideoConverter 对称（见第四十九轮）\**
 
-最后更新：**2026-10-17（第八十轮）** —— 摘要见下方「第八十 / 第七十九 / 七十七 / 七十六 / 七十五 / 七十四轮」几节；更早里程碑见下。
+最后更新：**2026-10-17（第八十一轮）** —— 摘要见下方「第八十一 / 八十 / 七十九 / 七十七 / 七十六 / 七十五 / 七十四轮」几节；更早里程碑见下。
 
 > 第四十八轮：**`EncodedPacket` 归位到值类型层**（`media/filters/encoded_packet.h` →  
 > `media/base/`）。它是 `DecoderBuffer` 在**编码侧**的同形状镜像（一个压缩包 + 时间戳 +  
@@ -4784,3 +4784,31 @@ loopback)生命周期——ffmpeg CLI 发布短流(`-stream_loop 2`)经 RTMP/RTS
 死锁);`media_unittests` **393/393**(含 `EndedIsReportedAfterBothStreamsDrain`)。
 docs/12 §2.4 / §2.6 收口(§2.6:凭三协议实时播放 + SRT 低延迟,倾向 SRT 绕开而非自研
 LL-HLS demuxer,测量已固化进 `check_live_protocols.py`)。本轮改动未提交。
+
+### 第八十一轮（2026-10-17）
+
+**Phase 2 残留收口 —— 把"需真实 peer"的直播验收从无 MediaMTX 也能跑、并补齐弱网脚本。**
+
+1. **客户端接线回测(可真跑的验证)**:用本地无服务器地址探 `headless`——RTMP/SRT
+   走到连接/握手阶段、RTSP 发出 DESCRIBE,**三协议均无 "Protocol not found"**,确认
+   它们已编入构建、接线完整;Phase 2 残留纯属"缺服务器",非客户端缺陷。
+
+2. **SRT 端到端真跑通(沙箱内,无需 MediaMTX)**:系统 `ffmpeg` 8.0.1 作 `srt://
+   mode=listener` 服务器,`headless` 作 caller——打开 mpegts、选 VideoToolbox 解码器、
+   媒体钟从 0 稳定推进到 16s(实时),`tools/check_live_protocols.py --backend ffmpeg`
+   报 **SRT PASS(媒体钟推进 ~6–7s、L≈3–4s)**。这是第一笔真正的端到端验收证据。
+
+3. **`check_live_protocols.py` 升级为双后端**:优先 MediaMTX(覆盖 RTMP/RTSP/SRT 全三
+   协议),缺 MediaMTX 时自动降级 ffmpeg-listener 直连。RTSP 因 ffmpeg 8.0.1 自带 RTSP
+   服务器脆弱(connect 而非 listen)、RTMP 因 ffmpeg 不能作 RTMP 服务器,二者在无
+   MediaMTX 时**诚实报 SERVER_MISSING** 而非假 FAIL,退出码 0/1/2 纪律不变。
+
+4. **弱网脚本化(`tools/check_weaknet.sh`,补 2.5 的"未做")**:`tc netem` 在 lo 注入
+   mild/moderate/severe(延迟/丢包/乱序),trap 保证 qdisc 拆除,驱动
+   `check_live_protocols.py` 断言弱网下媒体钟仍推进;`--protocol` 选型覆盖
+   RTMP/RTSP/SRT。需 root+Linux(iproute2),macOS 无 tc——真实 48h/矩阵跑留待 CI。
+   本机非 root 且无 tc,脚本优雅 exit 2(环境门槛校验已验证)。
+
+**诚实说明**:MediaMTX 下载仍被沙箱代理(502)拦截,故 RTMP/RTSP 经 MediaMTX 的实跑、
+以及真 `tc netem` 弱网跑,仍待有网络/root 的机器补跑;但工具已就绪、SRT 已真验证、
+客户端接线已确证。本轮改动未提交(待切)。
