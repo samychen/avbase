@@ -36,8 +36,14 @@ namespace avbase::media {
 // reads it from its own config; carrying a copy through every queue made it
 // look like the queue enforced something, while nothing ever read it (it had
 // one reader: a test accessor).
+// Default packet-count cap. It bounds RAM for queues whose packets are large,
+// and unlike the byte cap it is NOT a budget to be shared: every queue gets the
+// whole depth. Named once because three files used to hard-code 256 -- the
+// struct default, the demuxer's default envelope and PlayerImpl's translation.
+inline constexpr size_t kDefaultQueueMaxBuffers = 256;
+
 struct AVBASE_MEDIA_EXPORT BufferQueueLimits {
-  size_t max_buffers = 256;
+  size_t max_buffers = kDefaultQueueMaxBuffers;
   size_t max_bytes = 0;
 };
 

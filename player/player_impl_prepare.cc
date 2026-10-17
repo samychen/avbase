@@ -148,7 +148,7 @@ PlayerImpl::CreateDemuxerFor(const media::DataSourceDescriptor& descriptor) {
   // cap, and both are whole-player budgets the demuxer divides across streams.
   // min-frames is NOT carried here: the gate that reads it is in PipelineImpl.
   media::BufferQueueLimits limits;
-  limits.max_buffers = 256;  // count cap; a byte cap or infbuf governs memory
+  limits.max_buffers = media::kDefaultQueueMaxBuffers;  // count cap, not shared
   limits.max_bytes = config_.buffer.unlimited ? 0 : config_.buffer.max_bytes;
   return std::make_unique<media::FFmpegDemuxer>(media_log_, limits);
 #else

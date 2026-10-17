@@ -832,7 +832,7 @@ avbase_configure_target(avbase_media)
 # ---------- media/ffmpeg（唯一链接 FFmpeg 的 target，第三十八轮改名 avbase_ffmpeg） ----------
 # 目录现由 file(GLOB) 收录，下列是第三十八轮搬家后的真实成员（节选）：
 #   compat · av_packet_storage · log_bridge · data_source_io · url_data_source
-#   ffmpeg_glue · ffmpeg_demuxer(+_configs/_track_select) · ffmpeg_{video,audio}_decoder
+#   ffmpeg_glue · ffmpeg_demuxer(+_configs/_track_select/_seek) · ffmpeg_{video,audio}_decoder
 #   ffmpeg_hw_video_decoder · ffmpeg_hw_decoder_factory · ffmpeg_decoder_factories
 #   ffmpeg_{video,audio}_filter · video_convert · color_space_bridge · hw_frame_readback
 #   ffmpeg_text_decoder · ffmpeg_image_snapshot · sei_timecode
@@ -1172,7 +1172,7 @@ endif()
 
 | # | 规则 | 实现 |
 |---|---|---|
-| C1 | 单文件 ≤ 500 行（白名单以 `LINE_LIMIT_ALLOWLIST` 为准：`ffmpeg_demuxer.cc` 1100、`audio_renderer_algorithm.cc` 660 等，每条须附理由） | 统计 |
+| C1 | 单文件 ≤ 500 行（白名单以 `LINE_LIMIT_ALLOWLIST` 为准：`ffmpeg_demuxer.cc` 928、`audio_renderer_algorithm.cc` 665 等，每条须附理由；数字只能往下走） | 统计 |
 | C2 | 单函数 ≤ 80 行 | libclang AST |
 | C3 | 单类 public 方法 ≤ 12（接口类白名单） | libclang AST |
 | C4 | `base/` `media/base/` `player/public/` 不含 `libav`/`libsw` include | grep |

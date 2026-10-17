@@ -45,7 +45,7 @@ namespace avbase::media {
 // so callers that do not pass limits (tests) see the same backpressure as
 // before; PlayerImpl passes limits derived from BufferConfig.
 inline constexpr BufferQueueLimits kDefaultDemuxerQueueLimits{
-    256, kDefaultMaxBufferBytes / 2};
+    kDefaultQueueMaxBuffers, kDefaultMaxBufferBytes / 2};
 
 // One elementary stream. Owns the DecoderBufferQueue the demux thread fills.
 class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
