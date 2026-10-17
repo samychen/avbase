@@ -91,6 +91,21 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
     live_cue_max_age_ = max_age;
   }
 
+  // Buffering pre-buffer gate (ijkplayer packet-buffering / high-water-marks /
+  // min-frames). The renderer decides starvation; this decides whether the
+  // buffered TIME and PACKET-COUNT are enough to declare "have enough" yet, and
+  // defers OnBufferingStateChange(kHaveEnough) until both clear. PlayerImpl
+  // sets these from BufferConfig. Defaults (mark 0, enabled, 0 min packets) are
+  // a pass-through, so callers that never configure them see no behavior
+  // change.
+  void SetBufferingGate(base::TimeDelta mark) { buffering_gate_mark_ = mark; }
+  void SetBufferingGateEnabled(bool enabled) {
+    buffering_gate_enabled_ = enabled;
+  }
+  void SetBufferingGateMinPackets(size_t min_packets) {
+    buffering_gate_min_packets_ = min_packets;
+  }
+
   // Pipeline:
   void Start(std::vector<std::unique_ptr<Demuxer>> sources,
              RendererFactory* renderer_factory, RendererType renderer_type,
@@ -207,6 +222,18 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   // config.subtitle.live_cue_max_age, handed to the renderer once the demuxer
   // has told us whether the source is live. Zero disables the drop.
   base::TimeDelta live_cue_max_age_{base::TimeDelta()};
+
+  // ---- buffering pre-buffer gate -------------------------------------------
+  // See SetBufferingGate* above. The renderer reports starvation/frames-ready;
+  // this gate holds kHaveEnough until the buffered TIME and PACKET floor are
+  // both met, so playback does not start or resume on a too-thin buffer.
+  base::TimeDelta buffering_gate_mark_;
+  bool buffering_gate_enabled_ = true;
+  size_t buffering_gate_min_packets_ = 0;
+  bool hold_have_enough_ = false;
+  // Both OnBufferingStateChange and OnBufferedTimeUpdate may change this; small
+  // and only touched on the media sequence, so a plain bool is enough.
+  bool BufferingGateSatisfied() const;
 
   // Stage 0 (docs/14): Start() receives N demuxers. They are aggregated into a
   // single CompositeDemuxer (composite_) that the renderer sees as one

@@ -141,7 +141,15 @@ PlayerImpl::CreateDemuxerFor(const media::DataSourceDescriptor& descriptor) {
   // The descriptor is deliberately NOT handed to the constructor: it travels
   // with the demuxer to Initialize() (one per source, paired in
   // PipelineImpl::DoStart), which is where an open actually happens.
-  return std::make_unique<media::FFmpegDemuxer>(media_log_);
+  //
+  // BufferConfig -> BufferQueueLimits (invariant C22: media/ never sees
+  // PlayerConfig). infbuf makes the byte cap unlimited; min-frames is carried
+  // for the PipelineImpl pre-buffer gate; max-buffer-size is the byte cap.
+  media::BufferQueueLimits limits;
+  limits.max_buffers = 256;  // count cap; a byte cap or infbuf governs memory
+  limits.max_bytes = config_.buffer.unlimited ? 0 : config_.buffer.max_bytes;
+  limits.min_buffers = config_.buffer.min_frames;
+  return std::make_unique<media::FFmpegDemuxer>(media_log_, limits);
 #else
   (void)descriptor;
   return nullptr;
@@ -378,6 +386,10 @@ Status PlayerImpl::PrepareAsync() {
   }
   SetRendererFactory(renderer_factory);
 
+  // Arm the pre-buffer gate with the initial tier before playback can begin, so
+  // the first kHaveEnough is held until the buffer reaches the first high-water
+  // mark (or packet floor), matching ijkplayer's initial packet-buffering wait.
+  SyncBufferingGate();
   pipeline->Start(std::move(demuxers), renderer_factory.get(),
                   media::RendererType::kRendererImpl,
                   media_thread_.task_runner(), this);

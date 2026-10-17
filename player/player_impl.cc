@@ -40,7 +40,12 @@ PlayerImpl::PlayerImpl(const PlayerConfig& config, std::unique_ptr<Deps> deps)
                  : std::make_unique<Deps>(Deps::CreateDefault())),
       media_thread_("avbase-media"),
       video_thread_("avbase-video"),
-      audio_thread_("avbase-audio") {
+      audio_thread_("avbase-audio"),
+      // Built from config.buffer so the three-tier marks mirror BufferConfig's
+      // first/next/last_high_water_mark and packet-buffering maps to enabled.
+      // Listed last because buffer_controller_ is declared after the members
+      // above (init order follows declaration order; -Wreorder enforces it).
+      buffer_controller_(config.buffer) {
   media_thread_.Start();
   video_thread_.Start();
   audio_thread_.Start();

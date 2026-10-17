@@ -264,6 +264,13 @@ class PlayerImpl final : public media::Pipeline::Client {
   // used to strand the callbacks exactly like Reset() did.
   void AbortPendingSeeks(std::string reason, std::string suggestion);
 
+  // Pushes the BufferConfig-derived pre-buffer gate (enabled / high-water mark
+  // / min-frames) down to the pipeline. Called wherever the tier or the
+  // relevant config may have changed: at prepare, on every buffering start, and
+  // after a seek resets the progression to the first tier. Guarded for a null
+  // pipeline (the stop/reset path may run after the pipeline is torn down).
+  void SyncBufferingGate();
+
   // Installs are locked writes; the declaration order above is what keeps the
   // factory alive past the pipeline on teardown, so nothing but _Reset_ may
   // touch the pair directly.

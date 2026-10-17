@@ -35,6 +35,16 @@ std::vector<ConfigIssue> ValidateConfig(const PlayerConfig& c) {
     Add(&issues, "buffer.first_high_water_mark", "must not be negative",
         "use a non-negative duration");
   }
+  // min-frames is a packet floor the pre-buffer gate waits for; the demuxer
+  // queue is 256 packets deep, so a larger floor can never be met and the gate
+  // would never clear (playback would never start). Only relevant while the
+  // gate is enabled (packet-buffering).
+  if (c.buffer.enabled && c.buffer.min_frames > 256) {
+    Add(&issues, "buffer.min_frames",
+        "must be <= the demuxer packet-queue depth (256)",
+        "a larger floor can never be met; the pre-buffer gate would never "
+        "clear");
+  }
   if (c.video.frame_queue_size < 2 || c.video.frame_queue_size > 16) {
     Add(&issues, "video.frame_queue_size", "must be in [2, 16]",
         "3 is the usual value; larger queues use more memory");

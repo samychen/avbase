@@ -6,6 +6,7 @@
 #define AVBASE_PLAYER_BUFFER_CONTROLLER_H_
 
 #include "base/time/time.h"
+#include "player/public/player_config.h"
 
 namespace avbase::player {
 
@@ -42,6 +43,13 @@ class BufferController {
   enum class Step { kFirst, kNext, kLast };
   enum class Decision { kKeepWaiting, kProceed };
 
+  // Builds from the typed BufferConfig: the three-tier marks come from
+  // first/next/last_high_water_mark (the ascending order is repaired, never
+  // honored), and |enabled| comes from packet-buffering. When disabled, the
+  // time-based pre-buffer gate is off (Evaluate/progress become pass-through),
+  // but real underflow still pauses through the renderer's frame check.
+  explicit BufferController(const BufferConfig& config);
+
   // Note: no default argument here -- a nested class's default member
   // initializers are not visible inside the enclosing class's definition.
   explicit BufferController(Thresholds thresholds);
@@ -73,11 +81,17 @@ class BufferController {
   bool buffering() const { return buffering_; }
   Step step() const { return step_; }
   base::TimeDelta current_mark() const;
+  bool enabled() const { return enabled_; }
 
  private:
+  // Repairs a non-ascending mark set (next below first, or last below next)
+  // so "progression" keeps meaning "stricter each cycle".
+  static Thresholds Normalize(Thresholds thresholds);
+
   Thresholds thresholds_;
   Step step_ = Step::kFirst;
   bool buffering_ = false;
+  bool enabled_ = true;
 };
 
 }  // namespace avbase::player

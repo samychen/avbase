@@ -96,7 +96,8 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
     base::scoped_refptr<MediaLog> media_log,
     base::scoped_refptr<base::SequencedTaskRunner> media_runner,
     VideoDecoderConfig video_config, AudioDecoderConfig audio_config,
-    TextDecoderConfig text_config, StreamLiveness liveness)
+    TextDecoderConfig text_config, StreamLiveness liveness,
+    BufferQueueLimits limits)
     : type_(type),
       index_(index),
       media_log_(std::move(media_log)),
@@ -105,10 +106,11 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
       audio_config_(std::move(audio_config)),
       text_config_(std::move(text_config)),
       liveness_(liveness),
+      limits_(limits),
       queue_(std::make_unique<DecoderBufferQueue>(
           std::string(GetDemuxerStreamTypeName(type)) + "#" +
               std::to_string(index),
-          /*max_buffers=*/256, kDefaultMaxBufferBytes / 2, media_log_)) {}
+          limits_, media_log_)) {}
 
 FFmpegDemuxerStream::~FFmpegDemuxerStream() {
   queue_->Abort();
@@ -214,8 +216,10 @@ void FFmpegDemuxerStream::AbortFromDemuxThread() {
 // FFmpegDemuxer
 // ---------------------------------------------------------------------------
 
-FFmpegDemuxer::FFmpegDemuxer(base::scoped_refptr<MediaLog> media_log)
+FFmpegDemuxer::FFmpegDemuxer(base::scoped_refptr<MediaLog> media_log,
+                             BufferQueueLimits limits)
     : media_log_(std::move(media_log)),
+      buffer_limits_(limits),
       resume_event_(base::WaitableEvent::ResetPolicy::kAutomaticReset,
                     base::WaitableEvent::InitialState::kNotSignaled) {
   DETACH_FROM_SEQUENCE(media_sequence_checker_);
@@ -584,7 +588,7 @@ void FFmpegDemuxer::AddStream(void* av_stream_raw, uint32_t index,
 
   streams_.push_back(std::make_unique<FFmpegDemuxerStream>(
       type, static_cast<int32_t>(index), media_log_, media_runner_,
-      video_config, audio_config, text_config, liveness));
+      video_config, audio_config, text_config, liveness, buffer_limits_));
 }
 
 void FFmpegDemuxer::BuildMediaInfo() {

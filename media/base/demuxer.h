@@ -129,6 +129,13 @@ class AVBASE_MEDIA_EXPORT Demuxer : public MediaResource {
   virtual DemuxerStats GetStats() const = 0;
   virtual const char* name() const = 0;
 
+  // Compressed packets currently queued across all streams. Used by the
+  // PipelineImpl buffering gate to enforce the ijkplayer "min-frames" packet
+  // floor. Non-pure with a default of 0 so demuxers that do not track
+  // per-packet counts (test fakes, live sources) need no override; the gate
+  // treats 0 as "no extra packet constraint".
+  virtual size_t GetBufferedPacketCount() const { return 0; }
+
  protected:
   Demuxer();
 };

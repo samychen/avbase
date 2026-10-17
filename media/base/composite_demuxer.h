@@ -130,6 +130,7 @@ class AVBASE_MEDIA_EXPORT CompositeDemuxer : public Demuxer,
   bool IsSeekable() const override;
   DemuxerStats GetStats() const override;
   const char* name() const override;
+  size_t GetBufferedPacketCount() const override;
 
   // Aggregate inspection.
   // MediaResource's addressing contract (media/base/media_resource.h): an

@@ -11,12 +11,22 @@ namespace avbase::player {
 BufferController::BufferController() : BufferController(Thresholds{}) {}
 
 BufferController::BufferController(Thresholds thresholds)
-    : thresholds_(thresholds) {
+    : thresholds_(Normalize(thresholds)), enabled_(true) {}
+
+BufferController::BufferController(const BufferConfig& config)
+    : thresholds_(
+          Normalize({config.first_high_water_mark, config.next_high_water_mark,
+                     config.last_high_water_mark})),
+      enabled_(config.enabled) {}
+
+// static
+BufferController::Thresholds BufferController::Normalize(Thresholds t) {
   // The tier marks must ascend, or "progression" is meaningless: a next-mark
   // below the first-mark would make recovery EASIER than starting, which
   // reads as a bug to every user watching the progress bar.
-  thresholds_.next = std::max(thresholds_.next, thresholds_.first);
-  thresholds_.last = std::max(thresholds_.last, thresholds_.next);
+  t.next = std::max(t.next, t.first);
+  t.last = std::max(t.last, t.next);
+  return t;
 }
 
 void BufferController::OnBufferingStart() {
@@ -53,11 +63,23 @@ BufferController::Evaluate(base::TimeDelta buffered_time) const {
   if (!buffering_) {
     return Decision::kProceed;
   }
+  if (!enabled_) {
+    // packet-buffering=false: the time-based pre-buffer gate is disabled. The
+    // renderer's own frame-starvation check still pauses on a true underflow,
+    // so disabling this does not make playback "never buffer" -- only "do not
+    // wait for a buffered-time threshold before declaring ready".
+    return Decision::kProceed;
+  }
   return buffered_time >= current_mark() ? Decision::kProceed
                                          : Decision::kKeepWaiting;
 }
 
 int BufferController::progress_percent(base::TimeDelta buffered_time) const {
+  // No active tier, or the gate is off: the progress bar has nothing to fill
+  // against, so report complete rather than a stale fraction.
+  if (!buffering_ || !enabled_) {
+    return 100;
+  }
   const base::TimeDelta mark = current_mark();
   if (mark <= base::TimeDelta()) {
     return 100;

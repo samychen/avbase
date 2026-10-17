@@ -33,11 +33,19 @@
 #include "media/base/decoder_config.h"
 #include "media/base/demuxer.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/media_constants.h"
 #include "media/base/media_log.h"
 #include "media/ffmpeg/ffmpeg_glue.h"
 #include "media/media_export.h"
 
 namespace avbase::media {
+
+// Historical queue envelope (before BufferQueueLimits existed): 256 packets or
+// 7.5 MiB, whichever comes first. Kept as the FFmpegDemuxer constructor default
+// so callers that do not pass limits (tests) see the same backpressure as
+// before; PlayerImpl passes limits derived from BufferConfig.
+inline constexpr BufferQueueLimits kDefaultDemuxerQueueLimits{
+    256, kDefaultMaxBufferBytes / 2, 0};
 
 // One elementary stream. Owns the DecoderBufferQueue the demux thread fills.
 class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
@@ -47,7 +55,8 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
       base::scoped_refptr<MediaLog> media_log,
       base::scoped_refptr<base::SequencedTaskRunner> media_runner,
       VideoDecoderConfig video_config, AudioDecoderConfig audio_config,
-      TextDecoderConfig text_config, StreamLiveness liveness);
+      TextDecoderConfig text_config, StreamLiveness liveness,
+      BufferQueueLimits limits = BufferQueueLimits{});
   FFmpegDemuxerStream(const FFmpegDemuxerStream&) = delete;
   FFmpegDemuxerStream& operator=(const FFmpegDemuxerStream&) = delete;
   ~FFmpegDemuxerStream() override;
@@ -73,6 +82,9 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
   base::TimeDelta buffered_duration() const override {
     return queue_->buffered_duration();
   }
+  // Packets currently queued; the PipelineImpl buffering gate sums this across
+  // streams to enforce the ijkplayer "min-frames" floor.
+  size_t buffered_packets() const { return queue_ ? queue_->size() : 0; }
 
   // ---- Called on the demux thread -----------------------------------------
   // Enqueues a buffer and, if a Read() is waiting, posts its reply to the media
@@ -102,6 +114,7 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
   const AudioDecoderConfig audio_config_;
   const TextDecoderConfig text_config_;
   const StreamLiveness liveness_;
+  const BufferQueueLimits limits_;
   const std::unique_ptr<DecoderBufferQueue> queue_;
 
   // Guards only the pending-read slot; buffer storage has its own lock.
@@ -113,7 +126,8 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxerStream final : public DemuxerStream {
 
 class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
  public:
-  explicit FFmpegDemuxer(base::scoped_refptr<MediaLog> media_log);
+  explicit FFmpegDemuxer(base::scoped_refptr<MediaLog> media_log,
+                         BufferQueueLimits limits = kDefaultDemuxerQueueLimits);
   FFmpegDemuxer(const FFmpegDemuxer&) = delete;
   FFmpegDemuxer& operator=(const FFmpegDemuxer&) = delete;
   ~FFmpegDemuxer() override;
@@ -137,6 +151,16 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   bool IsLive() const override { return media_info_.is_live; }
   bool IsSeekable() const override { return media_info_.seekable; }
   DemuxerStats GetStats() const override;
+  // Total compressed packets queued across all streams; the PipelineImpl
+  // buffering gate uses it to enforce the ijkplayer "min-frames" floor. Inline
+  // here (not in the .cc) to keep the translation unit under its line ratchet.
+  size_t GetBufferedPacketCount() const override {
+    size_t total = 0;
+    for (const auto& stream : streams_) {
+      total += stream->buffered_packets();
+    }
+    return total;
+  }
   const char* name() const override { return "FFmpegDemuxer"; }
 
  private:
@@ -181,6 +205,9 @@ class AVBASE_MEDIA_EXPORT FFmpegDemuxer final : public Demuxer {
   base::scoped_refptr<MediaLog> media_log_;
   base::raw_ptr<Host> host_{nullptr};
   base::scoped_refptr<base::SequencedTaskRunner> media_runner_;
+  // Packet-queue backpressure envelope handed to every stream queue (derived
+  // from BufferConfig by PlayerImpl). Default keeps the historical 7.5 MiB cap.
+  const BufferQueueLimits buffer_limits_;
 
   std::unique_ptr<base::Thread> demux_thread_;
   // Only the demux thread touches this while the loop runs; ~FFmpegDemuxer

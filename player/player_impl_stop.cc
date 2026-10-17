@@ -158,6 +158,10 @@ void PlayerImpl::Reset() {
                      [](PlayerImpl* self) {
                        self->accurate_seek_.End();
                        self->buffer_controller_.OnSeekCompleted();
+                       // Keep the pipeline gate on the same (rewound) tier the
+                       // controller just reset to, so a reused pipeline cannot
+                       // gate the fresh position on a stale larger mark.
+                       self->SyncBufferingGate();
                      },
                      base::Unretained(this)));
   {

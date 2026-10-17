@@ -100,10 +100,40 @@ void PipelineImpl::OnBufferedTimeUpdate(base::TimeDelta buffered,
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   buffered_micros_.store(buffered.InMicroseconds());
   (void)playback_time;
+  // If we deferred a have-enough because the pre-buffer gate was not yet met,
+  // the freshly buffered time (and, by extension, the packet floor) may now
+  // clear it. Re-evaluate and forward the held transition.
+  if (hold_have_enough_ && BufferingGateSatisfied()) {
+    hold_have_enough_ = false;
+    client_->OnBufferingStateChange(BufferingState::kHaveEnough,
+                                    base::TimeDelta());
+  }
   // Deliberately not forwarded as an event: Pipeline::Client carries buffered
   // time through OnStatisticsUpdate, and the facade polls GetBufferedTime()
   // on its stats tick. An event per demux progress callback would flood the
   // event queue on network sources.
+}
+
+bool PipelineImpl::BufferingGateSatisfied() const {
+  if (!buffering_gate_enabled_) {
+    return true;
+  }
+  if (GetBufferedTime() < buffering_gate_mark_) {
+    return false;
+  }
+  if (buffering_gate_min_packets_ > 0 && composite_) {
+    // The packet floor (ijkplayer min-frames). A reported count of 0 means the
+    // demuxer does not track per-packet counts (synthetic sources) or its queue
+    // has fully drained; the buffered-TIME mark above is the authority then, so
+    // do not let an unreported count wedge the gate forever. A positive count
+    // below the floor holds the transition -- the demuxer reads ahead, so it is
+    // a bounded wait, not a deadlock.
+    const size_t packets = composite_->GetBufferedPacketCount();
+    if (packets > 0 && packets < buffering_gate_min_packets_) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void PipelineImpl::OnDemuxerError(MediaError error) {
@@ -128,6 +158,21 @@ void PipelineImpl::OnEnded() {
 void PipelineImpl::OnBufferingStateChange(BufferingState state,
                                           base::TimeDelta memory_usage) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (state == BufferingState::kHaveNothing) {
+    // Real starvation: forward immediately and drop any deferred have-enough,
+    // so a later recovery is reported as a fresh edge.
+    hold_have_enough_ = false;
+    client_->OnBufferingStateChange(state, memory_usage);
+    return;
+  }
+  // kHaveEnough: the renderer has frames, but the pre-buffer gate (buffered
+  // time + packet floor) may not be met yet. Defer forwarding until both clear,
+  // so the player does not start or resume on a too-thin buffer (ijkplayer's
+  // packet-buffering wait). The gate re-checks on every buffered-time update.
+  if (!BufferingGateSatisfied()) {
+    hold_have_enough_ = true;
+    return;
+  }
   client_->OnBufferingStateChange(state, memory_usage);
 }
 

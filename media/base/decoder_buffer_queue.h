@@ -25,6 +25,19 @@
 
 namespace avbase::media {
 
+// Backpressure envelope for a DecoderBufferQueue, expressed in media-layer
+// terms so it can be derived from a player BufferConfig without media/ ever
+// seeing that type (invariant C22). Mirrors ijkplayer's packet-queue controls:
+//   max_buffers -- hard cap on packet count (bounds RAM use);
+//   max_bytes   -- byte cap ("max-buffer-size"); 0 means unlimited ("infbuf");
+//   min_buffers -- packet-count floor the buffering gate waits for
+//                  ("min-frames"). Informational here; the gate reads it.
+struct AVBASE_MEDIA_EXPORT BufferQueueLimits {
+  size_t max_buffers = 256;
+  size_t max_bytes = 0;
+  size_t min_buffers = 0;
+};
+
 // Bounded, serial-aware queue of compressed samples between a demuxer and a
 // decoder.
 //
@@ -66,6 +79,10 @@ class AVBASE_MEDIA_EXPORT DecoderBufferQueue {
     bool aborted{false};
   };
 
+  DecoderBufferQueue(std::string name, BufferQueueLimits limits,
+                     base::scoped_refptr<MediaLog> media_log);
+  // Legacy overload kept for callers that only cap by count + bytes. Equivalent
+  // to the limits form with min_buffers = 0.
   DecoderBufferQueue(std::string name, size_t max_buffers, size_t max_bytes,
                      base::scoped_refptr<MediaLog> media_log);
   DecoderBufferQueue(const DecoderBufferQueue&) = delete;
@@ -108,6 +125,7 @@ class AVBASE_MEDIA_EXPORT DecoderBufferQueue {
   // Last timestamp minus first timestamp; the value BufferController uses to
   // decide whether the three-tier high water mark has been reached.
   base::TimeDelta buffered_duration() const;
+  size_t min_buffers() const { return limits_.min_buffers; }
   Stats GetStats() const;
   const std::string& name() const { return name_; }
 
@@ -117,8 +135,7 @@ class AVBASE_MEDIA_EXPORT DecoderBufferQueue {
   void UpdateCachedDurationLocked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   const std::string name_;
-  const size_t max_buffers_;
-  const size_t max_bytes_;
+  const BufferQueueLimits limits_;
   const base::scoped_refptr<MediaLog> media_log_;
 
   mutable base::Lock lock_;

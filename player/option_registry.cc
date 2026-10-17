@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace avbase {
@@ -73,6 +74,28 @@ base::unexpected<MediaError> TypeMismatch(std::string_view key,
              "pass the value with the matching type");
 }
 
+// ijkplayer exposes booleans as "1"/"0" (or true/false) and accepts them from
+// int- and string-typed setters. Parse any of those so a migrated call site
+// works regardless of which typed entry point it uses. Returns nullopt for an
+// unrecognized string, so the caller can raise a type-mismatch error.
+std::optional<bool> ParseBoolOption(const OptionValue& v) {
+  if (const bool* b = std::get_if<bool>(&v)) {
+    return *b;
+  }
+  if (const int64_t* i = std::get_if<int64_t>(&v)) {
+    return *i != 0;
+  }
+  if (const std::string* s = std::get_if<std::string>(&v)) {
+    if (*s == "1" || *s == "true" || *s == "on" || *s == "yes") {
+      return true;
+    }
+    if (*s == "0" || *s == "false" || *s == "off" || *s == "no" || s->empty()) {
+      return false;
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 // Definition of the Pimpl declared in option_registry.h.
@@ -95,19 +118,21 @@ OptionRegistry::OptionRegistry() : impl_(std::make_unique<Impl>()) {
   auto& e = impl_->entries;
   const auto P = OptionCategory::kPlayer;
 
-  // Only options whose PlayerConfig field is actually read downstream are
-  // registered. The other docs/05 §4 keys fall into two buckets:
+  // Every option whose PlayerConfig field is actually read downstream is
+  // registered. Two buckets are deliberately absent:
   //   * generated-but-not-wired: player/option_registry.inc (DRAFT, not built);
-  //   * dead no-ops: their field is written by SetOption but nothing reads it,
-  //     so the key was a silent no-op. Those string keys were deliberately
-  //     dropped (packet-buffering / max-buffer-size / min-frames / infbuf write
-  //     buffer.* fields the buffer controller never reads; nodisp writes
-  //     render.disable_video_output which no sink selection consults;
-  //     enable-accurate-seek writes seek.accurate which no seek path gates on).
-  //     Rejecting them is honest: a typo'd or unsupported key now errors
-  //     instead of looking supported. The underlying PlayerConfig fields stay
-  //     (settable via the typed API); wiring them is a per-subsystem feature,
+  //   * still-dead no-ops: nodisp writes render.disable_video_output which no
+  //     sink selection consults, and enable-accurate-seek writes seek.accurate
+  //     which no seek path gates on. Those string keys stay dropped and now
+  //     error instead of looking supported (a typo'd or unsupported key must
+  //     not look like it worked). The underlying PlayerConfig fields remain
+  //     (settable via the typed API); wiring each is a per-subsystem feature,
   //     tracked in docs/TODO.md §2.
+  //
+  // The four buffer keys ARE registered below: they feed the BufferController
+  // (packet-buffering -> buffer.enabled), the demuxer packet queue
+  // (max-buffer-size -> BufferQueueLimits::max_bytes, infbuf -> unlimited), and
+  // the PipelineImpl pre-buffer gate (min-frames -> packet floor).
 
   e.push_back({"framedrop", P, Type::kInt64, "video.max_frame_drop",
                [](PlayerConfig* c, const OptionValue& v) -> Status {
@@ -152,6 +177,71 @@ OptionRegistry::OptionRegistry() : impl_(std::make_unique<Impl>()) {
        },
        [](const PlayerConfig& c) -> OptionValue { return c.start_on_prepared; },
        "automatically start playing on prepared"});
+
+  // ---- buffer keys (ijkplayer packet-queue controls) ----------------------
+  // These four were previously dead no-ops because nothing read buffer.*. They
+  // now reach BufferController (enabled), the demuxer queue (max_bytes /
+  // unlimited), and the PipelineImpl pre-buffer gate (min_frames), so an
+  // existing ijkplayer setOption() call site keeps its meaning.
+
+  e.push_back(
+      {"packet-buffering", P, Type::kBool, "buffer.enabled",
+       [](PlayerConfig* c, const OptionValue& v) -> Status {
+         const std::optional<bool> b = ParseBoolOption(v);
+         if (!b)
+           return TypeMismatch("packet-buffering", "a boolean (1/0)");
+         c->buffer.enabled = *b;
+         return OkStatus();
+       },
+       [](const PlayerConfig& c) -> OptionValue { return c.buffer.enabled; },
+       "wait for the high-water-mark buffer before starting/resuming "
+       "(ijkplayer packet-buffering)"});
+
+  e.push_back({"max-buffer-size", P, Type::kInt64, "buffer.max_bytes",
+               [](PlayerConfig* c, const OptionValue& v) -> Status {
+                 const int64_t* i = std::get_if<int64_t>(&v);
+                 if (!i)
+                   return TypeMismatch("max-buffer-size", "an integer (bytes)");
+                 if (*i < 0 || *i > 256LL * 1024 * 1024)
+                   return OutOfRange("max-buffer-size", std::to_string(*i),
+                                     "[0, 268435456]");
+                 c->buffer.max_bytes = static_cast<size_t>(*i);
+                 return OkStatus();
+               },
+               [](const PlayerConfig& c) -> OptionValue {
+                 return static_cast<int64_t>(c.buffer.max_bytes);
+               },
+               "maximum bytes in the demuxer packet queue "
+               "(ijkplayer max-buffer-size)"});
+
+  e.push_back({"min-frames", P, Type::kInt64, "buffer.min_frames",
+               [](PlayerConfig* c, const OptionValue& v) -> Status {
+                 const int64_t* i = std::get_if<int64_t>(&v);
+                 if (!i)
+                   return TypeMismatch("min-frames", "an integer");
+                 if (*i < 0 || *i > 100000)
+                   return OutOfRange("min-frames", std::to_string(*i),
+                                     "[0, 100000]");
+                 c->buffer.min_frames = static_cast<size_t>(*i);
+                 return OkStatus();
+               },
+               [](const PlayerConfig& c) -> OptionValue {
+                 return static_cast<int64_t>(c.buffer.min_frames);
+               },
+               "minimum packets buffered before the pre-buffer gate clears "
+               "(ijkplayer min-frames)"});
+
+  e.push_back(
+      {"infbuf", P, Type::kBool, "buffer.unlimited",
+       [](PlayerConfig* c, const OptionValue& v) -> Status {
+         const std::optional<bool> b = ParseBoolOption(v);
+         if (!b)
+           return TypeMismatch("infbuf", "a boolean (1/0)");
+         c->buffer.unlimited = *b;
+         return OkStatus();
+       },
+       [](const PlayerConfig& c) -> OptionValue { return c.buffer.unlimited; },
+       "unlimited demuxer packet buffer (ijkplayer infbuf)"});
 }
 
 OptionRegistry::~OptionRegistry() = default;

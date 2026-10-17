@@ -130,5 +130,52 @@ TEST(BufferControllerTest, ThresholdsAreForcedToAscend) {
   EXPECT_EQ(c.current_mark(), base::Milliseconds(500));
 }
 
+TEST(BufferControllerTest, ConfigCtorDerivesMarksFromBufferConfig) {
+  BufferConfig config;
+  config.first_high_water_mark = base::Milliseconds(200);
+  config.next_high_water_mark = base::Milliseconds(800);
+  config.last_high_water_mark = base::Milliseconds(3000);
+  config.enabled = true;
+
+  BufferController c(config);
+  EXPECT_TRUE(c.enabled());
+  EXPECT_EQ(c.current_mark(), base::Milliseconds(200));
+  c.OnBufferingStart();
+  EXPECT_EQ(c.Evaluate(base::Milliseconds(199)),
+            BufferController::Decision::kKeepWaiting);
+  EXPECT_EQ(c.Evaluate(base::Milliseconds(200)),
+            BufferController::Decision::kProceed);
+}
+
+TEST(BufferControllerTest, ConfigCtorRepairsANonAscendingMarkSet) {
+  // A BufferConfig whose next-mark sits below the first is repaired the same
+  // way the Thresholds ctor repairs it, because the fix lives in Normalize.
+  BufferConfig config;
+  config.first_high_water_mark = base::Milliseconds(500);
+  config.next_high_water_mark = base::Milliseconds(100);
+  config.last_high_water_mark = base::Milliseconds(4000);
+
+  BufferController c(config);
+  EXPECT_EQ(c.current_mark(), base::Milliseconds(500));
+  c.OnBufferingStart();
+  c.OnBufferingEnd();  // advance first -> next
+  c.OnBufferingStart();
+  EXPECT_EQ(c.current_mark(), base::Milliseconds(500));  // next raised to first
+}
+
+TEST(BufferControllerTest, DisabledGateAlwaysProceedsAndReportsComplete) {
+  // packet-buffering=false: the time gate is off, so even an empty buffer
+  // proceeds (real underflow still pauses through the renderer's own check).
+  BufferConfig config;
+  config.enabled = false;
+
+  BufferController c(config);
+  EXPECT_FALSE(c.enabled());
+  c.OnBufferingStart();
+  EXPECT_EQ(c.Evaluate(base::TimeDelta()),
+            BufferController::Decision::kProceed);
+  EXPECT_EQ(c.progress_percent(base::TimeDelta()), 100);
+}
+
 }  // namespace
 }  // namespace avbase::player

@@ -334,6 +334,16 @@ DemuxerStats CompositeDemuxer::GetStats() const {
   return stats;
 }
 
+size_t CompositeDemuxer::GetBufferedPacketCount() const {
+  size_t total = 0;
+  for (const auto& child : sources_) {
+    if (child.demuxer) {
+      total += child.demuxer->GetBufferedPacketCount();
+    }
+  }
+  return total;
+}
+
 const char* CompositeDemuxer::name() const {
   return "CompositeDemuxer";
 }

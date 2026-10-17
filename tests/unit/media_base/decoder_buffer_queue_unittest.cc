@@ -295,6 +295,38 @@ TEST_F(DecoderBufferQueueTest, PopStatusNames) {
   EXPECT_STREQ(GetPopStatusName(S::kEndOfStream), "end-of-stream");
 }
 
+// ---- BufferQueueLimits (buffer.max_bytes / infbuf / min-frames) ------------
+
+// ijkplayer "infbuf": max_bytes == 0 removes the byte cap. The packet-count cap
+// still bounds the queue, so this is not literally unbounded memory.
+TEST(DecoderBufferQueueLimitsTest, MaxBytesZeroMeansUnlimited) {
+  DecoderBufferQueue queue{"q", BufferQueueLimits{100, 0, 0}, nullptr};
+  for (int i = 0; i < 10; ++i) {
+    EXPECT_TRUE(queue.TryPush(MakeBuffer(i, 1024)));
+  }
+}
+
+TEST(DecoderBufferQueueLimitsTest, MaxBytesCapsTheQueue) {
+  DecoderBufferQueue queue{"q", BufferQueueLimits{100, 100, 0}, nullptr};
+  // 60 + 60 bytes crosses the 100-byte mark; the third push is refused.
+  EXPECT_TRUE(queue.TryPush(MakeBuffer(0, 60)));
+  EXPECT_TRUE(queue.TryPush(MakeBuffer(1, 60)));
+  EXPECT_FALSE(queue.TryPush(MakeBuffer(2, 60)));
+  EXPECT_GE(queue.bytes(), 100u);
+}
+
+TEST(DecoderBufferQueueLimitsTest, MinBuffersIsCarried) {
+  DecoderBufferQueue queue{"q", BufferQueueLimits{256, 0, 5}, nullptr};
+  EXPECT_EQ(queue.min_buffers(), 5u);
+}
+
+TEST(DecoderBufferQueueLimitsTest, CountCapStillBoundsTheQueue) {
+  DecoderBufferQueue queue{"q", BufferQueueLimits{2, 0, 0}, nullptr};
+  EXPECT_TRUE(queue.TryPush(MakeBuffer(0)));
+  EXPECT_TRUE(queue.TryPush(MakeBuffer(1)));
+  EXPECT_FALSE(queue.TryPush(MakeBuffer(2)));
+}
+
 // L8: MarkEndOfStream used to push one more EOS marker per call, so a
 // consumer could pop several "ends" and read them as distinct stream ends.
 TEST_F(DecoderBufferQueueTest, MarkEndOfStreamIsIdempotent) {

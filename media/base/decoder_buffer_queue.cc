@@ -28,17 +28,23 @@ const char* GetPopStatusName(DecoderBufferQueue::PopStatus s) {
   return "invalid";
 }
 
-DecoderBufferQueue::DecoderBufferQueue(std::string name, size_t max_buffers,
-                                       size_t max_bytes,
+DecoderBufferQueue::DecoderBufferQueue(std::string name,
+                                       BufferQueueLimits limits,
                                        base::scoped_refptr<MediaLog> media_log)
     : name_(std::move(name)),
-      max_buffers_(max_buffers),
-      max_bytes_(max_bytes),
+      limits_(limits),
       media_log_(std::move(media_log)),
       not_full_(&lock_),
       not_empty_(&lock_) {
-  CHECK_GT(max_buffers_, 0u);
+  CHECK_GT(limits_.max_buffers, 0u);
 }
+
+DecoderBufferQueue::DecoderBufferQueue(std::string name, size_t max_buffers,
+                                       size_t max_bytes,
+                                       base::scoped_refptr<MediaLog> media_log)
+    : DecoderBufferQueue(std::move(name),
+                         BufferQueueLimits{max_buffers, max_bytes, 0},
+                         std::move(media_log)) {}
 
 DecoderBufferQueue::~DecoderBufferQueue() {
   // Anything still queued is released here. Buffers are refcounted, so a
@@ -47,8 +53,8 @@ DecoderBufferQueue::~DecoderBufferQueue() {
 }
 
 bool DecoderBufferQueue::IsFullLocked() const {
-  return buffers_.size() >= max_buffers_ ||
-         (max_bytes_ > 0 && bytes_ >= max_bytes_);
+  return buffers_.size() >= limits_.max_buffers ||
+         (limits_.max_bytes > 0 && bytes_ >= limits_.max_bytes);
 }
 
 void DecoderBufferQueue::UpdateCachedDurationLocked() {

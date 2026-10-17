@@ -32,6 +32,9 @@ void PlayerImpl::OnMediaSeekDone(int64_t request_id,
   // (BufferController::OnSeekCompleted's contract).
   DCHECK_CALLED_ON_VALID_SEQUENCE(buffer_controller_sequence_);
   buffer_controller_.OnSeekCompleted();
+  // The progression rewound to the first tier; keep the pipeline's gate in sync
+  // so the fresh position waits for the first mark, not a stale larger one.
+  SyncBufferingGate();
   bool accurate = false;
   base::TimeDelta accurate_target;
   {
@@ -114,6 +117,20 @@ void PlayerImpl::RemoveObserver(int id) {
 
 // ---- Pipeline::Client (media sequence) --------------------------------------
 
+void PlayerImpl::SyncBufferingGate() {
+  const auto pipeline = GetPipeline();
+  if (!pipeline) {
+    return;
+  }
+  // The current tier's mark is what the in-flight buffering cycle is waiting
+  // on; the renderer will not report its own kHaveEnough until frames arrive,
+  // and by then the pipeline's gate must already know the target. min-frames is
+  // the packet floor the gate also waits for.
+  pipeline->SetBufferingGateEnabled(config_.buffer.enabled);
+  pipeline->SetBufferingGate(buffer_controller_.current_mark());
+  pipeline->SetBufferingGateMinPackets(config_.buffer.min_frames);
+}
+
 void PlayerImpl::OnError(MediaError error) {
   {
     base::AutoLock scoped(state_lock_);
@@ -183,6 +200,10 @@ void PlayerImpl::OnBufferingStateChange(media::BufferingState state,
     return;
   }
   if (state == media::BufferingState::kHaveNothing) {
+    // Arm the pipeline's pre-buffer gate with THIS cycle's tier before the
+    // renderer can report recovery; the tier advances only on a completed
+    // cycle, so current_mark() is the mark this cycle waits on.
+    SyncBufferingGate();
     buffer_controller_.OnBufferingStart();
     event_hub_.Post(EventType::kBufferingStarted, BufferedUpdatePayload{},
                     GetMediaTime());
