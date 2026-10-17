@@ -181,7 +181,15 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "Prepare failed: %s\n", s.error().ToString().c_str());
     return 1;
   }
-  player.Start();
+  // PrepareSync already started playback: PlayerConfig::start_on_prepared
+  // defaults to true, so Start() ran before it returned and the state is
+  // kStarted. Calling Start() again is not a no-op -- the state machine
+  // rejects it and logs "Start in state Started is not legal" every run.
+  // headless.cc guards the same way; this example had no such guard, so it
+  // printed that ERROR on every single invocation while still working.
+  if (player.state() != avbase::PlayerState::kStarted) {
+    player.Start();
+  }
 
   int reported = 0;
   int64_t last_seen = -1;
