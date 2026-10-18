@@ -78,8 +78,14 @@ set_target_properties(avbase_gl PROPERTIES EXPORT_NAME gl)
 target_include_directories(avbase_gl PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
     $<BUILD_INTERFACE:${AVBASE_GLAD_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/avbase>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/avbase/render/gl/third_party/glad/include>)
+    # INSTALL_INTERFACE points at the package's include root (no "avbase"
+    # prefix): the sources write "render/gl/gl_api.h" and the installed tree
+    # keeps that exact layout (see AvbaseInstall.cmake, which installs the
+    # whole render/ tree to include/render). A former "include/avbase" prefix
+    # here duplicated the render/gl headers under include/avbase/render/gl and
+    # diverged from the rest of the package.
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/render/gl/third_party/glad/include>)
 
 # Only this module's own sources define it, so AVBASE_GL_EXPORT is a no-op for
 # everyone else (see render/gl/gl_export.h).
@@ -98,8 +104,13 @@ if(AVBASE_IS_TOP_LEVEL)
       ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
       LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
       RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+  # Headers land under include/render/gl -- matching the layout AvbaseInstall
+  # produces for the whole render/ tree, so the same "render/gl/gl_api.h"
+  # include works whether a consumer takes the full avbase package or just
+  # find_package(avbase_gl). No "avbase" prefix: that would duplicate the
+  # headers and break the "installed tree keeps the source layout" guarantee.
   install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/gl/"
-      DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/avbase/render/gl"
+      DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/render/gl"
       FILES_MATCHING PATTERN "*.h")
   install(EXPORT avbaseGlTargets
       FILE avbaseGlTargets.cmake

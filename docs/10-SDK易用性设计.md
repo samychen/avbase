@@ -576,7 +576,7 @@ void SeekTo(base::TimeDelta position, SeekMode mode, SeekCB cb);
 | **pkg-config** | ⬜ 未做 | `avbase.pc.in` 从未创建；非 blocker（V4 的另两条已覆盖） |
 | **vcpkg** | ⬜ 已写未跑 | `packaging/vcpkg-portfile.cmake`；未提交 registry、SHA512 占位；等 v0.1.0 tag 后填并实跑一次 |
 | **conan** | ⬜ 已写未跑 | `packaging/conanfile.py`；未提交 conancenter；同上 |
-| **系统包**（deb/rpm） | 🔧 规则已接 | `cmake/AvbaseInstall.cmake` 的 CPack 段（TGZ 全平台 / DEB 加 dpkg）；**产物未跑**，属 release 机动作 |
+| **系统包**（TGZ / deb / rpm） | ✅ TGZ 本地实跑 | `cmake/AvbaseInstall.cmake` 的 CPack 段；macOS 上 `cpack -G TGZ` 跑通（`avbase-0.1.0-Darwin.tar.gz`，静态库 + CMake config + 头树齐全且与源布局一致），DEB/RPM 待 Linux release 机 `cpack -G DEB`（dpkg）一次 |
 | **手工拷贝** | ✅ 本地实测 | 头树布局与树内一致（`install(DIRECTORY)` 无尾斜杠——带尾斜杠曾把 `player/` 拍成 `include/public` 少一层）；静态库直接进宿主编译即可 |
 | **源码内嵌**（`add_subdirectory`） | ✅ | install 规则只在顶层工程生效（`AvbaseInstall.cmake` 首行 `return()` 守卫），子项目构建不会往宿主 prefix 里装东西 |
 

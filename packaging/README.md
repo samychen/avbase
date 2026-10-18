@@ -7,7 +7,7 @@ M13 的「cpack-vcpkg-conan」（PROGRESS.md M13 行）。三条集成路径的�
 | 方式 | 交付物 | 状态 |
 |---|---|---|
 | CMake `find_package(avbase)` | `cmake/AvbaseInstall.cmake` + `cmake/AvbaseConfig.cmake.in` | ✅ **本地实测**：install 到 staging 后，树外 consumer 完成 configure/build/run（`avbase::player` 链接，Player 构造出六个线程） |
-| CPack | 同上文件内的 CPack 段（TGZ 全平台 / DEB 加 dpkg 系统） | ✅ 规则已接线；**打包产物本身未跑**（`cpack` 需在 release 机上执行一次，属发布动作） |
+| CPack | 同上文件内的 CPack 段（TGZ 全平台 / DEB 加 dpkg 系统） | ✅ **TGZ 本地实跑通过**（macOS `cpack -G TGZ` → `avbase-0.1.0-Darwin.tar.gz`，248 条目：静态库 + `lib/cmake/avbase/*` config/targets + `lib/cmake/avbase_gl/*` 独立 config + 头树保持源布局；`find_package(avbase_gl)` 已用树外 consumer 编译链接验证）；DEB/RPM 待 Linux release 机 `cpack -G DEB`（dpkg）一次 |
 | vcpkg | `vcpkg-portfile.cmake` | ⬜ 已写好，**未提交 registry、未跑过**（沙箱无 vcpkg）；SHA512 占位，发 tag 后填 |
 | conan | `conanfile.py` | ⬜ 已写好，**未提交 conancenter、未跑过**（沙箱无 conan） |
 | 手工拷贝 | 头树 + `.a` 直接进宿主编译 | ✅ 头树布局与树内一致（`player/public/...`、`media/base/...`），`install(DIRECTORY)` 已实测落位正确 |
