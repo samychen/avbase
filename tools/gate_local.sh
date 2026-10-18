@@ -184,6 +184,36 @@ job_bench() {
     --current "$out" --fail-on-regression
 }
 
+job_e2ecpu() {
+  # M13 (docs/04 §8, docs/07 §10): the machine half of the end-to-end CPU
+  # gate -- CPU per media second of a full play-through, compared against
+  # tools/e2e-cpu-baseline.jsonl. This is the number docs/04 §8 budgets
+  # ("relative to raw FFmpeg, total extra cost < 3% CPU") and the one that
+  # used to be read off tools/bench_render.sh by eye.
+  #
+  # Hard-fails here, on the developer's own machine, for the same reason the
+  # bench job does: before/after are the same box. The committed baseline was
+  # measured with VideoToolbox hardware decode on macOS, so it says nothing
+  # about a Linux/VAAPI runner -- CI records and uploads instead of failing.
+  #
+  # --runs 5 is not a formality: a single run of this clip has spanned
+  # 43.1-53.2 ms per media second with no code change, and two groups of five
+  # differed by 8.1%. Cost: about a minute (five 10 s play-throughs).
+  if [ -z "$FFMPEG_BIN" ]; then echo "ffmpeg CLI not found"; return 2; fi
+  if [ -z "$CMAKE" ]; then echo "cmake not found"; return 2; fi
+  "$CMAKE" --preset ffmpeg >/dev/null 2>&1 \
+    || { echo "e2ecpu configure failed"; return 1; }
+  "$CMAKE" --build build/ffmpeg --target headless >/dev/null 2>&1 \
+    || { echo "headless build failed"; return 1; }
+  local out; out="$(mktemp)"
+  python3 tools/measure_e2e_cpu.py --headless build/ffmpeg/bin/headless \
+    --runs 5 --jsonl "$out" || { echo "e2e cpu measure failed"; return 1; }
+  python3 tools/check_bench_regression.py \
+    --baseline tools/e2e-cpu-baseline.jsonl --current "$out" \
+    --value-key cpu_ms_per_media_s \
+    --tolerance tools/e2e-cpu-tolerance.json --fail-on-regression
+}
+
 job_tidy() {
   if [ ! -x "$CT" ]; then echo "clang-tidy not found at $CT"; return 2; fi
   if [ -z "$CMAKE" ]; then echo "cmake not found"; return 2; fi
@@ -258,7 +288,7 @@ job_ubsan()   { gate_preset ubsan   "--test-dir build/ubsan --output-on-failure"
 job_coverage(){ gate_preset coverage "--test-dir build/coverage --output-on-failure"; }
 
 # --- Dispatch ----------------------------------------------------------------
-ALL_JOBS="inv fmt lint tidy apidocs commentcov apicompat bench macos capi core ffmpeg e2e asan tsan ubsan coverage"
+ALL_JOBS="inv fmt lint tidy apidocs commentcov apicompat bench e2ecpu macos capi core ffmpeg e2e asan tsan ubsan coverage"
 DEFAULT_JOBS="inv fmt commentcov apicompat macos capi"
 
 if [ "${1:-}" = "--list" ]; then
@@ -270,7 +300,8 @@ if [ "${1:-}" = "--list" ]; then
   echo "  apidocs apidocs (doxygen zero warnings; needs DOXYGEN= if not on PATH)"
   echo "  commentcov comment_comment_coverage (V9 player/public four-question coverage; python3, no deps)"
   echo "  apicompat apicompat (V10 API-surface diff vs tools/api_baseline.json; python3, no deps)"
-  echo "  bench    bench (M13 self-contained micro-benchmarks; python3 + avbase::base only, no FFmpeg, no Google Benchmark)"
+  echo "  bench    bench (M13 self-contained micro-benchmarks; avbase::base + avbase::player, no FFmpeg, no Google Benchmark)"
+  echo "  e2ecpu   e2e-cpu (M13 end-to-end CPU per media second; needs headless + ffmpeg CLI, ~1 min)"
   echo "  macos   macos-player (macos-sdl2)"
   echo "  capi    capi + C99 syntax check"
   echo "  core    full[core no-ffmpeg]"

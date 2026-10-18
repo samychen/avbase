@@ -94,6 +94,26 @@ jobs:
             echo "ok   corrupt_header.mp4 -> actionable failure"
           fi
           exit $fail
+      # End-to-end CPU (docs/04 §8, docs/07 §10). Recorded, never failed:
+      # the committed baseline was measured on macOS with VideoToolbox, and
+      # this runner decodes with VAAPI or software, so absolute CPU per media
+      # second is not comparable across them. The trend on one machine is what
+      # matters, and that is gate_local --jobs e2ecpu.
+      - name: Measure end-to-end CPU
+        run: |
+          python3 tools/measure_e2e_cpu.py \
+            --headless build/ffmpeg/bin/headless --runs 5 \
+            --jsonl e2e-cpu.jsonl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e2e-cpu
+          path: e2e-cpu.jsonl
+      - name: Compare against the committed baseline (report only)
+        run: |
+          python3 tools/check_bench_regression.py \
+            --baseline tools/e2e-cpu-baseline.jsonl \
+            --current e2e-cpu.jsonl --value-key cpu_ms_per_media_s \
+            --tolerance tools/e2e-cpu-tolerance.json || true
 
   # platform/sdl2 had only ever been compiled on macOS, against Homebrew's
   # SDL2. Ubuntu's libsdl2-dev is a different SDL2 (and a different audio

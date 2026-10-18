@@ -175,8 +175,19 @@ demuxer + 第二对渲染腿**，共用一个时钟——多一次完整解码�
   唤醒」，不是「跨线程」本身，所以它没有像 PostTask 那样拿到 40% 的单独容差。
   鉴别力实测：每次迭代发两个事件 → +100.3% → 判 REGRESSION（其余 4 项无误伤）。
   **仍缺**：`BM_DecoderBufferQueue_PushPop` / `BM_VideoFrameQueue_ReserveCommit`
-  等依赖解码器或真实帧队列的项，以及端到端 CPU 门槛的机器判据——后者仍靠
-  `bench_render.sh` 人工。
+  等依赖解码器或真实帧队列的项。
+- **端到端 CPU 门槛已有机器判据**：`tools/measure_e2e_cpu.py` 用 `headless`
+  完整播一遍 1080p30 H.264（片源由 ffmpeg 生成并缓存），取子进程 CPU 时间
+  ÷ 媒体时长 = `cpu_ms_per_media_s`，5 次取中位数，与入库基线
+  `tools/e2e-cpu-baseline.jsonl` 比较（复用 `check_bench_regression.py` 的
+  `--value-key`）。mac 实测 ≈ 45.6 ms/媒体秒。判据 **15% 而非 5%**：零改动
+  时单次跑动 43.1–53.2、两组 5 次中位数差 8.1%，且噪声是比例性的（4 倍
+  像素的片源也没让它变小），摊薄启动开销没用——与微基准同一条道理。
+  鉴别力实测：合成负载（子进程烧 1 CPU 秒）→ +175% → 判 REGRESSION。
+  **敏感度局限**：null sink 不做像素处理，换 4K 片源只 +12%（低于门槛），
+  即它守的是解码与管线的 CPU；**渲染** CPU 仍靠 `bench_render.sh` 人工。
+  CI 只记录并上传（基线测于 mac 硬解、CI 跑 linux），本机
+  `gate_local --jobs e2ecpu` 硬判定（约 1 分钟）。
 - **10% 门槛 vs 25% 噪声地板，两件事**：docs/04 §8 的「微基准回退 > 10%
   即 fail」是**设计门槛**，仍然有效、仍然是要守的目标。但作为**机器判据**，
   10% 低于本机单次运行的噪声：同一二进制、无改动，p75 实测波动为

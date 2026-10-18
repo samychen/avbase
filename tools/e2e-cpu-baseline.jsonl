@@ -1,0 +1,5 @@
+{"bench": "E2E_CPU_1920x1080_30fps_10s", "clip": "1920x1080-30fps-10s.mp4", "cpu_ms_per_media_s": 43.132, "media_seconds": 10, "runs": 5}
+{"bench": "E2E_CPU_1920x1080_30fps_10s", "clip": "1920x1080-30fps-10s.mp4", "cpu_ms_per_media_s": 46.754, "media_seconds": 10, "runs": 5}
+{"bench": "E2E_CPU_1920x1080_30fps_10s", "clip": "1920x1080-30fps-10s.mp4", "cpu_ms_per_media_s": 46.782, "media_seconds": 10, "runs": 5}
+{"bench": "E2E_CPU_1920x1080_30fps_10s", "clip": "1920x1080-30fps-10s.mp4", "cpu_ms_per_media_s": 45.594, "media_seconds": 10, "runs": 5}
+{"bench": "E2E_CPU_1920x1080_30fps_10s", "clip": "1920x1080-30fps-10s.mp4", "cpu_ms_per_media_s": 44.066, "media_seconds": 10, "runs": 5}

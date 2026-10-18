@@ -29,6 +29,12 @@
 #   tools/check_bench_regression.py --baseline tools/bench-baseline.jsonl \
 #       --current /tmp/bench.jsonl --update-baseline
 #   tools/check_bench_regression.py --selftest
+#
+# Same comparison for a producer whose rows are not nanoseconds-per-op (the
+# end-to-end CPU gate, tools/measure_e2e_cpu.py):
+#   tools/check_bench_regression.py --baseline tools/e2e-cpu-baseline.jsonl \
+#       --current /tmp/e2e-cpu.jsonl --value-key cpu_ms_per_media_s \
+#       --tolerance tools/e2e-cpu-tolerance.json --fail-on-regression
 
 import argparse
 import json
@@ -49,7 +55,7 @@ def load_rows(path: Path) -> list[dict]:
     return rows
 
 
-def value_of(row: dict) -> float:
+def value_of(row: dict, key: str = None) -> float:
     """The number this gate compares: p75 of rounds, falling back to mean.
 
     Not the mean, deliberately. A round interrupted by a scheduler tick or by
@@ -59,23 +65,31 @@ def value_of(row: dict) -> float:
     taken while a compiler was still draining, whose own p75 was 163 ns. The
     mean remembered the interruption; the p75 mostly did not. Both sides are
     compared on the same statistic, so the choice costs no sensitivity.
+
+    `key` selects a different column, for a caller whose rows are not
+    nanoseconds-per-op -- tools/measure_e2e_cpu.py compares
+    `cpu_ms_per_media_s`. Everything else (median over runs, tolerance lookup,
+    --fail-on-regression, --update-baseline) is identical, so the end-to-end
+    gate does not need a second comparison tool with its own bugs.
     """
-    v = row.get("p75_ns_per_op")
-    if v is not None:
-        return float(v)
-    return float(row["mean_ns_per_op"])
+    keys = [key] if key else ["p75_ns_per_op", "mean_ns_per_op"]
+    for k in keys:
+        v = row.get(k)
+        if v is not None:
+            return float(v)
+    raise KeyError(f"row has none of {keys}: {row}")
 
 
-def baseline_median(rows: list[dict]) -> dict[str, float]:
+def baseline_median(rows: list[dict], key: str = None) -> dict[str, float]:
     """Median per benchmark, so a baseline built from several runs is not
     decided by whichever run happened to be unlucky."""
     by_bench: dict[str, list[float]] = {}
     for r in rows:
-        by_bench.setdefault(r["bench"], []).append(value_of(r))
+        by_bench.setdefault(r["bench"], []).append(value_of(r, key))
     return {b: statistics.median(v) for b, v in by_bench.items()}
 
 
-def current_mean(rows: list[dict]) -> dict[str, float]:
+def current_mean(rows: list[dict], key: str = None) -> dict[str, float]:
     """Median per benchmark over the rows of the current run.
 
     Median, not "the row", because the input is allowed to be several
@@ -87,7 +101,7 @@ def current_mean(rows: list[dict]) -> dict[str, float]:
     """
     by_bench: dict[str, list[float]] = {}
     for r in rows:
-        by_bench.setdefault(r["bench"], []).append(value_of(r))
+        by_bench.setdefault(r["bench"], []).append(value_of(r, key))
     return {b: statistics.median(v) for b, v in by_bench.items()}
 
 
@@ -120,15 +134,16 @@ def load_tolerances(path: Path) -> tuple[float, dict]:
 
 
 def check(baseline_path: Path, current_path: Path, threshold: float,
-          fail_on_regression: bool, per_bench: dict = None) -> int:
+          fail_on_regression: bool, per_bench: dict = None,
+          value_key: str = None) -> int:
     base_rows = load_rows(baseline_path) if baseline_path.exists() else []
     cur_rows = load_rows(current_path)
     if not cur_rows:
         print("check_bench_regression: no current rows; nothing to do")
         return 0
 
-    base = baseline_median(base_rows)
-    cur = current_mean(cur_rows)
+    base = baseline_median(base_rows, value_key)
+    cur = current_mean(cur_rows, value_key)
 
     per_bench = per_bench or {}
     print(f"{'benchmark':<40} {'baseline':>12} {'current':>12} {'delta':>9} "
@@ -229,6 +244,28 @@ def selftest() -> int:
             print(f"selftest FAIL: 20% with no override should fail, "
                   f"got {strict}")
             return 1
+    # --value-key: a producer whose unit is not ns/op. Without it the gate
+    # would raise KeyError on every row; with it, the comparison must behave
+    # exactly as it does for the micro-benchmarks (same median, same tolerance,
+    # same fail semantics).
+    base_e = [{"bench": "E2E_CPU", "cpu_ms_per_media_s": 48.0}]
+    cur_e = [{"bench": "E2E_CPU", "cpu_ms_per_media_s": 60.0}]
+    with tempfile.TemporaryDirectory() as d:
+        bp = Path(d) / "base.jsonl"
+        cp = Path(d) / "cur.jsonl"
+        bp.write_text("\n".join(json.dumps(r) for r in base_e) + "\n")
+        cp.write_text("\n".join(json.dumps(r) for r in cur_e) + "\n")
+        rc = check(bp, cp, 0.10, True, value_key="cpu_ms_per_media_s")
+        if rc != 1:
+            print(f"selftest FAIL: +25% on cpu_ms_per_media_s should fail, "
+                  f"got {rc}")
+            return 1
+        rc_ok = check(bp, cp, 0.30, True, value_key="cpu_ms_per_media_s")
+        if rc_ok != 0:
+            print(f"selftest FAIL: +25% under a 30% tolerance should pass, "
+                  f"got {rc_ok}")
+            return 1
+
     # Tolerance parsing: "_"-prefixed keys are prose and must never reach
     # float(). Not a hypothetical -- the per_bench explanation for
     # BM_PostTask_RoundTrip is a sentence, and it took the whole gate down with
@@ -268,6 +305,11 @@ def main(argv=None) -> int:
                    help="JSON file with per-benchmark noise floors")
     p.add_argument("--fail-on-regression", action="store_true",
                    help="exit 1 if any benchmark regresses beyond threshold")
+    p.add_argument("--value-key", default=None,
+                   help="JSON key holding the compared number (default: "
+                        "p75_ns_per_op, falling back to mean_ns_per_op). Set "
+                        "it for a producer whose rows are not ns/op -- "
+                        "tools/measure_e2e_cpu.py uses cpu_ms_per_media_s.")
     p.add_argument("--update-baseline", action="store_true",
                    help="rewrite the baseline file with current rows")
     p.add_argument("--selftest", action="store_true", help="run built-in checks")
@@ -288,7 +330,7 @@ def main(argv=None) -> int:
     default_tol, per_bench = load_tolerances(args.tolerance)
     threshold = args.threshold if args.threshold is not None else default_tol
     return check(args.baseline, args.current, threshold,
-                 args.fail_on_regression, per_bench)
+                 args.fail_on_regression, per_bench, args.value_key)
 
 
 if __name__ == "__main__":
