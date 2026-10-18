@@ -64,6 +64,22 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   `BM_GetMasterClock` ≈ 6.3 ns（mac 实测 p75），即 docs/04 §8 预算里最紧的两条
   （< 1 µs / < 200 ns），实测在预算内两个数量级；`bench/` 因此改为链
   `avbase::media`，FFmpeg 仍不需要。
+- 微基准扩到 player 层（`0952d06`）：新增 `BM_EventHub_PostVisit` ≈ 1.94 µs
+  （mac 实测 p75），即 docs/04 §8 预算里的 `EventHub::Post()` < 3 µs；`bench/`
+  因此改为链 `avbase::player`（传递 media），FFmpeg 仍不需要。形态是「发一批
+  + 末尾一个 FIFO 哨兵等排空」，不是「发一个等一个」——后者测的是两次线程
+  唤醒（≈10 µs 量级，见 `BM_PostTask_RoundTrip`），不是预算写的那条路径；
+  故数字是 **max(入队, 派发)**，两侧任一变慢都推高它。噪声源是「每事件一次
+  唤醒」而不是「跨线程」本身：安静时三次 p75 落在 1892–1947 ns（±2%），有
+  负载时最高 +23%，故给单独容差 35%（低于 PostTask 的 40%、高于 default 的
+  25%）。突变反证（每次迭代发两个事件）→ +100.3% → 判 REGRESSION，其余 4 项
+  无误伤。
+- 微基准避坑（同一 commit）：`EventHub` 以**静态存储期**对象析构会让进程在
+  退出时崩溃（实测 6 次中 5 次 SIGABRT、1 次 SIGILL，且都发生在数字全部打印
+  完之后）——`~EventHub` 会 join 派发线程，而静态析构期 base 的进程级状态已在
+  拆解。常规作用域内析构安全（同形态 3/3 rc=0）。bench 改为进程内共享一个
+  有意泄漏的 hub；每轮栈上重建虽也能跑，但首轮冷线程+冷调度会高出 32%
+  （2644 vs 1978/1997 ns），共享版更稳。
 - 微基准测量方法修正（同一 commit）：① 每轮迭代数自适应放大到跑够 20 ms——
   此前 5 ns 的 op 只跑 250 µs 一轮，三次连跑出过 5.3/13.6/6.4 ns；② 判定量从
   mean 换成 p75；③ 基线取 3 次运行中位数。另新增 `tools/bench-tolerance.json`：
