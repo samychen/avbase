@@ -432,20 +432,11 @@ Replaces the 30+ FFP_PROP_* integer properties that ijkplayer callers had to pol
 - `uint64_t frames_dropped_fps {0}`
 - `uint64_t frames_repeated {0}`
 - `uint64_t frames_dropped_by_sink {0}`
-  Frames handed to the display layer that it refused because it had nowhere
-  to draw them (no surface, or a surface of the wrong kind). A subset of
-  `frames_presented`, **not** a part of `frames_dropped`: that one counts
-  frames the compositor chose not to hand over. Nonzero here with a running
-  clock means the picture is being decoded and paced but not shown — check
-  `SetVideoSurface`.
+  Frames handed to the display layer that it refused because it had nowhere to draw them (no surface, a surface of the wrong kind). A subset of frames_presented, NOT a part of frames_dropped – see the field comment in media/base/renderer_client.h for why the two are different events.
 - `uint64_t frames_submit_failures {0}`
-  Frames that reached the display layer and could not be shown (upload or
-  present failed, or a hardware frame could not be imported). A display-path
-  fault, not a slow decode.
+  Frames that reached the display layer and could not be shown: upload or present failed, or a hardware frame could not be imported. Nonzero here is a display-path fault, not a slow decode.
 - `double measured_refresh_hz {0.0}`
-  The refresh rate the display layer measured from the spacing of its own
-  presents, as opposed to the interval the compositor paces against. 0 when
-  unmeasurable.
+  The rate this display layer actually achieved: the average spacing of its own presents, in Hz. Unlike the display interval a sink is constructed with, this is measured from what happened, so a value below the panel's nominal rate means presents are not arriving every interval (starved, or paced slower) – not that the display is slow. 0 until one is measured.
 - `media::AudioGlitchInfo audio_glitches`
   Underrun accounting straight from the audio sink. Turns "sometimes it
   crackles" into a number you can alert on.
@@ -477,11 +468,13 @@ First-frame latency decomposition. ijkplayer emitted FFP_MSG_OPEN_INPUT / FIND_S
 
 ### `class` avbase::Player
 
-*player/public/player.h:66*
+*player/public/player.h:75*
 
 The SDK entry point: one Player owns a complete pipeline (demuxer, decoders, A/V sync, output sinks).
 
 Thread safety: every method may be called from any thread and none block, with the single exception of PrepareSync() and StopSync(). Destruction is bounded by PlayerConfig::shutdown_timeout, so ~Player() cannot hang the caller (behaviour difference Δ15).
+
+WATCH OUT: do NOT give a Player static storage duration with automatic destruction. ~Player() joins the event thread (and, via the pipeline, the media/video/audio threads). Running that join from C++ static-destruction phase – a `static Player` torn down at program exit – crashes empirically (bench/bench_event_hub.cc measured SIGABRT/SIGILL on exit for the analogous static EventHub). If a Player must outlive everything, leak it (e.g. `new Player(...)` and never delete) rather than letting its destructor run at atexit.
 
 Minimal use:
 
@@ -592,7 +585,7 @@ The event handler runs on the event dispatch sequence, never on a pipeline seque
 
 ### `class` avbase::Player::Subscription
 
-*player/public/player.h:302*
+*player/public/player.h:311*
 
 RAII subscription handle: unsubscribes on destruction.
 
@@ -609,7 +602,7 @@ RAII subscription handle: unsubscribes on destruction.
 
 ### `class` avbase::PlayerBuilder
 
-*player/public/player.h:347*
+*player/public/player.h:356*
 
 Builder form, for injecting custom backends and for migrating string options. Not thread-safe: configure, Build(), then hand the Player to its owner.
 

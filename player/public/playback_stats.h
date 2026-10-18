@@ -102,8 +102,11 @@ struct AVBASE_PLAYER_EXPORT PlaybackStats {
   // present failed, or a hardware frame could not be imported. Nonzero here is
   // a display-path fault, not a slow decode.
   uint64_t frames_submit_failures{0};
-  // The refresh rate the display layer measured from its own presents, which
-  // is what "the sink is starving" looks like as a number. 0 when unmeasurable.
+  // The rate this display layer actually achieved: the average spacing of its
+  // own presents, in Hz. Unlike the display interval a sink is constructed
+  // with, this is measured from what happened, so a value below the panel's
+  // nominal rate means presents are not arriving every interval (starved, or
+  // paced slower) -- not that the display is slow. 0 until one is measured.
   double measured_refresh_hz{0.0};
   // Underrun accounting straight from the audio sink. Turns "sometimes it
   // crackles" into a number you can alert on.
