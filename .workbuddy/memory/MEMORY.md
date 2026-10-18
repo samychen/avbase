@@ -10,6 +10,14 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
 
 ## 硬规矩
 - **提交信息一律中文**（2026-10-18 用户要求，含正文；此前英文历史已整体改写）。
+- **宿主目标必须调 `avbase_configure_abi_definitions()`**（`apps/player_qt` 已这样）。
+  `SEQUENCE_CHECKER` 在 `AVBASE_ENABLE_DCHECK` 下有/无分别展开成「一个成员」和
+  「空」→ 库与宿主看到两套 `VideoFrame` 布局 → app 侧内联的
+  `scoped_refptr::AddRef()` 写到错误偏移 → 引用计数不涨 → 帧被 compositor 用着
+  就被释放。ASan 报 `heap-use-after-free @ VideoFrameCompositor::Render:615`；
+  没 ASan 时伪装成 `malloc_zone_error`/Qt `QRegion` 分配失败，与真凶完全不像。
+  **但 Qt 目标绝不能套 `avbase_configure_target`**（它带 `-fno-rtti`，moc 生成的
+  cast 和 QML 类型转换需要 RTTI）。即「ABI 宏全一样、RTTI/异常不一样」。
 - **`max-buffer-size` 是「全播放器」预算**，不是每条流的额度：ijk 比的是
   audio+video+subtitle 三队列之和。按流拆分走 `SplitQueueBudget()`（`media/base`），
   直接写进每条队列会让 A/V 默认内存翻倍（15→30 MiB），且没有测试读回上限 →
