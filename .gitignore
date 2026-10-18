@@ -37,3 +37,7 @@ Testing/
 # 对 git 隐身 —— git status 看不见、git add 被拒并要求 -f。
 # 项目级 .gitignore 优先级高于 core.excludesFile，这里显式重新纳入即可免疫。
 !base/test/
+
+# doxygen 的 WARN_LOGFILE：tools/gen_api_docs.sh 每次在仓库根写一份（零 warning
+# 时是空文件）。它是生成器的副产物，不是源码；漏进索引会让每次跑 apidocs 都脏。
+doxygen-warnings.log
