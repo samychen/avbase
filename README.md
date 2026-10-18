@@ -308,11 +308,15 @@ avbase/
 │                               unit/ 66 个 .cc · support/ 夹具 · fuzz/ 2 个目标
 │                            ⬜ contract/ integration/ golden/ e2e/ stress/ bench/
 ├── tools/                   ✅ `tools/*.py` 5,721 行
-│                               check_invariants.py（C1–C27 / 364 文件）
+│                               check_invariants.py（C1–C30 / 485 文件）
 │                               extract_constants.py · gen_options.py · sim_wsola.py
 │                               inspect/ → avbase-inspect（probe · decode · sync）
 │                            ⬜ golden_record.py · golden_diff.py · verify_e2e.py
-├── examples/                ✅ 3 个 / 759 行（headless · play_sdl2 · pull_frames）
+├── examples/                ✅ 5 个可执行 / ~1,300 行 + 2 个宿主样板头
+│                               （headless 156 · play_sdl2 161 · pull_frames 246 ·
+│                                play_glfw 352 · play_egl 288；scene_demo.h ·
+│                                sdl2_demo.h 是主机策略，按 docs/10 §12 从
+│                                play_sdl2.cc 拆出，main 文件 ≤300 行的度量）
 ├── third_party/             ⬜ 按设计保持为空（不 vendor）
 └── docs/                    ✅ 13 篇（01–08 + 10–12 + PROGRESS + BUILDING）
                              + archive/（1–9 轮进度 · 09 Linux 方案）+ reviews/

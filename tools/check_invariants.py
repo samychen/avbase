@@ -19,6 +19,11 @@ build system or the compiler cannot catch on its own:
   C27  core media never includes media/ffmpeg/ (the quarantine is a directory)
   C28  render/ never includes media/, platform/ or base/ (avbase_gl stays
        zero-dependency and therefore independently distributable)
+  C29  player/public/ names no OTHER module's export macro (docs/10 §12, V6:
+       the SDK facade does not leak another layer's ABI markers)
+  C30  examples/ never spawns a bare std::thread (docs/10 §12, V7: an example
+       is the template a host copies, so it speaks the SDK's threading
+       vocabulary -- base::Thread)
 
 The nine style rules this gate used to carry (C2, C7-C9, C11, C14, C17, C18,
 C20, C21) were cut in the "keep only what finds bugs" pass: C18 (throw) is
@@ -570,6 +575,70 @@ def check_sources_in_a_target(root: pathlib.Path, report: Report) -> None:
                    "(docs/06 §7.6)")
 
 
+def check_public_headers(root: pathlib.Path, report: Report) -> None:
+    """C29 (docs/10 §12 V6) and C30 (V7): the two "grep comes out empty" claims.
+
+    Both were written in docs/10 §12 as literal greps and neither was true as
+    written, which is the interesting part:
+
+    V6 said "player/public/*.h contains no 'AV[A-Z]'". Taken literally that
+    forbids the include guards and AVBASE_PLAYER_EXPORT themselves, so the
+    claim could never be held by any real header. The property actually
+    wanted is narrower and checkable: the facade must not name ANOTHER
+    module's export macro. media/base's AVBASE_MEDIA_EXPORT appearing in a
+    public header would mean a host including <player/public/player.h>
+    transitively depends on media's ABI markers, and the facade's job
+    (docs/02 §2.1) is to be the ONLY thing a host sees. The include guard
+    and the player's own export macro stay legal -- they are the header's
+    own identity, not a leak of someone else's.
+
+    V7 said "examples/ contains no 'std::thread'". This one WAS true of the
+    SDK's intent and false of the tree: examples/pull_frames.cc ran its
+    frame-capture poll loop on a bare std::thread. Fixed to use base::Thread
+    (the same chained-PostDelayedTask shape NullVideoSink uses), because an
+    example is the template a host copies -- a host that copies std::thread
+    gets a thread with no task queue, no bounded Stop() and no sequence
+    checker. std::this_thread::sleep_for is NOT matched: the substring
+    "std::thread" does not occur in "std::this_thread", so the waiting loops
+    the examples legitimately use are untouched.
+    """
+    # C29: no other module's export macro in the public facade.
+    export_re = re.compile(r"\bAVBASE_([A-Z][A-Z0-9]*)_EXPORT\b")
+    for path in sorted(root.glob("player/public/**/*.h")):
+        if any(part in (".git", "build") for part in path.parts):
+            continue
+        for i, line in enumerate(
+                path.read_text(encoding="utf-8", errors="replace")
+                .splitlines(), start=1):
+            for module in export_re.findall(line):
+                if module == "PLAYER":
+                    continue
+                report.add("C29", path, i,
+                           f"AVBASE_{module}_EXPORT in a player/public header "
+                           "— the facade must not name another module's "
+                           "export macro (docs/10 §12 V6)")
+
+    # C30: no bare std::thread in an example.
+    for path in sorted(root.glob("examples/**/*.h")) + \
+            sorted(root.glob("examples/**/*.cc")):
+        if any(part in (".git", "build") for part in path.parts):
+            continue
+        for i, line in enumerate(
+                path.read_text(encoding="utf-8", errors="replace")
+                .splitlines(), start=1):
+            # Same prose/string stripping check_file applies to its keyword
+            # rules: a comment that EXPLAINS why this file does not spawn a
+            # std::thread would otherwise fire the rule, and a gate that
+            # punishes the honest comment trains people to delete it.
+            code = re.sub(r'"(?:\\.|[^"\\])*"', '""', line)
+            code = re.sub(r"//.*$", "", code)
+            if re.search(r"\bstd::thread\b", code):
+                report.add("C30", path, i,
+                           "std::thread in an example — use base::Thread, "
+                           "which carries a task queue and a bounded Stop() "
+                           "(docs/10 §12 V7)")
+
+
 def check_columns(root: pathlib.Path, report: Report, update: bool) -> None:
     """C23: column width, as a ratchet rather than a hard limit.
 
@@ -687,6 +756,7 @@ def main() -> int:
 
     check_cmake_sources(root, report)
     check_sources_in_a_target(root, report)
+    check_public_headers(root, report)
     check_columns(root, report, args.update_baseline)
 
     for note in report.notes:

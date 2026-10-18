@@ -23,8 +23,9 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 
+#include "base/functional/bind.h"
+#include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "media/base/video_renderer_sink.h"
 #include "player/public/deps.h"
@@ -71,6 +72,14 @@ class FrameStore {
 // Renders nowhere; polls the upstream (compositor) callback at 60 Hz and
 // snapshots whatever frame is current. The frame reference is what keeps the
 // GPU surface alive for as long as the reader wants it.
+//
+// The poll loop runs on a base::Thread, not a std::thread: this example is
+// the template a host copies, and docs/10 §12 (V7) holds examples to the
+// SDK's own threading vocabulary -- a host that copies std::thread here gets
+// a thread with no task queue, no bounded Stop() and no sequence checker.
+// The 60 Hz cadence is one chained PostDelayedTask, the same shape
+// NullVideoSink uses (media/filters/null_video_sink.cc): stopping is "the
+// next arm never happens, plus Thread::Stop() joins".
 class FrameCaptureSink final : public VideoRendererSink {
  public:
   explicit FrameCaptureSink(FrameStore* store) : store_(store) {}
@@ -79,12 +88,22 @@ class FrameCaptureSink final : public VideoRendererSink {
   void Start() override {
     running_.store(true);
     playing_.store(true);
-    worker_ = std::thread([this] { PollLoop(); });
+    if (!worker_) {
+      worker_ = std::make_unique<base::Thread>("frame-capture");
+      worker_->Start();
+    }
+    worker_->task_runner()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&FrameCaptureSink::PollOnce, base::Unretained(this)),
+        base::TimeDelta());
   }
   void Stop() override {
     running_.store(false);
-    if (worker_.joinable()) {
-      worker_.join();
+    if (worker_) {
+      // Bounded and idempotent: Quit() + join. Any PollOnce already queued
+      // runs once more and reposts nothing, because running_ is false.
+      worker_->Stop();
+      worker_.reset();
     }
   }
   void Pause() override { playing_.store(false); }
@@ -107,25 +126,28 @@ class FrameCaptureSink final : public VideoRendererSink {
   const char* name() const override { return "frame-capture"; }
 
  private:
-  void PollLoop() {
-    while (running_.load()) {
-      if (playing_.load() && upstream_) {
-        auto frame = upstream_->Render(base::TimeTicks(), base::TimeTicks());
-        if (frame) {
-          if (!frame->IsMappable()) {
-            store_->native_frames_.fetch_add(1);
-          }
-          store_->Store(std::move(frame));
-          presented_.fetch_add(1);
+  void PollOnce() {
+    if (running_.load() && playing_.load() && upstream_) {
+      auto frame = upstream_->Render(base::TimeTicks(), base::TimeTicks());
+      if (frame) {
+        if (!frame->IsMappable()) {
+          store_->native_frames_.fetch_add(1);
         }
+        store_->Store(std::move(frame));
+        presented_.fetch_add(1);
       }
-      std::this_thread::sleep_for(16ms);
+    }
+    if (running_.load() && worker_ && worker_->task_runner()) {
+      worker_->task_runner()->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&FrameCaptureSink::PollOnce, base::Unretained(this)),
+          base::Milliseconds(16));
     }
   }
 
   RenderCallback* upstream_{nullptr};
   FrameStore* store_;
-  std::thread worker_;
+  std::unique_ptr<base::Thread> worker_;
   std::atomic<bool> running_{false};
   std::atomic<bool> playing_{false};
   std::atomic<int64_t> presented_{0};

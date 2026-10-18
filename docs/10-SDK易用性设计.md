@@ -677,19 +677,42 @@ Try: avbase-inspect play <file> --backend auto --log debug
 [  ] V3  最小集成只需 FFmpeg；ldd libavbase.so 无 SDL2/GL/X11/ALSA（dlopen 模式）
 [  ] V4  CMake / pkg-config / 手工拷贝 三种集成方式各有 CI job 验证
 [  ] V5  每个 ErrorCode 都有 summary + detail + suggestion，单测断言三段非空
-[  ] V6  player/public/*.h 中 grep 'AV[A-Z]' 结果为空
-[  ] V7  examples 中 grep 'std::thread' 结果为空
+      ✅ 已有：tests/unit/player/error_messages_unittest.cc 对全部 ErrorCode 断言三段非空
+[  ] V6  player/public/**/*.h 不得命名「其他模块」的导出宏（不变量 C29）
+      —— 原条目写作「grep 'AV[A-Z]' 为空」，字面执行会连 include guard 与
+      AVBASE_PLAYER_EXPORT 一起禁掉，任何真实头文件都不可能满足；2026-10-18
+      （M13）按真实意图收窄为上述可判定形式，落 tools/check_invariants.py。
+      跨模块导出宏当前 0 命中；`avbase_c.h`（C ABI）不在本规则内。
+[  ] V7  examples/ 不得出现裸 std::thread（不变量 C30）
+      —— 原条目写作「grep 'std::thread' 为空」。实测（2026-10-18，M13）发现
+      examples/pull_frames.cc 的帧捕获轮询就跑在裸线程上，已改用 base::Thread
+      （链式 PostDelayedTask，与 media/filters/null_video_sink.cc 同形）；
+      std::this_thread::sleep_for 不含该子串，示例里合法的等待循环不受影响。
 [  ] V8  COOKBOOK.md 有 ≥ 20 条，每条代码可编译
 [  ] V9  player/public/*.h 的 public 方法注释覆盖率 ≥ 95%（含线程/阻塞/错误/副作用四项）
 [  ] V10 API diff 工具（abi-compliance-checker）在 minor 版本间无破坏
-[  ] examples/play_sdl2/main.cc ≤ 300 行
-[  ] examples/play_embed/main.cc ≤ 350 行
+[  ] examples/play_sdl2.cc ≤ 300 行
+      ✅ 2026-10-18（M13）：161 行。原 486 行里约三分之二是主机样板（选项解析 /
+      事件日志 / 字幕光栅 / GL 运行时探测 / 建窗），已拆到 examples/sdl2_demo.h；
+      play_sdl2.cc 只剩程序本身（建窗、装 deps、prepare、泵事件、停）。
+      原条目写的路径是 examples/play_sdl2/main.cc，本仓 examples/ 是扁平布局，
+      已按实际路径改写。
+[  ] examples/play_embed ≤ 350 行
+      ⬜ play_embed 尚未创建（§6 表格里的 Linux 嵌入示例，X11 --wid / Wayland
+      --wl-surface / GTK4 宿主）。最小集成示例的职责先由 docs/COOKBOOK.md
+      第 1 条（V8）承担；文件建起来后此行按同一 350 行口径验收。
 [  ] avbase-inspect doctor 在干净 Ubuntu 24.04 容器里输出可读的诊断
 [  ] TROUBLESHOOTING.md 覆盖 ≥ 10 个常见症状
 [  ] MIGRATION.md 覆盖 05 文档的全部 Δ 项
 [  ] API.md（Doxygen）无 warning 生成
 [  ] CHANGELOG.md 每条变更关联 commit 与 Δ 编号
 ```
+
+> **条目形态说明（M13 补）**：清单里每条都必须能回答「怎么判」。V6/V7 原样是
+> 两条「grep 为空」——V6 字面不可能真（禁掉自己的 include guard），V7 字面
+> 当时为假（pull_frames 真在裸线程上跑）。两条都已改成可判定形式并落进门禁
+> （C29/C30，各带突变反证）。行数条目的路径也按仓库实际布局（扁平 examples/）
+> 改正。剩下的条目照同一标准收口：先有判据，再谈勾选。
 
 ---
 
