@@ -18,6 +18,16 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
   没 ASan 时伪装成 `malloc_zone_error`/Qt `QRegion` 分配失败，与真凶完全不像。
   **但 Qt 目标绝不能套 `avbase_configure_target`**（它带 `-fno-rtti`，moc 生成的
   cast 和 QML 类型转换需要 RTTI）。即「ABI 宏全一样、RTTI/异常不一样」。
+- **Qt 宿主接 `avbase_gl` 的三条硬约束**（全实测）：① `QSurfaceFormat`
+  必须请求 3.3 core，且在建**任何**窗口之前 `setDefaultFormat`（macOS 默认给 2.1，
+  症状是 `GlApi::Load` 拒绝而其余 Qt 全绿）；② `QQuickFramebufferObject` 要
+  `setMirrorVertically(true)`，否则整幅倒像、零 GL 错误零日志；③ glad 与任何 Qt
+  GL 头不能同 TU（macOS 经 `<QtGui/qopengl.h>` 拉进 `<OpenGL/gl3.h>`，typedef 冲突）。
+  另：Qt 里**用不了 `GlPresenter`**，它的契约结尾是 blit canvas + swap，两样都不归你。
+- **GPU 上屏不等于零拷贝**：把 YUV→RGB 交给着色器只搬走了算术，没搬走字节。
+  1080p 每帧 3.1 MB 仍从 CPU 内存进显存，核显上这次拷贝和定点转换一样贵（实测
+  8.2 vs 10.6 ms，854x480 下 GPU 更慢）。真零拷贝要解码器交 GPU 帧
+  （`GlHwTextureImporter` + `CVPixelBuffer`/`IOSurface`）。别再按「GPU 快 N 倍」估工期。
 - **`max-buffer-size` 是「全播放器」预算**，不是每条流的额度：ijk 比的是
   audio+video+subtitle 三队列之和。按流拆分走 `SplitQueueBudget()`（`media/base`），
   直接写进每条队列会让 A/V 默认内存翻倍（15→30 MiB），且没有测试读回上限 →

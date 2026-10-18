@@ -59,11 +59,32 @@ ApplicationWindow {
     }
 
     // ---- video surface -----------------------------------------------------
-    VideoItem {
-        id: video
-        // main.cc looks this object up by name to hand it the FrameMailbox.
-        objectName: "videoSurface"
+    // Two implementations of the same surface, one built at startup. The GPU
+    // one draws the video through avbase's GL layer inside Qt's framebuffer;
+    // the software one converts on the CPU and is kept as the reference the
+    // GPU one is checked against (AVBASE_QT_GL_REF in main.cc). A Loader
+    // rather than two items with `visible` toggled: an invisible item here
+    // still runs its refresh timer, and a software conversion happening behind
+    // a GL surface is both wasted work and a lie in any measurement.
+    Loader {
         anchors.fill: parent
+        sourceComponent: useGlSurface ? glSurface : softSurface
+
+        Component {
+            id: softSurface
+            VideoItem {
+                // main.cc looks these up by name to hand over the FrameMailbox.
+                objectName: "videoSurface"
+                anchors.fill: parent
+            }
+        }
+        Component {
+            id: glSurface
+            GlVideoItem {
+                objectName: "glVideoSurface"
+                anchors.fill: parent
+            }
+        }
     }
 
     // ---- empty state -------------------------------------------------------

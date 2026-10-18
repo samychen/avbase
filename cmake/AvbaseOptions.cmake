@@ -4,6 +4,7 @@
 
 option(AVBASE_ENABLE_FFMPEG       "Build the FFmpeg demuxer/decoder adapters" OFF)
 option(AVBASE_ENABLE_SDL2         "Build the SDL2 video/audio backend"        OFF)
+option(AVBASE_ENABLE_QT           "Build the Qt GL backend (needs Qt 6.4+)"  OFF)
 option(AVBASE_ENABLE_LINUX_NATIVE "Build the native Linux GL/X11/Wayland backend" OFF)
 option(AVBASE_ENABLE_ANDROID      "Build the Android backend"                 OFF)
 option(AVBASE_ENABLE_IOS          "Build the iOS backend"                     OFF)

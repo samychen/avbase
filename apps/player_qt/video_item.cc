@@ -5,7 +5,9 @@
 #include "apps/player_qt/video_item.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <utility>
 
@@ -175,7 +177,14 @@ VideoItem::VideoItem(QQuickItem* parent) : QQuickPaintedItem(parent) {
   timer_->start();
 }
 
-VideoItem::~VideoItem() = default;
+VideoItem::~VideoItem() {
+  // The comparison the GPU item exists to justify, printed only when asked:
+  // this number is CPU work that the shader path does on the GPU instead.
+  if (converted_frames_ > 0 && qEnvironmentVariableIsSet("AVBASE_QT_TIMING")) {
+    std::fprintf(stderr, "[qt-cpu] frames=%d convert_avg=%.3fms\n",
+                 converted_frames_, convert_ms_ / converted_frames_);
+  }
+}
 
 void VideoItem::setMailbox(FrameMailbox* mailbox) {
   mailbox_ = mailbox;
@@ -219,7 +228,14 @@ void VideoItem::refresh() {
     }
   }
 
+  const auto convert_begin = std::chrono::steady_clock::now();
   QImage image = I420ToImage(*readable);
+  if (qEnvironmentVariableIsSet("AVBASE_QT_TIMING")) {
+    convert_ms_ += std::chrono::duration<double, std::milli>(
+                       std::chrono::steady_clock::now() - convert_begin)
+                       .count();
+    ++converted_frames_;
+  }
   if (image.isNull()) {
     // Not every decoded format is I420 (NV12 from a hardware path, 10-bit
     // sources). Painting the previous frame forever would look like a hang, so

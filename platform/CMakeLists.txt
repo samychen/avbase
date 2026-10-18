@@ -123,11 +123,44 @@ if(AVBASE_ENABLE_EGL)
   endif()
 endif()
 
+# Qt backend: OPTIONAL, and the odd one out among the adapters.
+#
+# SDL2, GLFW and EGL are embeddable -- a host hands over a window and avbase
+# presents into it, swapping when it is done. Qt is not: the host is a scene
+# graph, avbase draws inside a framebuffer object Qt bound, on a thread Qt
+# runs, and Qt presents once for the whole window. So QtGLContext's SwapBuffers
+# and MakeCurrent are deliberately inert (see platform/qt/qt_gl_context.h) and
+# a Qt host drives the YUV layer itself rather than going through GlPresenter,
+# whose contract ends in "blit to the default framebuffer and swap".
+#
+# Gated on AVBASE_ENABLE_QT because it is the only target in this tree that
+# needs Qt to exist; a host without Qt still builds everything else.
+option(AVBASE_ENABLE_QT "Build the Qt GL backend (needs Qt 6.4+)" OFF)
+if(AVBASE_ENABLE_QT)
+  find_package(Qt6 6.4 QUIET COMPONENTS Core Gui)
+  if(Qt6_FOUND)
+    file(GLOB AVBASE_QT_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/qt/*.cc")
+    add_library(avbase_platform_qt ${AVBASE_QT_SOURCES})
+    add_library(avbase::platform_qt ALIAS avbase_platform_qt)
+    target_include_directories(avbase_platform_qt PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+    target_link_libraries(avbase_platform_qt
+        PUBLIC avbase::media avbase::gl Qt6::Gui)
+    # The library's compiler contract, unchanged: this target has no Q_OBJECT,
+    # no moc output and no dynamic_cast, so -fno-rtti -fno-exceptions is still
+    # the right contract here. The RTTI exception belongs to the Qt Quick APP,
+    # whose moc-generated casts do need it -- see apps/player_qt/CMakeLists.txt.
+    avbase_configure_target(avbase_platform_qt)
+  else()
+    message(WARNING
+        "AVBASE_ENABLE_QT=ON but Qt6 not found; Qt backend skipped")
+  endif()
+endif()
+
 if(AVBASE_ENABLE_LINUX_NATIVE)
   message(FATAL_ERROR "AVBASE_ENABLE_LINUX_NATIVE is scheduled for milestone M12")
 endif()
-
-
 # The FFmpeg adapter target used to live here. It moved to media/ffmpeg/:
 # FFmpeg is not a platform backend but a portable framework, and the
 # directory a target lives in has to equal the target (docs/06 §7.6).

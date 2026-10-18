@@ -50,6 +50,15 @@ class FrameMailbox {
     return frame_;
   }
 
+  // The counter alone, without the reference bump Load() costs. A caller that
+  // only wants to know "is there anything new" pays one lock and no atomic;
+  // the GPU item's GUI-side poll is exactly that caller, because it must not
+  // touch the frame the render thread is about to upload.
+  int64_t Serial() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return serial_;
+  }
+
   // Drops the current frame and bumps the serial, so a pending repaint sees
   // "nothing" instead of repainting a picture that belongs to the old source.
   void Clear() {

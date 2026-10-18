@@ -11,12 +11,19 @@
 # The reverse edge is fine and expected: this target links avbase::avbase, which
 # was itself built without exceptions or RTTI.
 
-find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Quick QuickControls2)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Quick QuickControls2 OpenGL)
 
+# QOpenGLFramebufferObject lives in Qt's OpenGL module (it moved out of Gui in
+# Qt 6), so the GPU item needs it: it is the object Qt asks us to allocate and
+# the buffer our renderer draws into.
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
 qt_add_executable(avbase_player_qt
+    gl_video_item.cc
+    gl_video_item.h
+    gl_video_renderer.cc
+    gl_video_renderer.h
     main.cc
     player_bridge.cc
     player_bridge.h
@@ -50,8 +57,21 @@ target_link_libraries(avbase_player_qt PRIVATE
     Qt6::Gui
     Qt6::Quick
     Qt6::QuickControls2
+    Qt6::OpenGL
     avbase::avbase
 )
+
+# The GPU surface needs the Qt window-system adapter from platform/qt. It is a
+# hard requirement rather than an optional extra: the software item is slow
+# enough that shipping the app without the GPU path would misrepresent what the
+# skeleton is for, and a silently-degraded build is the kind of thing nobody
+# notices until they profile it. Say which flag is missing instead.
+if(NOT TARGET avbase::platform_qt)
+  message(FATAL_ERROR
+      "AVBASE_BUILD_QT_PLAYER=ON requires -DAVBASE_ENABLE_QT=ON "
+      "(the GPU video surface links avbase::platform_qt)")
+endif()
+target_link_libraries(avbase_player_qt PRIVATE avbase::platform_qt)
 
 # Real audio output. Sdl2AudioSink pulls Render() from SDL's audio thread and
 # lazily runs SDL_INIT_AUDIO itself, so this needs no SDL window and no init in

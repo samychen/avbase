@@ -59,6 +59,12 @@ class VideoItem : public QQuickPaintedItem {
   QString frame_info_;
   QTimer* timer_{nullptr};
   int64_t last_serial_{-1};
+  // Only filled when AVBASE_QT_TIMING is set: the per-frame cost of the
+  // software conversion, which is the number the GPU path is measured against.
+  // Counting always and dividing on demand would put a clock read in a path
+  // that exists to prove the clock read is the cheap part.
+  int converted_frames_{0};
+  double convert_ms_{0.0};
 };
 
 }  // namespace avbase::apps
