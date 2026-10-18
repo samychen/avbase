@@ -8,7 +8,7 @@
 
 ## 0. 现状
 
-渲染 / 管线 / SDK 门面三层均已闭合（第六十六～七十九轮）。`AddVideoStream(int)` 等
+渲染 / 管线 / SDK 门面三层均已闭合（第六十六～七十九轮，渲染侧收口延续到第一百零一轮）。`AddVideoStream(int)` 等
 6 个「第 id 路」接口经证实是死接口——多源轴是 `GetStream(source_id, type)`，不是
 「同一资源多同类型流」——已点名拒绝，不再占用篇幅。
 
@@ -95,12 +95,16 @@ FORMAT/CODEC 透传项。它们的 `PlayerConfig` 字段同样多数无人读；
 | Linux 显示侧零拷贝（VAAPI→EGL） | 需 Linux + VAAPI 设备 |
 | Windows 显示侧零拷贝（D3D11-GL） | 需 Windows + D3D11 环境 |
 | 硬解性能对照（4K CPU < 15%） | 需 4K 样本入库 |
-| Qt 门面 / soak 48h | Phase 4 剩余（见 12 §2） |
+| soak 48h | Phase 4 剩余（见 12 §2）；脚本就绪，缺 CI 长跑机 |
 
 > **已从本节移出**：RTMP / RTSP / SRT 播放验收（第八十二轮实测全绿，MediaMTX v1.21.2
-> loopback、exit 0，RTMP L≈3.97s / RTSP L≈2.99s / SRT L≈3.54s；工具
-> `tools/check_live_protocols.py`，数字与判据见 [12 §2.4](12-剩余工作清单.md)）。它搬走前
-> 指向的 `operations.md` 从未记过这件事，是行文里的假指针。
+> loopback、exit 0，RTMP L≈3.97s / RTSP L≈2.99s / SRT L≈3.54s；数字由
+> `tools/check_live_protocols.py` 当场报出，原 docs/12 §2.4 那行已随 Phase 2 整表收口
+> 移出）。它搬走前指向的 `operations.md` 从未记过这件事，是行文里的假指针。
+>
+> **Qt 门面**也从本节移出了：它不属环境阻塞。骨架已在 `apps/player_qt` 跑通
+> （QObject 桥 + 两条上屏路径），剩余的是把 `player/qt/` 抽成可复用库，见
+> [12 §2](12-剩余工作清单.md) 的 4.2 行。
 
 ---
 

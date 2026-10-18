@@ -1,8 +1,9 @@
 # avbase 长期约定
 
 Chromium 风格分层 C++ 媒体播放器。目录即 target（`docs/06 §7.6`）。轮次史见
-`docs/PROGRESS.md`，GL 契约见 `docs/13`，门禁命令见 `operations.md`。本文件只留
-跨轮仍有效的硬规则；长尾教训在 `operations.md`，别在此复述。
+`.workbuddy/memory/<日期>.md` 与 `git log`（`docs/PROGRESS.md` 精简后只剩状态速览，
+第 1–47 轮在 `docs/archive/`），GL 契约见 `docs/13`，门禁命令见 `operations.md`。
+本文件只留跨轮仍有效的硬规则；长尾教训在 `operations.md`，别在此复述。
 
 ## 分层（docs/02 §6）
 `platform/` 只装「被宿主选中」的代码；可移植代码不进（FFmpeg→`media/ffmpeg/`、
@@ -10,6 +11,10 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
 
 ## 硬规矩
 - **提交信息一律中文**（2026-10-18 用户要求，含正文；此前英文历史已整体改写）。
+- **改 `docs/` 章节结构前先全树 grep 旧章节号**：精简过一次后，`docs/12 §2.1/§2.3/§2.5`、
+  `PROGRESS.md §3l` 这类引用还留在 40+ 处注释与 3 份文档里，指向的小节已经不存在。
+  要么连引用一起改，要么在原文件加一段「旧号 → 现在在哪」的转发（第一百零二轮做法：
+  docs/12 §0 与 PROGRESS 开头各一段，比改 28 个文件的注释省且不撞 80 列）。
 - **宿主目标必须调 `avbase_configure_abi_definitions()`**（`apps/player_qt` 已这样）。
   `SEQUENCE_CHECKER` 在 `AVBASE_ENABLE_DCHECK` 下有/无分别展开成「一个成员」和
   「空」→ 库与宿主看到两套 `VideoFrame` 布局 → app 侧内联的
@@ -63,6 +68,13 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
   已漂移：`PipelineStatistics` 后来长的三个字段它一个都不知道）。**别再在 media 层加
   第二个统计形状**——它不会编译失败、不会测试红，只会悄悄少字段。
   新加统计走 `PipelineStatistics` + `ToJson` + `renderer_sink_stats_unittest`。
+- **`docs/API.md` 是生成物，禁止手改**：`tools/gen_api_docs.sh` → doxygen XML →
+  `tools/doxy_xml_to_md.py`，文件第 3 行自己就写着。要改文档就改
+  `player/public/*.h` 的注释再重新生成；`gate_local --jobs apidocs` 的判据是
+  `gen_api_docs.sh && git diff --exit-code docs/API.md`。手改过两次的代价：文字被
+  静默替换 + 门禁红（且 `--jobs inv,fmt,lint,apicompat,commentcov` **不含**它，
+  跑那五个不等于跑过 apidocs）。生成器还在仓库根写 `doxygen-warnings.log`，
+  已 gitignore，别让它进索引。
 
 ## 五条「写下来会静默失效」的约定（都真踩过）
 - **朝向**：从渲染目标采样回来的 pass 都要 `flip_vertical=true`。搞反 = 上下颠倒、

@@ -318,7 +318,8 @@ config.net.reconnect_max_retries = 8;
 **注意**：`max_bytes` 是**整个播放器**的预算（ijk `MAX_QUEUE_SIZE` 同义），
 由 `SplitQueueBudget()` 按流数拆分——直接当每流额度会让 A/V 文件默认内存
 翻倍（docs/TODO §2 记着这件事）。`min_frames` 是预缓冲门控的包数下限，
-按**全管线包数总和**判定（docs/12 §3 附近的 PipelineImpl 注释）。
+按**全管线包数总和**判定（见 `PipelineImpl::BufferingGateSatisfied()`，
+`media/filters/pipeline_impl_host.cc`）。
 **相关配置**：`buffer.*` 全部、`net.reconnect*`。
 
 ## 18. 直播追帧

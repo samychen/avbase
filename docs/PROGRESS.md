@@ -4,16 +4,20 @@
 > 剩余工作权威清单：[12-剩余工作清单](12-剩余工作清单.md) ｜ 产品化能力 / 死选项 / 环境项：[TODO](TODO.md)
 > CI 不可见时的等价门禁信号：[tools/gate_local.sh](tools/gate_local.sh)
 
-> ⚠️ 本文档只保留**当前状态**与**已完成/未做速览**。轮次级过程记录（第四十八轮至第八十四轮）已移除——
+> ⚠️ 本文档只保留**当前状态**与**已完成/未做速览**。轮次级过程记录（第四十八轮起）已移除——
 > 属历史审计轨，不进活文档；如需追溯见 `git log` 与旧版 `PROGRESS.md` 的 git 历史。
+>
+> 第一至四十七轮的记录在 [archive/PROGRESS-rounds-1-9](archive/PROGRESS-rounds-1-9.md)。
+> 代码注释里写的 `PROGRESS.md §3l`、`§(5)` 等旧章节号指向的是**那里**——本文档精简后
+> 已没有这些小节（约 40 处注释仍用旧写法，按此转发阅读即可）。
 
 ---
 
 ## 当前状态
 
-**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧零拷贝 ⬜ · Phase 5 转码代码全落地（E5 硬编未实测）· macOS 窗口播放器 ✅ · CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅ · M13 SDK 文档七份 + apidocs 门禁 ✅**
+**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧 GPU 上屏 ✅（非零拷贝）、真零拷贝 ⬜ · Phase 5 转码代码全落地（E5 硬编未实测）· macOS 窗口播放器 ✅ · Qt 播放器骨架 ✅ · CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅ · M13 SDK 文档七份 + apidocs 门禁 ✅**
 
-最后更新：**2026-10-18**
+最后更新：**2026-10-19**
 
 ---
 
@@ -37,15 +41,17 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| Phase 3 显示侧零拷贝 | ⬜ | Linux(VAAPI-EGL)/Windows(D3D11-GL) 进 sink；`examples/pull_frames` 在对应硬件跑通；硬解性能对照 + 颜色空间兜底 |
+| Phase 3 显示侧 GPU 上屏 | ✅ | `apps/player_qt` 把 YUV→RGB 交给着色器并画进 Qt 的 FBO（`QQuickFramebufferObject` + `platform/qt/`），第八十七～九十七轮 |
+| Phase 3 真零拷贝 | ⬜ | 上一条只搬走了算术，1080p 每帧 3.1 MB 仍从 CPU 内存进显存（实测 854×480 下 GPU 4.2 ms vs 软件 2.9 ms）；要 Linux(VAAPI-EGL)/Windows(D3D11-GL) 进 sink + `examples/pull_frames` 在对应硬件跑通 |
 | Phase 5 E5 硬件编码器实测 | ⬜ | 代码全落地（E1–E5 + E3b 异步 + E5b 平台表外置），仅 `VideoToolbox`/`VAAPI`/`NVENC` 硬编本体未实测 |
-| Qt 门面 | ⬜ | `player/qt/` 未做；M15 C ABI 已作 UE/跨语言挂点 |
+| Qt 门面 | 🔶 | 骨架已跑通（`apps/player_qt`：`PlayerBridge`(QObject) + `VideoItem`(QQuickPaintedItem) + `GlVideoItem`(QQuickFramebufferObject)）；可复用库 `player/qt/` 未抽出；M15 C ABI 已作 UE/跨语言挂点 |
 | soak 48h 长稳 | ⬜ | 脚本 `tools/run_soak.py` 已就绪，48h 未跑（沙箱禁读他进程 RSS） |
 | Windows CI 验证 | ⬜ | job 已加（no-ffmpeg，不开 `/WX`），首跑待回答 |
-| M13 发布 0.1.0 | 🔵 | SDK 文档七份齐（API/COOKBOOK/MIGRATION/TROUBLESHOOTING/EXTENDING/PERFORMANCE/CHANGELOG）+ apidocs 门禁 + V5–V8 ✅；剩 cpack/vcpkg/conan 实跑、V9（注释覆盖率脚本）/V10（abi-compliance-checker）、golden 对拍与微基准入 CI |
+| M13 发布 0.1.0 | 🔵 | 文档七份 + apidocs 门禁 ✅；V9 注释覆盖率 / V10 API 兼容 / 微基准 5 项 / 端到端 CPU 判据 / golden diff 件 / cpack TGZ / vcpkg port 均已完成并入门禁。剩：golden **录制**基线（需 ijkplayer 原版）、依赖解码器的 `BM_*`、`conan` 实跑、渲染 CPU 的机器判据、`cpack -G DEB` 待 Linux 机、vcpkg 未提交 registry |
 | M14–M18 | ⏳ | VAAPI+HDR / Android / iOS / `ijkio` 缓存（后置增量） |
 | 产品化能力（Android/iOS/Web/Unity/UE/Flutter/…） | ❌ | 全部未做，见 [TODO](TODO.md) |
 | 决策项 | — | LL-HLS 自研 vs 接受 ~3s、M12 原生后端是否启动、版权主体、golden 基线锁版本，见 [12-剩余工作清单](12-剩余工作清单.md) §6 |
 
 > 完整开放项、降级项、死选项、环境项见 [12-剩余工作清单](12-剩余工作清单.md) 与 [TODO](TODO.md)；
-> 已修关键缺陷（关闭竞态 / VOD 死锁 / 解码器丢包 / corpus 三崩溃 / EOF 后 seek 永不回调）记录在 [12-剩余工作清单](12-剩余工作清单.md) §3。
+> 已修关键缺陷（关闭竞态 / VOD 死锁 / 解码器丢包 / corpus 三崩溃 / EOF 后 seek 永不回调 /
+> 暂停中 seek 画面跑飞 / 丢帧计数变成刷新率函数）记录在 [12-剩余工作清单](12-剩余工作清单.md) §3。
