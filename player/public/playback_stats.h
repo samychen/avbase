@@ -93,6 +93,18 @@ struct AVBASE_PLAYER_EXPORT PlaybackStats {
   uint64_t frames_dropped_late{0};
   uint64_t frames_dropped_fps{0};
   uint64_t frames_repeated{0};
+  // Frames handed to the display layer that it refused because it had nowhere
+  // to draw them (no surface, a surface of the wrong kind). A subset of
+  // frames_presented, NOT a part of frames_dropped -- see the field comment in
+  // media/base/renderer_client.h for why the two are different events.
+  uint64_t frames_dropped_by_sink{0};
+  // Frames that reached the display layer and could not be shown: upload or
+  // present failed, or a hardware frame could not be imported. Nonzero here is
+  // a display-path fault, not a slow decode.
+  uint64_t frames_submit_failures{0};
+  // The refresh rate the display layer measured from its own presents, which
+  // is what "the sink is starving" looks like as a number. 0 when unmeasurable.
+  double measured_refresh_hz{0.0};
   // Underrun accounting straight from the audio sink. Turns "sometimes it
   // crackles" into a number you can alert on.
   media::AudioGlitchInfo audio_glitches;

@@ -49,8 +49,13 @@ bool FakeVideoSink::GetDisplayInterval(base::TimeDelta* interval) const {
 }
 
 VideoSinkStats FakeVideoSink::GetStats() const {
-  VideoSinkStats stats;
-  stats.frames_presented = frames_.size();
+  VideoSinkStats stats = stats_.Get();
+  // The pulls above run back to back on the test thread, so the present-spacing
+  // EWMA inside PresentStats would report a rate in the kHz. The synthetic
+  // display's own interval is the honest number for this sink.
+  stats.measured_refresh_hz = display_interval_.InMillisecondsF() > 0.0
+                                  ? 1000.0 / display_interval_.InMillisecondsF()
+                                  : 0.0;
   return stats;
 }
 
@@ -59,7 +64,7 @@ int FakeVideoSink::PullFrames(int max_frames) {
   if (!callback) {
     return 0;
   }
-  int presented = 0;
+  int handed_over = 0;
   for (int i = 0; i < max_frames; ++i) {
     // A synthetic but monotonically advancing display: the compositor decides
     // what to present from the deadline pair, so a frozen one would keep
@@ -69,12 +74,20 @@ int FakeVideoSink::PullFrames(int max_frames) {
     const base::TimeTicks max = min + display_interval_;
     ++pull_count_;
     base::scoped_refptr<VideoFrame> frame = callback->Render(min, max);
+    // Classified exactly as the real sinks do. There is no upload here, so a
+    // frame either reaches a surface, fails on request, or is dropped for want
+    // of a surface.
+    const bool can_show = has_output_.load();
+    const bool readback_failed = submits_fail_.load() && frame;
+    const bool presented = frame && can_show && !readback_failed;
+    stats_.NoteFrameOutcome(ClassifyFrameOutcome(frame != nullptr, !can_show,
+                                                 readback_failed, presented));
     if (frame) {
       frames_.push_back(std::move(frame));
-      ++presented;
+      ++handed_over;
     }
   }
-  return presented;
+  return handed_over;
 }
 
 void FakeAudioSink::Initialize(const AudioParameters& params,

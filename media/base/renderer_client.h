@@ -115,6 +115,33 @@ struct AVBASE_MEDIA_EXPORT PipelineStatistics {
   // made -- the others are the pipeline catching up with reality.
   uint64_t video_frames_dropped_fps{0};
   uint64_t video_frames_repeated{0};  // Held because no new frame was due.
+
+  // The display layer's own counters. Until now the only way to read them was
+  // VideoRendererImpl::sink_stats(), whose one caller took `.render` and
+  // dropped the rest -- so "playing, but nothing is on screen" and "the upload
+  // keeps failing" both looked like a healthy pipeline from up here.
+  //
+  // NOT part of video_frames_dropped, and the two must not be added together:
+  // that one counts frames the compositor CHOSE not to hand over (late,
+  // fps-capped, stale serial); this one counts frames it DID hand over and the
+  // sink refused because it had nowhere to draw them -- no output target, a
+  // detached surface, a display of the wrong kind. It is therefore a subset of
+  // video_frames_presented rather than a sibling of it: "presented" here says
+  // the frame was selected for display, not that a display took it.
+  uint64_t video_frames_dropped_by_sink{0};
+  // Frames that reached the sink and could not be shown: the upload or the
+  // present failed, or a hardware frame could be neither imported nor read
+  // back. The sink already reported each one upward (OnFrameSubmitFailure) and
+  // nothing counted the reports, which is why a GPU that lost its context
+  // looked exactly like a video with nothing to show.
+  uint64_t video_frames_submit_failures{0};
+  // What the sink MEASURED, from the spacing of its own presents, as opposed
+  // to the interval the compositor paces against (GetDisplayInterval). A sink
+  // told 60 Hz that measures 24 has a starvation problem; with only the
+  // told-to value visible, that was indistinguishable from a 24 Hz display.
+  // 0 when the sink cannot measure (headless, or nothing presented yet).
+  double measured_refresh_hz{0.0};
+
   uint64_t video_decode_error_count{0};
   uint64_t video_keyframe_count{0};
 

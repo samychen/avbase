@@ -320,7 +320,8 @@ file_pos,count_bytes,logical_file_size}` / `latest_seek_load_duration` /
 `buffering{buffering_count,total_buffering_time,last_buffering_time,
 current_hwm_step,active_high_water_mark}` / `frames_presented` /
 `frames_dropped` / `frames_dropped_late` / `frames_dropped_fps` /
-`frames_repeated` / `audio_glitches` / `render`（upload/compose/blit/present
+`frames_repeated` / `frames_dropped_by_sink` / `frames_submit_failures` /
+`measured_refresh_hz` / `audio_glitches` / `render`（upload/compose/blit/present
 四段） / `stages` + `first_frame_latency` / `heap_bytes_estimate` /
 `events_dropped_by_overflow`。
 

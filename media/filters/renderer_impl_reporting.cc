@@ -117,6 +117,13 @@ PipelineStatistics RendererImpl::GetStatistics() const {
     stats.video_frames_dropped += c.frames_dropped;
     stats.video_frames_dropped_fps += c.frames_dropped_fps;
     stats.video_frames_repeated += c.frames_repeated;
+    // The display layer's half, summed for the same reason as the compositor's
+    // counts above: a second leg's refused frames are as real as the first's.
+    // Read here rather than inside the primary-only block below, because the
+    // counters are per-leg while only the COST sample is primary-only.
+    const VideoSinkStats sink = v->sink_stats();
+    stats.video_frames_dropped_by_sink += sink.frames_dropped;
+    stats.video_frames_submit_failures += sink.submit_failures;
     if (primary_sampled) {
       continue;
     }
@@ -124,6 +131,7 @@ PipelineStatistics RendererImpl::GetStatistics() const {
     if (c.avg_av_diff_ms != 0.0) {
       stats.avg_av_diff_ms = c.avg_av_diff_ms;
     }
+    stats.measured_refresh_hz = sink.measured_refresh_hz;
     // Frame counts come from the compositor, which counts them; the
     // per-frame COST comes from the sink, which is the only object that
     // runs the GL calls. Sampling it here is what turns sink telemetry into
@@ -134,7 +142,7 @@ PipelineStatistics RendererImpl::GetStatistics() const {
     // the frames that came out the far end of the graph, so an unfiltered
     // frame and a frame the graph refused are the same thing to it; only
     // the renderer, which decided, can tell them apart.
-    RenderPerfStats render = v->sink_stats().render;
+    RenderPerfStats render = sink.render;
     render.filter_state = v->filter_state();
     stats.render = render;
   }

@@ -431,6 +431,21 @@ Replaces the 30+ FFP_PROP_* integer properties that ijkplayer callers had to pol
 - `uint64_t frames_dropped_late {0}`
 - `uint64_t frames_dropped_fps {0}`
 - `uint64_t frames_repeated {0}`
+- `uint64_t frames_dropped_by_sink {0}`
+  Frames handed to the display layer that it refused because it had nowhere
+  to draw them (no surface, or a surface of the wrong kind). A subset of
+  `frames_presented`, **not** a part of `frames_dropped`: that one counts
+  frames the compositor chose not to hand over. Nonzero here with a running
+  clock means the picture is being decoded and paced but not shown — check
+  `SetVideoSurface`.
+- `uint64_t frames_submit_failures {0}`
+  Frames that reached the display layer and could not be shown (upload or
+  present failed, or a hardware frame could not be imported). A display-path
+  fault, not a slow decode.
+- `double measured_refresh_hz {0.0}`
+  The refresh rate the display layer measured from the spacing of its own
+  presents, as opposed to the interval the compositor paces against. 0 when
+  unmeasurable.
 - `media::AudioGlitchInfo audio_glitches`
   Underrun accounting straight from the audio sink. Turns "sometimes it
   crackles" into a number you can alert on.

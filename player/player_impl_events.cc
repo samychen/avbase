@@ -341,6 +341,9 @@ PlaybackStats PlayerImpl::GetPlaybackStats() const {
   stats.frames_presented = last_stats_.video_frames_presented;
   stats.frames_dropped = last_stats_.video_frames_dropped;
   stats.frames_repeated = last_stats_.video_frames_repeated;
+  stats.frames_dropped_by_sink = last_stats_.video_frames_dropped_by_sink;
+  stats.frames_submit_failures = last_stats_.video_frames_submit_failures;
+  stats.measured_refresh_hz = last_stats_.measured_refresh_hz;
   // Per-frame render cost, carried all the way from the GL render thread
   // through VideoSinkStats -> PipelineStatistics on the one-second tick.
   stats.render = last_stats_.render;

@@ -44,6 +44,12 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
   （`Flush` 的 `HoldReads(true)` + 新 serial 只有它接管），但它只许接管代际与重启解码，
   **不许**清 `paused_`。清过一次的后果是画面脱离暂停的时钟自己跑（实测 4.0s seek 后
   800ms 已在 5.07s），而音频静音、日志全绿。
+- **两个 `frames_dropped` 不是一件事，别相加**：compositor 的（选帧时被拒：late /
+  fps 上限 / serial 过期）vs sink 的（帧到手、但没有可绘制目标——`GlVideoSink::discard_`
+  是「无 display / 类型不对 / 无 raw surface」，**不是** seek）→ 后者是
+  `frames_presented` 的**子集**，上报名 `frames_dropped_by_sink`。第九十八轮前它根本
+  没上报（`GetStatistics` 只取 `sink_stats().render`），于是「在播但屏上什么都没有」
+  与「播得很好」在前者眼里一样。动统计先看 `renderer_sink_stats_unittest.cc`。
 - **「这一拍没有帧」不是丢帧**（ffplay 口径）：`frame_drops_late++` 只写在
   `frame_queue_next()` 的同一行，队列空与暂停都 `goto display` 不计数。sink 是每显示
   窗口问一次（不是 ffplay 的主动轮询），空问频率 = 刷新率 → 按「没交帧 = drop」计会让

@@ -29,6 +29,7 @@
 #include "media/base/audio_parameters.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/native_display.h"
+#include "media/base/present_stats.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
 
@@ -42,12 +43,24 @@ class FakeVideoSink final : public VideoRendererSink {
   RenderCallback* callback() const { return callback_.load(); }
   // Asks for up to |max_frames| display intervals' worth of frames, as a
   // running sink would, and keeps whatever came back. Returns how many frames
-  // the renderer presented; nullptr answers (repeat the previous frame) are
+  // the RENDERER handed over, which is independent of whether this sink had
+  // somewhere to put them: nullptr answers (repeat the previous frame) are
   // counted but not stored.
   int PullFrames(int max_frames);
   const std::vector<base::scoped_refptr<VideoFrame>>& frames() const {
     return frames_;
   }
+  // Whether this sink has a surface to draw into. A real sink drops frames
+  // when it has none (GlVideoSink's discard_), and the fake counts them the
+  // same way -- through PresentStats, the sink's own bookkeeping -- so a test
+  // reads the display layer's counters without inventing numbers the sink
+  // never produced.
+  void set_has_output(bool has_output) { has_output_.store(has_output); }
+  // Every frame handed over then fails to upload. A fake has no upload to
+  // fail, so it fails on request -- the alternative was leaving
+  // submit_failures untested at the layer that aggregates it, which is how the
+  // whole struct came to be counted and never read.
+  void set_submits_fail(bool fail) { submits_fail_.store(fail); }
   void set_display_interval(base::TimeDelta interval) {
     display_interval_ = interval;
   }
@@ -83,6 +96,11 @@ class FakeVideoSink final : public VideoRendererSink {
   // touched by the test thread only.
   int pull_count_ = 0;
   std::vector<base::scoped_refptr<VideoFrame>> frames_;
+  // The sink's own bookkeeping, identical to what GlVideoSink/NullVideoSink
+  // use: one PresentStats, one classification per ask.
+  PresentStats stats_;
+  std::atomic<bool> has_output_{true};
+  std::atomic<bool> submits_fail_{false};
 };
 
 class FakeAudioSink final : public AudioRendererSink {
