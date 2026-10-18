@@ -54,25 +54,6 @@ COLUMN_BASELINE = "tools/column_baseline.txt"
 # Files that legitimately exceed MAX_FILE_LINES, with the reason. Adding an
 # entry here requires a linked issue (invariant C12 / risk R12).
 LINE_LIMIT_ALLOWLIST = {
-    # Both grew by the live-cue policy (SetSourceLiveness / IsCueStale and its
-    # wiring). That policy and the cue pump (PumpText / OnTextRead) are now in
-    # renderer_impl_text.cc, the split this entry always named as the better
-    # fix; what remains is the control surface itself. Splitting the track
-    # switches into their own TU is still the pending fix -- the allowlist
-    # ceiling moved down with the split (700 -> 690) rather than the
-    # load-bearing comments being compressed to fit, because they record why
-    # liveness cannot be discovered by the renderer, which is the non-obvious
-    # part.
-    "media/filters/renderer_impl_controls.cc": (
-        693, "Renderer control surface: the Set* family, GetMediaTime, the "
-             "accurate-seek window, the audio AND video track switches (with "
-             "the multi-source foreign-stream guards, docs/14 stage 1) and "
-             "the renderer type. The video switch added ~170 lines (docs/12 "
-             "4.1); splitting the track switches into their own TU is the "
-             "pending fix. docs/14 stage 4 added a bounds-check to the kText "
-             "branch of OnTracksChanged (reject a source_id that names no "
-             "registered source before indexing text_legs_), raising it "
-             "690 -> 693."),
     # The C ABI is deliberately ONE file: a host reads this header to learn
     # the whole contract, and splitting it would move part of an ABI out of
     # the one place a C compiler is pointed at. What pushed it over 500 is
