@@ -39,10 +39,11 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   `tools/gate_local.sh` 本地复刻 CI 序列（`aee6c2f`）/
   二进制新鲜度门禁（旧二进制曾造成误诊，第八十五轮起）/
   apidocs 门禁（doxygen 零 warning + filter 生效断言 + API.md 新鲜度，
-  CI 与 gate_local 同构）。
+  CI 与 gate_local 同构，`bde3e8c`）。
 - **文档**：COOKBOOK 22 条（每条按真实签名核对，代码块由
   `examples/doc_snippets` 编译验证）/ TROUBLESHOOTING 13 症状 /
-  MIGRATION（docs/05 全部 Δ 项）/ EXTENDING / PERFORMANCE / API（Doxygen）。
+  MIGRATION（docs/05 全部 Δ 项）/ EXTENDING / PERFORMANCE / API（Doxygen，
+  `bde3e8c`）。
 
 ### Changed
 
