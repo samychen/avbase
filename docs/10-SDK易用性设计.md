@@ -564,16 +564,20 @@ void SeekTo(base::TimeDelta position, SeekMode mode, SeekCB cb);
 
 ## 9. 打包与集成
 
-| 方式 | 支持 | 说明 |
+> 2026-10-18（M13）按**实测**重写本表。原表是设计期的意图（vcpkg「✅ M13」
+> 之类），其中 pkg-config 一条从未有过 `.pc` 文件、手工拷贝写的
+> `libavbase.so` 也从未产出过——本仓发静态库。现在每行标注验证状态，
+> 明细与复现步骤在 `packaging/README.md`。
+
+| 方式 | 状态 | 实测结论 |
 |---|---|---|
-| **CMake `find_package`** | ✅ 首选 | `find_package(avbase 0.1 REQUIRED)` + `target_link_libraries(app PRIVATE avbase::avbase)` |
-| **pkg-config** | ✅ | `pkg-config --cflags --libs avbase`（非 CMake 项目） |
-| **vcpkg** | ✅ M13 | 提交 portfile 到 vcpkg 官方 registry |
-| **conan** | ✅ M13 | `conanfile.py` + conancenter 提交 |
-| **系统包**（deb/rpm） | 🔧 提供 `cpack` 配置 | `cpack -G DEB` / `-G RPM` |
-| **手工拷贝** | ✅ | `libavbase.so` + `include/avbase/`，`ldd` 只有 libc/libstdc++（dlopen 模式） |
-| **源码内嵌**（`add_subdirectory`） | ✅ | 所有 option 默认值在作为子项目时自动关闭 tests/examples/install |
-| **单头文件** | ❌ 不提供 | 有 FFmpeg 与 GL 依赖，单头不现实；但公开头只有 ~60 个且分层清晰 |
+| **CMake `find_package`** | ✅ 本地实测 | `find_package(avbase 0.1.0 REQUIRED)` + `avbase::player`（export 名与树内别名一致）；树外 consumer 跑通 configure/build/run。consumer 需启用 C 语言（FFmpeg 版本探针是 `.c`）并让 FFmpeg+libyuv 可达（静态库 LINK_ONLY） |
+| **pkg-config** | ⬜ 未做 | `avbase.pc.in` 从未创建；非 blocker（V4 的另两条已覆盖） |
+| **vcpkg** | ⬜ 已写未跑 | `packaging/vcpkg-portfile.cmake`；未提交 registry、SHA512 占位；等 v0.1.0 tag 后填并实跑一次 |
+| **conan** | ⬜ 已写未跑 | `packaging/conanfile.py`；未提交 conancenter；同上 |
+| **系统包**（deb/rpm） | 🔧 规则已接 | `cmake/AvbaseInstall.cmake` 的 CPack 段（TGZ 全平台 / DEB 加 dpkg）；**产物未跑**，属 release 机动作 |
+| **手工拷贝** | ✅ 本地实测 | 头树布局与树内一致（`install(DIRECTORY)` 无尾斜杠——带尾斜杠曾把 `player/` 拍成 `include/public` 少一层）；静态库直接进宿主编译即可 |
+| **源码内嵌**（`add_subdirectory`） | ✅ | install 规则只在顶层工程生效（`AvbaseInstall.cmake` 首行 `return()` 守卫），子项目构建不会往宿主 prefix 里装东西 |
 
 `cpack` 配置要点：
 - `CPACK_DEBIAN_PACKAGE_DEPENDS`：`libc6 (>= 2.31), libstdc++6 (>= 10), libavformat59 | libavformat60 | libavformat61`
@@ -675,7 +679,19 @@ Try: avbase-inspect play <file> --backend auto --log debug
 [  ] V1  新人冷启动 ≤ 15 分钟（找 3 个未参与项目的人实测，记录用时与卡点）
 [  ] V2  README 每个代码块由 CI 编译（examples/doc_snippets/）
 [  ] V3  最小集成只需 FFmpeg；ldd libavbase.so 无 SDL2/GL/X11/ALSA（dlopen 模式）
+      ✅ 2026-10-18（M13）：本仓发静态库，「ldd」无可测对象，按真实形态落成
+      tools/check_link_deps.sh —— 两半都有突变反证：① 核心 .a 的 undefined
+      符号（demangle 后大小写敏感匹配）不得含后端 API；第一版用 -i 宽匹配
+      把自己家的 avbase::gl::GlApi(NativeGLContext*) 误报成 "egl"（NatvieGLContext
+      里的 eGL），收窄后才可用。② 只 include player/public 头的 TU 在
+      FFmpeg-only 路径下 -fsyntax-only 通过。当前两半全绿。
 [  ] V4  CMake / pkg-config / 手工拷贝 三种集成方式各有 CI job 验证
+      🔶 2026-10-18（M13）：CMake 与手工拷贝两条**本地实测通过**（install 到
+      staging 后树外 consumer 完成 configure/build/run，export 名与树内别名
+      一致 avbase::player；install(DIRECTORY) 尾斜杠曾把 player/ 拍成
+      include/public 少一层，已修）；pkg-config（avbase.pc.in）未做；三条路径
+      的 **CI job 均未建**（沙箱看不到 CI，加 job 需先在本机复刻——见
+      packaging/README.md 的复现步骤与 consumer 侧三条须知）。
 [  ] V5  每个 ErrorCode 都有 summary + detail + suggestion，单测断言三段非空
       ✅ 已有：tests/unit/player/error_messages_unittest.cc 对全部 ErrorCode 断言三段非空
 [  ] V6  player/public/**/*.h 不得命名「其他模块」的导出宏（不变量 C29）

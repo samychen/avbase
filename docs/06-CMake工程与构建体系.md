@@ -11,7 +11,7 @@
 |---|---|---|
 | `cmake/FindFFmpeg.cmake` | ⬜ 未创建（`AVBASE_ENABLE_FFMPEG` 默认 **OFF**，本篇示例写 ON） | M4 |
 | `cmake/FindLinuxMediaDeps.cmake` | ⬜ 未创建 | M11/M12 |
-| `cmake/AvbaseInstall.cmake` + `avbase.map` | ⬜ 未创建 | M13 |
+| `cmake/AvbaseInstall.cmake` + `avbase.map` | ✅ 2026-10-18（M13）：install/export/CPack 已建（`packaging/README.md` 记验证状态）；符号版本表 `avbase.map` 未做——本仓全静态库 + 全头 inline，无导出符号表可锁，条目按「无对象」关闭 |
 | `cmake/AvbaseOptions.cmake` 的 `AVBASE_LINUX_*` 细分开关 | ⬜ 未创建 | M12 |
 | `avbase_platform_null` / `_sdl2` / `_linux` target | ⬜ `platform/CMakeLists.txt` 目前是占位（对 SDL2/Linux 开关直接 `FATAL_ERROR` 指向里程碑） | M10/M11/M12 |
 | `tools/gen_options.py` 生成 `option_registry.inc` | ⬜ `player/option_registry.cc` 目前是 9 项手写表 | M1 |

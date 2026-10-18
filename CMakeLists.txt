@@ -99,6 +99,9 @@ if(AVBASE_BUILD_TESTS AND AVBASE_ENABLE_FFMPEG)
 endif()
 
 include(AvbaseCheckInvariants)
+# Install/export/packaging rules (docs/06 §9, M13). Last on purpose: every
+# target and option must exist by the time this reads them.
+include(AvbaseInstall)
 
 if(AVBASE_IS_TOP_LEVEL)
   message(STATUS "--------------------------------------------------------")
