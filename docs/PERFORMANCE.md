@@ -157,16 +157,26 @@ demuxer + 第二对渲染腿**，共用一个时钟——多一次完整解码�
 
 ## 6. 已知边界（0.1.0 性能面的未项）
 
-- **微基准已落地（base + media 层 4 项）**：`bench/` 是自包含 harness——无
-  Google Benchmark（沙箱取不到，CI 也不该装），接 `AVBASE_BUILD_BENCH`，链
-  `avbase::base` + `avbase::media`（`media/ffmpeg` 是独立 target，故
-  `AVBASE_ENABLE_FFMPEG=OFF` 照样能编能跑）。mac 实测（p75，入
-  `tools/bench-baseline.jsonl`）：`BM_PostTask_RoundTrip` ≈ 10.5 µs、
-  `BM_BindOnce_Invoke` ≈ 138 ns、`BM_DecideNextFrame` ≈ 15.5 ns、
-  `BM_GetMasterClock` ≈ 6.3 ns。后两项即 §3 预算表里卡得最死的两条
-  （< 1 µs / < 200 ns），实测都在预算内两个数量级。
-  **仍缺**：`BM_EventHub_PostVisit` 等依赖 player 库的项，以及端到端 CPU
-  门槛的机器判据——后者仍靠 `bench_render.sh` 人工。
+- **微基准已落地（base + media + player 层 5 项）**：`bench/` 是自包含
+  harness——无 Google Benchmark（沙箱取不到，CI 也不该装），接
+  `AVBASE_BUILD_BENCH`，链 `avbase::base` + `avbase::player`（后者传递 media；
+  `media/ffmpeg` 是独立 target，故 `AVBASE_ENABLE_FFMPEG=OFF` 照样能编能跑）。
+  mac 实测（p75，入 `tools/bench-baseline.jsonl`）：`BM_PostTask_RoundTrip`
+  ≈ 10.5 µs、`BM_EventHub_PostVisit` ≈ 1.94 µs、`BM_BindOnce_Invoke`
+  ≈ 138 ns、`BM_DecideNextFrame` ≈ 15.5 ns、`BM_GetMasterClock` ≈ 6.3 ns。
+  后三项即 §3 预算表里卡得最死的三条（< 3 µs / < 1 µs / < 200 ns），实测都
+  在预算内。
+  **`BM_EventHub_PostVisit` 测的不是 `Post()` 本身**：事件枢纽按设计是异步的
+  （docs/04 §1 的 S8 就是为了让管线不等用户代码），所以「发一个、等一个」测的
+  是两次线程唤醒（≈10 µs 量级，见 `BM_PostTask_RoundTrip`），而不是预算写
+  的那条路径。落地形态是「发一批 + 末尾一个 FIFO 哨兵等排空」，故数字是
+  **max(入队, 派发)**——两侧任一变慢都会推高它，比只测入队更管用。它的方差
+  也远小于 PostTask（三次 p75 落在 1892–1947 ns，±2%）：噪声源是「每事件一次
+  唤醒」，不是「跨线程」本身，所以它没有像 PostTask 那样拿到 40% 的单独容差。
+  鉴别力实测：每次迭代发两个事件 → +100.3% → 判 REGRESSION（其余 4 项无误伤）。
+  **仍缺**：`BM_DecoderBufferQueue_PushPop` / `BM_VideoFrameQueue_ReserveCommit`
+  等依赖解码器或真实帧队列的项，以及端到端 CPU 门槛的机器判据——后者仍靠
+  `bench_render.sh` 人工。
 - **10% 门槛 vs 25% 噪声地板，两件事**：docs/04 §8 的「微基准回退 > 10%
   即 fail」是**设计门槛**，仍然有效、仍然是要守的目标。但作为**机器判据**，
   10% 低于本机单次运行的噪声：同一二进制、无改动，p75 实测波动为

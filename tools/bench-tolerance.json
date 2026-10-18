@@ -5,8 +5,10 @@
   "_what_this_is_not": "A tolerance is a noise floor, not a release line. It says 'a delta below this cannot be distinguished from run-to-run variation on this machine'. It does not say the corresponding slowdown is acceptable. A real 30% slowdown in BM_PostTask_RoundTrip would pass this gate and should be caught by the end-to-end CPU comparison instead.",
   "_measurement_notes": "Compared quantity is p75 of rounds, not the mean (see value_of() in the checker). Each round is scaled to run at least 20 ms; before that scaling, three consecutive runs of BM_GetMasterClock reported 5.3, 13.6 and 6.4 ns for identical code, because a 5 ns op at 50k iterations is a 250 microsecond round and one scheduler tick moves it by tens of percent.",
   "default": 0.25,
+  "_why_eventhub_is_not_flat_25": "BM_EventHub_PostVisit is cross-thread but NOT as noisy as BM_PostTask_RoundTrip, and the difference is worth stating because it says what the noise actually is. It batches: post N events, then one FIFO sentinel, then wait once -- so there is no wake-up per event, and on a quiet machine three runs landed at 1892/1937/1947 ns (+/-2%). Under a competing load the same binary measured 2137 ns and 2374 ns against a 1937 ns baseline (+10%, +23%), because two threads share one queue and a stall on either side stalls the whole batch. 35% absorbs the load and still catches the multiplicative regressions (docs/08 R3) this guard exists for.",
   "per_bench": {
     "_BM_PostTask_RoundTrip": "Cross-thread round trip: post, wake the worker, run, signal, wake the waiter. Its variance belongs to the OS scheduler, not to this tree, and no amount of extra measurement length removes it -- eight runs of one binary spanned 9.05 ms to 12.60 ms (mean 10.4 ms), a 37% spread.",
-    "BM_PostTask_RoundTrip": 0.4
+    "BM_PostTask_RoundTrip": 0.4,
+    "BM_EventHub_PostVisit": 0.35
   }
 }

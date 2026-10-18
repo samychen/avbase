@@ -10,3 +10,6 @@
 {"bench": "BM_DecideNextFrame", "iterations": 1520080, "mean_ns_per_op": 15.768, "p75_ns_per_op": 16.026, "rounds": 11}
 {"bench": "BM_GetMasterClock", "iterations": 3624731, "mean_ns_per_op": 6.271, "p75_ns_per_op": 6.53, "rounds": 11}
 {"bench": "BM_PostTask_RoundTrip", "iterations": 20000, "mean_ns_per_op": 9995.093, "p75_ns_per_op": 10611.763, "rounds": 11}
+{"bench": "BM_EventHub_PostVisit", "iterations": 20000, "mean_ns_per_op": 1925.253, "p75_ns_per_op": 1937.371, "rounds": 11}
+{"bench": "BM_EventHub_PostVisit", "iterations": 20000, "mean_ns_per_op": 2056.124, "p75_ns_per_op": 1947.235, "rounds": 11}
+{"bench": "BM_EventHub_PostVisit", "iterations": 20000, "mean_ns_per_op": 1866.413, "p75_ns_per_op": 1892.026, "rounds": 11}
