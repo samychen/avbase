@@ -320,8 +320,10 @@ avbase/
 ├── third_party/             ⬜ 按设计保持为空（不 vendor）
 └── docs/                    ✅ 13 篇（01–08 + 10–12 + PROGRESS + BUILDING）
                              + archive/（1–9 轮进度 · 09 Linux 方案）+ reviews/
-                             ⬜ API · COOKBOOK · MIGRATION · TROUBLESHOOTING
-                                EXTENDING · PERFORMANCE · CHANGELOG（M13 发版 blocker）
+                             ✅ M13 发版文档已齐：API（Doxygen 生成，apidocs
+                                门禁零 warning）· COOKBOOK · MIGRATION ·
+                                TROUBLESHOOTING · EXTENDING · PERFORMANCE ·
+                                CHANGELOG
 ```
 
 合计：**364 个 `.h`/`.cc`** —— C++ **39,488 行实现 + 19,842 行测试**，

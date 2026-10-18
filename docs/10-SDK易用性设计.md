@@ -503,8 +503,8 @@ void SeekTo(base::TimeDelta position, SeekMode mode, SeekCB cb);
 
 **文档 CI 检查**：
 - `README.md` 里的每个代码块被抽取到 `examples/doc_snippets/*.cc` 并编译（V2）
-- `docs/API.md` 每次 release 重新生成，diff 出公开 API 变化并写进 `CHANGELOG.md`
-- `player/public/*.h` 的 public 方法注释覆盖率 ≥ 95%（脚本检查）
+- `docs/API.md` 由 apidocs job（CI）与 `tools/gate_local.sh --jobs apidocs`（本地）在**每次 push** 门禁：doxygen 零 warning + filter 生效断言 + `git diff --exit-code docs/API.md`（改了 public 头注释不重新生成即红）；公开 API 变化人工写进 `CHANGELOG.md`
+- `player/public/*.h` 的 public 方法注释覆盖率 ≥ 95%（脚本检查）—— ⬜ 未落地（V9）
 
 ---
 
@@ -704,7 +704,10 @@ Try: avbase-inspect play <file> --backend auto --log debug
       examples/pull_frames.cc 的帧捕获轮询就跑在裸线程上，已改用 base::Thread
       （链式 PostDelayedTask，与 media/filters/null_video_sink.cc 同形）；
       std::this_thread::sleep_for 不含该子串，示例里合法的等待循环不受影响。
-[  ] V8  COOKBOOK.md 有 ≥ 20 条，每条代码可编译
+[x] V8  COOKBOOK.md 有 ≥ 20 条，每条代码可编译
+      ✅ 2026-10-18（M13）：22 条（§8 设计目录的 20 项全覆盖 + 「迁移配置」
+      与「线上排查」两条），差异登记见文末附录。代码块来自 examples/ 与
+      tests/ 实测路径，未逐条入编译门禁（见 CHANGELOG Known limitations）。
 [  ] V9  player/public/*.h 的 public 方法注释覆盖率 ≥ 95%（含线程/阻塞/错误/副作用四项）
 [  ] V10 API diff 工具（abi-compliance-checker）在 minor 版本间无破坏
 [  ] examples/play_sdl2.cc ≤ 300 行
@@ -718,9 +721,25 @@ Try: avbase-inspect play <file> --backend auto --log debug
       --wl-surface / GTK4 宿主）。最小集成示例的职责先由 docs/COOKBOOK.md
       第 1 条（V8）承担；文件建起来后此行按同一 350 行口径验收。
 [  ] avbase-inspect doctor 在干净 Ubuntu 24.04 容器里输出可读的诊断
-[  ] TROUBLESHOOTING.md 覆盖 ≥ 10 个常见症状
-[  ] MIGRATION.md 覆盖 05 文档的全部 Δ 项
-[  ] API.md（Doxygen）无 warning 生成
+[x] TROUBLESHOOTING.md 覆盖 ≥ 10 个常见症状
+      ✅ 2026-10-18（M13）：T1–T13 共 13 个症状，每条带症状 → 诊断命令 →
+      常见原因 → 修复，诊断命令均在本机实跑过。
+[x] MIGRATION.md 覆盖 05 文档的全部 Δ 项
+      ✅ 2026-10-18（M13）：Δ1–Δ22 逐条三栏（设计说法 / 0.1.0 实况附代码
+      位置 / 迁移动作）。核验中发现 4 处设计文档与代码漂移（Δ4 进度间隔、
+      Δ7 字段名、Δ11 组件缺失、Δ20 死选项），按实况改写并在附录差异表登记。
+[x] API.md（Doxygen）无 warning 生成
+      ✅ 2026-10-18（M13）：管线 = docs/Doxyfile（XML 后端）+
+      tools/doxygen_comment_filter.py（把 public 头的 `//` 注释转 doxygen
+      语法，doxygen 1.18 实测以 `<filter> <abs-path>` argv 调用）+ 
+      tools/doxy_xml_to_md.py + tools/gen_api_docs.sh，产物 docs/API.md
+      （1217 行）。零 warning 三重断言：WARN_AS_ERROR=YES、WARN_LOGFILE
+      非空即失败、stderr 非空即失败。第四重断言 filter 真生效——doxygen
+      对 filter 空输出是静默的（空流解析为空文件，零 warning 但注释全
+      丢），故脚本还要求 XML 里有非空 brief/detailed；该断言与 warning
+      门禁各做过突变反证（破坏 filter argv 分支 → rc=1；注入非法
+      doxygen 命令 → rc=1）。CI apidocs job 与 tools/gate_local.sh --jobs
+      apidocs 同构，均带 `git diff --exit-code docs/API.md` 防文档腐化。
 [  ] CHANGELOG.md 每条变更关联 commit 与 Δ 编号
 ```
 

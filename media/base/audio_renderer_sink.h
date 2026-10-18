@@ -42,8 +42,10 @@ class AVBASE_MEDIA_EXPORT AudioRendererSink
     //
     // CONTRACT — this runs on the sink's audio thread and MUST NOT block,
     // allocate, take a lock held by any media sequence, or call back into
-    // Player. Budget: < 100 us. Enforced by
-    // tests/contract/audio_renderer_sink_contract.h.
+    // Player. Budget: < 100 us (docs/04 §8). No dedicated contract test
+    // exists: the budget is a design constraint enforced by review, and the
+    // render path is exercised through fake sinks by
+    // tests/unit/media_filters/audio_renderer_impl_unittest.cc.
     virtual int Render(base::TimeDelta delay, base::TimeTicks delay_timestamp,
                        const AudioGlitchInfo& glitch_info, AudioBus* dest) = 0;
     virtual void OnRenderError() = 0;

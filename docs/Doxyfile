@@ -1,0 +1,85 @@
+# Doxygen configuration for the avbase SDK API reference.
+#
+# Regenerate with:
+#     tools/gen_api_docs.sh            # doxygen + zero-warning assert + docs/API.md
+#
+# The acceptance criterion (docs/10 §12, item "API.md（Doxygen）无 warning 生成")
+# is that the run below produces ZERO warnings. gen_api_docs.sh asserts it; the
+# warning log lands in the output dir. Do not hand-edit docs/API.md -- change
+# the comments in player/public/ and regenerate.
+#
+# Why an INPUT_FILTER: the headers document with plain `//` blocks and trailing
+# `// "option-key"` notes, which doxygen ignores. Rather than churning a frozen
+# surface into doxygen syntax, the filter rewrites a copy as doxygen reads it
+# (see tools/doxygen_comment_filter.py for the exact rules and what is left
+# alone).
+
+PROJECT_NAME           = avbase
+PROJECT_NUMBER         = 0.1.0
+PROJECT_BRIEF          = "Chromium-style layered C++ media player SDK"
+
+# The frozen SDK surface only. media/base and base/ headers are reached through
+# includes (INCLUDE_PATH below) so signatures resolve, but they are not
+# documented here -- the SDK surface is player/public/. The C ABI's internal
+# header (opaque struct definitions) and its macro-only export header carry
+# nothing a consumer includes directly.
+INPUT                  = player/public
+EXCLUDE                = player/public/c/avbase_c_internal.h \
+                         player/public/c/avbase_c_export.h
+RECURSIVE              = YES
+FILE_PATTERNS          = *.h
+EXAMPLE_PATH           =
+INCLUDE_PATH           = .
+
+INPUT_FILTER           = "python3 tools/doxygen_comment_filter.py"
+# Scope the filter to headers (INPUT_FILTER alone would also rewrite the
+# base/ headers pulled in through INCLUDE_PATH, which is harmless but noisy).
+# The value needs the `pattern=filter` form; a bare pattern list is a config
+# error doxygen only reports on stderr -- which is why gen_api_docs.sh checks
+# stderr, not just the exit code.
+FILTER_PATTERNS        = *.h="python3 tools/doxygen_comment_filter.py"
+
+# Expand the visibility macros away so signatures read `class Player`, not
+# `class AVBASE_PLAYER_EXPORT Player`. EXPAND_ONLY_PREDEF keeps every other
+# macro untouched.
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED             = AVBASE_PLAYER_EXPORT= \
+                         AVBASE_MEDIA_EXPORT= \
+                         AVBASE_BASE_EXPORT= \
+                         AVBASE_C_API= \
+                         AVBASE_CABI_EXPORT=
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_PACKAGE        = NO
+EXTRACT_STATIC         = NO
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+INTERNAL_DOCS          = NO
+
+# Warnings are the gate. Undocumented-entity warnings are OFF: comment
+# coverage is measured separately by tools/check_doc_coverage.py (docs/10 §12
+# V9), and turning this on would fail the run for prose the project considers
+# adequately covered. Malformed-documentation warnings stay ON -- those are
+# real defects in the comments themselves. WARN_AS_ERROR makes any warning
+# fatal, which is what tools/gen_api_docs.sh asserts.
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = NO
+WARN_AS_ERROR          = YES
+WARN_FORMAT            = "$file:$line: $text"
+
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+XML_PROGRAMLISTING     = NO
+
+# Generated output never belongs in the source tree; tools/gen_api_docs.sh
+# always runs doxygen from the repo root so this relative path holds.
+OUTPUT_DIRECTORY       = build/api-docs
+
+QUIET                  = NO
+WARN_LOGFILE           = doxygen-warnings.log

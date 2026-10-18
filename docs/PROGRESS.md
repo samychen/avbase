@@ -11,7 +11,7 @@
 
 ## 当前状态
 
-**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧零拷贝 ⬜ · Phase 5 转码代码全落地（E5 硬编未实测）· macOS 窗口播放器 ✅ · CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅**
+**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧零拷贝 ⬜ · Phase 5 转码代码全落地（E5 硬编未实测）· macOS 窗口播放器 ✅ · CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅ · M13 SDK 文档七份 + apidocs 门禁 ✅**
 
 最后更新：**2026-10-18**
 
@@ -42,7 +42,7 @@
 | Qt 门面 | ⬜ | `player/qt/` 未做；M15 C ABI 已作 UE/跨语言挂点 |
 | soak 48h 长稳 | ⬜ | 脚本 `tools/run_soak.py` 已就绪，48h 未跑（沙箱禁读他进程 RSS） |
 | Windows CI 验证 | ⬜ | job 已加（no-ffmpeg，不开 `/WX`），首跑待回答 |
-| M13 发布 0.1.0 | ⬜ | fuzz/stress/bench/覆盖率/SDK 文档/cpack-vcpkg-conan/V1–V10 |
+| M13 发布 0.1.0 | 🔵 | SDK 文档七份齐（API/COOKBOOK/MIGRATION/TROUBLESHOOTING/EXTENDING/PERFORMANCE/CHANGELOG）+ apidocs 门禁 + V5–V8 ✅；剩 cpack/vcpkg/conan 实跑、V9（注释覆盖率脚本）/V10（abi-compliance-checker）、golden 对拍与微基准入 CI |
 | M14–M18 | ⏳ | VAAPI+HDR / Android / iOS / `ijkio` 缓存（后置增量） |
 | 产品化能力（Android/iOS/Web/Unity/UE/Flutter/…） | ❌ | 全部未做，见 [TODO](TODO.md) |
 | 决策项 | — | LL-HLS 自研 vs 接受 ~3s、M12 原生后端是否启动、版权主体、golden 基线锁版本，见 [12-剩余工作清单](12-剩余工作清单.md) §6 |

@@ -19,6 +19,7 @@
 #   fmt     -> check-format                   (clang-format --dry-run --Werror)
 #   lint    -> check-cpplint                  (cpplint --repository=., whole tree)
 #   tidy    -> check-clang-tidy (core scope)  (clang-tidy 18, no PCH scratch db)
+#   apidocs -> apidocs                        (doxygen zero-warning gate + API.md freshness)
 #   macos   -> macos-player                   (macos-sdl2: build + freshness + ctest)
 #   capi    -> capi                           (build + freshness + ctest + C99 syntax)
 #   core    -> full[core]                     (no-ffmpeg: build + freshness + ctest)
@@ -108,6 +109,17 @@ job_lint() {
     | grep -v 'legacy/' | xargs "$CP" --repository=.
 }
 
+job_apidocs() {
+  # Mirrors the CI apidocs job. doxygen is not on every machine (this one
+  # keeps it at /tmp/avbase_tools), so DOXYGEN= overrides the lookup; with
+  # neither present the job is skipped, per this script's contract.
+  if [ -z "${DOXYGEN:-}" ] && ! command -v doxygen >/dev/null 2>&1; then
+    echo "doxygen not found; set DOXYGEN=/path/to/doxygen to run this job"
+    return 0
+  fi
+  tools/gen_api_docs.sh && git diff --exit-code docs/API.md
+}
+
 job_tidy() {
   if [ ! -x "$CT" ]; then echo "clang-tidy not found at $CT"; return 2; fi
   if [ -z "$CMAKE" ]; then echo "cmake not found"; return 2; fi
@@ -182,7 +194,7 @@ job_ubsan()   { gate_preset ubsan   "--test-dir build/ubsan --output-on-failure"
 job_coverage(){ gate_preset coverage "--test-dir build/coverage --output-on-failure"; }
 
 # --- Dispatch ----------------------------------------------------------------
-ALL_JOBS="inv fmt lint tidy macos capi core ffmpeg e2e asan tsan ubsan coverage"
+ALL_JOBS="inv fmt lint tidy apidocs macos capi core ffmpeg e2e asan tsan ubsan coverage"
 DEFAULT_JOBS="inv fmt macos capi"
 
 if [ "${1:-}" = "--list" ]; then
@@ -191,6 +203,7 @@ if [ "${1:-}" = "--list" ]; then
   echo "  fmt     check-format (clang-format --dry-run --Werror)"
   echo "  lint    check-cpplint (cpplint 1.6.1)"
   echo "  tidy    check-clang-tidy (clang-tidy 18, PCH off scratch db)"
+  echo "  apidocs apidocs (doxygen zero warnings; needs DOXYGEN= if not on PATH)"
   echo "  macos   macos-player (macos-sdl2)"
   echo "  capi    capi + C99 syntax check"
   echo "  core    full[core no-ffmpeg]"

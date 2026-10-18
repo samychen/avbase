@@ -10,8 +10,9 @@
 ## [0.1.0] - 2026-10-18
 
 首个发布版：M0–M13 质量收口完成（docs/08 路线图的本段范围）。
-「可发版」= Golden 对齐 + Sanitizer 全绿 + 基准达标 + SDK 文档四件事齐了
-前三件，第四件的文档部分见文末 Known limitations。
+「可发版」原定义含 Golden 对齐 + Sanitizer 全绿 + 基准达标 + SDK 文档四件事，
+0.1.0 实测只达成 Sanitizer（CI full matrix asan/tsan/ubsan）与 SDK 文档两件；
+Golden 对拍与微基准未落成，如实登记在文末 Known limitations（docs/12）。
 
 ### Added（首发即有的能力面）
 
@@ -36,7 +37,9 @@
 - **测试与门禁**：unit / corpus（315 样本，`5f3eff0`，CI 跑 full，
   `4b2d2c8` 起阻塞）/ fuzz（libFuzzer + standalone 双驱动）/
   `tools/gate_local.sh` 本地复刻 CI 序列（`aee6c2f`）/
-  二进制新鲜度门禁（旧二进制曾造成误诊，第八十五轮起）。
+  二进制新鲜度门禁（旧二进制曾造成误诊，第八十五轮起）/
+  apidocs 门禁（doxygen 零 warning + filter 生效断言 + API.md 新鲜度，
+  CI 与 gate_local 同构）。
 - **文档**：COOKBOOK 22 条（每条按真实签名核对，代码块由
   `examples/doc_snippets` 编译验证）/ TROUBLESHOOTING 13 症状 /
   MIGRATION（docs/05 全部 Δ 项）/ EXTENDING / PERFORMANCE / API（Doxygen）。
@@ -74,6 +77,10 @@
 
 ### Known limitations（0.1.0 未含，见 docs/12）
 
+- Golden 对拍未落成：无 golden JSONL，`tools/bench_render.sh` 只有人工触发
+  的单机基准，CI 侧只有 docs/04 §8 预算表的 >10%/>5% 回归门槛。
+- 微基准未入 CI：`AVBASE_BUILD_BENCH` 选项存在，但全树无 benchmark target
+  与源文件（无 Google Benchmark 依赖），「基准达标」无机器判据。
 - 显示侧零拷贝未实测（需 Linux VAAPI-EGL / Windows D3D11-GL 硬件环境）。
 - E5 硬件编码器本体未实测（VideoToolbox / VAAPI / NVENC）。
 - soak 48h 未跑（沙箱禁读他进程 RSS，需 CI 长跑机）。
