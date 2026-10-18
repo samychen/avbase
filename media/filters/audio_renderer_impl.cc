@@ -396,6 +396,17 @@ void AudioRendererImpl::OnDecoderOutput(
     // kOk with no buffer is DecoderStream's drained-stream signal; without
     // this branch a fully buffered stream pumped a null read forever and the
     // pipeline never learned the stream had ended.
+    //
+    // MarkEndOfStream() here is not redundant with the EOS-marker branch
+    // above: the algorithm's flag is what lets it hand out the last partial
+    // window instead of waiting for a full one. Without it, a stream that
+    // drains this way leaves that tail in the queue forever, so at any rate
+    // that takes the WSOLA path (|playback_rate| != 1) buffered_frames()
+    // freezes above zero, CheckForEnded() never fires, and playback hangs at
+    // the end instead of completing -- while the sink, being handed no
+    // samples, re-arms at 1/sample_rate and burns a core. It was invisible
+    // at 1x only because passthrough drains the queue without asking.
+    algorithm_.MarkEndOfStream();
     ended_ = true;
     if (ended_cb_) {
       ended_cb_.Run();

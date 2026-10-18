@@ -7,6 +7,8 @@
 #include <memory>
 #include <utility>
 
+#include "media/base/decoder_config.h"
+
 namespace avbase::media::ffmpeg {
 
 FFmpegHwVideoDecoderFactory::FFmpegHwVideoDecoderFactory(
@@ -44,6 +46,17 @@ FFmpegHwVideoDecoderFactory::CreateVideoDecoder(
   // is a "not me" (the stream walks on to the software tail), not an error.
   if (!media::DecoderSelector::CodecAllowedByMask(config.codec,
                                                   allowed_codecs_)) {
+    return nullptr;
+  }
+  // Per-stream gate: some decoders accept a stream at avcodec_open2() and then
+  // fail on the first packet -- long after Initialize() reported success and
+  // the fallback chain moved on. VideoToolbox with 4:2:2 / 4:4:4 H.264 is the
+  // measured case. Declining here is the "not me" the chain already knows how
+  // to act on; the empty default means "the codec list is the only filter".
+  if (spec_.config_supported && !spec_.config_supported(config)) {
+    LOG(INFO) << "[decoder-factory] '" << spec_.display_name
+              << "' declined config (codec=" << GetVideoCodecName(config.codec)
+              << ", profile=" << config.profile << ")";
     return nullptr;
   }
   for (const media::VideoCodec codec : spec_.codecs) {

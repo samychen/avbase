@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -43,6 +44,20 @@ struct FFmpegHwDecoderSpec {
   // kVaapiVideoDecoder, kNvDec, ...).
   media::VideoDecoderType decoder_type{media::VideoDecoderType::kUnknown};
   std::string display_name;  // For decoder events and status details.
+  // Per-device gate, evaluated against the stream's config before a decoder
+  // is built. Empty means "the codec list is the only filter".
+  //
+  // Why a device needs one: a device can accept a stream at avcodec_open2()
+  // time and reject it on the first packet -- long after Initialize() reported
+  // success and the fallback chain moved on. VideoToolbox does exactly that
+  // with H.264 High 4:2:2 and High 4:4:4 Predictive: "Failed setup for format
+  // videotoolbox_vld: hwaccel initialisation returned error", then
+  // "decode_slice_header error" on every packet, until DecoderStream abandons
+  // the stream after 20 consecutive errors and the player reports
+  // kDecodeFailed -- for a file the software tail decodes without complaint.
+  // Declining here is the "not me" that chain already knows how to act on;
+  // by the time the first packet fails, it has no candidate left to try.
+  std::function<bool(const media::VideoDecoderConfig& config)> config_supported;
 };
 
 // Hardware video decoding through libavcodec's hwaccel API:

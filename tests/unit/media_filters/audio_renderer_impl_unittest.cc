@@ -303,6 +303,36 @@ TEST_F(AudioRendererImplTest, EndedPublishesTheTailTheRingCouldNotTake) {
   EXPECT_EQ(frames_consumed_, 2 * kDecoderFramesPerBuffer);
 }
 
+// A drained stream has to tell the ALGORITHM it ended, not just the renderer.
+// This is the drained reply (kOk with a null buffer) rather than an EOS marker
+// buffer, and it is the shape a real demuxer's end of stream has.
+//
+// Measured on a 2 s m4a at 2x: without it the tail stuck at 2108 frames,
+// buffered_frames() never returned to zero, so CheckForEnded() never fired and
+// playback hung at the end -- while the sink, handed no samples, re-armed at
+// 1/sample_rate and burned a core for as long as the process lived. It cannot
+// be seen at 1x, where passthrough hands the queue out without asking whether
+// the stream ended; only a rate that takes the WSOLA path needs the flag.
+TEST_F(AudioRendererImplTest, DrainedStreamDrainsTheTailAboveRateOne) {
+  ScriptBuffers(/*buffers=*/1);
+  behaviour_.outputs_per_buffer = 2;
+  CreateRenderer();
+  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+  // 2x selects WSOLA; at 1x ChooseBufferMode() picks passthrough, which drains
+  // the queue unconditionally and so would pass even with the fix reverted.
+  renderer_->SetPlaybackRate(2.0);
+  StartPlaying();
+
+  ASSERT_GT(PullPeriod(), 0);
+  DrainQueue();
+
+  EXPECT_TRUE(PullUntil([this] { return renderer_->ended(); }))
+      << "the stream never reached ended";
+  EXPECT_TRUE(PullUntil([this] { return renderer_->buffered_frames() == 0; }))
+      << "the WSOLA tail outlived EOS: only a marked stream hands out the "
+         "last partial window, so at 2x the buffer never empties";
+}
+
 // H2: a terminal decode error must reach the pipeline through error_cb_. The
 // old code logged "reporting to the pipeline" and returned without reporting,
 // so the pump sat dead while the UI buffered forever.

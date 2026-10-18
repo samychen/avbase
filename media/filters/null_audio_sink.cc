@@ -4,8 +4,6 @@
 
 #include "media/filters/null_audio_sink.h"
 
-#include <algorithm>
-
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/synchronization/lock.h"
@@ -111,10 +109,22 @@ void NullAudioSink::ConsumeOnePeriod() {
       glitch_info_.total_glitches += 1;
       glitch_info_.total_glitch_duration += params_.buffer_duration();
     }
-    // Sleep for what was actually produced, so a starved source is consumed in
-    // real time rather than being overtaken by the null clock.
-    wait = base::SecondsD(static_cast<double>(std::max(written, 1)) /
-                          static_cast<double>(params_.sample_rate()));
+    if (written > 0) {
+      // Sleep for what was actually produced, so a starved source is consumed
+      // in real time rather than being overtaken by the null clock.
+      wait = base::SecondsD(static_cast<double>(written) /
+                            static_cast<double>(params_.sample_rate()));
+    } else {
+      // Nothing came out, so nothing was consumed, and a real device still
+      // takes a whole period to play the silence. Re-arming on the
+      // "one frame" floor instead -- 21 us at 48 kHz -- is one Render() per
+      // sample: measured 9224 callbacks in 300 ms (30 kHz) from a callback
+      // that only returned 0, which is a core burned for as long as the
+      // source stays starved. That is reachable from two ordinary states --
+      // an underrun, and a paused renderer (Render() reports 0 there too) --
+      // so the floor is not a corner case.
+      wait = params_.buffer_duration();
+    }
   }
   if (audio_runner_ && started_.load()) {
     audio_runner_->PostDelayedTask(
