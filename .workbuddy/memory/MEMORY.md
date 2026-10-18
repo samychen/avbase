@@ -92,6 +92,17 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
 L1–L5、docs/14 阶段 0–4、Phase 2 协议验收（HLS/HTTP + RTMP/RTSP/SRT，第八十二轮三协议
 实测全绿）、M15 C ABI（已接门禁）均完成。第八十五轮推翻了自己报的「VideoToolbox 硬解
 bug」（不存在），并新增 freshness 门禁。M13 进行中：SDK 文档七份齐 + apidocs 门禁
-（bde3e8c/282a71f）已推送；剩 cpack/vcpkg/conan 实跑、V9 注释覆盖率脚本、V10
-abi-compliance-checker、golden 对拍与微基准入 CI（后两项已登记 CHANGELOG Known
-limitations）。
+（bde3e8c/282a71f）已推送；V9 注释覆盖率、V10 API 兼容、微基准（base+media+
+player 5 项）、端到端 CPU 机器判据、golden diff 件、cpack/vcpkg 均已完成并接
+门禁。剩：golden **录制**基线（需 ijkplayer 原版，Q8 未决）、依赖解码器的
+BM_*、soak 48h（需 CI 长跑机）、conan 实跑、渲染 CPU 的机器判据（仍靠
+bench_render.sh 人工）。
+
+## 性能门禁（两条，都别按设计门槛直接判）
+- 微基准：`bench/` 链 `avbase::player`，`gate_local --jobs bench`（3 次取中位数），
+  容差 `tools/bench-tolerance.json` 25%（PostTask 40%、EventHub 35%）。
+- 端到端 CPU：`tools/measure_e2e_cpu.py` + `gate_local --jobs e2ecpu`（约 1 分钟），
+  容差 `tools/e2e-cpu-tolerance.json` **15%**。
+- **两条的设计门槛（微基准 10%、端到端 5%）都低于本机噪声地板**，误报过的教训：
+  误报的门禁会被习惯性 override，之后什么都抓不住。改阈值前先读那两个 json 里的
+  实测依据；改测量方法（轮长/统计量/次数）优先于放宽阈值。
