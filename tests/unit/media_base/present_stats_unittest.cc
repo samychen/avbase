@@ -32,12 +32,23 @@ TEST(ClassifyFrameOutcomeTest, AnUploadThatRefusedIsASubmitFailure) {
             FrameOutcome::kSubmitFailure);
 }
 
-TEST(ClassifyFrameOutcomeTest, AFrameTheRendererDidNotHandOverIsADrop) {
+TEST(ClassifyFrameOutcomeTest, AWindowWithNothingToShowIsNoEvent) {
   // Render() returning null means "keep showing the previous one" -- no frame
-  // was lost, so it is not a failure.
+  // was lost, so it is neither a drop nor a failure. ffplay draws the same
+  // line: video_refresh bumps frame_drops_late on the line that calls
+  // frame_queue_next(), so only a frame that had reached the queue can be
+  // dropped. An empty queue falls through to `goto display` uncounted.
   EXPECT_EQ(ClassifyFrameOutcome(kNoFrame, kNotDiscarding, kReadbackOk,
                                  kUploadFailed),
-            FrameOutcome::kDropped);
+            FrameOutcome::kNone);
+}
+
+TEST(ClassifyFrameOutcomeTest, DiscardingWithoutAFrameIsAlsoNoEvent) {
+  // "discard" means frames handed over are thrown away. Nothing handed over
+  // means nothing thrown away, however firmly the sink was told to discard.
+  EXPECT_EQ(
+      ClassifyFrameOutcome(kNoFrame, kDiscarding, kReadbackOk, kUploadFailed),
+      FrameOutcome::kNone);
 }
 
 TEST(ClassifyFrameOutcomeTest, DiscardingOutranksTheFrameItAlreadyHas) {
@@ -62,8 +73,10 @@ TEST(ClassifyFrameOutcomeTest, ReadbackFailureIsCountedOnceNotTwice) {
 }
 
 // The invariant, stated as arithmetic rather than as a comment: whatever the
-// sink observed, it counted exactly one thing.
-TEST(ClassifyFrameOutcomeTest, EveryObservationHasExactlyOneEnding) {
+// sink observed, it counted at most one thing -- and exactly one if a frame
+// existed (a readback failure leaves |has_frame| false, so it is asked
+// separately here; the frame was there, it just could not be read).
+TEST(ClassifyFrameOutcomeTest, EveryObservationCountsAtMostOneEnding) {
   for (const bool has_frame : {true, false}) {
     for (const bool discard : {true, false}) {
       for (const bool readback_failed : {true, false}) {
@@ -72,9 +85,11 @@ TEST(ClassifyFrameOutcomeTest, EveryObservationHasExactlyOneEnding) {
           stats.NoteFrameOutcome(ClassifyFrameOutcome(
               has_frame, discard, readback_failed, presented));
           const VideoSinkStats reported = stats.Get();
-          EXPECT_EQ(reported.frames_presented + reported.frames_dropped +
-                        reported.submit_failures,
-                    1u)
+          const uint64_t counted = reported.frames_presented +
+                                   reported.frames_dropped +
+                                   reported.submit_failures;
+          const uint64_t expected = (has_frame || readback_failed) ? 1u : 0u;
+          EXPECT_EQ(counted, expected)
               << "has_frame=" << has_frame << " discard=" << discard
               << " readback_failed=" << readback_failed
               << " presented=" << presented;
@@ -82,6 +97,24 @@ TEST(ClassifyFrameOutcomeTest, EveryObservationHasExactlyOneEnding) {
       }
     }
   }
+}
+
+// The reason kNone exists, as a rhythm rather than as a single call: a sink
+// asks once per display window, so at 30 fps on a 60 Hz display every other ask
+// answers "hold". Billed as drops, frames_dropped became a function of the
+// refresh rate -- on the Qt host it rose at 60/s while the player sat paused.
+TEST(PresentStatsTest, AWindowWithNothingToShowCostsNothing) {
+  PresentStats stats;
+  for (int window = 0; window < 60; ++window) {
+    stats.NoteFrameOutcome(ClassifyFrameOutcome(kNoFrame, kNotDiscarding,
+                                                kReadbackOk, kUploadFailed));
+  }
+  stats.NoteFrameOutcome(FrameOutcome::kPresented);
+
+  const VideoSinkStats reported = stats.Get();
+  EXPECT_EQ(reported.frames_presented, 1u);
+  EXPECT_EQ(reported.frames_dropped, 0u)
+      << "one frame arrived, so one frame is the whole account";
 }
 
 TEST(PresentStatsTest, CountsEachEndingInItsOwnField) {

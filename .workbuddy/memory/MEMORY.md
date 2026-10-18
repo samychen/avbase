@@ -44,6 +44,13 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
   （`Flush` 的 `HoldReads(true)` + 新 serial 只有它接管），但它只许接管代际与重启解码，
   **不许**清 `paused_`。清过一次的后果是画面脱离暂停的时钟自己跑（实测 4.0s seek 后
   800ms 已在 5.07s），而音频静音、日志全绿。
+- **「这一拍没有帧」不是丢帧**（ffplay 口径）：`frame_drops_late++` 只写在
+  `frame_queue_next()` 的同一行，队列空与暂停都 `goto display` 不计数。sink 是每显示
+  窗口问一次（不是 ffplay 的主动轮询），空问频率 = 刷新率 → 按「没交帧 = drop」计会让
+  `frames_dropped` 变成刷新率的函数（30fps/60Hz 下 30/s，暂停 60/s）。
+  `ClassifyFrameOutcome` 对 `!has_frame` 返回 `FrameOutcome::kNone`。**两个同名不同义**：
+  `VideoSinkStats::frames_dropped`（到手未显示）vs `PlaybackStats::frames_dropped`
+  （compositor 选帧被拒，宿主读的是这个，改前者不会动后者）。详见 `docs/05` Δ24。
 
 ## 五条「写下来会静默失效」的约定（都真踩过）
 - **朝向**：从渲染目标采样回来的 pass 都要 `flip_vertical=true`。搞反 = 上下颠倒、

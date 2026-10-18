@@ -16,33 +16,45 @@
 
 namespace avbase::media {
 
-// What became of one frame.
+// What became of one ask.
 //
-// A frame has exactly one ending, and carrying the decision as a VALUE is what
-// makes that true rather than merely intended. The sinks used to report a
-// readback failure and then -- because the failed readback left the frame null
-// -- fall into the "no frame" branch and report a drop as well, so
+// A frame that ARRIVED has exactly one ending, and carrying the decision as a
+// VALUE is what makes that true rather than merely intended. The sinks used to
+// report a readback failure and then -- because the failed readback left the
+// frame null -- fall into the "no frame" branch and report a drop as well, so
 // presented + dropped + failures added up to more frames than the renderer ever
 // handed over. Two call sites that must agree on "did this one count already"
 // is a rule that gets broken; one function that returns the ending cannot be.
+//
+// A tick with no frame has NO ending, and that is the distinction kNone exists
+// to make. The sink asks once per display window; the compositor answers "keep
+// showing what you have" whenever the next frame is not due yet, which at
+// 30 fps on a 60 Hz display is every other ask, and constantly while paused.
+// Counting those as drops made frames_dropped a measurement of the refresh
+// rate rather than of the video.
 enum class FrameOutcome {
+  kNone,
   kPresented,
   kDropped,
   kSubmitFailure,
 };
 
-// Decides a frame's ending from what the sink observed. Pure and free of clock
+// Decides an ask's ending from what the sink observed. Pure and free of clock
 // and display, so the rule has one definition and can be tested without either.
 //
 // The order of the questions is the order the sink asked them, and it is the
 // answer: a readback failure outranks everything because the frame never
 // became displayable and that is the part worth reporting -- hence "a submit
-// failure" and not also "a drop".
+// failure" and not also "a drop". It also leaves the frame null, so it has to
+// be asked before |has_frame| or it would read as "nothing arrived".
 //
 //   |readback_failed|  a hardware frame could be neither imported nor read back
-//   |discard|          the sink was told to throw frames away (seeking, flush)
 //   |has_frame|        Render() handed over a frame
+//   |discard|          the sink was told to throw frames away (seeking, flush)
 //   |presented|        the upload and the present both succeeded
+//
+// "Nothing arrived" is kNone even while discarding: a discarded frame is one
+// that existed and was thrown away, not one that never existed.
 FrameOutcome ClassifyFrameOutcome(bool has_frame, bool discard,
                                   bool readback_failed, bool presented);
 

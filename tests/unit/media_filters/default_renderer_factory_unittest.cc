@@ -59,9 +59,10 @@ class CountingSinkFactory final : public VideoRendererSinkFactory {
   int creates = 0;
 };
 
-// Hands the sink the same frame every tick. Non-null on purpose: a null frame
-// is classified as a drop whether or not the sink was told to discard, so it
-// could not tell the two apart.
+// Hands the sink the same frame every tick. Non-null on purpose: these cases
+// are about a frame that ARRIVED and was then discarded, and a null answer now
+// counts nothing at all (FrameOutcome::kNone), so a null frame could not tell
+// "discarded" from "there was nothing to discard".
 class AlwaysFrameCallback final : public VideoRendererSink::RenderCallback {
  public:
   explicit AlwaysFrameCallback(base::scoped_refptr<VideoFrame> frame)
@@ -76,6 +77,19 @@ class AlwaysFrameCallback final : public VideoRendererSink::RenderCallback {
 
  private:
   base::scoped_refptr<VideoFrame> frame_;
+};
+
+// Answers "keep showing what you have", which is what the compositor says on
+// every tick that is not due a frame. A real sink sees this constantly: at
+// 30 fps on a 60 Hz display half of its asks land here.
+class NeverFrameCallback final : public VideoRendererSink::RenderCallback {
+ public:
+  base::scoped_refptr<VideoFrame>
+  Render(base::TimeTicks /*deadline_min*/,
+         base::TimeTicks /*deadline_max*/) override {
+    return nullptr;
+  }
+  void OnFrameSubmitFailure() override {}
 };
 
 class DefaultRendererFactoryTest : public ::testing::Test {
@@ -164,6 +178,31 @@ TEST_F(DefaultRendererFactoryTest, NoDispBypassesTheInjectedFactory) {
   EXPECT_EQ(counting->creates, 0)
       << "nodisp must not let an injected backend open a window";
   EXPECT_STREQ(sink->name(), "NullVideoSink");
+}
+
+// A sink that asks and is told "nothing yet" has counted nothing, because
+// nothing happened. ffplay's video_refresh counts frame_drops_late only beside
+// the frame_queue_next() that skips a frame it already had; an empty queue
+// falls through to `goto display` and leaves the counter alone. Billing every
+// empty ask as a drop made frames_dropped a function of the refresh rate -- it
+// rose at 60/s on a paused Qt host, and at 30/s during ordinary playback.
+TEST_F(DefaultRendererFactoryTest, AnEmptyAskIsNotADroppedFrame) {
+  DefaultRendererFactory::Deps deps = MakeDeps();
+  DefaultRendererFactory factory(std::move(deps));
+  const auto sink = factory.CreateVideoRendererSink(ValidDisplay());
+  ASSERT_TRUE(sink);
+
+  NeverFrameCallback callback;
+  sink->Initialize(&callback);
+  sink->Play();   // RenderOne() only asks while playing.
+  sink->Start();  // One tick, inline.
+  const VideoSinkStats stats = sink->GetStats();
+  sink->Stop();
+
+  EXPECT_EQ(stats.frames_presented, 0u);
+  EXPECT_EQ(stats.frames_dropped, 0u)
+      << "no frame arrived, so no frame was lost";
+  EXPECT_EQ(stats.submit_failures, 0u);
 }
 
 TEST_F(DefaultRendererFactoryTest, NoDispSinkDiscardsEvenWithAValidTarget) {

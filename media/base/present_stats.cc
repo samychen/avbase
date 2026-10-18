@@ -14,7 +14,17 @@ FrameOutcome ClassifyFrameOutcome(const bool has_frame, const bool discard,
     // "we had nothing to show" and "we failed to show it" about one frame.
     return FrameOutcome::kSubmitFailure;
   }
-  if (discard || !has_frame) {
+  if (!has_frame) {
+    // Nothing was handed over, so nothing was lost. This is ffplay's rule, and
+    // it is arithmetic rather than opinion: video_refresh increments
+    // frame_drops_late on the same line as frame_queue_next(), i.e. only for a
+    // frame that had already reached the queue and was then skipped. An empty
+    // queue and a paused player both reach `goto display` without touching a
+    // counter -- which is why ffplay's drop count is flat while paused and
+    // ours climbed at the refresh rate.
+    return FrameOutcome::kNone;
+  }
+  if (discard) {
     return FrameOutcome::kDropped;
   }
   return presented ? FrameOutcome::kPresented : FrameOutcome::kSubmitFailure;
@@ -22,6 +32,11 @@ FrameOutcome ClassifyFrameOutcome(const bool has_frame, const bool discard,
 
 void PresentStats::NoteFrameOutcome(const FrameOutcome outcome) {
   switch (outcome) {
+  case FrameOutcome::kNone:
+    // A tick with no frame leaves the counters alone. NotePresentTiming() is
+    // what a sink calls for the other half of an ask it did not present; a
+    // hold has neither pixels nor cost.
+    return;
   case FrameOutcome::kPresented:
     NotePresented();
     return;
