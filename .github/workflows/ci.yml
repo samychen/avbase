@@ -692,6 +692,25 @@ jobs:
       - name: V9 public comment coverage
         run: python3 tools/check_comment_coverage.py --min-existence-rate 95 --min-full-rate 0
 
+  # docs/10 §4 and §12 acceptance criterion (V10): a minor version bump must
+  # not break user code. tools/check_api_compat.py diffs the declared public
+  # API surface (functions, methods, operators, ctors/dtors, enums, and
+  # per-class vtable layout) against the committed baseline
+  # tools/api_baseline.json. No libclang and no build: a committed baseline is
+  # the "last released surface", and a pure-Python diff keeps the check
+  # runnable on a clean runner the way commentcov is. A missing baseline is a
+  # hard error, because compatibility cannot be proven without it -- so the
+  # baseline is committed and refreshed only when a MAJOR version is cut (with
+  # --allow-breaking), exactly as the tool's docstring describes.
+  apicompat:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python
+        run: sudo apt-get update && sudo apt-get install -y python3
+      - name: V10 API surface diff vs committed baseline
+        run: python3 tools/check_api_compat.py
+
   # A `check-gl-constants` job used to sit here. It machine-checked the
   # hand-written enumerant table in render/gl/gl_constants.h against the
   # platform's GL headers, because a typo in that table compiles clean and only

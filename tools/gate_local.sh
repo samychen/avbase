@@ -21,6 +21,7 @@
 #   tidy    -> check-clang-tidy (core scope)  (clang-tidy 18, no PCH scratch db)
 #   apidocs -> apidocs                        (doxygen zero-warning gate + API.md freshness)
 #   commentcov -> commentcov                   (V9: player/public four-question comment coverage)
+#   apicompat -> apicompat                     (V10: API-surface diff vs committed baseline)
 #   macos   -> macos-player                   (macos-sdl2: build + freshness + ctest)
 #   capi    -> capi                           (build + freshness + ctest + C99 syntax)
 #   core    -> full[core]                     (no-ffmpeg: build + freshness + ctest)
@@ -133,6 +134,16 @@ job_commentcov() {
   python3 tools/check_comment_coverage.py --min-existence-rate 95 --min-full-rate 0
 }
 
+job_apicompat() {
+  # V10 (docs/10 §4 and §12): a minor version bump must not break user code.
+  # Diffs the declared public API surface (functions, methods, operators,
+  # ctors/dtors, enums, and per-class vtable layout) against the committed
+  # baseline tools/api_baseline.json. Pure Python, no libclang, no build --
+  # the same footprint as the commentcov gate. A missing baseline is a hard
+  # error: we cannot prove compatibility without it.
+  python3 tools/check_api_compat.py
+}
+
 job_tidy() {
   if [ ! -x "$CT" ]; then echo "clang-tidy not found at $CT"; return 2; fi
   if [ -z "$CMAKE" ]; then echo "cmake not found"; return 2; fi
@@ -207,8 +218,8 @@ job_ubsan()   { gate_preset ubsan   "--test-dir build/ubsan --output-on-failure"
 job_coverage(){ gate_preset coverage "--test-dir build/coverage --output-on-failure"; }
 
 # --- Dispatch ----------------------------------------------------------------
-ALL_JOBS="inv fmt lint tidy apidocs commentcov macos capi core ffmpeg e2e asan tsan ubsan coverage"
-DEFAULT_JOBS="inv fmt commentcov macos capi"
+ALL_JOBS="inv fmt lint tidy apidocs commentcov apicompat macos capi core ffmpeg e2e asan tsan ubsan coverage"
+DEFAULT_JOBS="inv fmt commentcov apicompat macos capi"
 
 if [ "${1:-}" = "--list" ]; then
   echo "Job -> CI job (see .github/workflows/ci.yml):"
@@ -218,6 +229,7 @@ if [ "${1:-}" = "--list" ]; then
   echo "  tidy    check-clang-tidy (clang-tidy 18, PCH off scratch db)"
   echo "  apidocs apidocs (doxygen zero warnings; needs DOXYGEN= if not on PATH)"
   echo "  commentcov comment_comment_coverage (V9 player/public four-question coverage; python3, no deps)"
+  echo "  apicompat apicompat (V10 API-surface diff vs tools/api_baseline.json; python3, no deps)"
   echo "  macos   macos-player (macos-sdl2)"
   echo "  capi    capi + C99 syntax check"
   echo "  core    full[core no-ffmpeg]"

@@ -505,6 +505,7 @@ void SeekTo(base::TimeDelta position, SeekMode mode, SeekCB cb);
 - `README.md` 里的每个代码块被抽取到 `examples/doc_snippets/*.cc` 并编译（V2）
 - `docs/API.md` 由 apidocs job（CI）与 `tools/gate_local.sh --jobs apidocs`（本地）在**每次 push** 门禁：doxygen 零 warning + filter 生效断言 + `git diff --exit-code docs/API.md`（改了 public 头注释不重新生成即红）；公开 API 变化人工写进 `CHANGELOG.md`
 - `player/public/*.h` 的 public 方法注释覆盖率 ≥ 95%（脚本检查）—— ✅ 已落地（V9）：`tools/check_comment_coverage.py`，`gate_local.sh --jobs commentcov` 与 `ci.yml` 的 `commentcov` job 同构（`--min-existence-rate 95`，python3 无外部依赖）
+- **API 表面兼容性**（SemVer，minor 升级不改用户代码即可编译通过）—— ✅ 已落地（V10）：`tools/check_api_compat.py` 抽取 `player/public` 的声明 API 面（函数/方法/运算符/构造析构 + 枚举 + 每类虚函数表布局），与入库基线 `tools/api_baseline.json` 做 diff；删符号/改签名/枚举值变/虚表变判 breaking（rc=1），纯新增判 compatible。`gate_local.sh --jobs apicompat` 与 `ci.yml` 的 `apicompat` job 同构（纯 Python，无 libclang、无构建）。基线由 `tools/check_api_compat.py --snapshot` 生成，仅在切 MAJOR 版本时（带 `--allow-breaking`）刷新。v1 不跟踪公开数据成员（避免误报，见 §12 V10 注）
 
 ---
 
@@ -722,7 +723,22 @@ Try: avbase-inspect play <file> --backend auto --log debug
       （--min-existence-rate 95 --min-full-rate 0，python3 无外部依赖）。
       突变反证（临时副本抹去 scene.h 全部注释）→ 81.8% → rc=1，已验证门禁对系统性回落的鉴别力；
       单条遗漏（99.4%）不误伤，符合覆盖率门禁本意。
-[  ] V10 API diff 工具（abi-compliance-checker）在 minor 版本间无破坏
+[x] V10 API diff 工具在 minor 版本间无破坏
+      ✅ 2026-10-18（M13）：落地 `tools/check_api_compat.py`——纯 Python 抽取声
+      明 API 面 + 与入库基线 `tools/api_baseline.json` 做 diff，无 libclang/无构建
+      （CI runner 不必装 abi-compliance-checker 那套 Perl + abi-dumper + 编译产物）。
+      实测当前 193 个 public 声明（函数/方法/运算符/构造析构 + 枚举 + 每类虚函数表
+      布局），与基线零差异。门禁判定：删符号 / 改签名（返回类型·参数类型·参数个数·
+      成员 const）/ C ABI 签名变 / 枚举项删除或值变 / 某类虚函数集合变化 → breaking（rc=1）；
+      纯新增符号 / 新增 overload / 新增枚举项 / 新增非虚方法 → compatible（minor 允许）。
+      `gate_local.sh --jobs apicompat` 与 `ci.yml` 的 `apicompat` job 同构。
+      突变反证（临时副本删 `GetPlayerStateName` + 改 `Player::SetDataSource` 签名）→
+      2 个 breaking → rc=1，已验证门禁鉴别力。基线由 `--snapshot` 生成，仅切 MAJOR
+      版本时带 `--allow-breaking` 刷新（见工具 docstring）。
+      已知限制（v1，诚实声明）：① 不跟踪公开数据成员（PlayerConfig 等配置结构体的
+      字段变更未纳入，避免对 `std::function` 等复杂成员的误报；与 V9 同口径）；
+      ② 不建模「隐式默认构造函数的消失」（类本无用户声明构造器、后加带参构造器会使
+      隐式默认构造器消失）——此类破坏属罕见且需 AST，留待后续扩展。
 [  ] examples/play_sdl2.cc ≤ 300 行
       ✅ 2026-10-18（M13）：161 行。原 486 行里约三分之二是主机样板（选项解析 /
       事件日志 / 字幕光栅 / GL 运行时探测 / 建窗），已拆到 examples/sdl2_demo.h；

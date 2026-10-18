@@ -45,6 +45,12 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   --jobs commentcov 与 ci.yml commentcov job 同构（--min-existence-rate 95
   --min-full-rate 0，python3 无外部依赖）。解析器修两处漏计 bug 后实测 170 个
   public 声明、存在率 100%。
+- V10 API 兼容性门禁（待回填 commit）：tools/check_api_compat.py 抽取
+  player/public 声明 API 面（函数/方法/运算符/构造析构 + 枚举 + 每类虚函数表
+  布局）并与入库基线 tools/api_baseline.json 做 diff（纯 Python，无 libclang、
+  无构建）；删符号/改签名/枚举值变/虚表变判 breaking（rc=1），纯新增判
+  compatible。gate_local --jobs apicompat 与 ci.yml apicompat job 同构。基线由
+  --snapshot 生成、仅切 MAJOR 时带 --allow-breaking 刷新。v1 不跟踪公开数据成员。
 - **文档**：COOKBOOK 22 条（每条按真实签名核对，代码块由
   `examples/doc_snippets` 编译验证）/ TROUBLESHOOTING 13 症状 /
   MIGRATION（docs/05 全部 Δ 项）/ EXTENDING / PERFORMANCE / API（Doxygen，
