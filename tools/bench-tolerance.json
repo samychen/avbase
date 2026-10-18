@@ -1,0 +1,12 @@
+{
+  "_comment": "Per-benchmark regression tolerance for tools/check_bench_regression.py. Read automatically; override the path with --tolerance. 'default' applies to any benchmark not named in 'per_bench'.",
+  "_why_not_10_percent": "docs/04 §8 sets a 10% micro-benchmark regression threshold. That number is a design target and it is the right one to aim at, but it is below the noise floor of a single run on a real machine, so as a machine gate it fails on noise and not on regressions. Measured on an idle developer machine, same binary, p75 of rounds: BM_BindOnce_Invoke spanned 116-155 ns (+21% over its median), BM_DecideNextFrame 15.1-17.8 ns (+18%), BM_GetMasterClock 6.3-7.1 ns (+13%). Enforced at 10%, the gate reported BM_DecideNextFrame as a regression with no code change at all -- a failure that names nothing, which is worse than a loose gate because it trains the next person to override it reflexively.",
+  "_what_25_percent_still_catches": "The regressions this guard exists for (docs/08 R3: a layer starting to charge for itself -- an allocation on a hot path, a lock added to a lock-free read, a virtual call replacing an inline one) are multiplicative. They show up as 2x to 10x, not 1.1x. At 25% they are still caught; what is given up is the ability to see a 12% drift, which this harness cannot distinguish from scheduler noise anyway.",
+  "_what_this_is_not": "A tolerance is a noise floor, not a release line. It says 'a delta below this cannot be distinguished from run-to-run variation on this machine'. It does not say the corresponding slowdown is acceptable. A real 30% slowdown in BM_PostTask_RoundTrip would pass this gate and should be caught by the end-to-end CPU comparison instead.",
+  "_measurement_notes": "Compared quantity is p75 of rounds, not the mean (see value_of() in the checker). Each round is scaled to run at least 20 ms; before that scaling, three consecutive runs of BM_GetMasterClock reported 5.3, 13.6 and 6.4 ns for identical code, because a 5 ns op at 50k iterations is a 250 microsecond round and one scheduler tick moves it by tens of percent.",
+  "default": 0.25,
+  "per_bench": {
+    "_BM_PostTask_RoundTrip": "Cross-thread round trip: post, wake the worker, run, signal, wake the waiter. Its variance belongs to the OS scheduler, not to this tree, and no amount of extra measurement length removes it -- eight runs of one binary spanned 9.05 ms to 12.60 ms (mean 10.4 ms), a 37% spread.",
+    "BM_PostTask_RoundTrip": 0.4
+  }
+}

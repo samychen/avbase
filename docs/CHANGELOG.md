@@ -60,6 +60,16 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   `tools/bench-baseline.jsonl`（回退 >10% 告警）；`gate_local --jobs bench`
   本地硬判定，`ci.yml` 的 bench job 只记录并上传 artifact——共享 runner 噪声
   大，且入库基线测于 mac、CI 跑在 linux，跨平台绝对值不可比，硬 fail 会假红。
+- 微基准扩到 media 层（待回填 commit）：新增 `BM_DecideNextFrame` ≈ 15.5 ns、
+  `BM_GetMasterClock` ≈ 6.3 ns（mac 实测 p75），即 docs/04 §8 预算里最紧的两条
+  （< 1 µs / < 200 ns），实测在预算内两个数量级；`bench/` 因此改为链
+  `avbase::media`，FFmpeg 仍不需要。
+- 微基准测量方法修正（同一 commit）：① 每轮迭代数自适应放大到跑够 20 ms——
+  此前 5 ns 的 op 只跑 250 µs 一轮，三次连跑出过 5.3/13.6/6.4 ns；② 判定量从
+  mean 换成 p75；③ 基线取 3 次运行中位数。另新增 `tools/bench-tolerance.json`：
+  docs/04 §8 的 10% 是设计门槛，低于本机单次运行噪声（实测无改动波动 13–21%，
+  已发生零改动误报），故判定阈值设 25%（PostTask 40%）。降噪而非放宽：突变
+  反证（给 DecideNextFrame 加倍工作量）→ +120% → 判 REGRESSION，其余无误伤。
 - golden 对拍 diff 件（`64c13e8`）：`tools/golden_diff.py` 按 docs/07 §7.4
   容差分级对比两份 JSONL 录制（帧数 / pts ±0、视频 hash 汉明距离 ≤5、事件序列
   类型与顺序一致、arg ±5%、`late_us` ±5000 µs、`stat` 跳过）+ `allowlist.yaml`

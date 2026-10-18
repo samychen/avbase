@@ -730,7 +730,15 @@ jobs:
       - name: Build benchmarks
         run: cmake --build build/bench --target avbase_benchmarks -j
       - name: Run benchmarks
-        run: find build/bench -name avbase_benchmarks -type f -exec {} --iters 50000 --rounds 11 --jsonl bench-run.jsonl \;
+        run: |
+          bin="$(find build/bench -name avbase_benchmarks -type f | head -1)"
+          # Three runs appended to one file: check_bench_regression.py takes
+          # the median per benchmark. Run-to-run spread dominates
+          # round-to-round spread here, and --iters must match the value used
+          # to produce tools/bench-baseline.jsonl.
+          for i in 1 2 3; do
+            "$bin" --iters 20000 --rounds 11 --jsonl bench-run.jsonl
+          done
       - name: Upload trend artifact
         uses: actions/upload-artifact@v4
         with:

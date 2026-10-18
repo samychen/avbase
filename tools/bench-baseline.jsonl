@@ -1,2 +1,12 @@
-{"bench": "BM_BindOnce_Invoke", "iterations": 50000, "mean_ns_per_op": 118.421, "p75_ns_per_op": 140.257, "rounds": 11}
-{"bench": "BM_PostTask_RoundTrip", "iterations": 50000, "mean_ns_per_op": 8648.352, "p75_ns_per_op": 8870.259, "rounds": 11}
+{"bench": "BM_BindOnce_Invoke", "iterations": 160428, "mean_ns_per_op": 142.147, "p75_ns_per_op": 155.367, "rounds": 11}
+{"bench": "BM_DecideNextFrame", "iterations": 1495679, "mean_ns_per_op": 14.939, "p75_ns_per_op": 15.128, "rounds": 11}
+{"bench": "BM_GetMasterClock", "iterations": 3618174, "mean_ns_per_op": 6.237, "p75_ns_per_op": 6.336, "rounds": 11}
+{"bench": "BM_PostTask_RoundTrip", "iterations": 20000, "mean_ns_per_op": 9398.094, "p75_ns_per_op": 9479.015, "rounds": 11}
+{"bench": "BM_BindOnce_Invoke", "iterations": 179703, "mean_ns_per_op": 118.972, "p75_ns_per_op": 128.081, "rounds": 11}
+{"bench": "BM_DecideNextFrame", "iterations": 1477432, "mean_ns_per_op": 15.066, "p75_ns_per_op": 15.509, "rounds": 11}
+{"bench": "BM_GetMasterClock", "iterations": 3623910, "mean_ns_per_op": 6.111, "p75_ns_per_op": 6.292, "rounds": 11}
+{"bench": "BM_PostTask_RoundTrip", "iterations": 20000, "mean_ns_per_op": 9810.346, "p75_ns_per_op": 10518.395, "rounds": 11}
+{"bench": "BM_BindOnce_Invoke", "iterations": 175096, "mean_ns_per_op": 127.799, "p75_ns_per_op": 137.927, "rounds": 11}
+{"bench": "BM_DecideNextFrame", "iterations": 1520080, "mean_ns_per_op": 15.768, "p75_ns_per_op": 16.026, "rounds": 11}
+{"bench": "BM_GetMasterClock", "iterations": 3624731, "mean_ns_per_op": 6.271, "p75_ns_per_op": 6.53, "rounds": 11}
+{"bench": "BM_PostTask_RoundTrip", "iterations": 20000, "mean_ns_per_op": 9995.093, "p75_ns_per_op": 10611.763, "rounds": 11}

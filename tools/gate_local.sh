@@ -146,12 +146,19 @@ job_apicompat() {
 }
 
 job_bench() {
-  # M13 (docs/04 §8, docs/07 §10): self-contained micro-benchmarks. Only
-  # links avbase::base, so no FFmpeg is required. The gate is a *trend guard*:
-  # it reports regressions against the committed baseline. We hard-fail here
-  # (the local machine is quiet enough to be actionable); CI runs the same
-  # command WITHOUT --fail-on-regression and uploads the JSONL as an artifact,
-  # because shared CI runners are too noisy for a hard 10% gate.
+  # M13 (docs/04 §8, docs/07 §10): self-contained micro-benchmarks. Links
+  # avbase::base and avbase::media -- media/ffmpeg is a separate target, so
+  # FFmpeg is still not required. The gate is a *trend guard*: it reports
+  # regressions against the committed baseline. We hard-fail here (the local
+  # machine is quiet enough to be actionable); CI runs the same command
+  # WITHOUT --fail-on-regression and uploads the JSONL as an artifact, because
+  # shared CI runners are too noisy to gate on.
+  #
+  # --iters must match how tools/bench-baseline.jsonl was produced. It is a
+  # floor, not the count used: a probe round scales it up so each timed round
+  # lasts >= 20 ms. Only BM_PostTask_RoundTrip ends up running at the floor,
+  # and for it the floor IS the measurement, so a mismatch here would compare
+  # a 20k-op round against a 50k-op one.
   if [ -z "$CMAKE" ]; then echo "cmake not found"; return 2; fi
   "$CMAKE" -S . -B build/bench -DAVBASE_BUILD_BENCH=ON -DAVBASE_BUILD_TESTS=OFF \
     -DAVBASE_ENABLE_FFMPEG=OFF >/dev/null 2>&1 \
@@ -162,8 +169,17 @@ job_bench() {
   bench_bin="$(find build/bench -name avbase_benchmarks -type f | head -1)"
   if [ -z "$bench_bin" ]; then echo "avbase_benchmarks not found"; return 1; fi
   local out; out="$(mktemp)"
-  "$bench_bin" --iters 50000 --rounds 11 --jsonl "$out" \
-    || { echo "bench run failed"; return 1; }
+  # Three runs, appended to one file: the checker takes the median per
+  # benchmark. Run-to-run spread is the dominant noise term, not round-to-round
+  # spread, and no tolerance setting fixes it -- one run of BM_DecideNextFrame
+  # has measured 15.4 ns and 20.0 ns minutes apart with no code change between
+  # them. Three runs cost seconds and remove the outliers that a single run
+  # would have to be forgiving enough to absorb.
+  local i
+  for i in 1 2 3; do
+    "$bench_bin" --iters 20000 --rounds 11 --jsonl "$out" \
+      || { echo "bench run failed"; return 1; }
+  done
   python3 tools/check_bench_regression.py --baseline tools/bench-baseline.jsonl \
     --current "$out" --fail-on-regression
 }

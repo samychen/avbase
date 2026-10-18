@@ -157,15 +157,26 @@ demuxer + 第二对渲染腿**，共用一个时钟——多一次完整解码�
 
 ## 6. 已知边界（0.1.0 性能面的未项）
 
-- **微基准已落地（base 层）**：`bench/` 是自包含 harness——无 Google
-  Benchmark（沙箱取不到，CI 也不该装），接 `AVBASE_BUILD_BENCH`，只链
-  `avbase::base`。实跑两项：`BM_PostTask_RoundTrip` ≈ 8.6 µs、
-  `BM_BindOnce_Invoke` ≈ 118 ns（mac 实测，入 `tools/bench-baseline.jsonl`）；
-  趋势守护 `tools/check_bench_regression.py`（>10% 回归告警），
-  `gate_local --jobs bench` 本地硬判定，CI 的 `bench` job 只记录并上传
-  artifact。**仍缺**：media/player 层的 `BM_*`（`DecideNextFrame` /
-  `GetMasterClock` / `EventHub::Post`）与端到端 CPU 门槛的机器判据——后者仍
-  靠 `bench_render.sh` 人工。
+- **微基准已落地（base + media 层 4 项）**：`bench/` 是自包含 harness——无
+  Google Benchmark（沙箱取不到，CI 也不该装），接 `AVBASE_BUILD_BENCH`，链
+  `avbase::base` + `avbase::media`（`media/ffmpeg` 是独立 target，故
+  `AVBASE_ENABLE_FFMPEG=OFF` 照样能编能跑）。mac 实测（p75，入
+  `tools/bench-baseline.jsonl`）：`BM_PostTask_RoundTrip` ≈ 10.5 µs、
+  `BM_BindOnce_Invoke` ≈ 138 ns、`BM_DecideNextFrame` ≈ 15.5 ns、
+  `BM_GetMasterClock` ≈ 6.3 ns。后两项即 §3 预算表里卡得最死的两条
+  （< 1 µs / < 200 ns），实测都在预算内两个数量级。
+  **仍缺**：`BM_EventHub_PostVisit` 等依赖 player 库的项，以及端到端 CPU
+  门槛的机器判据——后者仍靠 `bench_render.sh` 人工。
+- **10% 门槛 vs 25% 噪声地板，两件事**：docs/04 §8 的「微基准回退 > 10%
+  即 fail」是**设计门槛**，仍然有效、仍然是要守的目标。但作为**机器判据**，
+  10% 低于本机单次运行的噪声：同一二进制、无改动，p75 实测波动为
+  BindOnce +21%、DecideNextFrame +18%、GetMasterClock +13%。按 10% 判会在
+  零改动时误报（已实测发生），而一个总在误报的门禁会被习惯性 override，
+  之后什么都抓不住。故 `tools/bench-tolerance.json` 把**判定**阈值设为
+  25%（PostTask 40%，跨线程唤醒方差属 OS 调度器），降噪靠测量而非放宽：
+  每轮自适应跑够 20 ms、判定用 p75 而非均值、基线取 3 次运行的中位数。
+  鉴别力实测：给 `BM_DecideNextFrame` 加倍工作量 → +120% → 判 REGRESSION
+  （其余 3 项无误伤）。
 - **golden 对拍：diff 件已建，录制基线仍缺**：`tools/golden_diff.py` 按
   docs/07 §7.4 容差分级判定（帧数 / pts ±0、视频 hash 汉明 ≤5、事件序列
   类型与顺序一致、`late_us` ±5000 µs、`stat` 跳过）并支持 `allowlist.yaml`
