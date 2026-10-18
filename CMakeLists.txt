@@ -97,6 +97,11 @@ if(AVBASE_BUILD_TESTS AND AVBASE_ENABLE_FFMPEG)
   # under the tests gate (its asan/coverage runs are test infrastructure).
   add_subdirectory(tools/inspect)
 endif()
+if(AVBASE_BUILD_BENCH)
+  # Self-contained micro-benchmarks (docs/04 §8, M13). No Google Benchmark,
+  # no download; only avbase::base. Gated so the default build is unaffected.
+  add_subdirectory(bench)
+endif()
 
 include(AvbaseCheckInvariants)
 # Install/export/packaging rules (docs/06 §9, M13). Last on purpose: every

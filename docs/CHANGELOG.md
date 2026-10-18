@@ -51,6 +51,22 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   无构建）；删符号/改签名/枚举值变/虚表变判 breaking（rc=1），纯新增判
   compatible。gate_local --jobs apicompat 与 ci.yml apicompat job 同构。基线由
   --snapshot 生成、仅切 MAJOR 时带 --allow-breaking 刷新。v1 不跟踪公开数据成员。
+- 微基准自包含 harness（待回填 commit）：`bench/` 落地零依赖 micro-bench——
+  不用 Google Benchmark（沙箱取不到，CI 也不该装），并接上 `AVBASE_BUILD_BENCH`
+  （此前该 option 定义了但**全树无人消费**，没有任何 benchmark target）。只链
+  `avbase::base`，所以 `AVBASE_ENABLE_FFMPEG=OFF` 也能编能跑。首批两项：
+  `BM_PostTask_RoundTrip` ≈ 8.6 µs、`BM_BindOnce_Invoke` ≈ 118 ns（mac 实测）。
+  趋势守护 `tools/check_bench_regression.py` 对比入库基线
+  `tools/bench-baseline.jsonl`（回退 >10% 告警）；`gate_local --jobs bench`
+  本地硬判定，`ci.yml` 的 bench job 只记录并上传 artifact——共享 runner 噪声
+  大，且入库基线测于 mac、CI 跑在 linux，跨平台绝对值不可比，硬 fail 会假红。
+- golden 对拍 diff 件（待回填 commit）：`tools/golden_diff.py` 按 docs/07 §7.4
+  容差分级对比两份 JSONL 录制（帧数 / pts ±0、视频 hash 汉明距离 ≤5、事件序列
+  类型与顺序一致、arg ±5%、`late_us` ±5000 µs、`stat` 跳过）+ `allowlist.yaml`
+  豁免；自带 selftest（7 类判定）与突变反证。如实收窄一处：`audio.checksum`
+  按全等判定——格式里它是 CRC32，表达不了「逐样本差 ≤1 LSB」，需豁免走
+  allowlist。**录制基线仍缺**（需 ijkplayer 原版录制，Q8 未决 + 沙箱无原版），
+  故 CI 不跑对拍。
 - **文档**：COOKBOOK 22 条（每条按真实签名核对，代码块由
   `examples/doc_snippets` 编译验证）/ TROUBLESHOOTING 13 症状 /
   MIGRATION（docs/05 全部 Δ 项）/ EXTENDING / PERFORMANCE / API（Doxygen，
@@ -89,10 +105,16 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
 
 ### Known limitations（0.1.0 未含，见 docs/12）
 
-- Golden 对拍未落成：无 golden JSONL，`tools/bench_render.sh` 只有人工触发
-  的单机基准，CI 侧只有 docs/04 §8 预算表的 >10%/>5% 回归门槛。
-- 微基准未入 CI：`AVBASE_BUILD_BENCH` 选项存在，但全树无 benchmark target
-  与源文件（无 Google Benchmark 依赖），「基准达标」无机器判据。
+- Golden 对拍：diff 件已建（`tools/golden_diff.py`，按 docs/07 §7.4 容差分级
+  判定 + `allowlist.yaml` 豁免，自带 selftest 与突变反证），但**录制基线不在
+  仓库**——需 ijkplayer 原版录制（docs/07 §7.3），被开放问题 Q8（锁哪个
+  ijkplayer 版本）卡住、沙箱无原版，故 CI 不跑对拍（无基线可对比）。
+  `tools/bench_render.sh` 仍是人工触发的单机基准。
+- 微基准：已落地 base 层两项（`bench/` 自包含 harness，无 Google Benchmark；
+  `BM_PostTask_RoundTrip` / `BM_BindOnce_Invoke`），有入库基线
+  `tools/bench-baseline.jsonl` 与趋势守护 `tools/check_bench_regression.py`；
+  `gate_local --jobs bench` 硬判定，CI 只记录不硬 fail（跨平台噪声）。
+  **仍缺** media/player 层 `BM_*` 与端到端 CPU 门槛的机器判据。
 - 显示侧零拷贝未实测（需 Linux VAAPI-EGL / Windows D3D11-GL 硬件环境）。
 - E5 硬件编码器本体未实测（VideoToolbox / VAAPI / NVENC）。
 - soak 48h 未跑（沙箱禁读他进程 RSS，需 CI 长跑机）。

@@ -22,6 +22,7 @@
 #   apidocs -> apidocs                        (doxygen zero-warning gate + API.md freshness)
 #   commentcov -> commentcov                   (V9: player/public four-question comment coverage)
 #   apicompat -> apicompat                     (V10: API-surface diff vs committed baseline)
+#   bench   -> bench                          (M13: self-contained micro-benchmarks + trend guard; no Google Benchmark)
 #   macos   -> macos-player                   (macos-sdl2: build + freshness + ctest)
 #   capi    -> capi                           (build + freshness + ctest + C99 syntax)
 #   core    -> full[core]                     (no-ffmpeg: build + freshness + ctest)
@@ -144,6 +145,29 @@ job_apicompat() {
   python3 tools/check_api_compat.py
 }
 
+job_bench() {
+  # M13 (docs/04 §8, docs/07 §10): self-contained micro-benchmarks. Only
+  # links avbase::base, so no FFmpeg is required. The gate is a *trend guard*:
+  # it reports regressions against the committed baseline. We hard-fail here
+  # (the local machine is quiet enough to be actionable); CI runs the same
+  # command WITHOUT --fail-on-regression and uploads the JSONL as an artifact,
+  # because shared CI runners are too noisy for a hard 10% gate.
+  if [ -z "$CMAKE" ]; then echo "cmake not found"; return 2; fi
+  "$CMAKE" -S . -B build/bench -DAVBASE_BUILD_BENCH=ON -DAVBASE_BUILD_TESTS=OFF \
+    -DAVBASE_ENABLE_FFMPEG=OFF >/dev/null 2>&1 \
+    || { echo "bench configure failed"; return 1; }
+  "$CMAKE" --build build/bench --target avbase_benchmarks -j \
+    >/dev/null 2>&1 || { echo "bench build failed"; return 1; }
+  local bench_bin
+  bench_bin="$(find build/bench -name avbase_benchmarks -type f | head -1)"
+  if [ -z "$bench_bin" ]; then echo "avbase_benchmarks not found"; return 1; fi
+  local out; out="$(mktemp)"
+  "$bench_bin" --iters 50000 --rounds 11 --jsonl "$out" \
+    || { echo "bench run failed"; return 1; }
+  python3 tools/check_bench_regression.py --baseline tools/bench-baseline.jsonl \
+    --current "$out" --fail-on-regression
+}
+
 job_tidy() {
   if [ ! -x "$CT" ]; then echo "clang-tidy not found at $CT"; return 2; fi
   if [ -z "$CMAKE" ]; then echo "cmake not found"; return 2; fi
@@ -218,7 +242,7 @@ job_ubsan()   { gate_preset ubsan   "--test-dir build/ubsan --output-on-failure"
 job_coverage(){ gate_preset coverage "--test-dir build/coverage --output-on-failure"; }
 
 # --- Dispatch ----------------------------------------------------------------
-ALL_JOBS="inv fmt lint tidy apidocs commentcov apicompat macos capi core ffmpeg e2e asan tsan ubsan coverage"
+ALL_JOBS="inv fmt lint tidy apidocs commentcov apicompat bench macos capi core ffmpeg e2e asan tsan ubsan coverage"
 DEFAULT_JOBS="inv fmt commentcov apicompat macos capi"
 
 if [ "${1:-}" = "--list" ]; then
@@ -230,6 +254,7 @@ if [ "${1:-}" = "--list" ]; then
   echo "  apidocs apidocs (doxygen zero warnings; needs DOXYGEN= if not on PATH)"
   echo "  commentcov comment_comment_coverage (V9 player/public four-question coverage; python3, no deps)"
   echo "  apicompat apicompat (V10 API-surface diff vs tools/api_baseline.json; python3, no deps)"
+  echo "  bench    bench (M13 self-contained micro-benchmarks; python3 + avbase::base only, no FFmpeg, no Google Benchmark)"
   echo "  macos   macos-player (macos-sdl2)"
   echo "  capi    capi + C99 syntax check"
   echo "  core    full[core no-ffmpeg]"

@@ -711,6 +711,37 @@ jobs:
       - name: V10 API surface diff vs committed baseline
         run: python3 tools/check_api_compat.py
 
+  # docs/04 §8 and docs/07 §10 (M13): self-contained micro-benchmarks. No
+  # Google Benchmark (it cannot be fetched in the sandbox and the runner should
+  # not have to install it), no FFmpeg (the harness links only avbase::base).
+  # This job does NOT hard-fail on regression: the committed baseline is
+  # measured on the developer's machine (gate_local --jobs bench uses it), and a
+  # single shared CI runner is too noisy for a 10% gate. Here it records the
+  # numbers and uploads them as an artifact so the trend can be watched; the
+  # same command run locally with --fail-on-regression is the actionable gate.
+  bench:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build g++ python3
+      - name: Configure (bench only, no FFmpeg)
+        run: cmake -B build/bench -G Ninja -DAVBASE_BUILD_BENCH=ON -DAVBASE_BUILD_TESTS=OFF -DAVBASE_ENABLE_FFMPEG=OFF
+      - name: Build benchmarks
+        run: cmake --build build/bench --target avbase_benchmarks -j
+      - name: Run benchmarks
+        run: find build/bench -name avbase_benchmarks -type f -exec {} --iters 50000 --rounds 11 --jsonl bench-run.jsonl \;
+      - name: Upload trend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-run
+          path: bench-run.jsonl
+      - name: Diff against baseline (report only, non-blocking)
+        run: |
+          python3 tools/check_bench_regression.py \
+            --baseline tools/bench-baseline.jsonl \
+            --current bench-run.jsonl || true
+
   # A `check-gl-constants` job used to sit here. It machine-checked the
   # hand-written enumerant table in render/gl/gl_constants.h against the
   # platform's GL headers, because a typo in that table compiles clean and only

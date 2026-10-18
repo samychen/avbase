@@ -59,8 +59,13 @@ JSONL」未落成，回归靠单测 + 素材端到端 + sanitizer + corpus）。
 | **相对 FFmpeg 裸调的总额外开销** | **< 3% CPU** |
 
 CI 门槛（docs/08 R3）：**微基准回退 > 10% 或端到端 CPU 回退 > 5% 即 fail**。
-注意微基准当前不在 CI（没有 target），所以这条门槛目前靠
-`bench_render.sh` 的端到端数字人工把着——这是 0.1.0 的已知缺口。
+微基准这一半现在有机器判据了：`bench/` 自包含 harness 跑出数字，
+`tools/check_bench_regression.py` 与入库基线 `tools/bench-baseline.jsonl`
+对比，`gate_local --jobs bench` 本地硬 fail（开发机安静，结果可行动）。
+CI 的 `bench` job **不硬 fail**，只记录并上传 artifact：共享 runner 噪声大，
+10% 门槛会假红；而且入库基线测于 mac、CI 跑在 linux，跨平台绝对值本就不可
+比（见 §6「跨机器数字不可比」）。端到端 CPU 回退那 5% 仍无机器判据，仍靠
+`bench_render.sh` 人工。
 
 ## 4. 调优旋钮（按代价从高到低）
 
@@ -152,10 +157,23 @@ demuxer + 第二对渲染腿**，共用一个时钟——多一次完整解码�
 
 ## 6. 已知边界（0.1.0 性能面的未项）
 
-- **微基准不在 CI**：docs/04 §8 的 `BM_*` 清单未落成；端到端门槛（>10%/>5%）
-  目前只能靠 `bench_render.sh` 人工执行。
-- **golden 对拍未落成**：M10 的「原版录制 + 15 份 golden JSONL」不在仓库；
-  行为回归靠单测/素材/sanitizer/corpus（315 样本）。
+- **微基准已落地（base 层）**：`bench/` 是自包含 harness——无 Google
+  Benchmark（沙箱取不到，CI 也不该装），接 `AVBASE_BUILD_BENCH`，只链
+  `avbase::base`。实跑两项：`BM_PostTask_RoundTrip` ≈ 8.6 µs、
+  `BM_BindOnce_Invoke` ≈ 118 ns（mac 实测，入 `tools/bench-baseline.jsonl`）；
+  趋势守护 `tools/check_bench_regression.py`（>10% 回归告警），
+  `gate_local --jobs bench` 本地硬判定，CI 的 `bench` job 只记录并上传
+  artifact。**仍缺**：media/player 层的 `BM_*`（`DecideNextFrame` /
+  `GetMasterClock` / `EventHub::Post`）与端到端 CPU 门槛的机器判据——后者仍
+  靠 `bench_render.sh` 人工。
+- **golden 对拍：diff 件已建，录制基线仍缺**：`tools/golden_diff.py` 按
+  docs/07 §7.4 容差分级判定（帧数 / pts ±0、视频 hash 汉明 ≤5、事件序列
+  类型与顺序一致、`late_us` ±5000 µs、`stat` 跳过）并支持 `allowlist.yaml`
+  豁免，自带 selftest 与突变反证。一处如实收窄：`audio.checksum` 按**全等**
+  判定——录制格式里它是 CRC32，表达不了「逐样本差 ≤1 LSB」，需豁免时走
+  allowlist。**录制基线不在仓库**，需 ijkplayer 原版录制（docs/07 §7.3），
+  被开放问题 Q8（锁哪个 ijkplayer 版本）卡住且沙箱无原版，故 CI 不跑对拍：
+  没有基线可对比，跑出来等于没测。
 - **soak 48h 未跑**：脚本就绪（`tools/run_soak.py`，内存曲线斜率门禁），
   沙箱禁读他进程 RSS，需 CI 长跑机。
 - **跨机器数字不可比**：换机器/换负载重测，别拿两个环境的绝对值相减。

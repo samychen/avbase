@@ -1,0 +1,2 @@
+{"bench": "BM_BindOnce_Invoke", "iterations": 50000, "mean_ns_per_op": 118.421, "p75_ns_per_op": 140.257, "rounds": 11}
+{"bench": "BM_PostTask_RoundTrip", "iterations": 50000, "mean_ns_per_op": 8648.352, "p75_ns_per_op": 8870.259, "rounds": 11}
