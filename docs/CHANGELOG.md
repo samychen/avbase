@@ -80,6 +80,19 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   拆解。常规作用域内析构安全（同形态 3/3 rc=0）。bench 改为进程内共享一个
   有意泄漏的 hub；每轮栈上重建虽也能跑，但首轮冷线程+冷调度会高出 32%
   （2644 vs 1978/1997 ns），共享版更稳。
+- 端到端 CPU 回退的机器判据（`6e11e7b`）：`tools/measure_e2e_cpu.py` 用
+  `headless` 完整播一遍 1080p30 H.264（片源由 ffmpeg 生成并按参数缓存），取
+  子进程 CPU 时间（user+sys，getrusage）÷ 媒体时长 = `cpu_ms_per_media_s`，
+  5 次取中位数，与入库基线 `tools/e2e-cpu-baseline.jsonl` 比较——复用
+  `check_bench_regression.py`（为此新增 `--value-key`，判定/基线/容差逻辑
+  不重写第二套）。mac 实测 ≈ 45.6 ms/媒体秒（约一个核的 4.6%）。判据
+  **15% 而非 5%**：零改动时单次 43.1–53.2（8–16%），两组 5 次的中位数差
+  8.1%，且噪声是**比例性**的（4K 片源也没让它变小），摊薄启动开销无效。
+  鉴别力：合成负载烧 1 CPU 秒 → +175% → 判 REGRESSION。**敏感度局限如实记**：
+  null sink 不做像素处理，换 4K 片源仅 +12%（低于门槛），故它守的是解码与
+  管线的 CPU，渲染 CPU 仍靠 `tools/bench_render.sh` 人工。CI 在已构建的
+  headless 上顺手测一遍并上传（基线测于 mac 硬解、CI 跑 linux，绝对值不可
+  比），本机 `gate_local --jobs e2ecpu` 硬判定（约 1 分钟）。
 - 微基准测量方法修正（同一 commit）：① 每轮迭代数自适应放大到跑够 20 ms——
   此前 5 ns 的 op 只跑 250 µs 一轮，三次连跑出过 5.3/13.6/6.4 ns；② 判定量从
   mean 换成 p75；③ 基线取 3 次运行中位数。另新增 `tools/bench-tolerance.json`：
