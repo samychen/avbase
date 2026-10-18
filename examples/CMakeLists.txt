@@ -9,6 +9,17 @@ if(AVBASE_ENABLE_FFMPEG)
   target_link_libraries(headless PRIVATE avbase::avbase)
   avbase_configure_target(headless)
 
+  # docs/10 §12 V2/V8: every code block in README.md and docs/COOKBOOK.md is
+  # compiled. The snippets live here rather than only in the markdown so the
+  # documentation cannot drift from the frozen surface: a renamed signature
+  # turns this target red instead of a user's build. cookbook_smoke.cc carries
+  # the entries the other examples do not already exercise; play_sdl2 /
+  # pull_frames / headless cover window, event loop and custom sink.
+  add_executable(doc_snippets
+      doc_snippets/cookbook_smoke.cc)
+  target_link_libraries(doc_snippets PRIVATE avbase::avbase)
+  avbase_configure_target(doc_snippets)
+
   # Phase 3: the zero-copy frame-acquisition example. Needs the FFmpeg layer
   # for decode, and shows NativeHandle frames when a hardware factory is
   # enabled, but builds (and prints storage=cpu) without any of them.
