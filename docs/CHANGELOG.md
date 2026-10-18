@@ -40,6 +40,11 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   二进制新鲜度门禁（旧二进制曾造成误诊，第八十五轮起）/
   apidocs 门禁（doxygen 零 warning + filter 生效断言 + API.md 新鲜度，
   CI 与 gate_local 同构，`bde3e8c`）。
+- V9 注释覆盖率门禁（`e77c476`）：tools/check_comment_coverage.py 行状态机解析
+  （无 libclang 依赖），player/public 四问注释存在率 ≥95%；gate_local
+  --jobs commentcov 与 ci.yml commentcov job 同构（--min-existence-rate 95
+  --min-full-rate 0，python3 无外部依赖）。解析器修两处漏计 bug 后实测 170 个
+  public 声明、存在率 100%。
 - **文档**：COOKBOOK 22 条（每条按真实签名核对，代码块由
   `examples/doc_snippets` 编译验证）/ TROUBLESHOOTING 13 症状 /
   MIGRATION（docs/05 全部 Δ 项）/ EXTENDING / PERFORMANCE / API（Doxygen，
