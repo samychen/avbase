@@ -60,7 +60,7 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   `tools/bench-baseline.jsonl`（回退 >10% 告警）；`gate_local --jobs bench`
   本地硬判定，`ci.yml` 的 bench job 只记录并上传 artifact——共享 runner 噪声
   大，且入库基线测于 mac、CI 跑在 linux，跨平台绝对值不可比，硬 fail 会假红。
-- 微基准扩到 media 层（待回填 commit）：新增 `BM_DecideNextFrame` ≈ 15.5 ns、
+- 微基准扩到 media 层（`129c6f3`）：新增 `BM_DecideNextFrame` ≈ 15.5 ns、
   `BM_GetMasterClock` ≈ 6.3 ns（mac 实测 p75），即 docs/04 §8 预算里最紧的两条
   （< 1 µs / < 200 ns），实测在预算内两个数量级；`bench/` 因此改为链
   `avbase::media`，FFmpeg 仍不需要。
