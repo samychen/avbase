@@ -25,6 +25,7 @@ option(AVBASE_ENABLE_D3D11  "Build the D3D11 hw decoder factory"   OFF)
 
 option(AVBASE_BUILD_TESTS    "Build unit/contract/integration tests" ${AVBASE_IS_TOP_LEVEL})
 option(AVBASE_BUILD_EXAMPLES "Build example programs"               ${AVBASE_IS_TOP_LEVEL})
+option(AVBASE_BUILD_QT_PLAYER "Build the Qt Quick player/editor app (needs Qt 6.4+)" OFF)
 option(AVBASE_BUILD_BENCH    "Build benchmarks"                     OFF)
 option(AVBASE_BUILD_FUZZ     "Build libFuzzer targets"              OFF)
 option(AVBASE_INSTALL        "Generate install rules"               ${AVBASE_IS_TOP_LEVEL})

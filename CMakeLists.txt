@@ -73,6 +73,13 @@ add_subdirectory(platform)
 if(AVBASE_BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
+# Host applications (apps/) are SDK CONSUMERS and are gated separately from the
+# examples: an example proves the SDK is usable in thirty lines, an app is a
+# product shell with its own toolkit dependency. Nothing in the core may include
+# an apps/ header -- the same one-way rule as C28 for render/.
+if(AVBASE_BUILD_QT_PLAYER)
+  add_subdirectory(apps)
+endif()
 if(AVBASE_BUILD_TESTS)
   enable_testing()
   # After enable_testing() on purpose. The C ABI directory is added far above,

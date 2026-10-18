@@ -80,6 +80,20 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
   报 `Unknown NOLINT error category`。
 
 ## 操作教训（都真踩过）
+
+- **`avbase_configure_target()` 会给目标加 `-fno-exceptions -fno-rtti`，Qt 目标
+  绝不能套它。** 全树禁 RTTI 是核心库的规矩，但 Qt 的元对象系统
+  （`qobject_cast`、`QML` 引擎的类型转换、`Q_OBJECT` 的 `staticMetaObject`）
+  依赖 RTTI；套上去的表现是 moc 生成的代码编译失败或 `qobject_cast` 恒空，
+  而不是一条清晰的报错。UI 应用在 `apps/` 里自己设 flags，别复用核心库那份
+  helper——它们是「消费者」，本来就该和核心库有不同的编译契约。
+
+- **Qt 侧拿不到 avbase 的 GL sink 时，先进的自定义 `VideoRendererSink` 路线**：
+  `VideoRendererSink` 是 pull 模型（自己起线程调 `upstream_->Render()` 拿
+  `VideoFrame`），所以宿主可以完全绕开 GL 后端把帧取到自己手里。这比新写一个
+  `NativeDisplayKind` + backend 便宜一个数量级，代价是 CPU 上传（1080p30 够用）。
+  要做零拷贝再上 `platform/qt/` 的 `NativeGLContext` 适配（只需 5 个方法）。
+
 - **声称「全树通过」前必须真扫全树。** 门禁的「绿」常常是「没跑」；2 秒跑完的「全树格式
   检查」一定没跑；**exit=127（command not found）会让门禁看起来绿**。
 - **「版本不对的工具」是另一种假门禁**（第七十四轮）：PATH 里没有 clang-format 时

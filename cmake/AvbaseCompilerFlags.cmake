@@ -37,6 +37,33 @@ set(AVBASE_WARNINGS_STRICT
 set(AVBASE_WARNINGS_STRICT_GCC_ONLY
     -Wuseless-cast)
 
+# The ABI half of avbase_configure_target(): every macro that changes how a
+# type in a PUBLIC HEADER is laid out.
+#
+# This is separate from the function below because a host application cannot
+# always take the library's -fno-exceptions / -fno-rtti (Qt's meta-object
+# system needs RTTI), but it MUST still see identical layouts. Getting this
+# wrong is silent and expensive: SEQUENCE_CHECKER expands to a member when
+# AVBASE_ENABLE_DCHECK is defined and to nothing when it is not, so a
+# VideoFrame built by the library (one layout) and released through an inline
+# scoped_refptr in the app (the other layout) AddRef()s the wrong field -- the
+# refcount never grows, the frame is freed while the compositor still holds it,
+# and the crash lands in heap-allocator internals somewhere unrelated.
+#
+# Measured on apps/player_qt: AddressSanitizer reported heap-use-after-free in
+# VideoFrameCompositor::Render, 40 bytes into a 232-byte VideoFrame, freed from
+# the app's paint path. Adding these definitions fixed it.
+function(avbase_configure_abi_definitions target)
+  target_compile_definitions(${target} PRIVATE
+      $<$<BOOL:${AVBASE_ENABLE_DCHECK}>:AVBASE_ENABLE_DCHECK=1>
+      $<$<CONFIG:Debug>:AVBASE_DEBUG=1>)
+  check_cxx_compiler_flag(-Wthread-safety _avbase_has_thread_safety)
+  if(_avbase_has_thread_safety)
+    target_compile_definitions(${target} PRIVATE
+        AVBASE_THREAD_SAFETY_ANALYSIS=1)
+  endif()
+endfunction()
+
 function(avbase_configure_target target)
   target_compile_features(${target} PUBLIC cxx_std_20)
 
@@ -60,13 +87,10 @@ function(avbase_configure_target target)
     check_cxx_compiler_flag(-Wthread-safety AVBASE_HAS_THREAD_SAFETY)
     if(AVBASE_HAS_THREAD_SAFETY)
       target_compile_options(${target} PRIVATE -Wthread-safety)
-      target_compile_definitions(${target} PRIVATE AVBASE_THREAD_SAFETY_ANALYSIS=1)
     endif()
   endif()
 
-  target_compile_definitions(${target} PRIVATE
-      $<$<BOOL:${AVBASE_ENABLE_DCHECK}>:AVBASE_ENABLE_DCHECK=1>
-      $<$<CONFIG:Debug>:AVBASE_DEBUG=1>)
+  avbase_configure_abi_definitions(${target})
 
   if(AVBASE_SANITIZERS)
     set(_sf "")
