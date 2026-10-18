@@ -48,6 +48,15 @@ using media::DataSourceDescriptor;
 // bounded by PlayerConfig::shutdown_timeout, so ~Player() cannot hang the
 // caller (behaviour difference Δ15).
 //
+// WATCH OUT: do NOT give a Player static storage duration with automatic
+// destruction. ~Player() joins the event thread (and, via the pipeline, the
+// media/video/audio threads). Running that join from C++ static-destruction
+// phase -- a `static Player` torn down at program exit -- crashes empirically
+// (bench/bench_event_hub.cc measured SIGABRT/SIGILL on exit for the analogous
+// static EventHub). If a Player must outlive everything, leak it (e.g. `new
+// Player(...)` and never delete) rather than letting its destructor run at
+// atexit.
+//
 // Minimal use:
 //
 //   avbase::Player player;

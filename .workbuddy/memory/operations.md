@@ -193,6 +193,31 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
   容易放过，但 `bugprone-multi-level-implicit-pointer-conversion` 认它 —— 且
   **`static_cast` 不消这个 check**，它要最强的承认（`reinterpret_cast`）。
 
+- **回退链的「非我」信号必须在 open 之前发**（第九十五轮 VideoToolbox 修复）：
+  `FFmpegHwDecoderSpec::config_supported` 这种「这个流我不接」的否决，要在
+  `avcodec_open2()` **之前**判定并返回 `nullptr`（DecoderStream 既定的「非我」回退
+  信号），而不是等首个 packet 解码失败再放弃。后者会连错
+  `kMaxConsecutiveDecodeErrors`（20 次）才 `kDecodeFailed`，软件解码尾永远到不了——
+  而 VideoToolbox 正是 `open` 成功、**第一个 packet 才** `hwaccel initialisation
+  returned error` 的形态，事前没有任何字段能拦，于是「硬件失败 → 全流放弃」而不是
+  「硬件拒收 → 软件顶上」。判定「某后端能否吃这个流」的逻辑越早越好，且**必须走
+  「返回 nullptr = 非我」而非「开出来再失败」**：`config_supported` 字段声明了却
+  不接线 = 等于没有这道门。`ffmpeg_hw_decoder_factory.cc` 在 codec 掩码之后 consult
+  它；改 hw 后端时这条顺序别动。
+- **`avbase::Player` 不可置于静态存储期（自动析构）。** bench
+  （`bench/bench_event_hub.cc`）实测：把含 `EventHub` 的对象做成函数内 `static` 值，
+  进程退出时 6 次里 5 次 SIGABRT、1 次 SIGILL——`~EventHub`→`Shutdown`→
+  `base::Thread::Stop`→`std::thread::join()` 在 **C++ 静态析构阶段（main 返回后）**
+  执行会炸。`Player` 经 PIMPL 持有 `EventHub`（按值 `event_hub_`），且
+  `~PlayerImpl`（player_impl.cc:89）在析构体里就 `event_hub_.Shutdown()` +
+  `media/video/audio_thread_.Stop()` **显式 join**——所以 `static Player` 在 atexit
+  走的是**同一个 join 路径**，同风险（且一次 join 4 条线程）。`player.h` 析构注释里
+  写的「bounded by shutdown_timeout 不会挂」成立，但**挂不挂和崩不崩是两回事**：
+  shutdown_timeout 只防 hang，不防 atexit join 的崩。安全写法：栈上 / `unique_ptr`
+  等你在 main 返回前显式销毁的对象；若必须全程存活，用 `new Player(...)` 后永不
+  delete（或等价泄漏手段），别让析构在 atexit 跑。`EventHub` 同理（bench 的
+  `SharedHub()` 就是故意泄漏）。
+
 ## 「可执行文件比库旧」——诊断前必查，否则整个诊断都是假的
 
 **实测(第八十五轮，两次翻车)**：
