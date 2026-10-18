@@ -43,16 +43,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-
-def load_rows(path: Path) -> list[dict]:
-    rows = []
-    text = path.read_text(encoding="utf-8")
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        rows.append(json.loads(line))
-    return rows
+from _jsonl import load_jsonl
 
 
 def value_of(row: dict, key: str = None) -> float:
@@ -136,8 +127,8 @@ def load_tolerances(path: Path) -> tuple[float, dict]:
 def check(baseline_path: Path, current_path: Path, threshold: float,
           fail_on_regression: bool, per_bench: dict = None,
           value_key: str = None) -> int:
-    base_rows = load_rows(baseline_path) if baseline_path.exists() else []
-    cur_rows = load_rows(current_path)
+    base_rows = load_jsonl(baseline_path) if baseline_path.exists() else []
+    cur_rows = load_jsonl(current_path)
     if not cur_rows:
         print("check_bench_regression: no current rows; nothing to do")
         return 0
@@ -183,7 +174,7 @@ def check(baseline_path: Path, current_path: Path, threshold: float,
 
 
 def update_baseline(baseline_path: Path, current_path: Path) -> None:
-    rows = load_rows(current_path)
+    rows = load_jsonl(current_path)
     baseline_path.parent.mkdir(parents=True, exist_ok=True)
     with baseline_path.open("w", encoding="utf-8") as f:
         for r in rows:

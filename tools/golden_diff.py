@@ -33,6 +33,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from _jsonl import load_jsonl
+
 # docs/07 §7.4 容差分级表。0 = 必须完全一致；正数是绝对容差（除 event.arg
 # 是相对比例）。'skip' = 不做 golden（阶段耗时走性能基准）。
 DEFAULT_TOLERANCE = {
@@ -112,15 +114,6 @@ def load_allowlist(path):
     if cur is not None:
         items.append(cur)
     return items
-
-
-def load_jsonl(path):
-    rows = []
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line:
-            rows.append(json.loads(line))
-    return rows
 
 
 def hamming_hex(a, b):
