@@ -36,6 +36,10 @@ class AVBASE_PLAYER_EXPORT EventDispatcher {
  public:
   EventDispatcher(const EventDispatcher&) = delete;
   EventDispatcher& operator=(const EventDispatcher&) = delete;
+  // Queues |task| on the sequence this dispatcher represents; it runs after
+  // the current task returns. Any thread.
+  // Errors: none.
+  // Side effects: none until the task runs.
   virtual void Post(base::OnceClosure task) = 0;
   // Blocks until every queued task has run. Called from ~Player() so the host
   // still receives the final StateChanged{to=kStopped}.

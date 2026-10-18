@@ -62,8 +62,17 @@ class AVBASE_PLAYER_EXPORT SceneLayer {
  public:
   SceneLayer() = default;
 
+  // Whether this handle refers to a live layer (false for a default-built
+  // or removed one).
+  // Errors: none. Side effects: none.
   bool valid() const;
+  // True exactly when valid(); lets a handle be used in a boolean context
+  // (if/while) without an explicit valid() call.
+  // Thread safety: any thread; reads only the immutable handle state.
+  // Errors: none. Side effects: none.
   explicit operator bool() const { return valid(); }
+  // Stable id of the layer, unique within the scene.
+  // Errors: none. Side effects: none.
   uint64_t id() const { return id_; }
 
   // Every setter here REJECTS a bad value instead of clamping it. A setter
@@ -92,6 +101,10 @@ class AVBASE_PLAYER_EXPORT SceneLayer {
   // frame as the decoder stored it. Read here rather than in the turned
   // frame, so one rect means the same pixels whichever way the clip was shot.
   bool SetSourceRect(float x, float y, float w, float h);
+  // Chooses how the source is fitted into the layer rect (fit / fill /
+  // stretch). Rejects an unknown mode instead of clamping.
+  // Errors: none -- a bad mode returns false.
+  // Side effects: applies from the next composited frame.
   bool SetContentMode(SceneContentMode mode);
 
   // The angle this layer is drawn at, after the frame's own rotation and any
@@ -133,7 +146,12 @@ class AVBASE_PLAYER_EXPORT SceneFrame {
   // Adds an empty layer at |z|, or returns an invalid handle when the scene
   // refused one. The layer stays until RemoveLayer().
   SceneLayer AddLayer(int z);
+  // Removes a layer; false when the handle was already invalid.
+  // Errors: none.
+  // Side effects: the layer stops compositing immediately.
   bool RemoveLayer(SceneLayer layer);
+  // Number of live layers.
+  // Errors: none. Side effects: none.
   size_t layer_count() const;
 
   // The layer a registered source is drawing into, or an invalid handle when
@@ -191,7 +209,11 @@ using SceneUpdateCallback = base::RepeatingCallback<void(
 class AVBASE_PLAYER_EXPORT SceneSource
     : public std::enable_shared_from_this<SceneSource> {
  public:
+  // The name this source was registered under (not unique; see FindSource).
+  // Errors: none. Side effects: none.
   const std::string& name() const { return name_; }
+  // Stacking order the source was registered with.
+  // Errors: none. Side effects: none.
   int z() const { return z_; }
 
   // Hands over the newest frame. Any thread, any number of them.
@@ -208,8 +230,14 @@ class AVBASE_PLAYER_EXPORT SceneSource
   // and calls MakePublisherFactory() -- that path was retired.
   bool Publish(base::scoped_refptr<media::VideoFrame> frame);
 
+  // Frames accepted by Publish() so far.
+  // Errors: none. Side effects: none.
   uint64_t frames_published() const;
+  // Frames the scene actually consumed for compositing.
+  // Errors: none. Side effects: none.
   uint64_t frames_consumed() const;
+  // Frames dropped because a newer one arrived first.
+  // Errors: none. Side effects: none.
   uint64_t frames_superseded() const;
 
  private:
@@ -269,8 +297,19 @@ class AVBASE_PLAYER_EXPORT Scene {
   // Names are not required to be unique: a name is how a host finds its own
   // source again, not an identity, and FindSource() answers with the first.
   std::shared_ptr<SceneSource> AddSource(std::string name, int z);
+  // Drops a source from the scene; the compositor stops drawing it.
+  // Thread safety: any thread. Returns false when the handle was already gone
+  // (a double remove is not an error).
+  // Errors: none beyond that. Side effects: the source's layer is released and
+  // its outstanding frames are drained and freed.
   bool RemoveSource(const std::shared_ptr<SceneSource>& source);
+  // Looks up a registered source by name; names are not unique, so this
+  // returns the first match.
+  // Thread safety: any thread; reads the registry snapshot.
+  // Errors: returns nullptr when no source has that name. Side effects: none.
   std::shared_ptr<SceneSource> FindSource(std::string_view name) const;
+  // Number of currently registered sources.
+  // Thread safety: any thread. Errors: none. Side effects: none.
   size_t source_count() const;
 
   // Installs the per-frame placement hook. Callable at any time; it takes

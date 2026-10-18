@@ -73,6 +73,18 @@ LINE_LIMIT_ALLOWLIST = {
              "branch of OnTracksChanged (reject a source_id that names no "
              "registered source before indexing text_legs_), raising it "
              "690 -> 693."),
+    # The C ABI is deliberately ONE file: a host reads this header to learn
+    # the whole contract, and splitting it would move part of an ABI out of
+    # the one place a C compiler is pointed at. What pushed it over 500 is
+    # V9 (docs/10 §5): every entry point's comment must answer the four
+    # questions (what / thread-and-blocking / errors / side effects), which
+    # is now gated by tools/check_comment_coverage.py. The alternative --
+    # compressing those comments to fit -- was rejected: they are the reason
+    # the file exists.
+    "player/public/c/avbase_c.h": (
+        545, "C ABI contract header: one file IS the ABI, and V9 "
+             "(docs/10 §5) four-question comments on all 60 entry points "
+             "took it 441 -> 539 (2026-10-18, V9 gate)."),
     "player/player_impl.cc": (
         500, "The facade: config validation, the source/pipeline lifecycle, "
              "track selection, options and the public event surface. Its "

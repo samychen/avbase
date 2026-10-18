@@ -108,6 +108,8 @@ struct AVBASE_PLAYER_EXPORT PlaybackStats {
   size_t heap_bytes_estimate{0};
   uint64_t events_dropped_by_overflow{0};
 
+  // Serialises the stats as JSON, for logs and monitoring pipelines.
+  // Errors: none. Side effects: none.
   std::string ToJson() const;
 };
 

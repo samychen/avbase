@@ -53,14 +53,33 @@ class AVBASE_PLAYER_EXPORT OptionRegistry {
   OptionRegistry(const OptionRegistry&) = delete;
   OptionRegistry& operator=(const OptionRegistry&) = delete;
 
+  // Returns the process-wide OptionRegistry.
+  // Thread safety: any thread; the instance is constructed once and then
+  // read-only, so the read path needs no locking.
+  // Errors: none (never fails). Side effects: none -- first-call construction
+  // is deferred and idempotent.
   static const OptionRegistry& GetInstance();
 
+  // Writes |value| into |config| for the option |key| of |category|.
+  // Errors: kInvalidArgument for an unknown key (the message carries a
+  // "did you mean" suggestion) or a value outside the option's range.
+  // Side effects: mutates |config| only on success.
   Status SetInt(PlayerConfig* config, OptionCategory category,
                 std::string_view key, int64_t value) const;
+  // Double form of SetInt; same contract.
+  // Errors: kInvalidArgument for an unknown key or out-of-range value.
+  // Side effects: mutates |config| only on success.
   Status SetDouble(PlayerConfig* config, OptionCategory category,
                    std::string_view key, double value) const;
+  // String form of SetInt; same contract.
+  // Errors: kInvalidArgument for an unknown key or unparsable value.
+  // Side effects: mutates |config| only on success.
   Status SetString(PlayerConfig* config, OptionCategory category,
                    std::string_view key, std::string_view value) const;
+  // Typed-value form of SetInt; dispatches on the OptionValue's kind.
+  // Errors: kInvalidArgument for an unknown key or a kind the option does
+  // not accept.
+  // Side effects: mutates |config| only on success.
   Status SetValue(PlayerConfig* config, OptionCategory category,
                   std::string_view key, const OptionValue& value) const;
 

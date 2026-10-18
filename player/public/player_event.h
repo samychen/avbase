@@ -38,6 +38,8 @@ enum class PlayerState : uint8_t {
   kError,
   kEnd,
 };
+// Stable spelling of |state| for logs and diagnostics; never null.
+// Side effects: none.
 AVBASE_PLAYER_EXPORT const char* GetPlayerStateName(PlayerState state);
 
 enum class EventType {
@@ -68,6 +70,8 @@ enum class EventType {
   kStats,
   kHdrUnsupported,
 };
+// Stable spelling of |type| for logs and diagnostics; never null.
+// Side effects: none.
 AVBASE_PLAYER_EXPORT const char* GetEventTypeName(EventType type);
 
 struct AVBASE_PLAYER_EXPORT PreparedPayload {
@@ -222,31 +226,52 @@ AVBASE_DECLARE_EVENT_ACCESSOR(AsStats, StatsPayload);
 // Downgrade path for hosts that still speak ijkplayer's (what, arg1, arg2, obj)
 // quadruple — used by the optional C ABI layer and the Android JNI binding so
 // that an existing Java message handler keeps working unchanged.
+// Side effects: none (pure mapping; |obj| in the result borrows the event's
+// strings and stays valid while |event| does).
 struct AVBASE_PLAYER_EXPORT LegacyEvent {
   int what{0};
   int64_t arg1{0};
   int64_t arg2{0};
   std::string obj;
 };
+// Maps a modern PlayerEvent to the legacy Android-style event the struct
+// above describes, so an existing Java message handler keeps working.
+// Thread safety: any thread; pure mapping, no shared state.
+// Errors: returns false (and leaves |out| defaulted) when |event| has no
+// legacy equivalent. Side effects: none; |out| borrows the event's strings
+// and stays valid only while |event| does.
 AVBASE_PLAYER_EXPORT bool ToLegacyEvent(const PlayerEvent& event,
                                         LegacyEvent* out);
 
 // Observer interface, for projects that prefer virtual dispatch over a
 // std::function. Only the events you override are delivered.
+//
+// Every callback runs on the event dispatch sequence and must not block;
+// the default implementations ignore the event. Overriding OnEvent() alone
+// receives everything (including the events without a dedicated hook).
 class AVBASE_PLAYER_EXPORT PlayerObserver {
  public:
   PlayerObserver(const PlayerObserver&) = delete;
   PlayerObserver& operator=(const PlayerObserver&) = delete;
   virtual ~PlayerObserver() = default;
 
+  // Metadata is ready; the payload mirrors avbase::MediaInfo.
   virtual void OnPrepared(const PreparedPayload&) {}
+  // Playback reached the end (one call per pass with SetLoopCount).
   virtual void OnCompleted(const CompletedPayload&) {}
+  // A fatal error; the payload carries the ErrorCode and a message.
   virtual void OnError(const ErrorPayload&) {}
+  // The machine changed state; the payload names the transition.
   virtual void OnStateChanged(const StateChangedPayload&) {}
+  // The video size (or rotation) changed; re-layout the surface.
   virtual void OnVideoSizeChanged(const VideoSizeChangedPayload&) {}
+  // Buffering progress; the payload carries buffered-ahead and percent.
   virtual void OnBufferingProgress(const BufferingProgressPayload&) {}
+  // A seek finished; the payload carries requested-vs-actual.
   virtual void OnSeekCompleted(const SeekCompletedPayload&) {}
+  // A subtitle cue is due; the payload carries the cue text.
   virtual void OnTimedText(const TimedTextPayload&) {}
+  // Periodic stats snapshot (see PlaybackStats).
   virtual void OnStats(const StatsPayload&) {}
   // Catch-all for anything not overridden above.
   virtual void OnEvent(const PlayerEvent&) {}

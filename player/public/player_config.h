@@ -251,6 +251,7 @@ struct AVBASE_PLAYER_EXPORT ConfigIssue {
 
 // Returns every problem at once, so a caller can fix them in a single pass
 // instead of discovering them one rebuild at a time.
+// Side effects: none (pure validation).
 AVBASE_PLAYER_EXPORT std::vector<ConfigIssue>
 ValidateConfig(const PlayerConfig& config);
 

@@ -675,6 +675,23 @@ jobs:
           tools/gen_api_docs.sh
           git diff --exit-code docs/API.md
 
+  # docs/10 §12 acceptance criterion (V9): every public method's comment in
+  # player/public answers four questions (what / thread+blocking / failure /
+  # side effects), and coverage of declarations that HAVE a comment is >= 95%.
+  # No libclang: a line-state machine keeps the check runnable on a clean
+  # runner the way apidocs' own gate is. --min-full-rate 0 = report the
+  # four-dimension "full" metric but do not fail on it yet (pure getters
+  # legitimately answer "none"; forcing the wording is the noise the design
+  # avoids -- see tools/check_comment_coverage.py's docstring).
+  commentcov:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python
+        run: sudo apt-get update && sudo apt-get install -y python3
+      - name: V9 public comment coverage
+        run: python3 tools/check_comment_coverage.py --min-existence-rate 95 --min-full-rate 0
+
   # A `check-gl-constants` job used to sit here. It machine-checked the
   # hand-written enumerant table in render/gl/gl_constants.h against the
   # platform's GL headers, because a typo in that table compiles clean and only

@@ -20,6 +20,7 @@
 #   lint    -> check-cpplint                  (cpplint --repository=., whole tree)
 #   tidy    -> check-clang-tidy (core scope)  (clang-tidy 18, no PCH scratch db)
 #   apidocs -> apidocs                        (doxygen zero-warning gate + API.md freshness)
+#   commentcov -> commentcov                   (V9: player/public four-question comment coverage)
 #   macos   -> macos-player                   (macos-sdl2: build + freshness + ctest)
 #   capi    -> capi                           (build + freshness + ctest + C99 syntax)
 #   core    -> full[core]                     (no-ffmpeg: build + freshness + ctest)
@@ -120,6 +121,18 @@ job_apidocs() {
   tools/gen_api_docs.sh && git diff --exit-code docs/API.md
 }
 
+job_commentcov() {
+  # V9 (docs/10 §5 and §12): every public method's comment in player/public
+  # must answer four questions (what / thread+blocking / failure / side
+  # effects), and coverage of declarations that HAVE a comment must be >= 95%.
+  # Pure Python, no libclang, so it runs on a clean runner the same way the
+  # apidocs gate does. --min-full-rate 0 = report the four-dimension "full"
+  # metric but do not fail on it yet (pure getters legitimately answer "none",
+  # and forcing every comment to spell that out is the noise the design avoids
+  # -- see tools/check_comment_coverage.py's docstring).
+  python3 tools/check_comment_coverage.py --min-existence-rate 95 --min-full-rate 0
+}
+
 job_tidy() {
   if [ ! -x "$CT" ]; then echo "clang-tidy not found at $CT"; return 2; fi
   if [ -z "$CMAKE" ]; then echo "cmake not found"; return 2; fi
@@ -194,8 +207,8 @@ job_ubsan()   { gate_preset ubsan   "--test-dir build/ubsan --output-on-failure"
 job_coverage(){ gate_preset coverage "--test-dir build/coverage --output-on-failure"; }
 
 # --- Dispatch ----------------------------------------------------------------
-ALL_JOBS="inv fmt lint tidy apidocs macos capi core ffmpeg e2e asan tsan ubsan coverage"
-DEFAULT_JOBS="inv fmt macos capi"
+ALL_JOBS="inv fmt lint tidy apidocs commentcov macos capi core ffmpeg e2e asan tsan ubsan coverage"
+DEFAULT_JOBS="inv fmt commentcov macos capi"
 
 if [ "${1:-}" = "--list" ]; then
   echo "Job -> CI job (see .github/workflows/ci.yml):"
@@ -204,6 +217,7 @@ if [ "${1:-}" = "--list" ]; then
   echo "  lint    check-cpplint (cpplint 1.6.1)"
   echo "  tidy    check-clang-tidy (clang-tidy 18, PCH off scratch db)"
   echo "  apidocs apidocs (doxygen zero warnings; needs DOXYGEN= if not on PATH)"
+  echo "  commentcov comment_comment_coverage (V9 player/public four-question coverage; python3, no deps)"
   echo "  macos   macos-player (macos-sdl2)"
   echo "  capi    capi + C99 syntax check"
   echo "  core    full[core no-ffmpeg]"

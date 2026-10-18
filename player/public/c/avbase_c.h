@@ -38,6 +38,11 @@
 //      through a C frame (which is undefined behaviour, not "an error").
 //   6. Thread safety matches the C++ API: per-player methods are callable from
 //      any thread; the event callback runs on the event sequence.
+//   7. No entry point blocks the caller, with two documented exceptions --
+//      avbase_player_stop_sync and avbase_player_prepare_sync -- which wait
+//      for the pipeline and are bounded by their timeout argument. Every
+//      other call returns immediately; work happens on engine sequences and
+//      arrives through the event callback.
 
 #ifndef AVBASE_PLAYER_PUBLIC_C_AVBASE_C_H_
 #define AVBASE_PLAYER_PUBLIC_C_AVBASE_C_H_
@@ -58,14 +63,17 @@ extern "C" {
 // symbol changes meaning or disappears; adding symbols is a minor bump. A host
 // compiled against an older header keeps working against a newer library, so
 // this exists to let it decide whether to feature-detect instead.
+// Side effects: none.
 AVBASE_C_API const char* avbase_c_version(void);
 
 // Mirrors avbase::GetVersion() ("0.1.0").
+// Side effects: none.
 AVBASE_C_API const char* avbase_engine_version(void);
 
 // Mirrors avbase::GlobalInit(). Optional: every avbase_player_create() calls
 // it. Call it yourself only to guarantee it happens before your first X11 or
 // FFmpeg call.
+// Side effects: idempotent global init (FFmpeg/X11 once per process).
 AVBASE_C_API void avbase_global_init(void);
 
 // ---------------------------------------------------------------------------
@@ -104,10 +112,12 @@ typedef int32_t AvbaseStatus;
 // Stable, never-null, never-freed name of a code, e.g. "kSourceNotFound".
 // The name is the enum SPELLING on purpose: it is what a bug report will say,
 // and it stays readable across a mapping to a legacy code in a Java handler.
+// Side effects: none.
 AVBASE_C_API const char* avbase_status_name(AvbaseStatus status);
 
 // The engine's own message for |status|: a human sentence naming the likely
 // cause, or "" when it has nothing to add. Never null.
+// Side effects: none.
 AVBASE_C_API const char* avbase_status_message(AvbaseStatus status);
 
 // ---------------------------------------------------------------------------
@@ -130,32 +140,53 @@ typedef struct AvbaseSource AvbaseSource;
 // Creates a player with the default platform backends and an event handler
 // already attached, so no call can race a subscription. Returns null only when
 // the process is out of memory.
+// Side effects: allocates a player (release with avbase_player_destroy).
 AVBASE_C_API AvbasePlayer* avbase_player_create(void);
 
 // Destroying a null player is a no-op (not an error) so that cleanup paths can
 // call it unconditionally after a failed create.
+// Side effects: releases every pipeline resource, bounded by the shutdown
+// timeout.
 AVBASE_C_API void avbase_player_destroy(AvbasePlayer* player);
 
 // Bounded by PlayerConfig::shutdown_timeout; does not hang.
+// Blocking Stop: returns once the pipeline has really stopped.
+// Side effects: emits kStateChanged(kStopped).
 AVBASE_C_API void avbase_player_stop_sync(AvbasePlayer* player,
                                           int64_t timeout_ms);
 
 // SetDataSource(uri). |uri| is copied; the caller keeps ownership.
+// Side effects: moves the machine to kInitialized.
 AVBASE_C_API AvbaseStatus avbase_player_set_data_source(AvbasePlayer* player,
                                                         const char* uri);
 
+// PrepareAsync(): setup starts and this returns immediately; kPrepared (what
+// =200) arrives through the event callback.
+// Side effects: emits kPrepared, or kError on failure.
 AVBASE_C_API AvbaseStatus avbase_player_prepare(AvbasePlayer* player);
+// Blocking PrepareAsync, bounded by |timeout_ms|; a successful return may
+// already be kStarted when start_on_prepared is set.
+// Side effects: emits kPrepared, or kError on failure.
 AVBASE_C_API AvbaseStatus avbase_player_prepare_sync(AvbasePlayer* player,
                                                      int64_t timeout_ms);
 
+// Starts playback (legal from kPrepared/kPaused/kCompleted); illegal states
+// are logged and ignored, never fatal.
+// Side effects: emits kStateChanged(kStarted).
 AVBASE_C_API void avbase_player_start(AvbasePlayer* player);
+// Pauses a running player (legal from kStarted only).
+// Side effects: emits kStateChanged(kPaused).
 AVBASE_C_API void avbase_player_pause(AvbasePlayer* player);
+// Stops playback and tears the pipeline down; idempotent.
+// Side effects: emits kStateChanged(kStopped).
 AVBASE_C_API void avbase_player_stop(AvbasePlayer* player);
 
 // Back to kIdle and reusable. Releases the current media.
+// Side effects: emits kStateChanged(kIdle); drops every buffered packet.
 AVBASE_C_API void avbase_player_reset(AvbasePlayer* player);
 
 // Single-frame advance while paused.
+// Side effects: emits kSeekRenderingStarted for the stepped frame.
 AVBASE_C_API void avbase_player_step_once(AvbasePlayer* player);
 
 // Fire-and-forget seek; completion arrives as an event. |position_ms| is
@@ -163,22 +194,29 @@ AVBASE_C_API void avbase_player_step_once(AvbasePlayer* player);
 // Result<int64_t> exists to hand back a request id for correlation, and that
 // correlation is already carried by the event payload's request_id -- a host
 // that needs it should use the richer C++ API.
+// Side effects: emits kSeekCompleted (what=600, arg1 = actual ms).
 AVBASE_C_API void avbase_player_seek_to(AvbasePlayer* player,
                                         int64_t position_ms);
 
 // |rate| is clamped to [0.25, 4.0] as the C++ API does.
+// Side effects: takes effect on the next rendered frame.
 AVBASE_C_API void avbase_player_set_playback_rate(AvbasePlayer* player,
                                                   double rate);
 
 // |volume| is clamped to [0.0, 1.0].
+// Side effects: applies to the audio sink immediately.
 AVBASE_C_API void avbase_player_set_volume(AvbasePlayer* player, double volume);
+// Mutes or unmutes without touching the volume level.
+// Side effects: applies to the audio sink immediately.
 AVBASE_C_API void avbase_player_set_muted(AvbasePlayer* player, int muted);
 
 // |count| < 0 means infinite.
+// Side effects: emits kCompleted (what=300) once per finished pass.
 AVBASE_C_API void avbase_player_set_loop_count(AvbasePlayer* player, int count);
 
 // |stream_type| is an AVBASE_STREAM_* value below. |stream_index| is the index
 // reported by the prepared media, NOT an avbase_source index.
+// Side effects: emits kTrackChanged; decoders are rebuilt lazily.
 AVBASE_C_API AvbaseStatus avbase_player_select_track(AvbasePlayer* player,
                                                      int stream_type,
                                                      int stream_index);
@@ -186,31 +224,59 @@ AVBASE_C_API AvbaseStatus avbase_player_select_track(AvbasePlayer* player,
 // Attaches |display| as the video output, or detaches when null (audio keeps
 // playing -- the documented background-playback case). The player holds a
 // reference; destroying the display handle afterwards is safe.
+// Side effects: re-targets the video sink on the next frame.
 AVBASE_C_API void avbase_player_set_video_surface(AvbasePlayer* player,
                                                   AvbaseNativeDisplay* display);
 
+// Writes the frame at |at_ms| to |file_path| (PNG); completion arrives as
+// kSnapshotCompleted (what=1000, arg2 = Status).
+// Side effects: writes one file; emits kSnapshotCompleted.
 AVBASE_C_API AvbaseStatus avbase_player_take_snapshot(AvbasePlayer* player,
                                                       int64_t at_ms,
                                                       const char* file_path);
 
 // Forces the network retry path now. Replaces ijkplayer's write-only
 // FFP_PROP_INT64_IMMEDIATE_RECONNECT property.
+// Side effects: re-runs the reconnect ladder.
 AVBASE_C_API void avbase_player_reconnect_now(AvbasePlayer* player);
 
 // ---- Queries: lock-free snapshots, callable from any thread ----------------
 
 // Mirrors PlayerState. See AVBASE_STATE_* below.
+// Side effects: none.
 AVBASE_C_API int avbase_player_state(const AvbasePlayer* player);
+// Current playback position, including any seek in flight.
+// Side effects: none.
 AVBASE_C_API int64_t avbase_player_media_time_ms(const AvbasePlayer* player);
+// How much media is buffered ahead of the playhead.
+// Side effects: none.
 AVBASE_C_API int64_t avbase_player_buffered_time_ms(const AvbasePlayer* player);
+// Total duration in ms, or zero for a live source.
+// Side effects: none.
 AVBASE_C_API int64_t avbase_player_duration_ms(const AvbasePlayer* player);
+// Nonzero when the source is live (no seekable timeline).
+// Side effects: none.
 AVBASE_C_API int avbase_player_is_live(const AvbasePlayer* player);
+// Nonzero while playback is actively running.
+// Side effects: none.
 AVBASE_C_API int avbase_player_is_playing(const AvbasePlayer* player);
+// Display width after rotation/aspect corrections.
+// Side effects: none.
 AVBASE_C_API int32_t avbase_player_video_width(const AvbasePlayer* player);
+// Display height after rotation/aspect corrections.
+// Side effects: none.
 AVBASE_C_API int32_t avbase_player_video_height(const AvbasePlayer* player);
+// Clockwise rotation the host must apply, in degrees.
+// Side effects: none.
 AVBASE_C_API int32_t avbase_player_video_rotation(const AvbasePlayer* player);
+// Effective rate, after clamping.
+// Side effects: none.
 AVBASE_C_API double avbase_player_playback_rate(const AvbasePlayer* player);
+// Effective volume, after clamping.
+// Side effects: none.
 AVBASE_C_API double avbase_player_volume(const AvbasePlayer* player);
+// Current mute state.
+// Side effects: none.
 AVBASE_C_API int avbase_player_muted(const AvbasePlayer* player);
 
 // Copies at most |capacity| bytes (including the NUL) of the human-readable
@@ -218,11 +284,13 @@ AVBASE_C_API int avbase_player_muted(const AvbasePlayer* player);
 // excluding the NUL. A return value >= |capacity| means it was truncated, so
 // the caller can size a buffer and retry -- guessing a size is how the legacy
 // path used to truncate paths silently.
+// Side effects: none.
 AVBASE_C_API int32_t avbase_player_title(AvbasePlayer* player, char* out,
                                          int32_t capacity);
 
 // Full internal state as JSON (~1 ms). The first thing to attach to a bug
 // report. Same copy-into-your-buffer contract as the title.
+// Side effects: none.
 AVBASE_C_API int32_t avbase_player_dump_diagnostics(const AvbasePlayer* player,
                                                     char* out,
                                                     int32_t capacity);
@@ -253,6 +321,7 @@ typedef struct AvbaseMediaInfo {
 
 // Available only after avbase_player_prepare() has reported kPrepared;
 // returns AVBASE_ERR_INVALID_STATE before that.
+// Side effects: none.
 AVBASE_C_API AvbaseStatus
 avbase_player_get_media_info(const AvbasePlayer* player, AvbaseMediaInfo* out);
 
@@ -266,6 +335,7 @@ avbase_player_get_media_info(const AvbasePlayer* player, AvbaseMediaInfo* out);
 // The returned handle stays valid across stop/reset (the scene keeps it) but
 // must be released with avbase_source_release(). Source 0 is the player's own
 // avbase_player_set_data_source(); each call adds the next id.
+// Side effects: allocates a scene layer visible after the next composite.
 AVBASE_C_API AvbaseSource* avbase_player_add_source(AvbasePlayer* player,
                                                     const char* uri,
                                                     const char* name,
@@ -273,8 +343,12 @@ AVBASE_C_API AvbaseSource* avbase_player_add_source(AvbasePlayer* player,
 
 // Releases a source handle. Null is a no-op. Does not unregister the source;
 // it only drops this reference (matching the C++ shared_ptr semantics).
+// Side effects: none (the source outlives the handle).
 AVBASE_C_API void avbase_source_release(AvbaseSource* source);
 
+// Re-points a registered source at a new URI; takes effect at the next
+// prepare.
+// Side effects: invalidates the source's demuxer until re-prepared.
 AVBASE_C_API AvbaseStatus avbase_source_set_uri(AvbaseSource* source,
                                                 const char* uri);
 
@@ -288,33 +362,47 @@ AVBASE_C_API AvbaseStatus avbase_source_set_uri(AvbaseSource* source,
 
 // X11: |display| is a `Display*`, |window| is an XID. The pointers are copied,
 // not retained: the window must outlive the display handle.
+// Side effects: allocates a display handle (release with
+// avbase_display_release).
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_x11(void* x_display,
                                                           uintptr_t window);
 
 // Wayland: |surface| is a `wl_surface*`. Wayland cannot report a surface size,
 // so |width|/|height| must be supplied by the embedder.
+// Side effects: allocates a display handle.
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_wayland(void* wl_display,
                                                               void* wl_surface,
                                                               int32_t width,
                                                               int32_t height);
 
+// SDL2: |sdl_window| is an `SDL_Window*`.
+// Side effects: allocates a display handle.
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_sdl2(void* sdl_window);
+// GLFW: |glfw_window| is a `GLFWwindow*`.
+// Side effects: allocates a display handle.
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_glfw(void* glfw_window);
+// EGL: |egl_surface| is an `EGLSurface` as an opaque pointer.
+// Side effects: allocates a display handle.
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_egl(void* egl_surface);
 
 // Windows HWND. Kept explicit rather than folded into the Wrap() escape hatch
 // because it is the one kind every Windows host asks for.
+// Side effects: allocates a display handle.
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_hwnd(void* hwnd);
 
 // Android ANativeWindow / Surface.
+// Side effects: allocates a display handle.
 AVBASE_C_API AvbaseNativeDisplay*
 avbase_display_from_android_native_window(void* window);
+// Side effects: allocates a display handle.
 AVBASE_C_API AvbaseNativeDisplay*
 avbase_display_from_android_surface(void* surface);
 
 // iOS: a CAMetalLayer or CAEAGLLayer.
+// Side effects: allocates a display handle.
 AVBASE_C_API AvbaseNativeDisplay*
 avbase_display_from_cametal_layer(void* layer);
+// Side effects: allocates a display handle.
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_caeagl_layer(void* layer);
 
 // The generic door: |kind| is an AVBASE_DISPLAY_* value and |release| is an
@@ -327,6 +415,8 @@ AVBASE_C_API AvbaseNativeDisplay* avbase_display_from_caeagl_layer(void* layer);
 // a C host that needs cleanup state has nowhere else to keep it, and deriving
 // it from |raw| would be a guess. It runs on the render sequence, so it must
 // not block.
+// Side effects: allocates a display handle; |release| runs when the last
+// reference dies.
 AVBASE_C_API AvbaseNativeDisplay*
 avbase_display_wrap(void* raw, int kind,
                     void (*release)(void* raw, void* user_data),
@@ -334,9 +424,14 @@ avbase_display_wrap(void* raw, int kind,
 
 // A valid "render nowhere" target; the sink discards frames but audio keeps
 // playing.
+// Side effects: allocates a display handle.
 AVBASE_C_API AvbaseNativeDisplay* avbase_display_none(void);
 
+// Drops one reference; null is a no-op.
+// Side effects: frees the handle when the last reference dies.
 AVBASE_C_API void avbase_display_release(AvbaseNativeDisplay* display);
+// The AVBASE_DISPLAY_KIND_* this handle was created with.
+// Side effects: none.
 AVBASE_C_API int avbase_display_kind(const AvbaseNativeDisplay* display);
 
 // 0 when the display can render, non-zero when it is None() or failed to be
@@ -344,10 +439,12 @@ AVBASE_C_API int avbase_display_kind(const AvbaseNativeDisplay* display);
 // "could not create", and None() is a VALID non-rendering target -- the two
 // are different states and conflating them is what makes "the PiP is not
 // showing" undiagnosable (see the note on Player::scene()).
+// Side effects: none.
 AVBASE_C_API int avbase_display_is_valid(const AvbaseNativeDisplay* display);
 
 // Copy-into-your-buffer contract, same as the title: returns the full length
 // excluding the NUL, and a value >= |capacity| means truncated.
+// Side effects: none.
 AVBASE_C_API int32_t avbase_display_debug_string(
     const AvbaseNativeDisplay* display, char* out, int32_t capacity);
 
@@ -430,6 +527,7 @@ typedef void (*AvbaseEventCallback)(void* user_data, int what, int64_t arg1,
 // any avbase_player_* function from inside it -- including stop and reset.
 // That is the deadlock fix over ijkplayer's message_loop; do not reintroduce
 // a "must not reenter" rule here.
+// Side effects: starts event delivery to |cb|.
 AVBASE_C_API void avbase_player_set_event_callback(AvbasePlayer* player,
                                                    AvbaseEventCallback cb,
                                                    void* user_data);

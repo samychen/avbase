@@ -89,107 +89,133 @@
 - `using AvbaseEventCallback = void(*);`
   |obj| is owned by the library and valid only for the duration of the call.
 - `const char * avbase_c_version(void)`
-  Version of the C ABI itself, not of the engine. Bumped ONLY when an existing symbol changes meaning or disappears; adding symbols is a minor bump. A host compiled against an older header keeps working against a newer library, so this exists to let it decide whether to feature-detect instead.
+  Version of the C ABI itself, not of the engine. Bumped ONLY when an existing symbol changes meaning or disappears; adding symbols is a minor bump. A host compiled against an older header keeps working against a newer library, so this exists to let it decide whether to feature-detect instead. Side effects: none.
 - `const char * avbase_engine_version(void)`
-  Mirrors avbase::GetVersion() ("0.1.0").
+  Mirrors avbase::GetVersion() ("0.1.0"). Side effects: none.
 - `void avbase_global_init(void)`
-  Mirrors avbase::GlobalInit(). Optional: every avbase_player_create() calls it. Call it yourself only to guarantee it happens before your first X11 or FFmpeg call.
+  Mirrors avbase::GlobalInit(). Optional: every avbase_player_create() calls it. Call it yourself only to guarantee it happens before your first X11 or FFmpeg call. Side effects: idempotent global init (FFmpeg/X11 once per process).
 - `const char * avbase_status_name(AvbaseStatus status)`
-  Stable, never-null, never-freed name of a code, e.g. "kSourceNotFound". The name is the enum SPELLING on purpose: it is what a bug report will say, and it stays readable across a mapping to a legacy code in a Java handler.
+  Stable, never-null, never-freed name of a code, e.g. "kSourceNotFound". The name is the enum SPELLING on purpose: it is what a bug report will say, and it stays readable across a mapping to a legacy code in a Java handler. Side effects: none.
 - `const char * avbase_status_message(AvbaseStatus status)`
-  The engine's own message for |status|: a human sentence naming the likely cause, or "" when it has nothing to add. Never null.
+  The engine's own message for |status|: a human sentence naming the likely cause, or "" when it has nothing to add. Never null. Side effects: none.
 - `AvbasePlayer * avbase_player_create(void)`
-  Creates a player with the default platform backends and an event handler already attached, so no call can race a subscription. Returns null only when the process is out of memory.
+  Creates a player with the default platform backends and an event handler already attached, so no call can race a subscription. Returns null only when the process is out of memory. Side effects: allocates a player (release with avbase_player_destroy).
 - `void avbase_player_destroy(AvbasePlayer *player)`
-  Destroying a null player is a no-op (not an error) so that cleanup paths can call it unconditionally after a failed create.
+  Destroying a null player is a no-op (not an error) so that cleanup paths can call it unconditionally after a failed create. Side effects: releases every pipeline resource, bounded by the shutdown timeout.
 - `void avbase_player_stop_sync(AvbasePlayer *player, int64_t timeout_ms)`
-  Bounded by PlayerConfig::shutdown_timeout; does not hang.
+  Bounded by PlayerConfig::shutdown_timeout; does not hang. Blocking Stop: returns once the pipeline has really stopped. Side effects: emits kStateChanged(kStopped).
 - `AvbaseStatus avbase_player_set_data_source(AvbasePlayer *player, const char *uri)`
-  SetDataSource(uri). |uri| is copied; the caller keeps ownership.
+  SetDataSource(uri). |uri| is copied; the caller keeps ownership. Side effects: moves the machine to kInitialized.
 - `AvbaseStatus avbase_player_prepare(AvbasePlayer *player)`
+  PrepareAsync(): setup starts and this returns immediately; kPrepared (what =200) arrives through the event callback. Side effects: emits kPrepared, or kError on failure.
 - `AvbaseStatus avbase_player_prepare_sync(AvbasePlayer *player, int64_t timeout_ms)`
+  Blocking PrepareAsync, bounded by |timeout_ms|; a successful return may already be kStarted when start_on_prepared is set. Side effects: emits kPrepared, or kError on failure.
 - `void avbase_player_start(AvbasePlayer *player)`
+  Starts playback (legal from kPrepared/kPaused/kCompleted); illegal states are logged and ignored, never fatal. Side effects: emits kStateChanged(kStarted).
 - `void avbase_player_pause(AvbasePlayer *player)`
+  Pauses a running player (legal from kStarted only). Side effects: emits kStateChanged(kPaused).
 - `void avbase_player_stop(AvbasePlayer *player)`
+  Stops playback and tears the pipeline down; idempotent. Side effects: emits kStateChanged(kStopped).
 - `void avbase_player_reset(AvbasePlayer *player)`
-  Back to kIdle and reusable. Releases the current media.
+  Back to kIdle and reusable. Releases the current media. Side effects: emits kStateChanged(kIdle); drops every buffered packet.
 - `void avbase_player_step_once(AvbasePlayer *player)`
-  Single-frame advance while paused.
+  Single-frame advance while paused. Side effects: emits kSeekRenderingStarted for the stepped frame.
 - `void avbase_player_seek_to(AvbasePlayer *player, int64_t position_ms)`
-  Fire-and-forget seek; completion arrives as an event. |position_ms| is relative to the media start. Deliberately no return value: the C++ API's Result<int64_t> exists to hand back a request id for correlation, and that correlation is already carried by the event payload's request_id – a host that needs it should use the richer C++ API.
+  Fire-and-forget seek; completion arrives as an event. |position_ms| is relative to the media start. Deliberately no return value: the C++ API's Result<int64_t> exists to hand back a request id for correlation, and that correlation is already carried by the event payload's request_id – a host that needs it should use the richer C++ API. Side effects: emits kSeekCompleted (what=600, arg1 = actual ms).
 - `void avbase_player_set_playback_rate(AvbasePlayer *player, double rate)`
-  |rate| is clamped to [0.25, 4.0] as the C++ API does.
+  |rate| is clamped to [0.25, 4.0] as the C++ API does. Side effects: takes effect on the next rendered frame.
 - `void avbase_player_set_volume(AvbasePlayer *player, double volume)`
-  |volume| is clamped to [0.0, 1.0].
+  |volume| is clamped to [0.0, 1.0]. Side effects: applies to the audio sink immediately.
 - `void avbase_player_set_muted(AvbasePlayer *player, int muted)`
+  Mutes or unmutes without touching the volume level. Side effects: applies to the audio sink immediately.
 - `void avbase_player_set_loop_count(AvbasePlayer *player, int count)`
-  |count| < 0 means infinite.
+  |count| < 0 means infinite. Side effects: emits kCompleted (what=300) once per finished pass.
 - `AvbaseStatus avbase_player_select_track(AvbasePlayer *player, int stream_type, int stream_index)`
-  |stream_type| is an AVBASE_STREAM_* value below. |stream_index| is the index reported by the prepared media, NOT an avbase_source index.
+  |stream_type| is an AVBASE_STREAM_* value below. |stream_index| is the index reported by the prepared media, NOT an avbase_source index. Side effects: emits kTrackChanged; decoders are rebuilt lazily.
 - `void avbase_player_set_video_surface(AvbasePlayer *player, AvbaseNativeDisplay *display)`
-  Attaches |display| as the video output, or detaches when null (audio keeps playing – the documented background-playback case). The player holds a reference; destroying the display handle afterwards is safe.
+  Attaches |display| as the video output, or detaches when null (audio keeps playing – the documented background-playback case). The player holds a reference; destroying the display handle afterwards is safe. Side effects: re-targets the video sink on the next frame.
 - `AvbaseStatus avbase_player_take_snapshot(AvbasePlayer *player, int64_t at_ms, const char *file_path)`
+  Writes the frame at |at_ms| to |file_path| (PNG); completion arrives as kSnapshotCompleted (what=1000, arg2 = Status). Side effects: writes one file; emits kSnapshotCompleted.
 - `void avbase_player_reconnect_now(AvbasePlayer *player)`
-  Forces the network retry path now. Replaces ijkplayer's write-only FFP_PROP_INT64_IMMEDIATE_RECONNECT property.
+  Forces the network retry path now. Replaces ijkplayer's write-only FFP_PROP_INT64_IMMEDIATE_RECONNECT property. Side effects: re-runs the reconnect ladder.
 - `int avbase_player_state(const AvbasePlayer *player)`
-  Mirrors PlayerState. See AVBASE_STATE_* below.
+  Mirrors PlayerState. See AVBASE_STATE_* below. Side effects: none.
 - `int64_t avbase_player_media_time_ms(const AvbasePlayer *player)`
+  Current playback position, including any seek in flight. Side effects: none.
 - `int64_t avbase_player_buffered_time_ms(const AvbasePlayer *player)`
+  How much media is buffered ahead of the playhead. Side effects: none.
 - `int64_t avbase_player_duration_ms(const AvbasePlayer *player)`
+  Total duration in ms, or zero for a live source. Side effects: none.
 - `int avbase_player_is_live(const AvbasePlayer *player)`
+  Nonzero when the source is live (no seekable timeline). Side effects: none.
 - `int avbase_player_is_playing(const AvbasePlayer *player)`
+  Nonzero while playback is actively running. Side effects: none.
 - `int32_t avbase_player_video_width(const AvbasePlayer *player)`
+  Display width after rotation/aspect corrections. Side effects: none.
 - `int32_t avbase_player_video_height(const AvbasePlayer *player)`
+  Display height after rotation/aspect corrections. Side effects: none.
 - `int32_t avbase_player_video_rotation(const AvbasePlayer *player)`
+  Clockwise rotation the host must apply, in degrees. Side effects: none.
 - `double avbase_player_playback_rate(const AvbasePlayer *player)`
+  Effective rate, after clamping. Side effects: none.
 - `double avbase_player_volume(const AvbasePlayer *player)`
+  Effective volume, after clamping. Side effects: none.
 - `int avbase_player_muted(const AvbasePlayer *player)`
+  Current mute state. Side effects: none.
 - `int32_t avbase_player_title(AvbasePlayer *player, char *out, int32_t capacity)`
-  Copies at most |capacity| bytes (including the NUL) of the human-readable media title into |out| and returns the number of bytes the full string needs, excluding the NUL. A return value >= |capacity| means it was truncated, so the caller can size a buffer and retry – guessing a size is how the legacy path used to truncate paths silently.
+  Copies at most |capacity| bytes (including the NUL) of the human-readable media title into |out| and returns the number of bytes the full string needs, excluding the NUL. A return value >= |capacity| means it was truncated, so the caller can size a buffer and retry – guessing a size is how the legacy path used to truncate paths silently. Side effects: none.
 - `int32_t avbase_player_dump_diagnostics(const AvbasePlayer *player, char *out, int32_t capacity)`
-  Full internal state as JSON (~1 ms). The first thing to attach to a bug report. Same copy-into-your-buffer contract as the title.
+  Full internal state as JSON (~1 ms). The first thing to attach to a bug report. Same copy-into-your-buffer contract as the title. Side effects: none.
 - `AvbaseStatus avbase_player_get_media_info(const AvbasePlayer *player, AvbaseMediaInfo *out)`
-  Available only after avbase_player_prepare() has reported kPrepared; returns AVBASE_ERR_INVALID_STATE before that.
+  Available only after avbase_player_prepare() has reported kPrepared; returns AVBASE_ERR_INVALID_STATE before that. Side effects: none.
 - `AvbaseSource * avbase_player_add_source(AvbasePlayer *player, const char *uri, const char *name, int32_t z_order)`
   Registers a SECONDARY source and returns its layer handle, or null when the player is no longer in a state that accepts one. Call before prepare().
 
-  The returned handle stays valid across stop/reset (the scene keeps it) but must be released with avbase_source_release(). Source 0 is the player's own avbase_player_set_data_source(); each call adds the next id.
+  The returned handle stays valid across stop/reset (the scene keeps it) but must be released with avbase_source_release(). Source 0 is the player's own avbase_player_set_data_source(); each call adds the next id. Side effects: allocates a scene layer visible after the next composite.
 - `void avbase_source_release(AvbaseSource *source)`
-  Releases a source handle. Null is a no-op. Does not unregister the source; it only drops this reference (matching the C++ shared_ptr semantics).
+  Releases a source handle. Null is a no-op. Does not unregister the source; it only drops this reference (matching the C++ shared_ptr semantics). Side effects: none (the source outlives the handle).
 - `AvbaseStatus avbase_source_set_uri(AvbaseSource *source, const char *uri)`
+  Re-points a registered source at a new URI; takes effect at the next prepare. Side effects: invalidates the source's demuxer until re-prepared.
 - `AvbaseNativeDisplay * avbase_display_from_x11(void *x_display, uintptr_t window)`
-  X11: |display| is a `Display*`, |window| is an XID. The pointers are copied, not retained: the window must outlive the display handle.
+  X11: |display| is a `Display*`, |window| is an XID. The pointers are copied, not retained: the window must outlive the display handle. Side effects: allocates a display handle (release with avbase_display_release).
 - `AvbaseNativeDisplay * avbase_display_from_wayland(void *wl_display, void *wl_surface, int32_t width, int32_t height)`
-  Wayland: |surface| is a `wl_surface*`. Wayland cannot report a surface size, so |width|/|height| must be supplied by the embedder.
+  Wayland: |surface| is a `wl_surface*`. Wayland cannot report a surface size, so |width|/|height| must be supplied by the embedder. Side effects: allocates a display handle.
 - `AvbaseNativeDisplay * avbase_display_from_sdl2(void *sdl_window)`
+  SDL2: |sdl_window| is an `SDL_Window*`. Side effects: allocates a display handle.
 - `AvbaseNativeDisplay * avbase_display_from_glfw(void *glfw_window)`
+  GLFW: |glfw_window| is a `GLFWwindow*`. Side effects: allocates a display handle.
 - `AvbaseNativeDisplay * avbase_display_from_egl(void *egl_surface)`
+  EGL: |egl_surface| is an `EGLSurface` as an opaque pointer. Side effects: allocates a display handle.
 - `AvbaseNativeDisplay * avbase_display_from_hwnd(void *hwnd)`
-  Windows HWND. Kept explicit rather than folded into the Wrap() escape hatch because it is the one kind every Windows host asks for.
+  Windows HWND. Kept explicit rather than folded into the Wrap() escape hatch because it is the one kind every Windows host asks for. Side effects: allocates a display handle.
 - `AvbaseNativeDisplay * avbase_display_from_android_native_window(void *window)`
-  Android ANativeWindow / Surface.
+  Android ANativeWindow / Surface. Side effects: allocates a display handle.
 - `AvbaseNativeDisplay * avbase_display_from_android_surface(void *surface)`
+  Side effects: allocates a display handle.
 - `AvbaseNativeDisplay * avbase_display_from_cametal_layer(void *layer)`
-  iOS: a CAMetalLayer or CAEAGLLayer.
+  iOS: a CAMetalLayer or CAEAGLLayer. Side effects: allocates a display handle.
 - `AvbaseNativeDisplay * avbase_display_from_caeagl_layer(void *layer)`
+  Side effects: allocates a display handle.
 - `AvbaseNativeDisplay * avbase_display_wrap(void *raw, int kind, void(*release)(void *raw, void *user_data), void *user_data)`
   The generic door: |kind| is an AVBASE_DISPLAY_* value and |release| is an optional callback run on the render sequence when the last reference dies (may be null). This is how a host with its own window abstraction plugs in without asking this library for a new entry point per toolkit.
 
-  |release| receives BOTH |raw| (the pointer that was wrapped) and |user_data| (whatever the host passed). Passing user_data separately is the whole point: a C host that needs cleanup state has nowhere else to keep it, and deriving it from |raw| would be a guess. It runs on the render sequence, so it must not block.
+  |release| receives BOTH |raw| (the pointer that was wrapped) and |user_data| (whatever the host passed). Passing user_data separately is the whole point: a C host that needs cleanup state has nowhere else to keep it, and deriving it from |raw| would be a guess. It runs on the render sequence, so it must not block. Side effects: allocates a display handle; |release| runs when the last reference dies.
 - `AvbaseNativeDisplay * avbase_display_none(void)`
-  A valid "render nowhere" target; the sink discards frames but audio keeps playing.
+  A valid "render nowhere" target; the sink discards frames but audio keeps playing. Side effects: allocates a display handle.
 - `void avbase_display_release(AvbaseNativeDisplay *display)`
+  Drops one reference; null is a no-op. Side effects: frees the handle when the last reference dies.
 - `int avbase_display_kind(const AvbaseNativeDisplay *display)`
+  The AVBASE_DISPLAY_KIND_* this handle was created with. Side effects: none.
 - `int avbase_display_is_valid(const AvbaseNativeDisplay *display)`
   0 when the display can render, non-zero when it is None() or failed to be created. Never use the pointer itself for this: a null pointer here means "could not create", and None() is a VALID non-rendering target – the two are different states and conflating them is what makes "the PiP is not
-  showing" undiagnosable (see the note on Player::scene()).
+  showing" undiagnosable (see the note on Player::scene()). Side effects: none.
 - `int32_t avbase_display_debug_string(const AvbaseNativeDisplay *display, char *out, int32_t capacity)`
-  Copy-into-your-buffer contract, same as the title: returns the full length excluding the NUL, and a value >= |capacity| means truncated.
+  Copy-into-your-buffer contract, same as the title: returns the full length excluding the NUL, and a value >= |capacity| means truncated. Side effects: none.
 - `void avbase_player_set_event_callback(AvbasePlayer *player, AvbaseEventCallback cb, void *user_data)`
-  Replaces any previous callback (pass null to remove it). The callback runs on the event sequence, never on a pipeline sequence, and it is safe to call any avbase_player_* function from inside it – including stop and reset. That is the deadlock fix over ijkplayer's message_loop; do not reintroduce a "must not reenter" rule here.
+  Replaces any previous callback (pass null to remove it). The callback runs on the event sequence, never on a pipeline sequence, and it is safe to call any avbase_player_* function from inside it – including stop and reset. That is the deadlock fix over ijkplayer's message_loop; do not reintroduce a "must not reenter" rule here. Side effects: starts event delivery to |cb|.
 ### `struct` AvbaseMediaInfo
 
-*player/public/c/avbase_c.h:237*
+*player/public/c/avbase_c.h:305*
 
 Fills a caller-allocated buffer with the media's duration, dimensions and track counts. A snapshot, not a live view. |out| may be null only if all pointers passed in are null (a no-op way to probe support).
 
@@ -217,12 +243,13 @@ Routes events to the host's own loop (Android Looper, GLib main context, Qt even
 - `EventDispatcher(const EventDispatcher &)=delete`
 - `EventDispatcher & operator=(const EventDispatcher &)=delete`
 - `void Post(base::OnceClosure task)=0`
+  Queues |task| on the sequence this dispatcher represents; it runs after the current task returns. Any thread. Errors: none. Side effects: none until the task runs.
 - `void Flush()=0`
   Blocks until every queued task has run. Called from ~Player() so the host still receives the final StateChanged{to=kStopped}.
 
 ### `struct` avbase::Deps
 
-*player/public/deps.h:52*
+*player/public/deps.h:56*
 
 Everything avbase needs from the outside world. Every field may be null, in which case the auto-detected platform default is used — that is what makes `Player player; player.SetDataSource(url);` work with zero setup (rule E1).
 
@@ -290,9 +317,13 @@ The table is generated from player_config.h by tools/gen_options.py so the typed
 - `OptionRegistry(const OptionRegistry &)=delete`
 - `OptionRegistry & operator=(const OptionRegistry &)=delete`
 - `Status SetInt(PlayerConfig *config, OptionCategory category, std::string_view key, int64_t value) const`
+  Writes |value| into |config| for the option |key| of |category|. Errors: kInvalidArgument for an unknown key (the message carries a "did you mean" suggestion) or a value outside the option's range. Side effects: mutates |config| only on success.
 - `Status SetDouble(PlayerConfig *config, OptionCategory category, std::string_view key, double value) const`
+  Double form of SetInt; same contract. Errors: kInvalidArgument for an unknown key or out-of-range value. Side effects: mutates |config| only on success.
 - `Status SetString(PlayerConfig *config, OptionCategory category, std::string_view key, std::string_view value) const`
+  String form of SetInt; same contract. Errors: kInvalidArgument for an unknown key or unparsable value. Side effects: mutates |config| only on success.
 - `Status SetValue(PlayerConfig *config, OptionCategory category, std::string_view key, const OptionValue &value) const`
+  Typed-value form of SetInt; dispatches on the OptionValue's kind. Errors: kInvalidArgument for an unknown key or a kind the option does not accept. Side effects: mutates |config| only on success.
 - `std::map<std::string, std::string> Dump(const PlayerConfig &config, OptionCategory category) const`
   Inverse of the setters: exports a config as string key/value pairs, for logging and for diffing two players' configurations.
 - `std::vector<OptionDescriptor> Describe() const`
@@ -300,6 +331,7 @@ The table is generated from player_config.h by tools/gen_options.py so the typed
 - `std::string SuggestNearestKey(std::string_view key) const`
   "did you mean ..." helper used by the kInvalidArgument error message.
 - `static const OptionRegistry & GetInstance()`
+  Returns the process-wide OptionRegistry. Thread safety: any thread; the instance is constructed once and then read-only, so the read path needs no locking. Errors: none (never fails). Side effects: none – first-call construction is deferred and idempotent.
 
 - `enum class OptionCategory`
   Mirrors ijkplayer's IJKMP_OPT_CATEGORY_*.
@@ -409,6 +441,7 @@ Replaces the 30+ FFP_PROP_* integer properties that ijkplayer callers had to pol
 - `size_t heap_bytes_estimate {0}`
 - `uint64_t events_dropped_by_overflow {0}`
 - `std::string ToJson() const`
+  Serialises the stats as JSON, for logs and monitoring pipelines. Errors: none. Side effects: none.
 
 ### `struct` avbase::StageTimings
 
@@ -460,64 +493,91 @@ The event handler runs on the event dispatch sequence, never on a pipeline seque
 - `~Player()`
 - `Status SetDataSource(std::string_view uri)`
 - `Status SetDataSource(const DataSourceDescriptor &descriptor)`
+  Descriptor form: same contract, for callers that already resolved the source (memory buffer, custom downloader, secondary source). Errors: kInvalidArgument for a malformed descriptor. Side effects: moves the machine to kInitialized.
 - `Status PrepareAsync()`
+  Starts demux/decoder setup and returns immediately; kPrepared arrives through the event handler (or the return of PrepareSync). Errors: kInvalidState from any state but kIdle/kInitialized. Side effects: emits kPrepared, or kError on failure.
 - `Status PrepareSync(base::TimeDelta timeout=base::Seconds(30))`
+  Blocking form of PrepareAsync with |timeout|. The autostart runs inside it (see Start's WATCH OUT), so a successful return may already be kStarted. Errors: kTimeout when |timeout| elapses first; kInvalidState from any state but kIdle/kInitialized. Side effects: emits kPrepared, or kError on failure.
 - `void Start()`
   Legal only from kPrepared, kPaused and kCompleted; from any other state it logs "Player::Start in state <s> is not legal" and returns without changing anything (that rejection is deliberate, see player/state_machine.h).
 
   WATCH OUT: with the default start_on_prepared=true, the autostart runs inside PrepareSync() before it returns, so the Start() you write right after PrepareSync() is the ILLEGAL one, not the missing one. Guard it (examples/pull_frames.cc) or set start_on_prepared=false if you mean to start playback yourself. ijkplayer cannot hit this at all: its start only clears pause_req and is not a state transition.
+
+  Errors: none – an illegal state is logged and ignored (the rejection is deliberate, see player/state_machine.h). Side effects: emits kStateChanged(kStarted); from kCompleted replays from the beginning.
 - `void Pause()`
+  Pauses a running player; legal only from kStarted. Errors: none – an illegal state is logged and ignored. Side effects: emits kStateChanged(kPaused).
 - `void Stop()`
-  Non-blocking.
+  Stops playback and tears the pipeline down, keeping the configured backends. Idempotent: stopping an already-stopped player is a no-op. Errors: none. Side effects: emits kStateChanged(kStopped).
 - `void StopSync(base::TimeDelta timeout)`
+  Blocking Stop: returns once the pipeline has really stopped, bounded by |timeout| so it cannot hang a shutdown path. Errors: kTimeout if the pipeline does not stop within |timeout|. Side effects: emits kStateChanged(kStopped).
 - `void Reset()`
-  Back to kIdle, reusable.
+  Releases the current source and returns to kIdle, keeping config and backends: the player is reusable afterwards. Errors: none. Side effects: emits kStateChanged(kIdle); drops every buffered packet.
 - `void RunUntilIdle()`
-  Blocks until playback reaches a terminal state. Convenience for CLIs and tests; production hosts use SetEventHandler() with their own loop.
+  Blocks until playback reaches a terminal state. Convenience for CLIs and tests; production hosts use SetEventHandler() with their own loop. Errors: none (the terminal error, if any, arrives as an event). Side effects: none beyond what playback itself emits.
 - `Result<int64_t> SeekTo(base::TimeDelta position, SeekMode mode, SeekCB cb)`
-  Runs |cb| on the event sequence when the seek finishes; never inline. Returns the request id, which also appears in SeekCompletedPayload so a caller doing rapid seeks can match results to requests. SeekMode::kAccurate is additionally gated by config.seek.accurate ("enable-accurate-seek"). With that switched off an accurate request does not fail: it lands on the keyframe, and requested-vs-actual in the completion is how you tell.
+  Runs |cb| on the event sequence when the seek finishes; never inline. Returns the request id, which also appears in SeekCompletedPayload so a caller doing rapid seeks can match results to requests. SeekMode::kAccurate is additionally gated by config.seek.accurate ("enable-accurate-seek"). With that switched off an accurate request does not fail: it lands on the keyframe, and requested-vs-actual in the completion is how you tell. Errors: kInvalidState when not seekable in the current state. Side effects: emits kSeekCompleted (or kAccurateSeekCompleted); the callback runs on the event sequence, never inline.
 - `void SeekTo(base::TimeDelta position)`
+  Fire-and-forget seek to the nearest keyframe at or before |position|. Errors: kInvalidState when not seekable in the current state. Side effects: emits kSeekCompleted with the landed position.
 - `void StepOnce()`
-  Single-frame advance while paused.
+  Advances exactly one frame while paused; no-op unless kPaused. Errors: none – an illegal state is a no-op, not a failure. Side effects: emits kSeekRenderingStarted for the stepped frame.
 - `void SetPlaybackRate(double rate)`
-  [0.25, 4.0]
+  Sets the playback rate; the valid range is [0.25, 4.0] and out-of-range values are clamped, not rejected. Errors: none. Side effects: takes effect on the next rendered frame; audio is time-stretched to keep pitch (docs/04 §5).
 - `void SetVolume(double volume)`
-  [0.0, 1.0]
+  Sets the output volume in [0.0, 1.0]; out-of-range values are clamped. Errors: none. Side effects: applies to the audio sink immediately.
 - `void SetMuted(bool muted)`
+  Mutes or unmutes output without touching the volume level. Errors: none. Side effects: applies to the audio sink immediately.
 - `void SetLoopCount(int count)`
-  -1 = infinite
+  Sets how many times playback repeats after the first pass; -1 means infinite. Errors: none. Side effects: emits kCompleted once per finished pass.
 - `Status SelectTrack(media::DemuxerStreamType type, int stream_index)`
+  Selects one track of |type| by its index in media_info(); disabled tracks keep their place, so switching back is cheap. Errors: kTrackNotFound for an index the media does not have. Side effects: emits kTrackChanged; decoders are rebuilt lazily.
 - `void SetVideoSurface(base::scoped_refptr< NativeDisplay > display)`
-  May be called while playing. Pass a null display to render nowhere while keeping audio (useful for background playback).
+  May be called while playing. Pass a null display to render nowhere while keeping audio (useful for background playback). Errors: none. Side effects: re-targets the video sink on the next frame; emits kRenderingStarted when output resumes.
 - `Status TakeSnapshot(base::TimeDelta at, std::string file_path)`
+  Writes the frame at |at| to |file_path| (PNG). The write happens on a worker sequence; completion arrives as an event. Errors: kInvalidState when the position is not decodable yet. Side effects: emits kSnapshotCompleted (success or failure).
 - `void ReconnectNow()`
-  Forces the retry path of NetConfig::reconnect immediately. Replaces ijkplayer's write-only FFP_PROP_INT64_IMMEDIATE_RECONNECT property.
+  Forces the retry path of NetConfig::reconnect immediately. Replaces ijkplayer's write-only FFP_PROP_INT64_IMMEDIATE_RECONNECT property. Errors: none – without a live source the request is dropped. Side effects: re-runs the reconnect ladder (docs/04 §7).
 - `PlayerState state() const`
 - `std::optional<MediaInfo> media_info() const`
+  Media metadata once prepared (duration, streams, rotation...); nullopt before that. Errors: none. Side effects: none.
 - `base::TimeDelta GetMediaTime() const`
+  Current playback position, including any seek in flight. Errors: none. Side effects: none.
 - `base::TimeDelta GetBufferedTime() const`
+  How much media is buffered ahead of the playhead. Errors: none. Side effects: none.
 - `base::TimeDelta GetDuration() const`
+  Total duration, or zero for a live source. Errors: none. Side effects: none.
 - `bool is_live() const`
+  Whether the current source is live (no seekable timeline). Errors: none. Side effects: none.
 - `bool IsPlaying() const`
+  Whether playback is actively running (kStarted). Errors: none. Side effects: none.
 - `media::Size video_natural_size() const`
+  Display size after rotation/aspect corrections. Errors: none. Side effects: none.
 - `media::Size video_coded_size() const`
+  Coded size before rotation/aspect corrections. Errors: none. Side effects: none.
 - `int video_rotation() const`
+  Clockwise rotation the host must apply, in degrees. Errors: none. Side effects: none.
 - `double playback_rate() const`
+  Effective rate, after clamping. Errors: none. Side effects: none.
 - `double volume() const`
+  Effective volume, after clamping. Errors: none. Side effects: none.
 - `bool muted() const`
+  Current mute state. Errors: none. Side effects: none.
 - `PlaybackStats GetPlaybackStats() const`
+  Current counters (frames, drops, buffered ranges) as one snapshot. Errors: none. Side effects: none.
 - `std::string DumpDiagnostics() const`
   Full internal state as JSON, ~1 ms, safe to call at any time. The first thing to attach to a bug report; see docs/10 §10.
 - `Scene * scene()`
 - `std::shared_ptr<SceneSource> AddSource(const DataSourceDescriptor &descriptor, std::string name, int z)`
 - `void SetEventHandler(EventHandler handler)`
+  Installs the event handler. Replaces any previous one; the handler runs on the event dispatch sequence and may call any Player method (the class comment explains why that cannot deadlock). Errors: none. Side effects: none until the first event.
 - `Subscription AddObserver(PlayerObserver *observer)`
+  Subscribes |observer| to every PlayerEvent; keep the returned handle alive for as long as the observer should receive them. Errors: kInvalidArgument for a null observer. Side effects: starts event delivery to |observer|.
 - `Status UpdateConfig(const PlayerConfig &config)`
 - `const PlayerConfig & config() const`
+  The config in force; the reference stays valid for the player's lifetime and is never mutated in place. Errors: none. Side effects: none.
 
 ### `class` avbase::Player::Subscription
 
-*player/public/player.h:188*
+*player/public/player.h:302*
 
 RAII subscription handle: unsubscribes on destruction.
 
@@ -528,24 +588,30 @@ RAII subscription handle: unsubscribes on destruction.
 - `Subscription & operator=(const Subscription &)=delete`
 - `~Subscription()`
 - `void Reset()`
+  Drops the subscription early; the destructor does the same. Errors: none. Side effects: stops event delivery to the observer.
 - `bool active() const`
+  Whether the subscription still receives events. Errors: none. Side effects: none.
 
 ### `class` avbase::PlayerBuilder
 
-*player/public/player.h:219*
+*player/public/player.h:347*
 
-Builder form, for injecting custom backends and for migrating string options.
+Builder form, for injecting custom backends and for migrating string options. Not thread-safe: configure, Build(), then hand the Player to its owner.
 
 - `PlayerBuilder()`
 - `PlayerBuilder(const PlayerBuilder &)=delete`
 - `PlayerBuilder & operator=(const PlayerBuilder &)=delete`
 - `~PlayerBuilder()`
 - `PlayerBuilder & SetConfig(PlayerConfig config)`
+  Takes ownership of |config| (a copy is kept). Errors: none (validation happens in Build). Side effects: none until Build.
 - `Status SetOption(OptionCategory category, std::string_view key, const OptionValue &value)`
-  Unknown keys are rejected with a "did you mean" suggestion (Δ2).
+  Migrates one ijkplayer-style string option; unknown keys are rejected with a "did you mean" suggestion (Δ2). Errors: kInvalidArgument for an unknown key or malformed value. Side effects: records the option for Build.
 - `PlayerBuilder & SetDeps(std::unique_ptr< Deps > deps)`
+  Installs custom backends; the defaults are used for every factory the Deps leaves null. Errors: none. Side effects: none until Build.
 - `PlayerBuilder & SetLogLevel(base::logging::LogSeverity severity)`
+  Sets the initial log severity. Errors: none. Side effects: applies from the first log call after Build.
 - `Result<std::unique_ptr<Player>> Build()`
+  Produces the Player. Exactly one Build per builder. Errors: kInvalidState on a second Build; configuration errors as kInvalidArgument (see PlayerConfig::Issues()). Side effects: hands the configured backends to the new Player.
 
 ## player/public/player_config.h
 
@@ -582,7 +648,7 @@ Builder form, for injecting custom backends and for migrating string options.
   - `kSimple`
   - `kAuto`
 - `std::vector<ConfigIssue> ValidateConfig(const PlayerConfig &config)`
-  Returns every problem at once, so a caller can fix them in a single pass instead of discovering them one rebuild at a time.
+  Returns every problem at once, so a caller can fix them in a single pass instead of discovering them one rebuild at a time. Side effects: none (pure validation).
 ### `struct` avbase::AudioConfig
 
 *player/public/player_config.h:131*
@@ -806,22 +872,33 @@ Builder form, for injecting custom backends and for migrating string options.
 
 ### `class` avbase::PlayerObserver
 
-*player/public/player_event.h:236*
+*player/public/player_event.h:252*
 
 Observer interface, for projects that prefer virtual dispatch over a std::function. Only the events you override are delivered.
+
+Every callback runs on the event dispatch sequence and must not block; the default implementations ignore the event. Overriding OnEvent() alone receives everything (including the events without a dedicated hook).
 
 - `PlayerObserver(const PlayerObserver &)=delete`
 - `PlayerObserver & operator=(const PlayerObserver &)=delete`
 - `~PlayerObserver()=default`
 - `void OnPrepared(const PreparedPayload &)`
+  Metadata is ready; the payload mirrors avbase::MediaInfo.
 - `void OnCompleted(const CompletedPayload &)`
+  Playback reached the end (one call per pass with SetLoopCount).
 - `void OnError(const ErrorPayload &)`
+  A fatal error; the payload carries the ErrorCode and a message.
 - `void OnStateChanged(const StateChangedPayload &)`
+  The machine changed state; the payload names the transition.
 - `void OnVideoSizeChanged(const VideoSizeChangedPayload &)`
+  The video size (or rotation) changed; re-layout the surface.
 - `void OnBufferingProgress(const BufferingProgressPayload &)`
+  Buffering progress; the payload carries buffered-ahead and percent.
 - `void OnSeekCompleted(const SeekCompletedPayload &)`
+  A seek finished; the payload carries requested-vs-actual.
 - `void OnTimedText(const TimedTextPayload &)`
+  A subtitle cue is due; the payload carries the cue text.
 - `void OnStats(const StatsPayload &)`
+  Periodic stats snapshot (see PlaybackStats).
 - `void OnEvent(const PlayerEvent &)`
   Catch-all for anything not overridden above.
 
@@ -867,7 +944,9 @@ Observer interface, for projects that prefer virtual dispatch over a std::functi
   - `kHdrUnsupported`
 - `using EventPayload = std::variant<PreparedPayload, CompletedPayload, FlushedPayload, ErrorPayload, StateChangedPayload, VideoSizeChangedPayload, RotationChangedPayload, RenderingStartedPayload, DecodingStartedPayload, DecoderOpenedPayload, DecoderFallbackPayload, StageReachedPayload, WaitingPayload, BufferingProgressPayload, BufferedUpdatePayload, SeekCompletedPayload, AccurateSeekCompletedPayload, SeekRenderingStartedPayload, TimedTextPayload, TrackChangedPayload, SnapshotCompletedPayload, StatsPayload, HdrUnsupportedPayload>;`
 - `const char * GetPlayerStateName(PlayerState state)`
+  Stable spelling of |state| for logs and diagnostics; never null. Side effects: none.
 - `const char * GetEventTypeName(EventType type)`
+  Stable spelling of |type| for logs and diagnostics; never null. Side effects: none.
 - `AVBASE_DECLARE_EVENT_ACCESSOR(AsPrepared, PreparedPayload)`
 - `AVBASE_DECLARE_EVENT_ACCESSOR(AsError, ErrorPayload)`
 - `AVBASE_DECLARE_EVENT_ACCESSOR(AsStateChanged, StateChangedPayload)`
@@ -885,17 +964,18 @@ Observer interface, for projects that prefer virtual dispatch over a std::functi
 - `AVBASE_DECLARE_EVENT_ACCESSOR(AsSnapshotCompleted, SnapshotCompletedPayload)`
 - `AVBASE_DECLARE_EVENT_ACCESSOR(AsStats, StatsPayload)`
 - `bool ToLegacyEvent(const PlayerEvent &event, LegacyEvent *out)`
+  Maps a modern PlayerEvent to the legacy Android-style event the struct above describes, so an existing Java message handler keeps working. Thread safety: any thread; pure mapping, no shared state. Errors: returns false (and leaves |out| defaulted) when |event| has no legacy equivalent. Side effects: none; |out| borrows the event's strings and stays valid only while |event| does.
 - `#define AVBASE_DECLARE_EVENT_ACCESSOR AVBASE_PLAYER_EXPORT const Type* Name(const PlayerEvent& event)`
   Typed accessors. Each returns nullptr when |event| carries a different payload, so a switch on event.type plus one accessor is all a caller needs and std::visit never appears in user code (design rule E7).
 ### `struct` avbase::AccurateSeekCompletedPayload
 
-*player/public/player_event.h:147*
+*player/public/player_event.h:151*
 
 - `base::TimeDelta position`
 
 ### `struct` avbase::BufferedUpdatePayload
 
-*player/public/player_event.h:134*
+*player/public/player_event.h:138*
 
 - `base::TimeDelta cached_time`
 - `base::TimeDelta high_water_mark_time`
@@ -904,19 +984,19 @@ Observer interface, for projects that prefer virtual dispatch over a std::functi
 
 ### `struct` avbase::BufferingProgressPayload
 
-*player/public/player_event.h:130*
+*player/public/player_event.h:134*
 
 - `base::TimeDelta buffered_ahead`
 - `int percent {0}`
 
 ### `struct` avbase::CompletedPayload
 
-*player/public/player_event.h:174*
+*player/public/player_event.h:178*
 
 
 ### `struct` avbase::DecoderFallbackPayload
 
-*player/public/player_event.h:109*
+*player/public/player_event.h:113*
 
 - `std::string from_decoder`
 - `std::string to_decoder`
@@ -924,7 +1004,7 @@ Observer interface, for projects that prefer virtual dispatch over a std::functi
 
 ### `struct` avbase::DecoderOpenedPayload
 
-*player/public/player_event.h:104*
+*player/public/player_event.h:108*
 
 - `media::DemuxerStreamType type {media::DemuxerStreamType::kUnknown}`
 - `std::string decoder_name`
@@ -932,7 +1012,7 @@ Observer interface, for projects that prefer virtual dispatch over a std::functi
 
 ### `struct` avbase::DecodingStartedPayload
 
-*player/public/player_event.h:98*
+*player/public/player_event.h:102*
 
 - `media::DemuxerStreamType type {media::DemuxerStreamType::kUnknown}`
 - `media::VideoDecoderType video_type {media::VideoDecoderType::kUnknown}`
@@ -941,26 +1021,26 @@ Observer interface, for projects that prefer virtual dispatch over a std::functi
 
 ### `struct` avbase::ErrorPayload
 
-*player/public/player_event.h:77*
+*player/public/player_event.h:81*
 
 - `MediaError error`
 
 ### `struct` avbase::FlushedPayload
 
-*player/public/player_event.h:173*
+*player/public/player_event.h:177*
 
 
 ### `struct` avbase::HdrUnsupportedPayload
 
-*player/public/player_event.h:175*
+*player/public/player_event.h:179*
 
 - `std::string transfer`
 
 ### `struct` avbase::LegacyEvent
 
-*player/public/player_event.h:225*
+*player/public/player_event.h:231*
 
-Downgrade path for hosts that still speak ijkplayer's (what, arg1, arg2, obj) quadruple — used by the optional C ABI layer and the Android JNI binding so that an existing Java message handler keeps working unchanged.
+Downgrade path for hosts that still speak ijkplayer's (what, arg1, arg2, obj) quadruple — used by the optional C ABI layer and the Android JNI binding so that an existing Java message handler keeps working unchanged. Side effects: none (pure mapping; |obj| in the result borrows the event's strings and stays valid while |event| does).
 
 - `int what {0}`
 - `int64_t arg1 {0}`
@@ -969,7 +1049,7 @@ Downgrade path for hosts that still speak ijkplayer's (what, arg1, arg2, obj) qu
 
 ### `struct` avbase::PlayerEvent
 
-*player/public/player_event.h:189*
+*player/public/player_event.h:193*
 
 - `EventType type {EventType::kError}`
 - `EventPayload payload`
@@ -982,27 +1062,27 @@ Downgrade path for hosts that still speak ijkplayer's (what, arg1, arg2, obj) qu
 
 ### `struct` avbase::PreparedPayload
 
-*player/public/player_event.h:73*
+*player/public/player_event.h:77*
 
 - `MediaInfo media_info`
 - `StageTimings stages`
 
 ### `struct` avbase::RenderingStartedPayload
 
-*player/public/player_event.h:95*
+*player/public/player_event.h:99*
 
 - `media::DemuxerStreamType type {media::DemuxerStreamType::kUnknown}`
 
 ### `struct` avbase::RotationChangedPayload
 
-*player/public/player_event.h:91*
+*player/public/player_event.h:95*
 
 - `int degrees {0}`
 - `bool mirrored {false}`
 
 ### `struct` avbase::SeekCompletedPayload
 
-*player/public/player_event.h:140*
+*player/public/player_event.h:144*
 
 - `int64_t request_id {0}`
   Matches the SeekTo() call; see Δ.
@@ -1013,13 +1093,13 @@ Downgrade path for hosts that still speak ijkplayer's (what, arg1, arg2, obj) qu
 
 ### `struct` avbase::SeekRenderingStartedPayload
 
-*player/public/player_event.h:150*
+*player/public/player_event.h:154*
 
 - `media::DemuxerStreamType type {media::DemuxerStreamType::kUnknown}`
 
 ### `struct` avbase::SnapshotCompletedPayload
 
-*player/public/player_event.h:165*
+*player/public/player_event.h:169*
 
 - `base::TimeDelta at`
 - `std::string file_path`
@@ -1027,7 +1107,7 @@ Downgrade path for hosts that still speak ijkplayer's (what, arg1, arg2, obj) qu
 
 ### `struct` avbase::StageReachedPayload
 
-*player/public/player_event.h:114*
+*player/public/player_event.h:118*
 
 - `enum class Stage`
   - `kOpenInput`
@@ -1038,20 +1118,20 @@ Downgrade path for hosts that still speak ijkplayer's (what, arg1, arg2, obj) qu
 
 ### `struct` avbase::StateChangedPayload
 
-*player/public/player_event.h:80*
+*player/public/player_event.h:84*
 
 - `PlayerState from {PlayerState::kIdle}`
 - `PlayerState to {PlayerState::kIdle}`
 
 ### `struct` avbase::StatsPayload
 
-*player/public/player_event.h:170*
+*player/public/player_event.h:174*
 
 - `PlaybackStats stats`
 
 ### `struct` avbase::TimedTextPayload
 
-*player/public/player_event.h:153*
+*player/public/player_event.h:157*
 
 - `std::string text`
 - `base::TimeDelta pts`
@@ -1065,7 +1145,7 @@ Downgrade path for hosts that still speak ijkplayer's (what, arg1, arg2, obj) qu
 
 ### `struct` avbase::TrackChangedPayload
 
-*player/public/player_event.h:160*
+*player/public/player_event.h:164*
 
 - `media::DemuxerStreamType type {media::DemuxerStreamType::kUnknown}`
 - `int old_index {-1}`
@@ -1073,7 +1153,7 @@ Downgrade path for hosts that still speak ijkplayer's (what, arg1, arg2, obj) qu
 
 ### `struct` avbase::VideoSizeChangedPayload
 
-*player/public/player_event.h:86*
+*player/public/player_event.h:90*
 
 Merges ijkplayer's FFP_MSG_VIDEO_SIZE_CHANGED (400) and SAR_CHANGED (401), which could arrive out of order (behaviour difference Δ8).
 
@@ -1083,7 +1163,7 @@ Merges ijkplayer's FFP_MSG_VIDEO_SIZE_CHANGED (400) and SAR_CHANGED (401), which
 
 ### `struct` avbase::WaitingPayload
 
-*player/public/player_event.h:122*
+*player/public/player_event.h:126*
 
 - `enum class Reason`
   - `kBuffering`
@@ -1099,7 +1179,7 @@ Merges ijkplayer's FFP_MSG_VIDEO_SIZE_CHANGED (400) and SAR_CHANGED (401), which
 
 ### `class` avbase::Scene
 
-*player/public/scene.h:260*
+*player/public/scene.h:288*
 
 The player's composition surface: the one place several pictures become one.
 
@@ -1118,8 +1198,11 @@ LIFETIME: the scene outlives pipelines. The renderer is rebuilt every Prepare an
 - `std::shared_ptr<SceneSource> AddSource(std::string name, int z)`
   Names are not required to be unique: a name is how a host finds its own source again, not an identity, and FindSource() answers with the first.
 - `bool RemoveSource(const std::shared_ptr< SceneSource > &source)`
+  Drops a source from the scene; the compositor stops drawing it. Thread safety: any thread. Returns false when the handle was already gone (a double remove is not an error). Errors: none beyond that. Side effects: the source's layer is released and its outstanding frames are drained and freed.
 - `std::shared_ptr<SceneSource> FindSource(std::string_view name) const`
+  Looks up a registered source by name; names are not unique, so this returns the first match. Thread safety: any thread; reads the registry snapshot. Errors: returns nullptr when no source has that name. Side effects: none.
 - `size_t source_count() const`
+  Number of currently registered sources. Thread safety: any thread. Errors: none. Side effects: none.
 - `void SetUpdateCallback(SceneUpdateCallback callback)`
   Installs the per-frame placement hook. Callable at any time; it takes effect from the next frame and replaces whatever was there, because one frame runs one hook.
 - `bool SetBackgroundColor(float r, float g, float b, float a)`
@@ -1130,7 +1213,7 @@ LIFETIME: the scene outlives pipelines. The renderer is rebuilt every Prepare an
 
 ### `class` avbase::SceneFrame
 
-*player/public/scene.h:124*
+*player/public/scene.h:137*
 
 Once-per-displayed-frame access to the composition.
 
@@ -1146,7 +1229,9 @@ VALID ONLY FOR THE DURATION OF THE CALLBACK, and that is a guarantee rather than
 - `SceneLayer AddLayer(int z)`
   Adds an empty layer at |z|, or returns an invalid handle when the scene refused one. The layer stays until RemoveLayer().
 - `bool RemoveLayer(SceneLayer layer)`
+  Removes a layer; false when the handle was already invalid. Errors: none. Side effects: the layer stops compositing immediately.
 - `size_t layer_count() const`
+  Number of live layers. Errors: none. Side effects: none.
 - `SceneLayer layer_of(const SceneSource &source)`
   The layer a registered source is drawing into, or an invalid handle when that source has not been synced yet – which is the first frame after AddSource(). Placement has to wait: until the engine has made the layer there is nothing to place.
 - `SceneLayer layer_with_id(uint64_t id)`
@@ -1167,8 +1252,11 @@ VALIDITY: only inside the callback it came from. That is enforced rather than me
 
 - `SceneLayer()=default`
 - `bool valid() const`
+  Whether this handle refers to a live layer (false for a default-built or removed one). Errors: none. Side effects: none.
 - `explicit operator bool() const`
+  True exactly when valid(); lets a handle be used in a boolean context (if/while) without an explicit valid() call. Thread safety: any thread; reads only the immutable handle state. Errors: none. Side effects: none.
 - `uint64_t id() const`
+  Stable id of the layer, unique within the scene. Errors: none. Side effects: none.
 - `bool SetRect(float x, float y, float w, float h)`
   Where the picture lands, in NORMALISED composition coordinates: (0,0) is the top-left of the whole composition, (1,1) the bottom-right, and w/h are fractions of it. The default is everything.
 - `bool SetZ(int z)`
@@ -1182,6 +1270,7 @@ VALIDITY: only inside the callback it came from. That is enforced rather than me
 - `bool SetSourceRect(float x, float y, float w, float h)`
   The part of this layer's OWN picture that is drawn, normalised over the frame as the decoder stored it. Read here rather than in the turned frame, so one rect means the same pixels whichever way the clip was shot.
 - `bool SetContentMode(SceneContentMode mode)`
+  Chooses how the source is fitted into the layer rect (fit / fill / stretch). Rejects an unknown mode instead of clamping. Errors: none – a bad mode returns false. Side effects: applies from the next composited frame.
 - `int rotation() const`
   The angle this layer is drawn at, after the frame's own rotation and any override have been combined.
 - `bool Upload(const media::VideoFrame &frame)`
@@ -1189,14 +1278,16 @@ VALIDITY: only inside the callback it came from. That is enforced rather than me
 
 ### `class` avbase::SceneSource
 
-*player/public/scene.h:191*
+*player/public/scene.h:209*
 
 A second (third, ...) input into the composition: where a producer that is not this player pushes frames.
 
 The handle survives everything the scene does. Add it once, publish into it whenever, and it is re-plumbed automatically when the pipeline is rebuilt – which happens on every Prepare, because the sink belongs to the renderer and the renderer belongs to the pipeline. Hiding that churn is most of why this class exists.
 
 - `const std::string & name() const`
+  The name this source was registered under (not unique; see FindSource). Errors: none. Side effects: none.
 - `int z() const`
+  Stacking order the source was registered with. Errors: none. Side effects: none.
 - `bool Publish(base::scoped_refptr< media::VideoFrame > frame)`
   Hands over the newest frame. Any thread, any number of them.
 
@@ -1204,8 +1295,11 @@ The handle survives everything the scene does. Add it once, publish into it when
 
   In docs/14 stage 3 this is the ONLY way a second picture reaches the scene: the player builds the secondary leg's demuxer/decoder itself and routes its sink through here, so a host no longer creates a second Player and calls MakePublisherFactory() – that path was retired.
 - `uint64_t frames_published() const`
+  Frames accepted by Publish() so far. Errors: none. Side effects: none.
 - `uint64_t frames_consumed() const`
+  Frames the scene actually consumed for compositing. Errors: none. Side effects: none.
 - `uint64_t frames_superseded() const`
+  Frames dropped because a newer one arrived first. Errors: none. Side effects: none.
 
 - `enum class SceneContentMode`
   How a layer's picture is placed inside its rect.
