@@ -51,7 +51,7 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   无构建）；删符号/改签名/枚举值变/虚表变判 breaking（rc=1），纯新增判
   compatible。gate_local --jobs apicompat 与 ci.yml apicompat job 同构。基线由
   --snapshot 生成、仅切 MAJOR 时带 --allow-breaking 刷新。v1 不跟踪公开数据成员。
-- 微基准自包含 harness（待回填 commit）：`bench/` 落地零依赖 micro-bench——
+- 微基准自包含 harness（`64c13e8`）：`bench/` 落地零依赖 micro-bench——
   不用 Google Benchmark（沙箱取不到，CI 也不该装），并接上 `AVBASE_BUILD_BENCH`
   （此前该 option 定义了但**全树无人消费**，没有任何 benchmark target）。只链
   `avbase::base`，所以 `AVBASE_ENABLE_FFMPEG=OFF` 也能编能跑。首批两项：
@@ -60,7 +60,7 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   `tools/bench-baseline.jsonl`（回退 >10% 告警）；`gate_local --jobs bench`
   本地硬判定，`ci.yml` 的 bench job 只记录并上传 artifact——共享 runner 噪声
   大，且入库基线测于 mac、CI 跑在 linux，跨平台绝对值不可比，硬 fail 会假红。
-- golden 对拍 diff 件（待回填 commit）：`tools/golden_diff.py` 按 docs/07 §7.4
+- golden 对拍 diff 件（`64c13e8`）：`tools/golden_diff.py` 按 docs/07 §7.4
   容差分级对比两份 JSONL 录制（帧数 / pts ±0、视频 hash 汉明距离 ≤5、事件序列
   类型与顺序一致、arg ±5%、`late_us` ±5000 µs、`stat` 跳过）+ `allowlist.yaml`
   豁免；自带 selftest（7 类判定）与突变反证。如实收窄一处：`audio.checksum`
