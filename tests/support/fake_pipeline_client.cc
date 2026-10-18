@@ -70,8 +70,13 @@ void FakePipelineClient::OnWaiting(WaitingReason /*reason*/) {
   events_.push_back("waiting");
 }
 
-void FakePipelineClient::OnStatisticsUpdate(
-    const PipelineStatistics& /*stats*/) {}
+void FakePipelineClient::OnStatisticsUpdate(const PipelineStatistics& stats) {
+  // Kept rather than counted: the pipeline folds the composite's byte/seek
+  // counters into every tick before forwarding it, and "a tick arrived" says
+  // nothing about whether the fold happened. Tests read stats() for that.
+  std::scoped_lock scoped(lock_);
+  stats_ = stats;
+}
 
 void FakePipelineClient::OnVideoConfigChange(
     const VideoDecoderConfig& /*config*/) {}

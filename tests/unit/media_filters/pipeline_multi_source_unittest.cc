@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "base/functional/bind.h"
+#include "base/location.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
 #include "gtest/gtest.h"
@@ -200,6 +201,56 @@ TEST_F(PipelineMultiSourceTest, ASecondSeeksOffsetIsReDerived) {
   EXPECT_EQ(demuxer0_->position(), base::Seconds(7));
   EXPECT_EQ(demuxer1_->position(), base::Seconds(6));
   EXPECT_EQ(av_sync_->source_offset(1), base::Seconds(1));
+}
+
+// The statistics tick is a PUSH with two of its fields REPLACED: no single
+// source can answer for the whole file, so the composite owns bytes_read and
+// seek_count and PipelineImpl folds them in on the way out
+// (pipeline_impl_host.cc). Round 100 deleted the pull-side copy of these
+// numbers, which was the last reader that could notice a dropped fold; this
+// assertion is now the only one.
+TEST_F(PipelineMultiSourceTest, TheStatisticsTickCarriesTheCompositeCounters) {
+  StartTwoSourcePipeline();
+  WaitUntilStarted();
+  SeekAndWait(base::Seconds(5));
+
+  // The expectation is the same expression CompositeDemuxer::GetStats() sums,
+  // so this states "the fold happened", not "the composite adds correctly"
+  // (composite_demuxer_unittest covers that). Zero would make the two
+  // indistinguishable, hence the guard.
+  const uint64_t child_seeks =
+      demuxer0_->GetStats().seek_count + demuxer1_->GetStats().seek_count;
+  ASSERT_GT(child_seeks, 0u)
+      << "no seek reached the sources; a fold and a passthrough would look "
+         "the same";
+
+  PipelineStatistics from_renderer;
+  from_renderer.seek_count = 1u << 20;  // a value nobody can produce honestly
+  from_renderer.video_frames_presented = 7;
+
+  std::atomic<bool> delivered{false};
+  // Through RendererClient, which is how the tick really arrives: the
+  // pipeline's override is private (only its renderer may report to it), and
+  // a fake renderer would have to be pumped for a real 1 s tick.
+  runner_->PostTask(FROM_HERE,
+                    base::BindOnce(
+                        [](RendererClient* c, const PipelineStatistics& s,
+                           std::atomic<bool>* done) {
+                          c->OnStatisticsUpdate(s);
+                          done->store(true);
+                        },
+                        static_cast<RendererClient*>(pipeline_.get()),
+                        from_renderer, &delivered));
+  ASSERT_TRUE(PumpUntil([&delivered] { return delivered.load(); }))
+      << "the tick never reached the media sequence";
+
+  const PipelineStatistics out = client_.stats();
+  EXPECT_EQ(out.seek_count, child_seeks)
+      << "the composite's seek count did not replace the renderer's";
+  // Fields the composite does NOT own pass through untouched. Without this
+  // pair, a pipeline that dropped the tick entirely would fail the line above
+  // for the right reason and the one below for none at all.
+  EXPECT_EQ(out.video_frames_presented, 7u);
 }
 
 // A single-source pipeline states no offset: there is no second timeline to

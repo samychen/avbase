@@ -57,6 +57,12 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
   `ClassifyFrameOutcome` 对 `!has_frame` 返回 `FrameOutcome::kNone`。**两个同名不同义**：
   `VideoSinkStats::frames_dropped`（到手未显示）vs `PlaybackStats::frames_dropped`
   （compositor 选帧被拒，宿主读的是这个，改前者不会动后者）。详见 `docs/05` Δ24。
+- **统计只有一条路：push**。media 层用 `RendererClient::OnStatisticsUpdate` 把
+  `PipelineStatistics` 推上去，`PlayerImpl` 存快照供 `PlaybackStats` 读。第一百轮删掉了
+  `Pipeline::Statistics` + `Pipeline::GetStatistics()`（pull 侧副本，M8 起零调用者，
+  已漂移：`PipelineStatistics` 后来长的三个字段它一个都不知道）。**别再在 media 层加
+  第二个统计形状**——它不会编译失败、不会测试红，只会悄悄少字段。
+  新加统计走 `PipelineStatistics` + `ToJson` + `renderer_sink_stats_unittest`。
 
 ## 五条「写下来会静默失效」的约定（都真踩过）
 - **朝向**：从渲染目标采样回来的 pass 都要 `flip_vertical=true`。搞反 = 上下颠倒、

@@ -88,6 +88,13 @@ class FakePipelineClient final : public Pipeline::Client {
     std::scoped_lock scoped(lock_);
     return duration_;
   }
+  // The last statistics tick, as the pipeline forwarded it -- composite byte
+  // and seek counters already folded in. A copy, like every other accessor
+  // here: the media sequence may be writing while the test thread reads.
+  PipelineStatistics stats() const {
+    std::scoped_lock scoped(lock_);
+    return stats_;
+  }
 
   // One line per event, for test failure messages.
   std::string EventLog() const;
@@ -118,6 +125,7 @@ class FakePipelineClient final : public Pipeline::Client {
   int buffering_count_ = 0;
   int waiting_count_ = 0;
   std::vector<TimedTextCue> cues_;
+  PipelineStatistics stats_;
 };
 
 }  // namespace avbase::media::test

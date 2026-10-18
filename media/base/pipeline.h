@@ -25,9 +25,9 @@
 //      shutdown, in the fixed destruction order at docs/03 §10.1 -- that order
 //      is the primary defence against risk R5 (stop/destructor deadlock, the
 //      defect listed as #11 in docs/01 §2).
-//   2. Statistics duplicates PipelineStatistics (renderer_client.h). Chromium
-//      has the same duplication and lives with it; if M8 finds them drifting,
-//      collapse them into one struct rather than adding a conversion layer.
+//   2. CLOSED (round 100). Statistics duplicated PipelineStatistics
+//      (renderer_client.h); both were deleted rather than collapsed, because
+//      the accessor that returned the duplicate had no callers. See gap 5.
 //   3. Seek() reports completion through a closure, while Player::SeekTo()
 //      (frozen at M8) reports through Result<int64_t> plus a SeekCB and adds
 //      SeekMode::kAccurate. SeekController (player/, M9) owns accurate-seek
@@ -37,12 +37,15 @@
 //      (Player::SelectTrack). Until M8 wires them, an implementation should
 //      return without effect and LOG(WARNING) -- not DCHECK, because the SDK
 //      facade may legitimately call them before the pipeline is ready.
-//   5. Statistics and PipelineStatistics (renderer_client.h) overlap. Both are
-//      declared because Chromium has both, but shipping two structs that drift
-//      is how A12 (every legacy FFP_PROP_* reachable) silently rots. M8 should
-//      either make Statistics an alias of the PipelineStatistics subset the
-//      facade exposes, or delete it and have GetStatistics() return
-//      PipelineStatistics.
+//   5. CLOSED (round 100). Statistics and PipelineStatistics overlapped, and
+//      the two drifted exactly as predicted: Statistics gained nothing after
+//      M8, while PipelineStatistics grew three fields (sink drops, submit
+//      failures, measured refresh) that the copy never learned about. Since
+//      Pipeline::GetStatistics() had no caller anywhere in the tree -- the
+//      host reads statistics through RendererClient::OnStatisticsUpdate, which
+//      PUSHES a PipelineStatistics -- both the struct and the accessor are
+//      gone. There is now one statistics shape in the media layer, and the
+//      player owns the snapshot the facade reads.
 //
 // .cc owed by this header -- media/base/pipeline.cc:
 //   Pipeline::Pipeline()      -- out-of-line `= default`, same convention as
@@ -81,7 +84,7 @@ class NativeDisplay;
 // seam that separates "what the media graph does" from "what the SDK promises".
 //
 // THREADING. Everything runs on |media_task_runner|, the "media" sequence in
-// docs/04 §1. The exceptions are the four const getters below, which are
+// docs/04 §1. The exceptions are the three const getters below, which are
 // documented individually as thread-safe because Player answers them from the
 // caller's thread. Stop() is non-blocking by contract (Δ1): it returns once the
 // stop has been *requested*, and Player::StopSync(timeout) is what waits, with
@@ -113,21 +116,11 @@ class AVBASE_MEDIA_EXPORT Pipeline {
     virtual ~Client() = default;
   };
 
-  // Snapshot of pipeline-level counters, for Player::GetPlaybackStats().
-  struct Statistics {
-    base::TimeDelta buffered_time;
-    base::TimeDelta duration;
-    int64_t total_bytes_read{0};
-    uint64_t video_frames_presented{0};
-    uint64_t video_frames_dropped{0};
-    // The fps-capped subset of video_frames_dropped, so a host can tell "the
-    // cap I asked for is doing work" from "the pipeline is falling behind".
-    uint64_t video_frames_dropped_fps{0};
-    uint64_t audio_glitches{0};
-    double avg_av_diff_ms{0.0};
-    uint64_t seek_count{0};
-  };
-
+  // NO Statistics STRUCT HERE (round 100). Pipeline-level counters live in the
+  // player, not here: the media layer PUSHES PipelineStatistics through
+  // Client::OnStatisticsUpdate, and PlayerImpl keeps the latest one for
+  // Player::GetPlaybackStats(). A pull-style accessor on this interface was
+  // declared in the DRAFT and never called by anything; see gap 5.
   Pipeline(const Pipeline&) = delete;
   Pipeline& operator=(const Pipeline&) = delete;
   virtual ~Pipeline();
@@ -183,7 +176,6 @@ class AVBASE_MEDIA_EXPORT Pipeline {
   virtual base::TimeDelta GetMediaTime() = 0;
   virtual base::TimeDelta GetBufferedTime() const = 0;
   virtual base::TimeDelta GetDuration() const = 0;
-  virtual Statistics GetStatistics() const = 0;
 
   // Keyframe seek, clamped to [0, duration]. |seeked_cb| runs on the media
   // sequence once the demuxer and every renderer have flushed to the new

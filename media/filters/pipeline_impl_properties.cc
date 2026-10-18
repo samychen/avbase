@@ -4,7 +4,7 @@
 //
 // PipelineImpl's public property surface: the four runtime setters (volume,
 // rate, latency hint, preserves-pitch) and the read-back accessors (media
-// time, buffered/duration, live-edge chase, statistics, seek capability).
+// time, buffered/duration, live-edge chase, seek capability).
 // Split from pipeline_impl.cc as a line-count seam (C1): this is "the pipeline
 // answering" -- every method here only reads or forwards to |renderer_| /
 // |av_sync_| on the media sequence, none of it is the start/seek/stop
@@ -107,22 +107,6 @@ base::TimeDelta PipelineImpl::GetDuration() const {
 
 bool PipelineImpl::ShouldChaseToLiveEdge(base::TimeDelta behind) const {
   return LiveEdgePolicy::ShouldChase(true, latency_hint_, behind);
-}
-
-Pipeline::Statistics PipelineImpl::GetStatistics() const {
-  Pipeline::Statistics out;
-  base::AutoLock scoped(snapshot_lock_);
-  out.buffered_time =
-      base::TimeDelta::FromMicroseconds(buffered_micros_.load());
-  out.duration = base::TimeDelta::FromMicroseconds(duration_micros_.load());
-  out.total_bytes_read = last_stats_.total_bytes_read;
-  out.video_frames_presented = last_stats_.video_frames_presented;
-  out.video_frames_dropped = last_stats_.video_frames_dropped;
-  out.video_frames_dropped_fps = last_stats_.video_frames_dropped_fps;
-  out.audio_glitches = last_stats_.audio_glitches;
-  out.avg_av_diff_ms = last_stats_.avg_av_diff_ms;
-  out.seek_count = last_stats_.seek_count;
-  return out;
 }
 
 bool PipelineImpl::CanSeekForward() const {

@@ -189,15 +189,16 @@ void PipelineImpl::OnDurationChange(base::TimeDelta duration) {
 
 void PipelineImpl::OnStatisticsUpdate(const PipelineStatistics& stats) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // Composite byte/seek counters are pipeline-level facts (the container, not
+  // any one decoder, owns them), so they are folded in before the tick is
+  // forwarded. Nothing is cached here: this is a PUSH, and the client is the
+  // only reader of a statistics snapshot (gap 5 -- a pull-side copy used to
+  // sit next to it and drifted).
   PipelineStatistics merged = stats;
   if (composite_) {
     const DemuxerStats d = composite_->GetStats();
     merged.total_bytes_read = d.bytes_read;
     merged.seek_count = d.seek_count;
-  }
-  {
-    base::AutoLock scoped(snapshot_lock_);
-    last_stats_ = merged;
   }
   // Live-edge chase (docs/12 section 2.1), evaluated on the 1 s statistics
   // tick: behind = live edge (a live stream's growing duration) minus

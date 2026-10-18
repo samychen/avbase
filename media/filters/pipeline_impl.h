@@ -129,7 +129,6 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   base::TimeDelta GetMediaTime() override;
   base::TimeDelta GetBufferedTime() const override;
   base::TimeDelta GetDuration() const override;
-  Statistics GetStatistics() const override;
   void TakeSnapshot(base::TimeDelta at,
                     Renderer::SnapshotFrameCallback callback) override;
   void Seek(base::TimeDelta time, base::OnceClosure seeked_cb) override;
@@ -267,15 +266,15 @@ class AVBASE_MEDIA_EXPORT PipelineImpl final : public Pipeline,
   bool seek_renderer_flushed_ = false;
 
   // ---- thread-safe snapshots ----------------------------------------------
-  // duration/buffered are atomics; the statistics snapshot and the media info
-  // are copied under a lock because they are multi-field and written on the
-  // media sequence while any thread may read them.
+  // duration/buffered are atomics; the media info is copied under a lock
+  // because it is multi-field and written on the media sequence while any
+  // thread may read it. Statistics do NOT live here: they are pushed to the
+  // client on the 1 s tick and the player keeps the snapshot (gap 5).
   std::atomic<int64_t> duration_micros_{0};
   std::atomic<int64_t> buffered_micros_{0};
   base::TimeDelta latency_hint_ = base::Milliseconds(3000);
   std::atomic<bool> seekable_{false};
   mutable base::Lock snapshot_lock_;
-  PipelineStatistics last_stats_ GUARDED_BY(snapshot_lock_);
   MediaInfo media_info_ GUARDED_BY(snapshot_lock_);
 
   // MUST be last: the factory is destroyed first, so every outstanding
