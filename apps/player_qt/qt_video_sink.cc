@@ -9,6 +9,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/threading/thread.h"
+#include "media/base/video_sink_gate.h"
 
 namespace avbase::apps {
 
@@ -28,7 +29,10 @@ constexpr base::TimeDelta kPollInterval = base::Milliseconds(16);
 struct QtVideoSink::Context {
   base::scoped_refptr<base::SequencedTaskRunner> runner;
   std::atomic<bool> running{true};
-  std::atomic<bool> playing{true};
+  // Whether this tick should ask for a frame: playing, or one pull owed after
+  // a flush. See media/base/video_sink_gate.h -- the same rule the three
+  // in-tree sinks use, so this one cannot drift from them.
+  media::VideoSinkGate gate;
   // Written by Stop() (any thread) while the loop reads it, hence atomic.
   std::atomic<RenderCallback*> upstream{nullptr};
   FrameMailbox* mailbox{nullptr};
@@ -62,7 +66,7 @@ void QtVideoSink::Start() {
     context_->mailbox = mailbox_;
   }
   context_->running.store(true);
-  context_->playing.store(true);
+  context_->gate.SetPlaying(true);
   context_->upstream.store(upstream_);
 
   // The shared_ptr is captured BY VALUE: the queued task owns a reference, so
@@ -98,20 +102,27 @@ void QtVideoSink::Stop() {
 void QtVideoSink::Pause() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (context_) {
-    context_->playing.store(false);
+    context_->gate.SetPlaying(false);
   }
 }
 
 void QtVideoSink::Play() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (context_) {
-    context_->playing.store(true);
+    context_->gate.SetPlaying(true);
   }
 }
 
 void QtVideoSink::Flush() {
+  std::lock_guard<std::mutex> lock(mutex_);
   if (mailbox_ != nullptr) {
     mailbox_->Clear();
+  }
+  // The mail box dropped its frame and the compositor dropped its queue, so
+  // the next frame that arrives is a different picture. Ask for it even if the
+  // player is paused -- that is what makes a seek show its target.
+  if (context_) {
+    context_->gate.NoteFlushed();
   }
 }
 
@@ -150,7 +161,7 @@ void QtVideoSink::PollOnce(std::shared_ptr<Context> context) {
     return;
   }
   RenderCallback* upstream = context->upstream.load();
-  if (context->playing.load() && upstream != nullptr &&
+  if (context->gate.ShouldPull() && upstream != nullptr &&
       context->mailbox != nullptr) {
     // Belt and braces against two pollers: if a previous tick is somehow still
     // inside Render(), skip this one. Dropping a frame is always better than
@@ -160,11 +171,12 @@ void QtVideoSink::PollOnce(std::shared_ptr<Context> context) {
       auto frame = upstream->Render(base::TimeTicks(), base::TimeTicks());
       context->rendering.store(false);
       if (frame) {
+        // Spends a flush's one-shot ask. A null frame ("keep showing the
+        // previous one") spends nothing -- there is no new picture yet.
+        context->gate.NoteFrameReceived();
         context->mailbox->Store(std::move(frame));
         context->presented.fetch_add(1);
       }
-      // A null frame means "keep showing the previous one", which is the
-      // normal answer while paused or between frames -- not a drop.
     }
   }
   if (context->running.load() && context->runner) {

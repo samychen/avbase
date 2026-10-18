@@ -17,6 +17,7 @@
 #include "media/base/render_cadence.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
+#include "media/base/video_sink_gate.h"
 #include "media/media_export.h"
 
 namespace avbase::media {
@@ -74,7 +75,12 @@ class AVBASE_MEDIA_EXPORT NullVideoSink final : public VideoRendererSink {
   // Written from any thread, read on the render thread; single flags, so
   // atomics rather than a lock -- the render loop must never block on its
   // owner (the sink outlives every callback via VideoRendererImpl::Stop()).
-  std::atomic<bool> playing_{false};
+  //
+  // The "may I pull" question is |gate_|'s: a flush reopens it even while
+  // paused, so the seek frame is still pulled (and discarded) here. See
+  // media/base/video_sink_gate.h for why that matters to a sink that shows
+  // nothing.
+  VideoSinkGate gate_;
   std::atomic<bool> discard_{false};
   // Set once at construction and never written again, so a plain const bool is
   // enough: it is read on the render thread only through the discard_ update.

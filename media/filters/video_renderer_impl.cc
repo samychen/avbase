@@ -163,13 +163,22 @@ void VideoRendererImpl::StartPlayingFrom(base::TimeDelta time) {
   compositor_.Flush();
   filter_runner_.Reset();
   ended_ = false;
-  paused_ = false;
-  compositor_.SetPaused(false);
+  // NOT `paused_ = false`: this also runs for a seek made while paused (the
+  // demuxer has moved, playback has not), and clearing the flag resumed video
+  // against a frozen clock -- the picture ran on at 1x while audio was silent.
+  // |paused_| belongs to SetPaused(); adopting the new generation and
+  // restarting the decoder is this method's job either way.
+  compositor_.SetPaused(paused_);
   if (!started_) {
     sink_->Start();
     started_ = true;
   }
-  sink_->Play();
+  // Flush() paused the sink, so restate it: a paused seek owes one frame.
+  if (paused_) {
+    sink_->Pause();
+  } else {
+    sink_->Play();
+  }
   (void)time;  // the demuxer has already seeked; the first frame carries it
   PumpDecoder();
 }
@@ -256,6 +265,16 @@ void VideoRendererImpl::SetPlaybackRate(double rate) {
 void VideoRendererImpl::SetPaused(bool paused) {
   paused_ = paused;
   compositor_.SetPaused(paused);
+  // The sink's play state is derived HERE and nowhere else: it used to be
+  // driven from StartPlayingFrom()/Flush(), so a user pause never reached it
+  // (the compositor's gate hid that) and a resume came only via a seek.
+  if (started_ && sink_) {
+    if (paused) {
+      sink_->Pause();
+    } else {
+      sink_->Play();
+    }
+  }
 }
 
 void VideoRendererImpl::SetStepMode(bool step) {
@@ -322,7 +341,11 @@ size_t VideoRendererImpl::frames_pending() const {
 // ---- S3: decode pump -------------------------------------------------------
 
 void VideoRendererImpl::PumpDecoder() {
-  if (stopping_ || read_outstanding_ || ended_ || paused_) {
+  // A paused renderer owes the display one frame after a flush, and that is all
+  // a paused pump may read for: Flush() empties the queue.
+  const bool owing_a_refresh = compositor_.refresh_pending();
+  if (stopping_ || read_outstanding_ || ended_ ||
+      (paused_ && !owing_a_refresh)) {
     return;
   }
   // Back-pressure without a blocking wait. ffplay blocks its video thread on

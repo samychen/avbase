@@ -299,7 +299,12 @@ VideoFrameCompositor::DecideNextFrame(const FrameSyncInput& in,
   // --- 1. Gates that stop pacing entirely --------------------------------
   // ffplay: `if (is->paused) goto display;` — while paused we neither advance
   // nor drop; the current frame simply stays on screen.
-  if (in.buffering_blocked || (in.paused && !in.step_mode)) {
+  //
+  // |refresh_pending| is the single exception, and it is what "seek while
+  // paused" is made of: the clock is stopped but the frame is a different
+  // one, so it is shown once (step 5) and then the gate closes again.
+  if (in.buffering_blocked ||
+      ((in.paused && !in.step_mode) && !in.refresh_pending)) {
     return MakeHold(out, base::TimeDelta(), in.now + th.max_sleep);
   }
 
@@ -343,6 +348,19 @@ VideoFrameCompositor::DecideNextFrame(const FrameSyncInput& in,
   // target_delay is the duration the candidate frame should occupy the screen;
   // it is reported so that the caller can advance frame_timer after presenting.
   out.target_delay = ComputeTargetDelay(last_duration, in, th);
+
+  // A frame a flush asked for is due NOW, whatever pacing says: a seek made
+  // while paused stopped the clock, not the picture. It reaches this point
+  // only after the rejection rules above (a frame the seek disowned, or one an
+  // accurate seek has not reached, is not the picture the flush asked for) and
+  // after the arithmetic -- deliberately, because |target_delay| is what the
+  // NEXT frame is paced against. An un-paced refresh (target_delay == 0) makes
+  // the frame after it due immediately, which for a secondary source with an
+  // offset is exactly the frame that had to be held.
+  if (in.refresh_pending) {
+    out.decision = Decision::kPresent;
+    return out;
+  }
 
   // A null frame_timer means nothing has ever been presented. ffplay shows the
   // first frame as soon as it is decoded rather than waiting one interval, and
@@ -504,11 +522,20 @@ void VideoFrameCompositor::Flush() {
   displayed_duration_ = base::TimeDelta();
   frames_dropped_since_last_present_ = 0;
   end_of_stream_ = false;
+  // Everything above says "nothing from before the seek counts any more". The
+  // picture the flush is for has not arrived yet, so one present is owed --
+  // even if playback is paused, which is exactly the case this exists for.
+  refresh_pending_ = true;
 }
 
 size_t VideoFrameCompositor::frames_pending() const {
   base::AutoLock scoped(lock_);
   return pending_frames_.size();
+}
+
+bool VideoFrameCompositor::refresh_pending() const {
+  base::AutoLock scoped(lock_);
+  return refresh_pending_;
 }
 
 base::scoped_refptr<VideoFrame> VideoFrameCompositor::current_frame() const {
@@ -576,6 +603,7 @@ VideoFrameCompositor::BuildFrameSyncInputLocked(
   in.paused = paused_;
   in.step_mode = step_mode_;
   in.buffering_blocked = buffering_blocked_;
+  in.refresh_pending = refresh_pending_;
   in.accurate_seek_pending = accurate_seek_pending_;
   in.accurate_seek_target = accurate_seek_target_;
   in.frames_dropped_since_last_present = frames_dropped_since_last_present_;
@@ -620,6 +648,10 @@ VideoFrameCompositor::Render(base::TimeTicks deadline_min,
     case Decision::kPresent: {
       base::scoped_refptr<VideoFrame> frame = pending_frames_.front();
       pending_frames_.pop_front();
+      // The picture the flush asked for is on screen, so the refresh is spent
+      // -- whichever route let it through (the paused gate, the step gate, or
+      // ordinary pacing).
+      refresh_pending_ = false;
       PresentLocked(frame, out);
       if (step_mode_) {
         step_mode_ = false;  // ffplay: is->step is consumed by one frame.

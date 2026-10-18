@@ -247,7 +247,8 @@ moc 生成的代码里，而不是你写的任何一行。
 | `AVBASE_QT_GRAB=/tmp/x.png` | 抓窗口内容后退出；配合 `QT_QPA_PLATFORM=offscreen` 可在无显示环境验证（GPU 路径不行，它需要真实 GL context） |
 | `AVBASE_QT_GRAB_DELAY=1500` | 抓图前的等待毫秒数（默认 1500） |
 | `AVBASE_QT_GRAB_REF=/tmp/other.png` | 与参考图逐像素比较，打印 `mean_abs` / `max_abs` |
-| `AVBASE_QT_GRAB_SEEK=30` | 抓图前先暂停并 seek 到该秒数。注意：avbase 的 sink 在暂停时**不再拉帧**（`GlVideoSink::PresentOne` 也是同一条件），所以暂停后的画面其实是最后一帧，这个开关只在"暂停前的画面恰好是想要的"时有用；像素判据靠的是内容与时间无关的素材，不是它 |
+| `AVBASE_QT_GRAB_SEEK=30` | 抓图前先暂停并 seek 到该秒数（用来把两次运行钉在同一帧上） |
+| `AVBASE_QT_GRAB_SEEK_WAIT=2500` | seek 之后等多少毫秒再抓（默认 800）。想证明"画面**停在**目标帧"而不是"路过它"，就把这个值调大 |
 | `AVBASE_QT_TIMING=1` | 打印每条路径的每帧成本（见上面实测表） |
 | `AVBASE_QT_NULL_VIDEO=1` | 用 avbase 的 null 视频 sink，隔离「是不是我的 sink」 |
 | `AVBASE_QT_NULL_AUDIO=1` | 用 null 音频 sink，隔离音频设备 |
@@ -265,7 +266,11 @@ moc 生成的代码里，而不是你写的任何一行。
   `mean_abs = 0.82`、`max_abs = 207`（孤立边缘像素）。改成错误朝向后立刻变成
   `mean_abs = 34.9`，所以这个数字是有鉴别力的，不是装饰。
 - 15 秒连续播放后自行退出 `EXIT=0`，6 条 avbase 线程全部干净停止。
-- **ASan 全插桩构建下 0 error**（GPU 路径初始化 + 绘制 + 退出）。
+- **暂停中 seek 的画面判据**：`/tmp` 里合成一条每 0.25 秒换一次纯色的 10 秒片
+  （40 色、g=30），抓图的中心像素直接翻译成"停在第几帧"。暂停后 seek 到 4.000 s，
+  在 0.8 s / 3 s / 6 s 三个等待点抓到的都是**第 120 帧 = 4.00 s**——既真的动了，
+  也没有在暂停状态下偷偷往前跑。
+- **ASan 全插桩构建下 0 error**（GPU 路径初始化 + 绘制 + 暂停 seek + 退出）。
 - 未验证：带 display-matrix 的旋转素材（手头没有合适的；`LayerRotationToCosSin`
   本身有 `tests/unit/gl/gl_rotation_unittest.cc` 覆盖，未验的是 Qt 路径把
   `frame.rotation()` 传进去这一段）；音频是否真的出声（沙箱无听感手段）；多显示器 /

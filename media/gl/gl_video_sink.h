@@ -20,6 +20,7 @@
 #include "media/base/render_perf_stats.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
+#include "media/base/video_sink_gate.h"
 #include "media/gl/gl_hw_texture_importer.h"
 #include "media/gl/gl_output_target.h"
 #include "media/gl/gl_scene_engine.h"
@@ -150,7 +151,11 @@ class AVBASE_MEDIA_EXPORT GlVideoSink : public VideoRendererSink {
 
   // Cross-thread flags: written from any thread (Pause/Play/SetOutputTarget
   // are callable anywhere), read on the render thread.
-  std::atomic<bool> playing_{false};
+  //
+  // "Should this tick ask the compositor for a frame" is |gate_|'s job and not
+  // a plain `playing_` check, because a flush reopens the ask even while
+  // paused; see media/base/video_sink_gate.h.
+  VideoSinkGate gate_;
   std::atomic<bool> discard_{false};
   // Every number this sink reports, in one object: see media/base/
   // present_stats.h for why it is not spelled out here -- the SDL2 sink

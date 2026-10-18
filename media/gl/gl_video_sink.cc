@@ -63,7 +63,7 @@ void GlVideoSink::Start() {
 }
 
 void GlVideoSink::Stop() {
-  playing_.store(false);
+  gate_.SetPlaying(false);
   if (thread_) {
     // Join the render thread before touching the presenter: after Stop()
     // returns, PresentOne() can no longer be in flight (the contract the
@@ -85,16 +85,22 @@ void GlVideoSink::Stop() {
 }
 
 void GlVideoSink::Pause() {
-  playing_.store(false);
+  gate_.SetPlaying(false);
 }
 
 void GlVideoSink::Play() {
-  playing_.store(true);
+  gate_.SetPlaying(true);
 }
 
 void GlVideoSink::Flush() {
   // The compositor owns buffered frames; the texture keeps showing whatever
   // it showed, which is the right post-flush picture until the next present.
+  //
+  // What the flush does change is whether that next present will be asked for
+  // at all: it is a different picture, so it is owed even if this sink is
+  // paused. Without this, seeking while paused froze the pre-seek frame on
+  // screen while the new generation decoded behind it.
+  gate_.NoteFlushed();
 }
 
 void GlVideoSink::SetOutputTarget(base::scoped_refptr<NativeDisplay> display) {
@@ -135,9 +141,14 @@ void GlVideoSink::NotePresentTiming(const PresentTiming& timing) {
 
 void GlVideoSink::PresentOne() {
   const base::TimeTicks frame_start = base::TimeTicks::Now();
-  if (playing_.load() && callback_) {
+  if (gate_.ShouldPull() && callback_) {
     base::scoped_refptr<VideoFrame> frame =
         callback_->Render(base::TimeTicks(), base::TimeTicks());
+    // A flush's one-shot ask is spent by the frame that answers it, not by the
+    // ask itself: the frame is usually still decoding when the ask goes out.
+    if (frame) {
+      gate_.NoteFrameReceived();
+    }
     // Zero-copy contract (avbase §6.2): a hardware frame arrives GPU-resident,
     // and the sink's job is to keep it that way when it can.
     //

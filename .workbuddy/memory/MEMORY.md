@@ -35,6 +35,15 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
   **不参与**拆分。
 - **子代理/工具的审查报告要逐条复核**：第九十五轮 11 条里 3 条是误报（加锁的跨线程读、
   不存在的锁序表、把表格行当成缺失章节）。误报也要写进当轮记忆，否则会被反复重查。
+- **sink 的播放状态只有一个派发点**：`VideoRendererImpl::SetPaused`（不是
+  `StartPlayingFrom`/`Flush`）。「该不该拉帧」的完整规则在
+  `media/base/video_sink_gate.h`：**新 sink 一律用 `VideoSinkGate`，别再写
+  `if (playing_)`**。`Flush()` 的语义包含「下一帧是另一幅画」——暂停也要拉一次，
+  否则暂停中 seek 的画面永远不更新。改这块先读 `docs/05` Δ23。
+- **暂停只停时钟，不停代际**：`StartPlayingFrom` 在暂停中 seek 也**必须**被调用
+  （`Flush` 的 `HoldReads(true)` + 新 serial 只有它接管），但它只许接管代际与重启解码，
+  **不许**清 `paused_`。清过一次的后果是画面脱离暂停的时钟自己跑（实测 4.0s seek 后
+  800ms 已在 5.07s），而音频静音、日志全绿。
 
 ## 五条「写下来会静默失效」的约定（都真踩过）
 - **朝向**：从渲染目标采样回来的 pass 都要 `flip_vertical=true`。搞反 = 上下颠倒、

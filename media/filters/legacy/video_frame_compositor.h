@@ -141,6 +141,10 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
     bool paused{false};
     bool step_mode{false};
     bool buffering_blocked{false};
+    // A flush has not yet produced the picture it asked for. This is the one
+    // thing that outranks the paused gate: a seek made while paused must move
+    // the display without restarting the clock.
+    bool refresh_pending{false};
     bool accurate_seek_pending{false};
     base::TimeDelta accurate_seek_target;
     int frames_dropped_since_last_present{0};
@@ -240,6 +244,12 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
   size_t frames_pending() const;
   base::scoped_refptr<VideoFrame> current_frame() const;
 
+  // True between a flush and the frame that shows its result. The decoder
+  // pump reads exactly as far as this stays true, which is how a paused seek
+  // gets its frame decoded without restarting playback: one new picture, then
+  // the pump stops on |paused_| again. See VideoRendererImpl::PumpDecoder.
+  bool refresh_pending() const;
+
   // ---- Called on the sink's render sequence ------------------------------
   // Picks the frame that should be visible inside [deadline_min, deadline_max].
   // Returns nullptr when the caller should keep displaying the previous frame.
@@ -322,6 +332,9 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
   bool accurate_seek_pending_ GUARDED_BY(lock_){false};
   base::TimeDelta accurate_seek_target_ GUARDED_BY(lock_);
   bool end_of_stream_ GUARDED_BY(lock_){false};
+  // Set by Flush(), cleared by the present that answers it. See
+  // FrameSyncInput::refresh_pending for what it licenses.
+  bool refresh_pending_ GUARDED_BY(lock_){false};
 
   base::TimeDelta fps_duration_ GUARDED_BY(lock_);
   base::TimeTicks frame_timer_ GUARDED_BY(lock_);

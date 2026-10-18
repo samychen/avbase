@@ -36,7 +36,7 @@ void NullVideoSink::Start() {
 }
 
 void NullVideoSink::Stop() {
-  playing_.store(false);
+  gate_.SetPlaying(false);
   if (thread_) {
     thread_->Stop();
     thread_.reset();
@@ -45,15 +45,19 @@ void NullVideoSink::Stop() {
 }
 
 void NullVideoSink::Pause() {
-  playing_.store(false);
+  gate_.SetPlaying(false);
 }
 
 void NullVideoSink::Play() {
-  playing_.store(true);
+  gate_.SetPlaying(true);
 }
 
 void NullVideoSink::Flush() {
-  // Nothing buffered here; the compositor owns the frames.
+  // Nothing buffered here; the compositor owns the frames. The flush still
+  // owes one pull: the next frame is a different picture, and a sink that
+  // stopped asking because it was paused would leave the compositor's new
+  // generation unpaced (and, on a sink that shows it, unshown).
+  gate_.NoteFlushed();
 }
 
 void NullVideoSink::SetOutputTarget(
@@ -87,9 +91,14 @@ void NullVideoSink::RenderOne() {
   // keeps the video clock alive for video-only streams (docs/07 §4,
   // SetOutputTargetNullEntersDiscardMode). The frame is then counted, not
   // shown -- a discarded frame is not a presented one.
-  if (playing_.load() && callback_) {
+  if (gate_.ShouldPull() && callback_) {
     base::scoped_refptr<VideoFrame> frame =
         callback_->Render(base::TimeTicks(), base::TimeTicks());
+    // Spends a flush's one-shot ask. A null answer means "repeat what you
+    // have", so it spends nothing.
+    if (frame) {
+      gate_.NoteFrameReceived();
+    }
     // There is no upload to fail and no hardware frame to read back, so the
     // only question is whether this frame was shown. Same classification the
     // sinks with a display use, so "presented" means the same thing here.

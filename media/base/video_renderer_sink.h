@@ -69,7 +69,12 @@ class AVBASE_MEDIA_EXPORT VideoRendererSink {
   virtual void Stop() = 0;
   virtual void Pause() = 0;
   virtual void Play() = 0;
-  virtual void Flush() = 0;  // Only valid while not playing.
+  // Only valid while not playing. It also means "the next frame you are given
+  // is a DIFFERENT picture": a sink that has been paused must still ask for
+  // that one, or a seek made while paused leaves the old frame on screen
+  // forever. See media/base/video_sink_gate.h -- all three sinks ask the same
+  // question there.
+  virtual void Flush() = 0;
   // May be called while playing, from any thread; implementations must
   // serialise it against Render().
   virtual void SetOutputTarget(base::scoped_refptr<NativeDisplay> display) = 0;

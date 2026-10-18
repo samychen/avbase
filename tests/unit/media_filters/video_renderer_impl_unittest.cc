@@ -181,6 +181,64 @@ TEST_F(VideoRendererImplTest, PausedRendererPresentsNothingNew) {
       << "resuming did not restart presentation";
 }
 
+// The paused-seek contract, entirely inside the renderer: the new generation
+// must be DECODED (Flush() empties the queue, and a paused pump that read
+// nothing would leave the display on a pre-seek frame forever) and exactly ONE
+// frame of it may reach the sink, after which the renderer stays paused.
+//
+// The regression this pins was the opposite of a stale picture, and only a
+// real file showed it: StartPlayingFrom() cleared the pause flag, so a seek
+// made while paused resumed video against a frozen master clock. The picture
+// ran on at 1x while audio and the clock stayed put -- seek to 4 s, wait
+// 800 ms, and the display was at 5.07 s.
+TEST_F(VideoRendererImplTest, SeekWhilePausedShowsTheTargetOnceAndStaysPaused) {
+  ScriptBuffers(/*buffers=*/2);
+  CreateRenderer();
+  ASSERT_EQ(init_status_, PipelineStatus::kOk);
+  StartPlaying(/*serial=*/0);
+  PresentFor(/*intervals=*/4);
+  ASSERT_GT(sink_->frames().size(), 0u);
+
+  renderer_->SetPaused(true);
+  env_.RunUntilIdle();
+  const size_t playing_frames = sink_->frames().size();
+  PresentFor(/*intervals=*/2);
+  ASSERT_EQ(sink_->frames().size(), playing_frames)
+      << "the paused renderer presented another frame";
+
+  // The seek: a new generation, the flush that always comes with it, and the
+  // pipeline's restart -- which arrives while playback is still paused.
+  stream_->set_serial(1);
+  ScriptBuffers(/*buffers=*/2);
+  renderer_->Flush(/*serial=*/1, base::DoNothing());
+  env_.RunUntilIdle();
+  renderer_->StartPlayingFrom(base::Seconds(5));
+  renderer_->SetMasterClock(kMasterClock, 1, true);
+  env_.RunUntilIdle();
+
+  PresentFor(/*intervals=*/2);
+  EXPECT_EQ(FramesWithSerial(1), 1)
+      << "a paused seek must show the seek frame exactly once";
+
+  // Still paused: nothing may follow it.
+  PresentFor(/*intervals=*/4);
+  EXPECT_EQ(FramesWithSerial(1), 1)
+      << "the picture ran on while the player was paused";
+
+  // Resuming works -- which needs the sink to have been told to play. That
+  // statement lives in SetPaused() and nowhere else, because a paused seek
+  // leaves the renderer paused and a resume therefore never passes through
+  // StartPlayingFrom().
+  const int plays_before = sink_->play_count();
+  renderer_->SetPaused(false);
+  env_.RunUntilIdle();
+  EXPECT_GT(sink_->play_count(), plays_before)
+      << "SetPaused(false) did not restart the sink";
+  PresentFor(/*intervals=*/4);
+  EXPECT_GT(FramesWithSerial(1), 1) << "resuming after a paused seek did not "
+                                       "present";
+}
+
 // #2 in docs/PROGRESS §(5), the one that showed up as NAL corruption after the
 // first seek: Flush() bumps the serial, and nothing from the flushed generation
 // may reach the display afterwards. The frame counts are asserted rather than

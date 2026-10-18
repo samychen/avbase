@@ -719,6 +719,60 @@ TEST_F(VideoFrameCompositorStateTest, PausedRenderKeepsCurrentFrame) {
   EXPECT_EQ(compositor_->current_frame(), first);
 }
 
+// A seek made while paused has to move the picture: the flush says the next
+// frame is different content, and it is shown once even though the clock is
+// stopped. Without this the display kept the pre-seek frame while the pipeline
+// decoded the new generation behind it -- and neither the decoder nor the seek
+// path had anything wrong with it, which is what made the bug hard to see.
+TEST_F(VideoFrameCompositorStateTest,
+       FlushWhilePausedPresentsTheNextFrameOnce) {
+  compositor_->PutCurrentFrame(MakeFrame(0));
+  clock_.Advance(base::Milliseconds(100));
+  ASSERT_TRUE(compositor_->Render(kNow, clock_.NowTicks()));
+
+  compositor_->SetPaused(true);
+  clock_.Advance(base::Seconds(1));
+  ASSERT_EQ(compositor_->Render(kNow, clock_.NowTicks()), nullptr);
+
+  compositor_->Flush();
+  EXPECT_TRUE(compositor_->refresh_pending());
+  compositor_->PutCurrentFrame(MakeFrame(5));
+  compositor_->PutCurrentFrame(MakeFrame(6));
+  clock_.Advance(base::Milliseconds(100));
+
+  const auto shown = compositor_->Render(kNow, clock_.NowTicks());
+  ASSERT_TRUE(shown) << "the seek frame never reached the display";
+  EXPECT_EQ(shown->timestamp(), kTenSeconds + base::Microseconds(5 * 33333));
+  EXPECT_FALSE(compositor_->refresh_pending())
+      << "the owed frame was not spent";
+
+  EXPECT_EQ(compositor_->Render(kNow, clock_.NowTicks()), nullptr)
+      << "a paused compositor presented more than the seek frame";
+  EXPECT_EQ(compositor_->frames_pending(), 1u)
+      << "the frame after the seek target was consumed while paused";
+  EXPECT_EQ(compositor_->current_frame(), shown);
+}
+
+// The refresh is not a licence to show anything: a frame the seek disowned is
+// still rejected, and the NEXT candidate is evaluated with the refresh still
+// pending. This is what an accurate seek made while paused lands on -- the
+// frame at the target, not the keyframe before it.
+TEST_F(VideoFrameCompositorStateTest,
+       FlushRefreshStillRejectsFramesBeforeAnAccurateSeekTarget) {
+  compositor_->SetPaused(true);
+  compositor_->BeginAccurateSeek(kTenSeconds + base::Milliseconds(100));
+  compositor_->Flush();
+
+  compositor_->PutCurrentFrame(MakeFrame(0));  // 10.000 s: before the target.
+  compositor_->PutCurrentFrame(MakeFrame(4));  // 10.133 s: at the target.
+
+  const auto shown = compositor_->Render(kNow, clock_.NowTicks());
+  ASSERT_TRUE(shown);
+  EXPECT_EQ(shown->timestamp(), kTenSeconds + base::Microseconds(4 * 33333))
+      << "the refresh presented a frame before the accurate-seek target";
+  EXPECT_EQ(compositor_->GetStats().frames_dropped_accurate_seek, 1u);
+}
+
 TEST_F(VideoFrameCompositorStateTest, PlaybackRateAcceleratesPresentation) {
   for (int64_t i = 0; i < 10; ++i) {
     compositor_->PutCurrentFrame(MakeFrame(i));

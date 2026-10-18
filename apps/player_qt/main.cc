@@ -281,7 +281,16 @@ int main(int argc, char** argv) {
           // Long enough for the seek to round-trip through the pipeline and
           // the sink to present the frame there. Fixed rather than polled so
           // both compared runs wait exactly as long.
-          QTimer::singleShot(800, &app, do_grab);
+          //
+          // Overridable because two questions need different answers: "is the
+          // picture the seek target?" wants the shortest wait that still
+          // settles, while "does the picture STAY there while paused?" wants
+          // a wait long enough for a resumed pipeline to have run away
+          // visibly.
+          const int seek_wait_ms =
+              qEnvironmentVariableIntValue("AVBASE_QT_GRAB_SEEK_WAIT");
+          QTimer::singleShot(seek_wait_ms > 0 ? seek_wait_ms : 800, &app,
+                             do_grab);
         });
   }
 
