@@ -141,6 +141,24 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
 - **审查发现的三处假门禁**（第八十四轮）：check-clang-tidy 三处失效
   （header-filter 负向前瞻不支持 / 可选后端不在编译库 / HeaderFilterRegex
   未锚定 vendored glad），exit=127 让门禁看起来绿。
+- **倍速（rate>1）播放卡在结尾、CPU 飙 18×**（`34403de`）：音频流以「kOk 空
+  buffer」排空（真实 demuxer 的 EOS 形态）时，除置 `ended_` 外必须调用
+  `algorithm_.MarkEndOfStream()`；否则 WSOLA 路径（rate≠1）的尾部窗口不被
+  交还，`buffered_frames()` 恒大于 0、`CheckForEnded()` 永不触发，播放挂起，
+  且 null sink 收不到样本以 1/采样率 重新武装空转烧核。1x 走 passthrough
+  不受影响，故此前未被发现。同步修 `null_audio_sink.cc`：Render() 产出 0 样本
+  （饿源/暂停渲染器）时按整周期休眠，而非 `max(0,1)/采样率` 的 21µs 地板
+  （48kHz 下每样本一次 Render()，实测 300ms 内 9224 次回调）。两处均补确定性
+  红测并做突变反证（回退修复后由绿转红）。
+- **VideoToolbox 4:2:2 / 4:4:4 H.264 硬解失败**（`34403de`）：VideoToolbox 在
+  `avcodec_open2()` 成功、首个 packet 才报 "hwaccel initialisation returned
+  error"，连错 20 次后 `DecoderStream` 放弃流、播放器报 `kDecodeFailed`——
+  而软件解码尾能正常播。`FFmpegHwDecoderSpec` 新增 `config_supported` 每流门禁，
+  `VideotoolboxSupportsConfig` 在 open 之前就拒绝 `profile_idc≥122` 的 H.264
+  （空/不可解析 profile 给硬件留余地）；`FFmpegHwVideoDecoderFactory::
+  CreateVideoDecoder` 于 codec 掩码之后 consult 它，返回 nullptr 即既有的
+  「非我」回退信号，软件解码尾仍可达。补 `ffmpeg_hw_decoder_factory_unittest`
+  验证拒绝 244/122、接受 100/66/空/HEVC。
 
 ### Known limitations（0.1.0 未含，见 docs/12）
 
@@ -153,7 +171,9 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   `BM_PostTask_RoundTrip` / `BM_BindOnce_Invoke`），有入库基线
   `tools/bench-baseline.jsonl` 与趋势守护 `tools/check_bench_regression.py`；
   `gate_local --jobs bench` 硬判定，CI 只记录不硬 fail（跨平台噪声）。
-  **仍缺** media/player 层 `BM_*` 与端到端 CPU 门槛的机器判据。
+  media/player 层 `BM_EventHub_PostVisit`（≈1.94µs，预算 3µs，`0952d06`）与
+  端到端 CPU 回退机器判据（`measure_e2e_cpu.py` + 基线 + 容差 15%，
+  `6e11e7b`）均已落地；**仍缺** 更多 media 层 `BM_*` 与 Golden 对拍件。
 - 显示侧零拷贝未实测（需 Linux VAAPI-EGL / Windows D3D11-GL 硬件环境）。
 - E5 硬件编码器本体未实测（VideoToolbox / VAAPI / NVENC）。
 - soak 48h 未跑（沙箱禁读他进程 RSS，需 CI 长跑机）。
