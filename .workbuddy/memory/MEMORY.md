@@ -9,6 +9,23 @@ Chromium 风格分层 C++ 媒体播放器。目录即 target（`docs/06 §7.6`�
 `platform/` 只装「被宿主选中」的代码；可移植代码不进（FFmpeg→`media/ffmpeg/`、
 GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base`/`player/`。**
 
+## 起播时序：音频设备必须在准备阶段打开（第一百零三轮，实测）
+- **症状**：播放前几秒画面定格在第一帧、有声音、然后突然正常播。
+- **机理**：音频时钟只在设备**第一次回调送出样本**时起锚（`AudioRendererImpl::Render()`
+  且 `written > 0`）。设备若在 `StartPlayingFrom()` 才打开，那段耗时（实测
+  `SDL_InitSubSystem(AUDIO)` 129ms + `SDL_OpenAudioDevice` 275ms）整段落在「视频首帧
+  已按帧率推进」之后 → av_diff ≈ -400ms → `ComputeTargetDelay()` 一次性吸收 →
+  画面冻结等量时间。设备慢的机器就是几秒。ffplay 不出现只因它的设备在 prepare 阶段开。
+- **修法**：`Sdl2AudioSink::Initialize()` 里开设备（paused，不出声），由
+  `AudioRendererImpl::OnDecoderInitialized()` 成功后调用——不是 `Initialize()` 开头，
+  因为「解码器失败不能留下空转的设备」。代价：起播首帧晚约一个设备打开的时间。
+- **配速的 forward 方向没有上限**：`PresentLocked` 里那句 snap 只在 frame_timer
+  **落后**时生效；「向前等」没有天花板，任何大的负 av_diff 都会变成一次冻结。
+  定位时先分清「队列空」还是「在等」：给 `Render()` 的 hold/empty 两个出口打探针，
+  看 `pending_frames_.size()` 与 `wait_ms`，一步就能排除解码链。
+- **`AVBASE_QT_TRACE=<ms>`**（`apps/player_qt/main.cc`）逐拍打印「GUI 正在显示那一帧
+  自己的 pts」+ stats JSON。只看 `frames_presented` 分不出「画面在动」和「计数在涨」。
+
 ## 硬规矩
 - **提交信息一律中文**（2026-10-18 用户要求，含正文；此前英文历史已整体改写）。
 - **改 `docs/` 章节结构前先全树 grep 旧章节号**：精简过一次后，`docs/12 §2.1/§2.3/§2.5`、
