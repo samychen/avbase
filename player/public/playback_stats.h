@@ -90,8 +90,14 @@ struct AVBASE_PLAYER_EXPORT PlaybackStats {
 
   uint64_t frames_presented{0};
   uint64_t frames_dropped{0};
+  // The four reasons above partition frames_dropped: late + fps + stale_serial
+  // + accurate_seek == frames_dropped. They are reported separately because
+  // "the pipeline is behind" and "a policy limit is thinning the output" call
+  // for opposite reactions, and the total alone cannot tell them apart.
   uint64_t frames_dropped_late{0};
   uint64_t frames_dropped_fps{0};
+  uint64_t frames_dropped_stale_serial{0};
+  uint64_t frames_dropped_accurate_seek{0};
   uint64_t frames_repeated{0};
   // Frames handed to the display layer that it refused because it had nowhere
   // to draw them (no surface, a surface of the wrong kind). A subset of

@@ -114,6 +114,18 @@ struct AVBASE_MEDIA_EXPORT PipelineStatistics {
   // count, and this one is the only one that is a policy decision the host
   // made -- the others are the pipeline catching up with reality.
   uint64_t video_frames_dropped_fps{0};
+  // The other three reasons the compositor drops, each counted separately
+  // there since the port and never reported upward. Without them a host sees
+  // video_frames_dropped move and cannot say why, which is exactly the
+  // question an operator asks first. They partition the total: late +
+  // fps-capped + stale-serial + accurate-seek adds up to video_frames_dropped.
+  //
+  // (frames_dropped_late was already declared on PlaybackStats and serialised
+  // into its JSON, but nothing ever assigned it -- a field that is always zero
+  // is worse than a missing one, because it reads as evidence.)
+  uint64_t video_frames_dropped_late{0};
+  uint64_t video_frames_dropped_stale_serial{0};
+  uint64_t video_frames_dropped_accurate_seek{0};
   uint64_t video_frames_repeated{0};  // Held because no new frame was due.
 
   // The display layer's own counters. Until now the only way to read them was

@@ -267,11 +267,17 @@ class AVBASE_MEDIA_EXPORT VideoFrameCompositor {
   // Exposed for unit testing; all are pure.
   //
   // ClassifyCandidate() handles everything that can reject a frame outright
-  // (pause, stale serial, accurate seek, fps cap); DecideNextFrame() then does
-  // the timing arithmetic. Splitting them keeps each function inside the
-  // 80-line budget of invariant C2 and makes the rejection rules readable on
-  // their own. Returns kNone when the frame is acceptable.
+  // regardless of timing (stale serial, accurate seek, a source faster than
+  // the fps cap); DecideNextFrame() then does the timing arithmetic. Splitting
+  // them keeps each function inside the 80-line budget of invariant C2 and
+  // makes the rejection rules readable on their own. Returns kNone when the
+  // frame is acceptable.
   static DropReason ClassifyCandidate(const FrameSyncInput& in);
+  // ijkplayer's "max-fps": true when the candidate's TIMESTAMP is closer to
+  // the previous frame's than the cap allows. Timestamp, not wall clock -- a
+  // poll-driven sink makes several frames share one instant, and comparing
+  // those against "time since last present" drops the whole batch.
+  static bool ShouldDropForFpsCap(const FrameSyncInput& in);
   // Nominal on-screen duration for the candidate, ported from ffplay's
   // `last_duration` derivation including the serial guard.
   static base::TimeDelta DeriveFrameDuration(const FrameSyncInput& in,

@@ -116,6 +116,9 @@ PipelineStatistics RendererImpl::GetStatistics() const {
     stats.video_frames_presented += c.frames_presented;
     stats.video_frames_dropped += c.frames_dropped;
     stats.video_frames_dropped_fps += c.frames_dropped_fps;
+    stats.video_frames_dropped_late += c.frames_dropped_late;
+    stats.video_frames_dropped_stale_serial += c.frames_dropped_stale_serial;
+    stats.video_frames_dropped_accurate_seek += c.frames_dropped_accurate_seek;
     stats.video_frames_repeated += c.frames_repeated;
     // The display layer's half, summed for the same reason as the compositor's
     // counts above: a second leg's refused frames are as real as the first's.

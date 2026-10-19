@@ -45,6 +45,12 @@ TEST(PlaybackStatsMappingTest, TheDisplayLayersCountersReachTheSnapshot) {
   stats.video_frames_dropped_by_sink = 9;
   stats.video_frames_submit_failures = 2;
   stats.measured_refresh_hz = 59.94;
+  // The four reasons the compositor dropped, each with its own value: they
+  // partition |frames_dropped| and a crossed wire would show up here first.
+  stats.video_frames_dropped_late = 13;
+  stats.video_frames_dropped_fps = 5;
+  stats.video_frames_dropped_stale_serial = 17;
+  stats.video_frames_dropped_accurate_seek = 19;
 
   // Through the interface the PIPELINE uses, not through PlayerImpl: the
   // override is declared in a private section, and going via Pipeline::Client
@@ -62,6 +68,13 @@ TEST(PlaybackStatsMappingTest, TheDisplayLayersCountersReachTheSnapshot) {
   EXPECT_EQ(out.frames_dropped_by_sink, 9u);
   EXPECT_EQ(out.frames_submit_failures, 2u);
   EXPECT_DOUBLE_EQ(out.measured_refresh_hz, 59.94);
+  // And so do the reasons, each on its own field. frames_dropped_late used to
+  // exist on PlaybackStats with nothing ever assigning it: a counter that
+  // always reads zero is read as evidence that nothing was late.
+  EXPECT_EQ(out.frames_dropped_late, 13u);
+  EXPECT_EQ(out.frames_dropped_fps, 5u);
+  EXPECT_EQ(out.frames_dropped_stale_serial, 17u);
+  EXPECT_EQ(out.frames_dropped_accurate_seek, 19u);
 }
 
 // ToJson is a hand-written string builder, so a new field is invisible to a
@@ -72,11 +85,21 @@ TEST(PlaybackStatsJsonTest, TheJsonCarriesTheDisplayLayersCounters) {
   stats.frames_dropped_by_sink = 11;
   stats.frames_submit_failures = 4;
   stats.measured_refresh_hz = 59.94;
+  stats.frames_dropped_late = 13;
+  stats.frames_dropped_fps = 5;
+  stats.frames_dropped_stale_serial = 17;
+  stats.frames_dropped_accurate_seek = 19;
 
   const std::string json = stats.ToJson();
   EXPECT_NE(json.find("\"frames_dropped_by_sink\":11"), std::string::npos);
   EXPECT_NE(json.find("\"frames_submit_failures\":4"), std::string::npos);
   EXPECT_NE(json.find("\"measured_refresh_hz\":59.940"), std::string::npos);
+  EXPECT_NE(json.find("\"frames_dropped_late\":13"), std::string::npos);
+  EXPECT_NE(json.find("\"frames_dropped_fps\":5"), std::string::npos);
+  EXPECT_NE(json.find("\"frames_dropped_stale_serial\":17"),
+            std::string::npos);
+  EXPECT_NE(json.find("\"frames_dropped_accurate_seek\":19"),
+            std::string::npos);
   // A counter that never moved is still reported: "absent" and "zero" are
   // different answers to a consumer parsing this, and only one of them is true.
   const std::string empty = PlaybackStats().ToJson();

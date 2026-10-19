@@ -286,35 +286,48 @@ TEST(VideoFrameCompositorTest, PlaybackRateZeroDoesNotDivideByZero) {
 // fps cap ("max-fps")
 // ---------------------------------------------------------------------------
 
-TEST(VideoFrameCompositorTest, FpsCapDropsFramesArrivingTooSoon) {
+// The cap asks about the SOURCE's frame spacing, so the frame that gets
+// rejected is the one whose timestamp is too close to the last presented one.
+// A wall clock cannot express this: a poll-driven sink hands over a batch and
+// every frame in it shares one "time since last present". See
+// ShouldDropForFpsCap for the measurement that made this a bug.
+TEST(VideoFrameCompositorTest, FpsCapDropsAFrameTooCloseToTheLastPresented) {
   auto in = MakeInput();
   in.max_fps = 31;  // ijkplayer default.
-  in.last_present_wall_time = kNow - base::Milliseconds(10);  // 10 ms ago.
+  in.last_timestamp = in.next_timestamp - base::Microseconds(16000);  // 60 fps.
   const auto out = C::DecideNextFrame(in, Thresholds());
   EXPECT_EQ(out.decision, D::kDrop);
   EXPECT_EQ(out.drop_reason, R::kFpsCap);
 }
 
-TEST(VideoFrameCompositorTest, FpsCapAllowsFrameAfterMinInterval) {
-  auto in = MakeInput();
-  in.max_fps = 31;  // min interval ~32.2 ms
-  in.last_present_wall_time = kNow - base::Milliseconds(40);
+// 33.333 ms of spacing against a 31 fps cap (32.258 ms) leaves less than a
+// millisecond of room, which is exactly why this pairing has to be pinned: the
+// ijkplayer default cap may never drop a source that is AT or BELOW it. Get
+// this wrong and the player runs at 1 fps while every counter says the
+// pipeline is healthy.
+TEST(VideoFrameCompositorTest, FpsCapAllowsA30fpsSourceAtTheDefault31Cap) {
+  auto in = MakeInput();  // 33.333 ms between frames.
+  in.max_fps = 31;
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kPresent);
 }
 
 TEST(VideoFrameCompositorTest, FpsCapDisabledForZeroAndNegative) {
   auto in = MakeInput();
-  in.last_present_wall_time = kNow - base::Milliseconds(1);
+  in.last_timestamp = in.next_timestamp - base::Microseconds(1000);
   in.max_fps = 0;
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kPresent);
   in.max_fps = -1;
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kPresent);
 }
 
+// Nothing has been presented, so there is no spacing to compare against. The
+// guard is |last_serial|, not a null wall clock: the first frame of a stream
+// is never surplus, whatever its timestamp says.
 TEST(VideoFrameCompositorTest, FpsCapIgnoredBeforeFirstPresent) {
   auto in = MakeInput();
   in.max_fps = 31;
-  in.last_present_wall_time = base::TimeTicks();  // null: nothing shown yet
+  in.last_timestamp = in.next_timestamp - base::Microseconds(1000);
+  in.last_serial = -1;  // No previous frame.
   EXPECT_EQ(C::DecideNextFrame(in, Thresholds()).decision, D::kPresent);
 }
 
@@ -336,28 +349,27 @@ TEST(VideoFrameCompositorTest, ApplyFpsCapExtendsShortDurations) {
 
 TEST(VideoFrameCompositorTest, FpsCapHalvesOutputFor60fpsSource) {
   // A 60 fps source capped at 30 fps must drop roughly every other frame.
+  // The comparison is against the last PRESENTED frame's timestamp, so the
+  // loop advances that only on a present -- comparing against the immediately
+  // preceding frame instead would reject all sixty.
   auto in = MakeInput();
   in.fps_duration = base::Microseconds(16667);
   in.next_duration = base::Microseconds(16667);
-  in.last_timestamp = in.next_timestamp - base::Microseconds(16667);
   in.max_fps = 30;
 
+  base::TimeDelta presented_pts = kTenSeconds - base::Seconds(1);
   int presented = 0;
   int dropped = 0;
-  base::TimeTicks wall = kNow;
-  base::TimeTicks last_present = wall - base::Microseconds(16667);
   for (int i = 0; i < 60; ++i) {
-    in.now = wall;
-    in.last_present_wall_time = last_present;
-    in.frame_timer = wall - base::Microseconds(16667);
+    in.next_timestamp = kTenSeconds + base::Microseconds(i * 16667);
+    in.last_timestamp = presented_pts;
     const auto out = C::DecideNextFrame(in, Thresholds());
     if (out.decision == D::kPresent) {
       ++presented;
-      last_present = wall;
+      presented_pts = in.next_timestamp;
     } else if (out.decision == D::kDrop && out.drop_reason == R::kFpsCap) {
       ++dropped;
     }
-    wall = wall + base::Microseconds(16667);
   }
   EXPECT_GT(dropped, 20);
   EXPECT_GT(presented, 20);
@@ -671,6 +683,31 @@ class VideoFrameCompositorStateTest : public ::testing::Test {
   base::SimpleTestTickClock clock_;
   std::unique_ptr<C> compositor_;
 };
+
+// The regression that made a 30 fps source play at 1 fps. A poll-driven sink
+// hands Render() several frames at once, and they all share one wall-clock
+// instant; a cap that compares each of them against "time since last present"
+// rejects the whole batch. None of these frames is surplus by the source's own
+// timestamps, so none of them may be dropped.
+TEST_F(VideoFrameCompositorStateTest,
+       ABatchOfFramesIsNotDroppedForBeingTooSoon) {
+  compositor_->SetMaxFps(31);  // ijkplayer's default, and the one that bit.
+  for (int64_t i = 0; i < 10; ++i) {
+    compositor_->PutCurrentFrame(MakeFrame(i));
+  }
+
+  // 40 polls at 16 ms is 640 ms of wall clock for 333 ms of material: plenty
+  // of chances to present, and the pacing alone should decide which ones.
+  for (int i = 0; i < 40; ++i) {
+    clock_.Advance(base::Milliseconds(16));
+    compositor_->SetMasterClock(kTenSeconds + base::Milliseconds(16 * i), 1,
+                                true);
+    compositor_->Render(kNow, clock_.NowTicks());
+  }
+
+  EXPECT_EQ(compositor_->GetStats().frames_dropped, 0u);
+  EXPECT_EQ(compositor_->GetStats().frames_presented, 10u);
+}
 
 TEST_F(VideoFrameCompositorStateTest, PresentsFramesInOrder) {
   for (int64_t i = 0; i < 5; ++i) {

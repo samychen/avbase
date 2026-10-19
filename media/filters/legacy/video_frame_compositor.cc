@@ -75,8 +75,8 @@ using FrameSyncOutput = VideoFrameCompositor::FrameSyncOutput;
 
 // Both take |out| by value and return it, so the fields DecideNextFrame has
 // already computed (target_delay, av_diff, frame_duration) survive into the
-// returned decision. Returning a fresh object here silently dropped them, and
-// PlaybackRateScalesTargetDelayNotTheHoldGate caught it.
+// returned decision -- returning a fresh object here silently dropped them,
+// and PlaybackRateScalesTargetDelayNotTheHoldGate caught it.
 FrameSyncOutput MakeHold(FrameSyncOutput out, base::TimeDelta wait,
                          base::TimeTicks retry_at) {
   out.decision = Decision::kHold;
@@ -92,8 +92,8 @@ FrameSyncOutput MakeDrop(FrameSyncOutput out, DropReason reason) {
 }
 
 // IsNoTimestamp comes from media/base/media_constants.h (pulled in by the
-// header for the master_clock_ default): one predicate, not a second copy in
-// this TU's anonymous namespace.
+// header for the master_clock_ default): one predicate, not a second copy
+// in this TU's anonymous namespace.
 
 }  // namespace
 
@@ -146,19 +146,11 @@ base::TimeDelta VideoFrameCompositor::ApplyFpsCap(base::TimeDelta duration,
 }
 
 // static
-//
-// Port of the `last_duration` derivation in ffplay's video_refresh():
-//
-//   if (lastvp->serial == vp->serial)
-//       last_duration = vp->pts - lastvp->pts;
-//   else
-//       last_duration = <derived from the stream frame rate>;
-//   if (isnan(last_duration) || last_duration <= 0 || last_duration > 10)
-//       last_duration = <derived from the stream frame rate>;
-//
-// The serial guard is the critical part: across a seek the pts delta spans the
-// discontinuity and would produce a multi-second stall. See docs/04 §4 rule R6
-// and the regression test SkipsDurationComputationAcrossSeekSerialChange.
+// Port of the `last_duration` derivation in ffplay's video_refresh(): the pts
+// delta, but only when both frames share a serial -- across a seek it spans
+// the discontinuity and stalls for seconds (docs/04 §4 rule R6; regression
+// test SkipsDurationComputationAcrossSeekSerialChange). Otherwise, and when
+// the delta is NaN/<=0/>10, the frame rate's own duration.
 base::TimeDelta
 VideoFrameCompositor::DeriveFrameDuration(const FrameSyncInput& in,
                                           const Thresholds& th) {
@@ -183,23 +175,18 @@ VideoFrameCompositor::DeriveFrameDuration(const FrameSyncInput& in,
 }
 
 // static
+// Port of compute_target_delay() in ff_ffplay.c, whose `diff` is
+// `video_clock - master_clock`. This port works with its negation,
+// `av_diff = master_clock - next_timestamp`, so the branches are mirrored:
+// positive av_diff means video is behind the master and must hurry up,
+// negative means it is ahead and should wait.
 //
-// Port of compute_target_delay() in ff_ffplay.c:
-//
-//   sync_threshold = clip(delay, AV_SYNC_THRESHOLD_MIN, AV_SYNC_THRESHOLD_MAX);
+//   sync_threshold = clip(delay, MIN, MAX);
 //   if (fabs(diff) < AV_NOSYNC_THRESHOLD) {
-//     if (diff <= -sync_threshold)
-//       delay = max(0, delay + diff);
-//     else if (diff >= sync_threshold && delay > AV_SYNC_FRAMEDUP_THRESHOLD)
-//       delay = delay + diff;
-//     else if (diff >= sync_threshold)
-//       delay = 2 * delay;
+//     if (diff <= -sync_threshold) delay = max(0, delay + diff);
+//     else if (diff >= sync_threshold && delay > FRAMEDUP) delay += diff;
+//     else if (diff >= sync_threshold) delay = 2 * delay;
 //   }
-//
-// ffplay's `diff` is `video_clock - master_clock`. This port works with
-// `av_diff = master_clock - next_timestamp`, i.e. the negation, so the branch
-// conditions below are mirrored. Positive av_diff means video is behind the
-// master clock and must hurry up; negative means it is ahead and should wait.
 base::TimeDelta
 VideoFrameCompositor::ComputeTargetDelay(base::TimeDelta last_duration,
                                          const FrameSyncInput& in,
@@ -256,11 +243,9 @@ VideoFrameCompositor::ComputeTargetDelay(base::TimeDelta last_duration,
 
 // static
 //
-// Rejection rules, in priority order. Kept separate from the timing arithmetic
-// so that both fit inside the project's 80-line function budget and so the
-// ordering is obvious at a glance: a stale-seek frame must be dropped even if
-// it is also late, and an accurate-seek frame must be dropped even if it is
-// inside the fps cap window.
+// Rejection rules, in priority order: a stale-seek frame is dropped even if it
+// is also late, and an accurate-seek frame even if it is inside the fps cap.
+// Kept separate from the timing arithmetic so both fit the function budget.
 VideoFrameCompositor::DropReason
 VideoFrameCompositor::ClassifyCandidate(const FrameSyncInput& in) {
   // ffplay: `if (vp->serial != is->videoq.serial) { frame_queue_next(); goto
@@ -276,18 +261,38 @@ VideoFrameCompositor::ClassifyCandidate(const FrameSyncInput& in) {
     return DropReason::kAccurateSeek;
   }
 
-  // ijkplayer's "max-fps" option. Rather than lengthening the display interval
-  // (which would silently grow A/V drift), frames arriving sooner than the cap
-  // are dropped, so the output rate matches the cap exactly.
-  if (in.max_fps > 0 && !in.last_present_wall_time.is_null()) {
-    const base::TimeDelta min_interval =
-        base::Microseconds(1000000 / in.max_fps);
-    const base::TimeDelta since_last = in.now - in.last_present_wall_time;
-    if (since_last + kFpsCapSlack < min_interval) {
-      return DropReason::kFpsCap;
-    }
+  // ijkplayer's "max-fps". Note that this asks about the SOURCE, not about
+  // when the sink happened to poll -- see ShouldDropForFpsCap.
+  if (ShouldDropForFpsCap(in)) {
+    return DropReason::kFpsCap;
   }
+
   return DropReason::kNone;
+}
+
+// static
+//
+// ijkplayer's "max-fps": rather than lengthening the display interval (which
+// would grow A/V drift), a frame closer than one cap interval to its
+// predecessor is dropped. The distance is between TIMESTAMPS, not between
+// wall-clock instants, and that is the bug this replaced: a sink polls on its
+// own cadence, so a batch of frames lands between two polls and each one reads
+// the POLL interval as "time since last present". Measured on 30 fps at the
+// default cap of 31: frames 33.3 ms apart read 18 ms, and 151 of 162 were
+// dropped for being "too soon" -- a 1 fps picture, frames_dropped_late at 0.
+bool VideoFrameCompositor::ShouldDropForFpsCap(const FrameSyncInput& in) {
+  if (in.max_fps <= 0 || in.last_serial < 0) {
+    return false;  // No cap, or nothing presented to compare against.
+  }
+  if (IsNoTimestamp(in.next_timestamp) || IsNoTimestamp(in.last_timestamp)) {
+    return false;  // No timestamps: the source did not state a rate.
+  }
+  const base::TimeDelta step = in.next_timestamp - in.last_timestamp;
+  if (step <= base::TimeDelta()) {
+    return false;  // Same or out of order: a repeat, not a rate question.
+  }
+  const base::TimeDelta min_interval = base::Microseconds(1000000 / in.max_fps);
+  return step + kFpsCapSlack < min_interval;
 }
 
 // static
@@ -298,11 +303,10 @@ VideoFrameCompositor::DecideNextFrame(const FrameSyncInput& in,
 
   // --- 1. Gates that stop pacing entirely --------------------------------
   // ffplay: `if (is->paused) goto display;` — while paused we neither advance
-  // nor drop; the current frame simply stays on screen.
-  //
-  // |refresh_pending| is the single exception, and it is what "seek while
-  // paused" is made of: the clock is stopped but the frame is a different
-  // one, so it is shown once (step 5) and then the gate closes again.
+  // nor drop; the current frame simply stays on screen. |refresh_pending| is
+  // the one exception, and it is what "seek while paused" is made of: the
+  // clock is stopped but the frame is a different one, so it is shown once
+  // and then the gate closes again.
   if (in.buffering_blocked ||
       ((in.paused && !in.step_mode) && !in.refresh_pending)) {
     return MakeHold(out, base::TimeDelta(), in.now + th.max_sleep);
@@ -314,8 +318,8 @@ VideoFrameCompositor::DecideNextFrame(const FrameSyncInput& in,
       out.decision = Decision::kEndOfStream;
       return out;
     }
-    // ffplay waits on the picture queue's condition variable; we ask to be
-    // retried shortly so the control plane stays responsive.
+    // ffplay waits on the queue's condition variable; we ask to be retried
+    // shortly so the control plane stays responsive.
     return MakeHold(out, base::TimeDelta(), in.now + th.min_sleep);
   }
 
@@ -345,30 +349,29 @@ VideoFrameCompositor::DecideNextFrame(const FrameSyncInput& in,
   }
 
   // --- 9. Pace against the master clock -----------------------------------
-  // target_delay is the duration the candidate frame should occupy the screen;
-  // it is reported so that the caller can advance frame_timer after presenting.
+  // |target_delay| is how long this frame should occupy the screen; it is
+  // reported so the caller can advance frame_timer after presenting.
   out.target_delay = ComputeTargetDelay(last_duration, in, th);
 
   // A frame a flush asked for is due NOW, whatever pacing says: a seek made
   // while paused stopped the clock, not the picture. It reaches this point
-  // only after the rejection rules above (a frame the seek disowned, or one an
-  // accurate seek has not reached, is not the picture the flush asked for) and
-  // after the arithmetic -- deliberately, because |target_delay| is what the
-  // NEXT frame is paced against. An un-paced refresh (target_delay == 0) makes
-  // the frame after it due immediately, which for a secondary source with an
-  // offset is exactly the frame that had to be held.
+  // only after the rejection rules and after the arithmetic -- deliberately,
+  // because |target_delay| is what the NEXT frame is paced against, and an
+  // un-paced refresh (target_delay == 0) makes the frame after it due at once:
+  // for a secondary source with an offset that is the frame that had to be
+  // held.
   if (in.refresh_pending) {
     out.decision = Decision::kPresent;
     return out;
   }
 
-  // A null frame_timer means nothing has ever been presented. ffplay shows the
+  // A null frame_timer means nothing has ever been presented: ffplay shows the
   // first frame as soon as it is decoded rather than waiting one interval, and
-  // so do we: pacing is meaningless without a reference point.
+  // so do we -- pacing is meaningless without a reference point.
   if (!in.frame_timer.is_null() && in.frame_timer - in.now > th.min_sleep) {
-    // Not yet due. If the sink reported a display window that already covers
-    // the due instant, presenting now beats waiting for the next refresh
-    // (Chromium's VideoRendererSink::RenderCallback contract).
+    // Not yet due -- unless the sink's display window already covers the due
+    // instant, in which case presenting now beats waiting for the next
+    // refresh (Chromium's VideoRendererSink::RenderCallback contract).
     if (!in.deadline_max.is_null() && in.frame_timer <= in.deadline_max) {
       out.decision = Decision::kPresent;
       return out;
@@ -389,9 +392,9 @@ VideoFrameCompositor::DecideNextFrame(const FrameSyncInput& in,
 //
 // ffplay's framedrop block: drop only when video is the slave clock, the drop
 // budget is not exhausted, the frame is later than its own duration, and the
-// drift is still inside AV_NOSYNC_THRESHOLD. Beyond that threshold the frame
-// timer is snapped instead (step 9), because chasing a large drift by dropping
-// would empty the queue without ever catching up.
+// drift is still inside AV_NOSYNC_THRESHOLD -- beyond which the timer is
+// snapped instead, because dropping to chase a large drift empties the queue
+// without ever catching up.
 bool VideoFrameCompositor::ShouldDropForLateness(const FrameSyncInput& in,
                                                  const FrameSyncOutput& out,
                                                  base::TimeDelta frame_duration,
@@ -522,9 +525,8 @@ void VideoFrameCompositor::Flush() {
   displayed_duration_ = base::TimeDelta();
   frames_dropped_since_last_present_ = 0;
   end_of_stream_ = false;
-  // Everything above says "nothing from before the seek counts any more". The
-  // picture the flush is for has not arrived yet, so one present is owed --
-  // even if playback is paused, which is exactly the case this exists for.
+  // ...and one present is owed, because the picture the flush is for has not
+  // arrived yet -- even if playback is paused, which is why this exists.
   refresh_pending_ = true;
 }
 
@@ -549,12 +551,11 @@ void VideoFrameCompositor::PresentLocked(
   last_presented_serial_ = frame->serial();
   const base::TimeTicks now = tick_clock_->NowTicks();
 
-  // ffplay:
-  //   is->frame_timer += delay;
-  //   if (delay > 0 && time - is->frame_timer > AV_SYNC_THRESHOLD_MAX)
-  //       is->frame_timer = time;
-  // frame_timer_ holds the instant the NEXT frame is due, so advancing it by
-  // the duration of the frame just presented is exactly ffplay's invariant.
+  // ffplay's `frame_timer += delay` (and the AV_SYNC_THRESHOLD_MAX snap below
+  // it): frame_timer_ holds the instant the NEXT frame is due, so advancing it
+  // by the duration just presented is exactly ffplay's invariant. Note the
+  // snap only fires when the timer has fallen BEHIND -- there is no cap on how
+  // far ahead it may be asked to wait, which is what a frozen picture is.
   frame_timer_ =
       (frame_timer_.is_null() ? now : frame_timer_) + out.target_delay;
   if (out.target_delay > base::TimeDelta() &&
@@ -649,8 +650,7 @@ VideoFrameCompositor::Render(base::TimeTicks deadline_min,
       base::scoped_refptr<VideoFrame> frame = pending_frames_.front();
       pending_frames_.pop_front();
       // The picture the flush asked for is on screen, so the refresh is spent
-      // -- whichever route let it through (the paused gate, the step gate, or
-      // ordinary pacing).
+      // -- whichever route let it through (paused gate, step gate, pacing).
       refresh_pending_ = false;
       PresentLocked(frame, out);
       if (step_mode_) {

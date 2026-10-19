@@ -340,6 +340,12 @@ PlaybackStats PlayerImpl::GetPlaybackStats() const {
   stats.video_output_fps = video_output_fps_;
   stats.frames_presented = last_stats_.video_frames_presented;
   stats.frames_dropped = last_stats_.video_frames_dropped;
+  stats.frames_dropped_late = last_stats_.video_frames_dropped_late;
+  stats.frames_dropped_fps = last_stats_.video_frames_dropped_fps;
+  stats.frames_dropped_stale_serial =
+      last_stats_.video_frames_dropped_stale_serial;
+  stats.frames_dropped_accurate_seek =
+      last_stats_.video_frames_dropped_accurate_seek;
   stats.frames_repeated = last_stats_.video_frames_repeated;
   stats.frames_dropped_by_sink = last_stats_.video_frames_dropped_by_sink;
   stats.frames_submit_failures = last_stats_.video_frames_submit_failures;

@@ -429,7 +429,14 @@ Replaces the 30+ FFP_PROP_* integer properties that ijkplayer callers had to pol
 - `uint64_t frames_presented {0}`
 - `uint64_t frames_dropped {0}`
 - `uint64_t frames_dropped_late {0}`
+  The four reasons above partition frames_dropped: late + fps + stale_serial
+
+  -
+
+  accurate_seek == frames_dropped. They are reported separately because "the pipeline is behind" and "a policy limit is thinning the output" call for opposite reactions, and the total alone cannot tell them apart.
 - `uint64_t frames_dropped_fps {0}`
+- `uint64_t frames_dropped_stale_serial {0}`
+- `uint64_t frames_dropped_accurate_seek {0}`
 - `uint64_t frames_repeated {0}`
 - `uint64_t frames_dropped_by_sink {0}`
   Frames handed to the display layer that it refused because it had nowhere to draw them (no surface, a surface of the wrong kind). A subset of frames_presented, NOT a part of frames_dropped – see the field comment in media/base/renderer_client.h for why the two are different events.

@@ -27,6 +27,11 @@ std::string PlaybackStats::ToJson() const {
   out += "\"frames_presented\":" + std::to_string(frames_presented) + ",";
   out += "\"frames_dropped\":" + std::to_string(frames_dropped) + ",";
   out += "\"frames_dropped_late\":" + std::to_string(frames_dropped_late) + ",";
+  out += "\"frames_dropped_fps\":" + std::to_string(frames_dropped_fps) + ",";
+  out += "\"frames_dropped_stale_serial\":" +
+         std::to_string(frames_dropped_stale_serial) + ",";
+  out += "\"frames_dropped_accurate_seek\":" +
+         std::to_string(frames_dropped_accurate_seek) + ",";
   out += "\"frames_repeated\":" + std::to_string(frames_repeated) + ",";
   out +=
       "\"frames_dropped_by_sink\":" + std::to_string(frames_dropped_by_sink) +

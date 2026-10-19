@@ -14,6 +14,7 @@
 // static storage duration instead would run that join at atexit and crash --
 // see the WATCH OUT in player/public/player.h.
 
+#include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QImage>
 #include <QQmlApplicationEngine>
@@ -209,6 +210,63 @@ int main(int argc, char** argv) {
 
   if (argc > 1) {
     bridge.open(QString::fromLocal8Bit(argv[1]));
+  }
+
+  // AVBASE_QT_STATS=<ms> prints the pipeline's own counters and exits.
+  //
+  // "The picture stutters" is an impression; frames_presented against a known
+  // frame rate is a measurement, and the two disagree often enough to be worth
+  // the branch. What it separates is decisive:
+  //
+  //   presented ≈ 30/s                      -> the pipeline is fine, look at Qt
+  //   presented low, dropped_late high      -> the compositor is refusing
+  //   frames presented low, repeated high          -> nothing to present
+  //   (starved)
+  //
+  // The JSON comes from Player::GetPlaybackStats(), which is the same surface a
+  // host can read at any time -- so this prints production telemetry, not a
+  // debug-only view that could drift from it.
+  const QByteArray stats_after = qgetenv("AVBASE_QT_STATS");
+  if (!stats_after.isEmpty()) {
+    const int stats_ms = qEnvironmentVariableIntValue("AVBASE_QT_STATS");
+    QTimer::singleShot(stats_ms > 0 ? stats_ms : 3000, &app, [&bridge, &app]() {
+      const QByteArray json = bridge.stats().toUtf8();
+      std::fprintf(stderr, "stats %s\n", json.constData());
+      app.quit();
+    });
+  }
+
+  // AVBASE_QT_TRACE=<ms> prints one line per <ms> until the app exits.
+  //
+  // AVBASE_QT_STATS answers "how many frames did the pipeline hand out", which
+  // is not the question "is the picture moving". Those two disagree in exactly
+  // the case that is hardest to see from the outside: a compositor that
+  // PRESENTS steadily while the frame it hands out carries the same timestamp
+  // is a frozen picture with a healthy frame counter. Printing the timestamp
+  // of the frame the GUI is actually showing -- not a counter, the frame's own
+  // media time -- is what separates them.
+  //
+  // A trace line is also the only way to see a stall that RESOLVES: a playback
+  // that freezes for three seconds and then plays correctly leaves no trace in
+  // a single end-of-run sample, because the totals look fine.
+  const QByteArray trace_every = qgetenv("AVBASE_QT_TRACE");
+  QElapsedTimer trace_clock;
+  QTimer trace_timer;
+  if (!trace_every.isEmpty()) {
+    const int every_ms = qEnvironmentVariableIntValue("AVBASE_QT_TRACE");
+    trace_clock.start();
+    trace_timer.setInterval(every_ms > 0 ? every_ms : 250);
+    QObject::connect(&trace_timer, &QTimer::timeout, &app, [&]() {
+      int64_t serial = 0;
+      const auto frame = mailbox.Load(&serial);
+      std::fprintf(
+          stderr, "trace t_ms=%lld pts_us=%lld serial=%lld %s\n",
+          static_cast<long long>(trace_clock.elapsed()),
+          frame ? static_cast<long long>(frame->timestamp().InMicroseconds())
+                : -1LL,
+          static_cast<long long>(serial), bridge.stats().toUtf8().constData());
+    });
+    trace_timer.start();
   }
 
   // Headless verification hook, inert unless the environment says otherwise.
