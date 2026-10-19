@@ -184,15 +184,33 @@ ffmpeg -loop 1 -i pattern.png -t 10 -r 30 -c:v libx264 -pix_fmt yuv420p still.mp
 ## 时间线是真的模型，不是画出来的图
 
 `TimelineModel` 是 `QAbstractListModel`：clip 有 track / start / duration，
-`moveClip()` 会 clamp 并触发 `dataChanged`，`clipAt(seconds, track)` 能回答
-"这个时刻这一轨上是什么"。QML 只负责把秒映射成像素。
+QML 只负责把秒映射成像素。这意味着换成 QWidget 时间线、或者做撤销/重做、
+或者序列化成工程文件时，**没有任何逻辑要搬**——它们都在模型里。
 
-这意味着换成 QWidget 时间线、或者做撤销/重做、或者序列化成工程文件时，
-**没有任何逻辑要搬**——它们都在模型里。
+### 面板里的数据必须是当前打开的媒体
 
-还**没有**的（真编辑器需要，但和 UI 框架选型正交）：undo/redo、涟漪编辑、
-吸附、每秒缩略图、音频波形、工程文件读写、导出面板（导出本身复用
-`avbase::transcode`，地基是现成的）。
+面板由 `PlayerBridge` 在 `kPrepared`（MediaInfo 到达）时调用
+`loadFromMedia(name, duration, has_video, has_audio)` 填充：一条视频 clip（V1）
+加一条音频 clip（A1），长度就是该媒体的长度。
+
+**每种类型一条 clip，不是每条流一条**：avbase 同时只渲染一路视频和一路音频，
+把每条音频流都画成独立轨道等于宣称这个应用能混音，而它不能。媒体没给时长
+（直播流）时面板清空——没有尺子就不画格子，编一个长度是撒谎。
+
+这条不是洁癖。面板原先由 `loadDemo()` 塞六个硬编码 clip 名
+（`intro.mp4` / `b-roll.mp4` / ...），于是刚打开的文件显示的是一条属于
+**不存在工程**的时间线；更糟的是 `duration()` 从 clip 推导，播放头被 clamp 到
+占位数据的 18 秒，播到 18 秒后播放头就再也不动了。长得像数据的占位符比空
+面板坏：空面板一眼看出没做完，假的会被当成真的读。
+
+判据在 `tests/unit/qt/timeline_model_unittest.cc`（8 条，三条突变验证过）。
+
+### 还**没有**的
+
+真编辑器需要、但和 UI 框架选型正交：undo/redo、涟漪编辑、吸附、每秒缩略图、
+音频波形、工程文件读写、导出面板（导出本身复用 `avbase::transcode`，地基是现成
+的）。clip 目前不可拖拽也不可增删——背后没有混音器，给了手柄就是接了空气的
+控件。
 
 ## 一个必须知道的 ABI 陷阱（实测踩过）
 

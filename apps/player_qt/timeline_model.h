@@ -10,9 +10,17 @@
 // the drawing differs. Keeping the arithmetic here is also what makes the panel
 // testable without a screen.
 //
+// WHAT THIS MODEL IS NOT: a project. There is no project-file loader and no
+// mixer behind it yet, so the clips it holds describe the file that is
+// currently open and nothing else. It used to be filled with six hard-coded
+// clip names
+// ("intro.mp4", "b-roll.mp4", ...) so the skeleton had something to draw, which
+// meant a freshly opened file showed a timeline belonging to a project that did
+// not exist. A placeholder that looks like data is worse than an empty panel:
+// the empty panel is obviously unfinished, while the fake one gets read.
+//
 // What a real editor adds on top (and what is NOT here): undo/redo, ripple
-// edits, snapping, and the project-file round trip. The clip struct is shaped
-// so that adding those does not move any of them into the view.
+// edits, snapping, multi-clip mixing, and the project-file round trip.
 
 #ifndef AVBASE_APPS_PLAYER_QT_TIMELINE_MODEL_H_
 #define AVBASE_APPS_PLAYER_QT_TIMELINE_MODEL_H_
@@ -33,9 +41,9 @@ class TimelineModel : public QAbstractListModel {
       double playhead READ playhead WRITE setPlayhead NOTIFY playheadChanged)
   Q_PROPERTY(double pixelsPerSecond READ pixels_per_second WRITE
                  setPixelsPerSecond NOTIFY pixelsPerSecondChanged)
+  // Four lanes: V2, V1, A1, A2 -- fixed, because the QML header column draws
+  // them by index and there is no project format that could ask for more.
   Q_PROPERTY(int trackCount READ track_count CONSTANT)
-  Q_PROPERTY(int selectedRow READ selected_row WRITE setSelectedRow NOTIFY
-                 selectedRowChanged)
 
  public:
   enum Role {
@@ -64,45 +72,46 @@ class TimelineModel : public QAbstractListModel {
                 int role = Qt::DisplayRole) const override;
   QHash<int, QByteArray> roleNames() const override;
 
+  // The project's length in seconds: the media's own duration, floored so an
+  // empty panel still has a ruler wide enough to be recognisable as one.
+  //
+  // Deliberately NOT derived from the clips. The playhead's clamp is measured
+  // against this, and deriving it from the clips made the clamp a function of
+  // the placeholder data -- which is how a 30 s file ended up with a playhead
+  // that stopped moving at 18 s.
   double duration() const;
   double playhead() const { return playhead_; }
   double pixels_per_second() const { return pixels_per_second_; }
   int track_count() const { return track_count_; }
-  int selected_row() const { return selected_row_; }
 
   void setPlayhead(double seconds);
   void setPixelsPerSecond(double pps);
-  void setSelectedRow(int row);
 
-  // Appends a clip; the timeline's duration grows to cover it.
-  Q_INVOKABLE void addClip(const QString& name, int track, double start,
-                           double duration, const QString& kind);
-  // Moves a clip along its track. Returns the clamped start it landed on.
-  Q_INVOKABLE double moveClip(int row, double new_start);
-  Q_INVOKABLE void removeClip(int row);
+  // Replaces the panel's contents with the tracks the media named |name|
+  // actually carries. A source with no duration -- a live stream, or one the
+  // container did not state -- clears the panel instead: a timeline that cannot
+  // place a frame on a ruler has nothing honest to draw.
+  Q_INVOKABLE void loadFromMedia(const QString& name, double duration,
+                                 bool has_video, bool has_audio);
   Q_INVOKABLE void clear();
-  // Fills the panel with a few clips so the skeleton has something to show
-  // before a project-file loader exists. Callers replace this wholesale.
-  Q_INVOKABLE void loadDemo();
-  // Row of the clip covering |seconds| on |track|, or -1.
-  Q_INVOKABLE int clipAt(double seconds, int track) const;
-  // Row of the topmost clip covering |seconds|, or -1 (video tracks first).
-  Q_INVOKABLE int topClipAt(double seconds) const;
 
  signals:
   void durationChanged();
   void playheadChanged();
   void pixelsPerSecondChanged();
-  void selectedRowChanged();
 
  private:
-  void RecomputeDuration();
+  // Appends without model notifications; every caller must already be inside a
+  // beginResetModel()/endResetModel() pair.
+  void AppendClip(const QString& name, int track, double start, double duration,
+                  const QString& kind);
 
   QList<Clip> clips_;
+  // The media's own duration, kept separately from the clips -- see duration().
+  double project_duration_{0.0};
   double playhead_{0.0};
   double pixels_per_second_{60.0};
-  int track_count_{4};
-  int selected_row_{-1};
+  const int track_count_{4};
 };
 
 }  // namespace avbase::apps

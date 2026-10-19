@@ -96,8 +96,7 @@ TEST(PlaybackStatsJsonTest, TheJsonCarriesTheDisplayLayersCounters) {
   EXPECT_NE(json.find("\"measured_refresh_hz\":59.940"), std::string::npos);
   EXPECT_NE(json.find("\"frames_dropped_late\":13"), std::string::npos);
   EXPECT_NE(json.find("\"frames_dropped_fps\":5"), std::string::npos);
-  EXPECT_NE(json.find("\"frames_dropped_stale_serial\":17"),
-            std::string::npos);
+  EXPECT_NE(json.find("\"frames_dropped_stale_serial\":17"), std::string::npos);
   EXPECT_NE(json.find("\"frames_dropped_accurate_seek\":19"),
             std::string::npos);
   // A counter that never moved is still reported: "absent" and "zero" are

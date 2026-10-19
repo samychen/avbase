@@ -158,7 +158,10 @@ int main(int argc, char** argv) {
   // Must precede the first load: the sink factory captures the mailbox at
   // Player construction and cannot be swapped afterwards.
   bridge.setMailbox(&mailbox);
-  timeline.loadDemo();
+  // The panel starts empty and is filled by PlayerBridge when MediaInfo for
+  // the opened file arrives. It was previously seeded with hard-coded clip
+  // names, which produced a timeline that described a project that did not
+  // exist -- see timeline_model.h.
 
   QQmlApplicationEngine engine;
   engine.rootContext()->setContextProperty(QStringLiteral("player"), &bridge);

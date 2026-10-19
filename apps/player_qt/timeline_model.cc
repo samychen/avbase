@@ -6,11 +6,24 @@
 
 #include <algorithm>
 
-#include <QColor>
-
+// Qt Core only. The colours are hex strings handed to QML, so this model needs
+// no QColor -- and it must not pull in QtGui, because that is what lets the
+// suite below run headless on a machine with no display.
 namespace avbase::apps {
 
 namespace {
+
+// The four lanes the QML header column draws, top to bottom: V2, V1, A1, A2.
+// The programme's picture goes on V1 -- the lane immediately above the first
+// audio lane -- so what the user is watching sits next to the sound that
+// belongs to it, which is where every NLE puts it.
+constexpr int kVideoLane = 1;
+constexpr int kAudioLane = 2;
+
+// A floor, so a panel with nothing in it is still a ruler: a zero-width
+// timeline is indistinguishable from a broken one, and it leaves nowhere to
+// drop the first clip.
+constexpr double kMinProjectDuration = 10.0;
 
 // Track colours follow the convention every NLE uses, because a timeline the
 // user has to re-learn is a worse timeline: video above audio, and the video
@@ -67,13 +80,14 @@ QHash<int, QByteArray> TimelineModel::roleNames() const {
 }
 
 double TimelineModel::duration() const {
-  double total = 0.0;
-  for (const Clip& clip : clips_) {
-    total = std::max(total, clip.start + clip.duration);
-  }
-  // A floor keeps an empty timeline from collapsing the ruler to zero width,
-  // which makes the first clip impossible to drag to a sensible place.
-  return std::max(total, 10.0);
+  // The media's own length, or a floor for the empty panel: a ruler with no
+  // width reads as a broken one, and leaves nowhere to drop a first clip.
+  //
+  // Not derived from the clips. It used to be, and that is what let the
+  // playhead stop moving at 18 s on a 30 s file -- the clips were placeholder
+  // data and the playhead's clamp inherited their length. The panel's length
+  // is a property of the media, so it is kept as one.
+  return project_duration_ > 0.0 ? project_duration_ : kMinProjectDuration;
 }
 
 void TimelineModel::setPlayhead(double seconds) {
@@ -94,112 +108,51 @@ void TimelineModel::setPixelsPerSecond(double pps) {
   emit pixelsPerSecondChanged();
 }
 
-void TimelineModel::setSelectedRow(int row) {
-  if (row == selected_row_) {
-    return;
+void TimelineModel::loadFromMedia(const QString& name, double duration,
+                                  bool has_video, bool has_audio) {
+  beginResetModel();
+  clips_.clear();
+  // A zero or negative duration means the source never said how long it is;
+  // there is then no ruler to put a clip on, so the panel stays empty rather
+  // than inventing a length for it.
+  project_duration_ = duration > 0.0 ? duration : 0.0;
+  if (project_duration_ > 0.0) {
+    // One clip per KIND, not one per stream: avbase renders a single video
+    // track and a single audio track at a time. Drawing every audio stream as
+    // its own lane would claim the app can mix them, which it cannot.
+    if (has_video) {
+      AppendClip(name, kVideoLane, 0.0, project_duration_,
+                 QStringLiteral("video"));
+    }
+    if (has_audio) {
+      AppendClip(name, kAudioLane, 0.0, project_duration_,
+                 QStringLiteral("audio"));
+    }
   }
-  selected_row_ = row;
-  emit selectedRowChanged();
+  endResetModel();
+  setPlayhead(0.0);
+  emit durationChanged();
 }
 
-void TimelineModel::addClip(const QString& name, int track, double start,
-                            double duration, const QString& kind) {
+void TimelineModel::clear() {
+  beginResetModel();
+  clips_.clear();
+  project_duration_ = 0.0;
+  endResetModel();
+  setPlayhead(0.0);
+  emit durationChanged();
+}
+
+void TimelineModel::AppendClip(const QString& name, int track, double start,
+                               double duration, const QString& kind) {
   Clip clip;
   clip.name = name;
   clip.track = std::clamp(track, 0, track_count_ - 1);
   clip.start = std::max(0.0, start);
-  clip.duration = std::max(0.1, duration);
+  clip.duration = std::max(0.0, duration);
   clip.kind = kind;
   clip.color = DefaultColor(kind, clip.track);
-
-  const int row = static_cast<int>(clips_.size());
-  beginInsertRows(QModelIndex(), row, row);
   clips_.append(clip);
-  endInsertRows();
-  RecomputeDuration();
-}
-
-double TimelineModel::moveClip(int row, double new_start) {
-  if (row < 0 || row >= static_cast<int>(clips_.size())) {
-    return 0.0;
-  }
-  const double clamped = std::max(0.0, new_start);
-  if (qFuzzyCompare(clamped, clips_[row].start)) {
-    return clamped;
-  }
-  clips_[row].start = clamped;
-  const QModelIndex changed = index(row, 0);
-  emit dataChanged(changed, changed, {kStartRole});
-  RecomputeDuration();
-  return clamped;
-}
-
-void TimelineModel::removeClip(int row) {
-  if (row < 0 || row >= static_cast<int>(clips_.size())) {
-    return;
-  }
-  beginRemoveRows(QModelIndex(), row, row);
-  clips_.removeAt(row);
-  endRemoveRows();
-  if (selected_row_ == row) {
-    setSelectedRow(-1);
-  } else if (selected_row_ > row) {
-    setSelectedRow(selected_row_ - 1);
-  }
-  RecomputeDuration();
-}
-
-void TimelineModel::clear() {
-  if (clips_.isEmpty()) {
-    return;
-  }
-  beginResetModel();
-  clips_.clear();
-  endResetModel();
-  setSelectedRow(-1);
-  setPlayhead(0.0);
-  RecomputeDuration();
-}
-
-void TimelineModel::loadDemo() {
-  beginResetModel();
-  clips_.clear();
-  endResetModel();
-
-  // Two video tracks and one audio track, which is the shape a first cut has:
-  // a programme track, an overlay track, and the sound.
-  addClip(QStringLiteral("intro.mp4"), 0, 0.0, 6.0, QStringLiteral("video"));
-  addClip(QStringLiteral("b-roll.mp4"), 1, 2.5, 5.0, QStringLiteral("video"));
-  addClip(QStringLiteral("interview.mp4"), 0, 6.0, 12.0,
-          QStringLiteral("video"));
-  addClip(QStringLiteral("logo.png"), 1, 9.0, 4.0, QStringLiteral("image"));
-  addClip(QStringLiteral("music.wav"), 2, 0.0, 18.0, QStringLiteral("audio"));
-  addClip(QStringLiteral("voice.wav"), 3, 6.0, 12.0, QStringLiteral("audio"));
-}
-
-int TimelineModel::clipAt(double seconds, int track) const {
-  for (int row = 0; row < static_cast<int>(clips_.size()); ++row) {
-    const Clip& clip = clips_[row];
-    if (clip.track == track && seconds >= clip.start &&
-        seconds < clip.start + clip.duration) {
-      return row;
-    }
-  }
-  return -1;
-}
-
-int TimelineModel::topClipAt(double seconds) const {
-  for (int track = 0; track < track_count_; ++track) {
-    const int row = clipAt(seconds, track);
-    if (row >= 0) {
-      return row;
-    }
-  }
-  return -1;
-}
-
-void TimelineModel::RecomputeDuration() {
-  emit durationChanged();
 }
 
 }  // namespace avbase::apps

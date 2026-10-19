@@ -96,6 +96,38 @@ if(AVBASE_ENABLE_SDL2)
       DEPS avbase::platform_sdl2)
 endif()
 
+# ---- apps/player_qt: the timeline model. Qt Core only -- the model carries
+# no widget, so this needs no screen and CI can run it.
+#
+# Deliberately NOT built through avbase_add_unittest(): that helper ends in
+# avbase_configure_target(), which adds -fno-rtti, and moc's generated casts
+# need RTTI -- the same reason the app itself skips it, see the header
+# comment in apps/player_qt/CMakeLists.txt. The ABI macros still have to match,
+# so the one call that is safe is the one that only defines macros.
+if(AVBASE_ENABLE_QT)
+  find_package(Qt6 6.4 REQUIRED COMPONENTS Core)
+  file(GLOB AVBASE_QT_UNITTEST_SOURCES CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/unit/qt/*.cc")
+  # The header is listed as a source on purpose: AUTOMOC finds the Q_OBJECT it
+  # must run on by looking for a header beside each source file, and here the
+  # header lives in apps/player_qt/ while the test lives in unit/qt/. Naming
+  # it explicitly is what makes the moc step happen at all -- without it the
+  # link fails with "missing vtable for TimelineModel", which says nothing
+  # about the real cause.
+  add_executable(qt_unittests
+      ${AVBASE_QT_UNITTEST_SOURCES}
+      "${CMAKE_SOURCE_DIR}/apps/player_qt/timeline_model.cc"
+      "${CMAKE_SOURCE_DIR}/apps/player_qt/timeline_model.h")
+  target_link_libraries(qt_unittests PRIVATE Qt6::Core GTest::gtest_main)
+  target_include_directories(qt_unittests PRIVATE ${CMAKE_SOURCE_DIR})
+  avbase_configure_abi_definitions(qt_unittests)
+  # Target-scoped rather than directory-scoped: the other suites in this
+  # directory have no Q_OBJECT and no Qt dependency, so AUTOMOC belongs to the
+  # one target that needs it.
+  set_target_properties(qt_unittests PROPERTIES AUTOMOC ON)
+  gtest_discover_tests(qt_unittests PROPERTIES TIMEOUT 120)
+endif()
+
 # ---- render/gl: the one suite that looks at pixels. Gated on GLFW because a
 # GL context has to come from somewhere, and GLFW is the only backend this tree
 # can build against without a display server: the tests create a HIDDEN window,

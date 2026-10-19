@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// The Shotcut-style timeline: a ruler, stacked tracks with draggable clips, and
-// a playhead that is the same clock the player is on.
+// The Shotcut-style timeline: a ruler, stacked tracks holding one clip per kind,
+// and a playhead that is the same clock the player is on.
+//
+// The clips are a VIEW of the file that is open -- its video track and its audio
+// track -- not an editable project: there is no mixer behind them yet.
 //
 // WHAT IS BORROWED FROM SHOTCUT (github.com/mltframework/shotcut, GPL-3.0 --
 // LAYOUT AND INTERACTION IDEAS ONLY, no code): tracks are horizontal lanes with
@@ -38,6 +41,23 @@ Item {
         return Math.max(0, Math.min(timeline.duration, x / pps));
     }
 
+    // Keep the playhead inside the viewport. A playhead that scrolls out of
+    // sight reads as a timeline that stopped moving -- which is what a 30 s
+    // file looked like when the panel believed it was 18 s long: past the end
+    // of the (placeholder) project nothing advanced and nothing said why.
+    Connections {
+        target: timeline
+        function onPlayheadChanged() {
+            const x = timeline.playhead * root.pps;
+            const left = flick.contentX;
+            const right = left + flick.width;
+            if (x < left || x > right - 12) {
+                flick.contentX = Math.max(0, Math.min(
+                    flick.contentWidth - flick.width, x - flick.width * 0.5));
+            }
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
@@ -62,21 +82,20 @@ Item {
                     font.letterSpacing: 1.2
                 }
 
-                ToolButton {
-                    text: "+ Clip"
+                // Which file the lanes describe. The panel has no project of
+                // its own -- it shows the open file's tracks -- so the only
+                // honest label is that file's name and length.
+                Label {
+                    text: player.source.length === 0 ? "no media"
+                          : player.source.split("/").pop()
+                            + (player.duration > 0
+                               ? "  \u00b7  " + player.formatTime(player.duration)
+                               : "  \u00b7  live")
+                    color: "#6d7681"
                     font.pixelSize: 11
-                    onClicked: timeline.addClip("clip.mp4", 0,
-                                                timeline.playhead, 4.0, "video")
-                    ToolTip.visible: hovered
-                    ToolTip.text: "Append a clip at the playhead (model demo)"
-                }
-                ToolButton {
-                    text: "\u2212 Clip"
-                    font.pixelSize: 11
-                    enabled: timeline.selectedRow >= 0
-                    onClicked: timeline.removeClip(timeline.selectedRow)
-                    ToolTip.visible: hovered
-                    ToolTip.text: "Remove the selected clip"
+                    font.family: "Menlo"
+                    elide: Text.ElideMiddle
+                    Layout.maximumWidth: 320
                 }
 
                 Item { Layout.fillWidth: true }
@@ -214,7 +233,6 @@ Item {
                                 anchors.fill: parent
                                 acceptedButtons: Qt.LeftButton
                                 onClicked: (mouse) => {
-                                    timeline.selectedRow = -1;
                                     timeline.playhead = root.secondsAt(mouse.x);
                                     player.seekCommit(timeline.playhead);
                                 }
@@ -227,7 +245,6 @@ Item {
                         model: timeline
 
                         Rectangle {
-                            id: clipRect
                             // Repeater over a QAbstractListModel exposes the
                             // roles directly (name, track, start, clipLength...).
                             y: root.rulerHeight + model.track * root.trackHeight + 4
@@ -236,10 +253,12 @@ Item {
                             width: Math.max(6, model.clipLength * root.pps)
                             radius: 4
                             color: model.color
-                            border.width: timeline.selectedRow === index ? 2 : 0
-                            border.color: "#ffffff"
-                            opacity: dragArea.drag.active ? 0.85 : 1.0
 
+                            // Deliberately no MouseArea: there is no mixer
+                            // behind the panel, so a clip that could be dragged
+                            // or deleted would be a control wired to nothing.
+                            // Clicks fall through to the lane, which seeks --
+                            // the one edit that is actually implemented.
                             Label {
                                 anchors.fill: parent
                                 anchors.leftMargin: 7
@@ -249,27 +268,6 @@ Item {
                                 text: model.name
                                 color: "#f2f5f8"
                                 font.pixelSize: 11
-                            }
-
-                            MouseArea {
-                                id: dragArea
-                                anchors.fill: parent
-                                drag.target: clipRect
-                                drag.axis: Drag.XAxis
-                                // Clamped so a clip cannot be dragged before the
-                                // project start; the model clamps again, which
-                                // is the authoritative bound.
-                                drag.minimumX: 0
-                                drag.maximumX: root.contentWidth - clipRect.width
-
-                                onClicked: timeline.selectedRow = index
-
-                                onReleased: {
-                                    if (drag.active) {
-                                        timeline.moveClip(index,
-                                            clipRect.x / root.pps);
-                                    }
-                                }
                             }
                         }
                     }

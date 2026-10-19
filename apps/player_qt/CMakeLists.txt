@@ -27,6 +27,7 @@ qt_add_executable(avbase_player_qt
     main.cc
     player_bridge.cc
     player_bridge.h
+    player_bridge_events.cc
     qt_video_sink.cc
     qt_video_sink.h
     timeline_model.cc
