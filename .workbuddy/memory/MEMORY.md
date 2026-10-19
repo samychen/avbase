@@ -46,6 +46,17 @@ GL→`render/gl/`）。**C28：`render/` 不得 include `media`/`platform`/`base
   `setMirrorVertically(true)`，否则整幅倒像、零 GL 错误零日志；③ glad 与任何 Qt
   GL 头不能同 TU（macOS 经 `<QtGui/qopengl.h>` 拉进 `<OpenGL/gl3.h>`，typedef 冲突）。
   另：Qt 里**用不了 `GlPresenter`**，它的契约结尾是 blit canvas + swap，两样都不归你。
+- **`apps/player_qt` 的 UI 数据必须来自真实现场**：时间线面板曾由 `loadDemo()` 铺
+  六条硬编码 clip，且 `duration()` 从 clip 推导 → 播放头被 clamp 在占位数据的 18 秒，
+  播到 18 秒就不动（控制栏照常走）。占位数据比空面板坏：空的一眼看出没做完，假的
+  会被当成真的读。兑现不了的编辑入口（+/− Clip、可拖拽 clip）要删，别留
+  「接了空气的控件」。
+- **C1 顶到 500 行时拆文件**（先例 `player_bridge_events.cc`，照
+  `renderer_impl.cc` / `renderer_impl_reporting.cc` 的分法），不要压注释凑数。
+- **Qt 单测不能走 `avbase_add_unittest()`**：它带 `-fno-rtti`，moc 的 cast 需要 RTTI。
+  手写 `add_executable` + `avbase_configure_abi_definitions()`。且 AUTOMOC 只找源文件
+  同目录的头文件，跨目录必须把 `.h` 显式列进目标源，否则链接期只报「missing vtable」。
+  `qt_unittests` 产物在 `build/<dir>/bin/`，且不在 CI（CI 没有 Qt）。
 - **GPU 上屏不等于零拷贝**：把 YUV→RGB 交给着色器只搬走了算术，没搬走字节。
   1080p 每帧 3.1 MB 仍从 CPU 内存进显存，核显上这次拷贝和定点转换一样贵（实测
   8.2 vs 10.6 ms，854x480 下 GPU 更慢）。真零拷贝要解码器交 GPU 帧
