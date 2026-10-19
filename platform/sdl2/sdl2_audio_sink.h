@@ -50,6 +50,9 @@ class AVBASE_MEDIA_EXPORT Sdl2AudioSink final : public AudioRendererSink {
  private:
   static void AudioCallbackTrampoline(void* userdata, uint8_t* stream, int len);
   void AudioCallback(uint8_t* stream, int len);
+  // Opens the device, once. Split out of Start() so that Initialize() can do
+  // it during preparation -- see the comment there for why the timing matters.
+  void OpenDevice();
 
   base::raw_ptr<RenderCallback> callback_{nullptr};
   AudioParameters params_;

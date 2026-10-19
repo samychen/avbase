@@ -318,17 +318,23 @@ TEST_F(RendererImplTest, InitIsReportedOnceWithBothStreams) {
   EXPECT_EQ(audio_factory_->counters().init_calls, 1);
   ASSERT_TRUE(video_sink_);
   EXPECT_NE(video_sink_->callback(), nullptr);
-  // But the audio *device* is not open yet, and that asymmetry is deliberate:
-  // AudioRendererImpl initializes and starts its sink in StartPlayingFrom, so
-  // that a decoder that fails to initialize cannot leave a device open and
-  // pulling silence (audio_renderer_impl.cc:148).
+  // The audio sink is handed its parameters as soon as its decoder is up --
+  // for a device-backed sink that is what OPENS the device. It used to happen
+  // in StartPlayingFrom(), which put the device's start-up time (measured:
+  // 129 ms for SDL_InitSubSystem(AUDIO) + 275 ms for SDL_OpenAudioDevice)
+  // between the video's first frame and the audio clock's first sample, and
+  // the compositor repaid that gap as a frozen picture of the same length.
+  // Opened during preparation, then -- but not started, because nothing has
+  // been asked to play.
   ASSERT_TRUE(audio_sink_);
-  EXPECT_EQ(audio_sink_->callback(), nullptr);
+  EXPECT_NE(audio_sink_->callback(), nullptr);
   EXPECT_EQ(audio_sink_->start_count(), 0);
 }
 
-// ...and the other half of that asymmetry: playback start is what opens it.
-TEST_F(RendererImplTest, StartPlayingFromOpensTheAudioDevice) {
+// ...and the other half: preparation opens it, playback start STARTS it. The
+// split is what spends the device's start-up cost where nobody is pacing
+// against it.
+TEST_F(RendererImplTest, StartPlayingFromStartsTheAlreadyOpenDevice) {
   SetStreams(/*with_video=*/false, /*with_audio=*/true);
   ScriptBuffers(/*buffers=*/1);
   CreateRenderer(/*with_video=*/false, /*with_audio=*/true);
@@ -336,7 +342,9 @@ TEST_F(RendererImplTest, StartPlayingFromOpensTheAudioDevice) {
   ASSERT_TRUE(WaitFor([this] { return init_done_; }));
   ASSERT_EQ(init_status_, PipelineStatus::kOk);
   ASSERT_TRUE(audio_sink_);
-  ASSERT_EQ(audio_sink_->callback(), nullptr);
+  ASSERT_NE(audio_sink_->callback(), nullptr)
+      << "the device should already be open by the time playback can start";
+  ASSERT_EQ(audio_sink_->start_count(), 0);
 
   renderer_->StartPlayingFrom(base::TimeDelta());
 

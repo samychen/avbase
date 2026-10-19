@@ -93,6 +93,14 @@ void AudioRendererImpl::OnDecoderInitialized(InitializeCB cb,
   initialized_ = true;
   LOG(INFO) << "avbase.adec: audio decoder ready ("
             << decoder_stream_.GetDisplayName() << ")";
+  // Hand the sink its parameters NOW, while still preparing. For a device
+  // backed sink this is what opens the device (paused -- see
+  // Sdl2AudioSink::Initialize), and opening it is the slow part: leaving it
+  // to StartPlayingFrom() put those hundreds of milliseconds between the
+  // video's first frame and the audio clock's first sample, which the
+  // compositor then repaid as a frozen picture. It is deliberately not done
+  // in Initialize() above: a decoder that fails must not leave a device open.
+  sink_->Initialize(params_, this);
   std::move(cb).Run(PipelineStatus::kOk);
 }
 

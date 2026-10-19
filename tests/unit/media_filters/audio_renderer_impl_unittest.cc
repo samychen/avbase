@@ -160,9 +160,20 @@ TEST_F(AudioRendererImplTest, DecodesConsumesAndEnds) {
   CreateRenderer();
   ASSERT_TRUE(init_done_);
   ASSERT_EQ(init_status_, PipelineStatus::kOk);
-  // The device is not opened by Initialize: a decoder that fails to come up
-  // must not leave a device pulling silence (audio_renderer_impl.cc:148).
-  ASSERT_EQ(sink_->callback(), nullptr);
+  // The sink is handed its parameters AS SOON AS THE DECODER IS UP, which is
+  // what opens the device -- deliberately before anyone asks to play.
+  //
+  // Why: opening a device costs real time (measured here: 129 ms for
+  // SDL_InitSubSystem(AUDIO) and 275 ms for SDL_OpenAudioDevice). Left until
+  // StartPlayingFrom(), that time fell between the video's first frame and the
+  // audio clock's first sample, and the compositor repaid it as a frozen
+  // picture of exactly that length (av_diff of -400 ms absorbed in one step).
+  // Handing the parameters over during preparation spends the same 400 ms
+  // where nobody is pacing against it.
+  //
+  // What it must NOT do is start: nothing has been asked to play yet.
+  EXPECT_NE(sink_->callback(), nullptr);
+  EXPECT_EQ(sink_->start_count(), 0);
 
   StartPlaying();
   EXPECT_NE(sink_->callback(), nullptr);
@@ -177,6 +188,26 @@ TEST_F(AudioRendererImplTest, DecodesConsumesAndEnds) {
   // Every frame the decoder emitted reached the device: 2 buffers per input
   // buffer, 1024 frames each.
   EXPECT_EQ(frames_consumed_, 2 * kDecoderFramesPerBuffer);
+}
+
+// The counterpart of the hand-off above: a decoder that fails to come up must
+// still not leave a device opened and pulling silence. That property is why
+// the hand-off lives in OnDecoderInitialized() and not in Initialize() --
+// moving it earlier had to keep it, not trade it away.
+//
+// Discriminating power: alone it cannot tell "handed over on success only"
+// from "never handed over at all" -- deleting the hand-off leaves THIS test
+// green. It is the pair with DecodesConsumesAndEnds (which goes red on that
+// deletion) that pins the behaviour, so the two have to stay together.
+TEST_F(AudioRendererImplTest, AFailedDecoderLeavesNoDeviceBehind) {
+  behaviour_.init_fails = true;
+  ScriptBuffers(/*buffers=*/1);
+  CreateRenderer();
+  ASSERT_TRUE(init_done_);
+  EXPECT_NE(init_status_, PipelineStatus::kOk);
+  EXPECT_EQ(sink_->callback(), nullptr)
+      << "a decoder that failed still opened the device";
+  EXPECT_EQ(sink_->start_count(), 0);
 }
 
 // #41: paused means "play silence", and silence is not an underrun. Counting it

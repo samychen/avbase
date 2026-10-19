@@ -31,14 +31,41 @@ void Sdl2AudioSink::Initialize(const AudioParameters& params,
       static_cast<size_t>(params.channels()) *
       static_cast<size_t>(params.frames_per_buffer()));
   initialized_.store(true);
+  // Open the device HERE, while still preparing, rather than in Start().
+  //
+  // WHY THE TIMING IS THE BUG: opening it costs real wall-clock time --
+  // measured on this machine, 129 ms for SDL_InitSubSystem(AUDIO) plus 275 ms
+  // for SDL_OpenAudioDevice. Start() runs from StartPlayingFrom(), the same
+  // instant VideoRendererImpl::StartPlayingFrom() does, and video presents its
+  // first frame ~20 ms later and paces from there. The audio clock is only
+  // anchored when the device's FIRST callback delivers samples
+  // (AudioRendererImpl::Render with written > 0), so all of that start-up time
+  // lands as "video is ahead of the master clock" -- and ComputeTargetDelay()
+  // absorbs an av_diff that large in one step, which is a frozen picture for
+  // exactly as long as the device took to open. Measured before this change:
+  // video first present at +22 ms, audio anchored at +435 ms, picture frozen
+  // 370 ms at 0.46 s. On a slower device it is seconds.
+  //
+  // Opening here is not early playback: SDL_OpenAudioDevice() returns the
+  // device PAUSED, so no callback runs and nothing is emitted until Play()
+  // unpauses it. What is bought is that the 400 ms is spent before the
+  // pipeline is asked to start, where nobody is pacing against it.
+  OpenDevice();
 }
 
 void Sdl2AudioSink::Start() {
   if (started_.exchange(true)) {
     return;
   }
-  // The host may have initialised only video; audio is initialised lazily
-  // here so that a video-only host is not forced to name audio at startup.
+  // A host that never called Initialize() still gets a device here. Normally
+  // Initialize() already opened it and this returns at once.
+  OpenDevice();
+}
+
+void Sdl2AudioSink::OpenDevice() {
+  if (device_ != nullptr) {
+    return;
+  }
   if ((SDL_WasInit(0) & SDL_INIT_AUDIO) == 0) {
     // M6: the return value used to be ignored AND the subsystem was never
     // quit again; record whether THIS sink performed the init so Stop() can
@@ -46,7 +73,6 @@ void Sdl2AudioSink::Start() {
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) {
       LOG(ERROR) << "avbase.aout: SDL_InitSubSystem(AUDIO) failed: "
                  << SDL_GetError();
-      started_.store(false);
       return;
     }
     we_initialized_audio_.store(true);
@@ -65,7 +91,6 @@ void Sdl2AudioSink::Start() {
   SDL_AudioDeviceID device = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
   if (device == 0) {
     LOG(ERROR) << "avbase.aout: SDL_OpenAudioDevice failed: " << SDL_GetError();
-    started_.store(false);
     return;
   }
   // SDL's audio callback hands the device id back as void*, and an id is an
