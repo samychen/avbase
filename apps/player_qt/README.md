@@ -45,6 +45,10 @@ AVBASE_QT_PREFIX=/usr/local/opt/qt tools/gate_local.sh --jobs qt   # 本地复�
 `qt` preset 刻意**不开 FFmpeg**——要证明的是「Qt 宿主目标能编译」，与解码层正交。
 详见 [docs/BUILDING.md §3.9](../../docs/BUILDING.md)。
 
+只要门面库、不要这个示例应用，就只开 `AVBASE_BUILD_QT_FACADE=ON`（它会建
+`player/qt/`，不建 `apps/player_qt/`）；`AVBASE_BUILD_QT_PLAYER=ON` 隐含把库也打开
+——应用现在是库的消费者，不再拥有那些源文件。
+
 `AVBASE_BUILD_QT_PLAYER` 默认 **OFF**，所以不带 Qt 的机器照常构建整个树。
 `AVBASE_ENABLE_QT=ON` 建 `platform/qt/`（第四个窗口系统适配器），应用**硬依赖**它：
 没有 GPU 路径的播放器骨架会误导人，所以缺这个开关时 CMake 直接报错并点名。
@@ -53,20 +57,30 @@ AVBASE_QT_PREFIX=/usr/local/opt/qt tools/gate_local.sh --jobs qt   # 本地复�
 
 ## 目录
 
+**这个目录现在只装"应用"**：`main.cc` 与 `qml/`。其余（`PlayerBridge`、
+`VideoItem`、`GlVideoItem`、`GlVideoRenderer`、`QtVideoSink`、`FrameMailbox`、
+`TimelineModel`）已搬进 **[`player/qt/`](../../player/qt/)**，是可复用的门面库
+`avbase::qtfacade`，宿主链接它即可，不必再抄这个目录。
+
 | 文件 | 职责 | 行数量级 |
 |---|---|---|
 | `main.cc` | 组装根：QML 引擎 → bridge → mailbox 的销毁顺序 | ~290 |
-| `player_bridge.{h,cc}` | **唯一**让 avbase 与 Qt 相遇的地方：Q_PROPERTY + 状态/统计查询 | ~400 |
-| `player_bridge_events.cc` | 事件那一半：`ApplyEvent` / `StateName`，从 bridge 拆出（C1 限 500 行） | ~140 |
-| `qt_video_sink.{h,cc}` | 自定义 `VideoRendererSink`，拉帧丢进 mailbox | ~150 |
-| `frame_mailbox.h` | 渲染线程 → GUI 线程的单槽帧交换 | ~80 |
-| `video_item.{h,cc}` | **软件路径**：`QQuickPaintedItem`，I420 → RGB → QPainter | ~270 |
-| `gl_video_item.{h,cc}` | **GPU 路径的 Qt 半边**：`QQuickFramebufferObject` + FBO + mailbox | ~300 |
-| `gl_video_renderer.{h,cc}` | **GPU 路径的 GL 半边**：GlApi + GlVideoLayer + YUV 程序 + 四边形 | ~200 |
-| `timeline_model.{h,cc}` | 时间线数据模型（多轨 clip、播放头、缩放） | ~250 |
 | `qml/ControlBar.qml` | Haruna 风格控制栏 | ~280 |
 | `qml/TimelinePanel.qml` | Shotcut 风格时间线 | ~270 |
 | `qml/Main.qml` | 应用壳：视频面 + 控制栏 + 时间线 + 拖放 | ~330 |
+
+门面库那半边（都是 `avbase::qt` 命名空间）：
+
+| 文件 | 职责 |
+|---|---|
+| `player/qt/player_bridge.{h,cc}` | **唯一**让 avbase 与 Qt 相遇的地方：Q_PROPERTY + 状态/统计查询 |
+| `player/qt/player_bridge_events.cc` | 事件那一半：`ApplyEvent` / `StateName`（C1 限 500 行） |
+| `player/qt/qt_video_sink.{h,cc}` | 自定义 `VideoRendererSink`，拉帧丢进 mailbox |
+| `player/qt/frame_mailbox.h` | 渲染线程 → GUI 线程的单槽帧交换 |
+| `player/qt/video_item.{h,cc}` | **软件路径**：`QQuickPaintedItem`，I420 → RGB → QPainter |
+| `player/qt/gl_video_item.{h,cc}` | **GPU 路径的 Qt 半边**：`QQuickFramebufferObject` + FBO + mailbox |
+| `player/qt/gl_video_renderer.{h,cc}` | **GPU 路径的 GL 半边**：GlApi + GlVideoLayer + YUV 程序 + 四边形 |
+| `player/qt/timeline_model.{h,cc}` | 时间线数据模型（多轨 clip、播放头、缩放） |
 
 ## UI 元素 → Player API 映射
 
@@ -261,10 +275,11 @@ heap-use-after-free, 40 bytes inside a 232-byte region
 ```
 
 崩溃看起来像「Qt 的 QRegion 分配失败」或「malloc_zone_error」，和真凶完全不像。
-修法就是补宏，`apps/player_qt/CMakeLists.txt` 里一行：
+修法就是补宏，`apps/player_qt/CMakeLists.txt` 与 `player/qt/CMakeLists.txt` 各一行：
 
 ```cmake
 avbase_configure_abi_definitions(avbase_player_qt)
+avbase_configure_abi_definitions(avbase_qtfacade)
 ```
 
 ## 另一个陷阱：不要把 Qt 目标套进 `avbase_configure_target()`

@@ -13,19 +13,19 @@
 // class is the placeholder that proves the wiring, and its public shape
 // (setMailbox / refresh / frameSize) is what the GPU version keeps.
 
-#ifndef AVBASE_APPS_PLAYER_QT_VIDEO_ITEM_H_
-#define AVBASE_APPS_PLAYER_QT_VIDEO_ITEM_H_
+#ifndef AVBASE_PLAYER_QT_VIDEO_ITEM_H_
+#define AVBASE_PLAYER_QT_VIDEO_ITEM_H_
 
 #include <QImage>
 #include <QQuickPaintedItem>
 #include <QSize>
 #include <QString>
 
-#include "apps/player_qt/frame_mailbox.h"
+#include "player/qt/frame_mailbox.h"
 
 class QTimer;
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 class VideoItem : public QQuickPaintedItem {
   Q_OBJECT
@@ -67,6 +67,6 @@ class VideoItem : public QQuickPaintedItem {
   double convert_ms_{0.0};
 };
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt
 
-#endif  // AVBASE_APPS_PLAYER_QT_VIDEO_ITEM_H_
+#endif  // AVBASE_PLAYER_QT_VIDEO_ITEM_H_

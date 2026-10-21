@@ -12,8 +12,8 @@
 // reference-counted, so "storing" it costs one atomic increment and never a
 // pixel copy.
 
-#ifndef AVBASE_APPS_PLAYER_QT_FRAME_MAILBOX_H_
-#define AVBASE_APPS_PLAYER_QT_FRAME_MAILBOX_H_
+#ifndef AVBASE_PLAYER_QT_FRAME_MAILBOX_H_
+#define AVBASE_PLAYER_QT_FRAME_MAILBOX_H_
 
 #include <stdint.h>
 
@@ -23,7 +23,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "media/base/video_frame.h"
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 class FrameMailbox {
  public:
@@ -73,6 +73,6 @@ class FrameMailbox {
   int64_t serial_{0};
 };
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt
 
-#endif  // AVBASE_APPS_PLAYER_QT_FRAME_MAILBOX_H_
+#endif  // AVBASE_PLAYER_QT_FRAME_MAILBOX_H_

@@ -27,6 +27,20 @@ option(AVBASE_ENABLE_D3D11  "Build the D3D11 hw decoder factory"   OFF)
 option(AVBASE_BUILD_TESTS    "Build unit/contract/integration tests" ${AVBASE_IS_TOP_LEVEL})
 option(AVBASE_BUILD_EXAMPLES "Build example programs"               ${AVBASE_IS_TOP_LEVEL})
 option(AVBASE_BUILD_QT_PLAYER "Build the Qt Quick player/editor app (needs Qt 6.4+)" OFF)
+# The reusable Qt Quick facade. Separate from (and implied by) the app: a host
+# that wants PlayerBridge/VideoItem/GlVideoItem without the demo app asks for
+# this and nothing else. AVBASE_ENABLE_QT is the *GL backend* under it and not
+# a substitute -- the backend is inert without something to draw, and the
+# facade cannot build without the backend.
+option(AVBASE_BUILD_QT_FACADE "Build the reusable Qt Quick facade library (player/qt/, needs Qt 6.4+)" OFF)
+if(AVBASE_BUILD_QT_PLAYER AND NOT AVBASE_BUILD_QT_FACADE)
+  message(STATUS
+      "AVBASE_BUILD_QT_PLAYER=ON implies AVBASE_BUILD_QT_FACADE=ON "
+      "(the app links the facade; it does not own those sources any more)")
+  set(AVBASE_BUILD_QT_FACADE ON CACHE BOOL
+      "Build the reusable Qt Quick facade library (player/qt/, needs Qt 6.4+)"
+      FORCE)
+endif()
 option(AVBASE_BUILD_BENCH    "Build benchmarks"                     OFF)
 option(AVBASE_BUILD_FUZZ     "Build libFuzzer targets"              OFF)
 option(AVBASE_INSTALL        "Generate install rules"               ${AVBASE_IS_TOP_LEVEL})

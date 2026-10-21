@@ -2,13 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/player_qt/gl_video_item.h"
-
-#include <chrono>
-#include <cstdio>
-#include <memory>
-#include <string>
-#include <utility>
+#include "player/qt/gl_video_item.h"
 
 #include <QOpenGLContext>
 #include <QOpenGLFramebufferObject>
@@ -16,11 +10,17 @@
 #include <QQuickOpenGLUtils>
 #include <QTimer>
 
-#include "apps/player_qt/gl_video_renderer.h"
+#include <chrono>
+#include <cstdio>
+#include <memory>
+#include <string>
+#include <utility>
+
 #include "base/logging.h"
 #include "media/base/video_frame.h"
+#include "player/qt/gl_video_renderer.h"
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 namespace {
 
@@ -294,4 +294,4 @@ void GlVideoItem::reportRendererState(const QString& info) {
   emit rendererInfoChanged();
 }
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt

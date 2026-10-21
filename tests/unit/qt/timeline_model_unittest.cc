@@ -11,7 +11,7 @@
 // come from the open file" is not a property a screenshot can check: a
 // wrong-but- plausible timeline looks exactly like a right one.
 
-#include "apps/player_qt/timeline_model.h"
+#include "player/qt/timeline_model.h"
 
 #include <QModelIndex>
 #include <QString>
@@ -19,7 +19,7 @@
 
 #include <gtest/gtest.h>
 
-namespace avbase::apps {
+namespace avbase::qt {
 namespace {
 
 class TimelineModelTest : public ::testing::Test {
@@ -146,4 +146,4 @@ TEST_F(TimelineModelTest, ZoomIsClampedAndDoesNotTouchTheClips) {
 }
 
 }  // namespace
-}  // namespace avbase::apps
+}  // namespace avbase::qt

@@ -96,29 +96,40 @@ if(AVBASE_ENABLE_SDL2)
       DEPS avbase::platform_sdl2)
 endif()
 
-# ---- apps/player_qt: the timeline model. Qt Core only -- the model carries
-# no widget, so this needs no screen and CI can run it.
+# ---- player/qt: the Qt facade. Qt Core only -- the model carries no widget,
+# so this needs no screen and CI can run it.
+#
+# It links avbase::qtfacade rather than compiling player/qt/timeline_model.cc
+# directly: the test then exercises the same object the host links, and a
+# header/source drift inside the library cannot hide behind a second copy.
 #
 # Deliberately NOT built through avbase_add_unittest(): that helper ends in
 # avbase_configure_target(), which adds -fno-rtti, and moc's generated casts
-# need RTTI -- the same reason the app itself skips it, see the header
-# comment in apps/player_qt/CMakeLists.txt. The ABI macros still have to match,
+# need RTTI -- the same reason the facade and the app skip it, see the header
+# comment in player/qt/CMakeLists.txt. The ABI macros still have to match,
 # so the one call that is safe is the one that only defines macros.
-if(AVBASE_ENABLE_QT)
-  find_package(Qt6 6.4 REQUIRED COMPONENTS Core)
+if(AVBASE_BUILD_QT_FACADE)
+  # Every Qt module the FACADE links, not the ones this test uses: linking
+  # avbase::qtfacade makes CMake evaluate its INTERFACE link libraries, and
+  # Qt6::Quick's own interface mentions Qt6::QmlIntegration -- an imported
+  # target that only exists if Quick was found. Finding Core alone fails at
+  # GENERATE time with "Target Qt6::QmlIntegration not found", which is a
+  # confusing error for a test that includes nothing but Core headers.
+  # (The test still needs no screen: none of these are instantiated.)
+  find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Quick OpenGL)
   file(GLOB AVBASE_QT_UNITTEST_SOURCES CONFIGURE_DEPENDS
       "${CMAKE_CURRENT_SOURCE_DIR}/unit/qt/*.cc")
   # The header is listed as a source on purpose: AUTOMOC finds the Q_OBJECT it
   # must run on by looking for a header beside each source file, and here the
-  # header lives in apps/player_qt/ while the test lives in unit/qt/. Naming
+  # header lives in player/qt/ while the test lives in unit/qt/. Naming
   # it explicitly is what makes the moc step happen at all -- without it the
   # link fails with "missing vtable for TimelineModel", which says nothing
   # about the real cause.
   add_executable(qt_unittests
       ${AVBASE_QT_UNITTEST_SOURCES}
-      "${CMAKE_SOURCE_DIR}/apps/player_qt/timeline_model.cc"
-      "${CMAKE_SOURCE_DIR}/apps/player_qt/timeline_model.h")
-  target_link_libraries(qt_unittests PRIVATE Qt6::Core GTest::gtest_main)
+      "${CMAKE_SOURCE_DIR}/player/qt/timeline_model.h")
+  target_link_libraries(qt_unittests PRIVATE
+      Qt6::Core GTest::gtest_main avbase::qtfacade)
   target_include_directories(qt_unittests PRIVATE ${CMAKE_SOURCE_DIR})
   avbase_configure_abi_definitions(qt_unittests)
   # Target-scoped rather than directory-scoped: the other suites in this

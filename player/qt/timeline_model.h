@@ -22,8 +22,8 @@
 // What a real editor adds on top (and what is NOT here): undo/redo, ripple
 // edits, snapping, multi-clip mixing, and the project-file round trip.
 
-#ifndef AVBASE_APPS_PLAYER_QT_TIMELINE_MODEL_H_
-#define AVBASE_APPS_PLAYER_QT_TIMELINE_MODEL_H_
+#ifndef AVBASE_PLAYER_QT_TIMELINE_MODEL_H_
+#define AVBASE_PLAYER_QT_TIMELINE_MODEL_H_
 
 #include <QAbstractListModel>
 #include <QByteArray>
@@ -32,7 +32,7 @@
 #include <QString>
 #include <QVariant>
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 class TimelineModel : public QAbstractListModel {
   Q_OBJECT
@@ -114,6 +114,6 @@ class TimelineModel : public QAbstractListModel {
   const int track_count_{4};
 };
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt
 
-#endif  // AVBASE_APPS_PLAYER_QT_TIMELINE_MODEL_H_
+#endif  // AVBASE_PLAYER_QT_TIMELINE_MODEL_H_

@@ -1,4 +1,9 @@
-# The Qt Quick player / editor skeleton.
+# The Qt Quick player / editor skeleton — the app half.
+#
+# Everything reusable (PlayerBridge, VideoItem, GlVideoItem, GlVideoRenderer,
+# QtVideoSink, FrameMailbox, TimelineModel) lives in player/qt/ now and is
+# linked as avbase::qtfacade. This directory holds what is genuinely the app:
+# main.cc (window setup, CLI switches, QML loading) and the QML itself.
 #
 # WHY THIS DOES NOT CALL avbase_configure_target(): that helper adds
 # -fno-exceptions -fno-rtti, which is the right contract for the core libraries
@@ -8,32 +13,16 @@
 # anything the author wrote. A UI app is a consumer of the SDK, so it gets the
 # consumer's compiler contract, not the library's.
 #
-# The reverse edge is fine and expected: this target links avbase::avbase, which
-# was itself built without exceptions or RTTI.
+# The reverse edge is fine and expected: this target links avbase::qtfacade,
+# which relays to avbase::avbase, built without exceptions or RTTI.
 
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Quick QuickControls2 OpenGL)
 
-# QOpenGLFramebufferObject lives in Qt's OpenGL module (it moved out of Gui in
-# Qt 6), so the GPU item needs it: it is the object Qt asks us to allocate and
-# the buffer our renderer draws into.
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
 qt_add_executable(avbase_player_qt
-    gl_video_item.cc
-    gl_video_item.h
-    gl_video_renderer.cc
-    gl_video_renderer.h
     main.cc
-    player_bridge.cc
-    player_bridge.h
-    player_bridge_events.cc
-    qt_video_sink.cc
-    qt_video_sink.h
-    timeline_model.cc
-    timeline_model.h
-    video_item.cc
-    video_item.h
 )
 
 # ABI: the layout-affecting macros the core libraries were built with. This
@@ -57,30 +46,15 @@ target_link_libraries(avbase_player_qt PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Quick
+    # QuickControls2 is a QML import, not a C++ dependency of the facade, so it
+    # is linked here and not there: the library has no QML of its own.
     Qt6::QuickControls2
     Qt6::OpenGL
-    avbase::avbase
+    avbase::qtfacade
 )
 
-# The GPU surface needs the Qt window-system adapter from platform/qt. It is a
-# hard requirement rather than an optional extra: the software item is slow
-# enough that shipping the app without the GPU path would misrepresent what the
-# skeleton is for, and a silently-degraded build is the kind of thing nobody
-# notices until they profile it. Say which flag is missing instead.
-if(NOT TARGET avbase::platform_qt)
+if(NOT TARGET avbase::qtfacade)
   message(FATAL_ERROR
-      "AVBASE_BUILD_QT_PLAYER=ON requires -DAVBASE_ENABLE_QT=ON "
-      "(the GPU video surface links avbase::platform_qt)")
-endif()
-target_link_libraries(avbase_player_qt PRIVATE avbase::platform_qt)
-
-# Real audio output. Sdl2AudioSink pulls Render() from SDL's audio thread and
-# lazily runs SDL_INIT_AUDIO itself, so this needs no SDL window and no init in
-# main() -- Qt owns the window, SDL only owns the sound card.
-#
-# Without it the app still builds and plays, silently: avbase falls back to its
-# null sink, which is the same thing play_glfw does.
-if(AVBASE_ENABLE_SDL2)
-  target_compile_definitions(avbase_player_qt PRIVATE
-      AVBASE_QT_HAVE_SDL2_AUDIO=1)
+      "avbase_player_qt requires avbase::qtfacade "
+      "(-DAVBASE_BUILD_QT_FACADE=ON, implied by AVBASE_BUILD_QT_PLAYER)")
 endif()

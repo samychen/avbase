@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/player_qt/timeline_model.h"
+#include "player/qt/timeline_model.h"
 
 #include <algorithm>
 
 // Qt Core only. The colours are hex strings handed to QML, so this model needs
 // no QColor -- and it must not pull in QtGui, because that is what lets the
 // suite below run headless on a machine with no display.
-namespace avbase::apps {
+namespace avbase::qt {
 
 namespace {
 
@@ -155,4 +155,4 @@ void TimelineModel::AppendClip(const QString& name, int track, double start,
   clips_.append(clip);
 }
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt

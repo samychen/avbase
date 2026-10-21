@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/player_qt/qt_video_sink.h"
+#include "player/qt/qt_video_sink.h"
 
 #include <utility>
 
@@ -11,7 +11,7 @@
 #include "base/threading/thread.h"
 #include "media/base/video_sink_gate.h"
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 // 60 Hz. This is a poll interval, not a promise: the compositor inside avbase
 // decides which frame is current, and Render() returns the same frame on a
@@ -191,4 +191,4 @@ std::unique_ptr<media::VideoRendererSink> QtVideoSinkFactory::Create(
   return std::make_unique<QtVideoSink>(mailbox_);
 }
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt

@@ -31,3 +31,12 @@ endif()
 if(AVBASE_ENABLE_SDL2)
   target_link_libraries(avbase INTERFACE avbase::platform_sdl2)
 endif()
+
+# player/qt/ — the Qt Quick facade. A subdirectory rather than a sibling of
+# player/ because it is part of the SDK's host surface (apps/ is for consumers
+# and nothing under base/ media/ player/ render/ platform/ may include it),
+# and its own target because the whole directory is what one option selects
+# (docs/06 §7.6: one directory, one target).
+if(AVBASE_BUILD_QT_FACADE)
+  add_subdirectory(qt)
+endif()

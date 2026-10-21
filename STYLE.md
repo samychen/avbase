@@ -139,6 +139,7 @@ class AVBASE_MEDIA_EXPORT VideoFrame
 
 规则：
 - **include 顺序**：对应 `.h` → C 系统头 → C++ 标准库 → 其他库 → 本项目（`base/...` → `media/...` → `player/...`）。每块之间空行。
+- **Qt 头（`<QFoo>`）排在 C++ 标准库之前**，看着与上一行矛盾，但这是 cpplint 的分类决定的：它只把白名单里的名字（`<string>`、`<cstdio>` …）当 C++ 标准头，其余尖括号头一律归 C 系统头，`<QFoo>` 无 `.h` 后缀也不在白名单 → 落在 C 系统头那一档 → 放在标准库之后就报 `build/include_order`。`<SDL.h>` 有 `.h`，按上一行排在标准库之前，两者因此不冲突。别为了「看起来该在后面」把它们挪回去，那会让 lint 红（`player/qt/*.cc` 在 CI 的 lint 口径里，`apps/` 不在——这是它搬进 `player/qt/` 之后才第一次被扫到的）。
 - 只 include 直接依赖（IWYU 原则），CI 跑 `include-what-you-use`。
 - 能用前置声明就不 include。
 - **公开头文件不得 include 任何 `libav*.h` / `libsw*.h`**（check_invariants C4）。

@@ -23,8 +23,8 @@
 // this header drags in no Qt header at all and the split stays enforced by the
 // compiler rather than by a comment.
 
-#ifndef AVBASE_APPS_PLAYER_QT_GL_VIDEO_RENDERER_H_
-#define AVBASE_APPS_PLAYER_QT_GL_VIDEO_RENDERER_H_
+#ifndef AVBASE_PLAYER_QT_GL_VIDEO_RENDERER_H_
+#define AVBASE_PLAYER_QT_GL_VIDEO_RENDERER_H_
 
 #include <memory>
 #include <string>
@@ -41,7 +41,7 @@ class QtGLContext;
 class VideoFrame;
 }  // namespace avbase::media
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 // One video surface's worth of GL state: the entry-point table, the YUV
 // conversion program, the layer that owns the three plane textures, the quad.
@@ -99,6 +99,6 @@ class GlVideoRenderer {
   std::string renderer_name_;
 };
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt
 
-#endif  // AVBASE_APPS_PLAYER_QT_GL_VIDEO_RENDERER_H_
+#endif  // AVBASE_PLAYER_QT_GL_VIDEO_RENDERER_H_

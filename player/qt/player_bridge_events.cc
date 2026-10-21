@@ -11,17 +11,17 @@
 // The immediate reason is that player_bridge.cc had reached the project's
 // 500-line ceiling (C1) with real work, not with filler.
 
-#include "apps/player_qt/player_bridge.h"
+#include "player/qt/player_bridge.h"
 
 #include <QFileInfo>
 #include <QMetaObject>
 #include <QSize>
 #include <QString>
 
-#include "apps/player_qt/timeline_model.h"
 #include "media/base/media_info.h"
+#include "player/qt/timeline_model.h"
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 namespace {
 
@@ -139,4 +139,4 @@ void PlayerBridge::ApplyEvent(const PlayerEvent& event) {
   }
 }
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt

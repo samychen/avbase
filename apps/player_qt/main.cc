@@ -32,11 +32,11 @@
 #include <cstdio>
 #include <cstdlib>
 
-#include "apps/player_qt/frame_mailbox.h"
-#include "apps/player_qt/gl_video_item.h"
-#include "apps/player_qt/player_bridge.h"
-#include "apps/player_qt/timeline_model.h"
-#include "apps/player_qt/video_item.h"
+#include "player/qt/frame_mailbox.h"
+#include "player/qt/gl_video_item.h"
+#include "player/qt/player_bridge.h"
+#include "player/qt/timeline_model.h"
+#include "player/qt/video_item.h"
 
 namespace {
 
@@ -101,9 +101,8 @@ int main(int argc, char** argv) {
   // The one C++ type QML instantiates directly. PlayerBridge and TimelineModel
   // arrive as context properties instead, because there is exactly one of each
   // and QML should not be able to construct a second Player by accident.
-  qmlRegisterType<avbase::apps::VideoItem>("AvbasePlayer", 1, 0, "VideoItem");
-  qmlRegisterType<avbase::apps::GlVideoItem>("AvbasePlayer", 1, 0,
-                                             "GlVideoItem");
+  qmlRegisterType<avbase::qt::VideoItem>("AvbasePlayer", 1, 0, "VideoItem");
+  qmlRegisterType<avbase::qt::GlVideoItem>("AvbasePlayer", 1, 0, "GlVideoItem");
 
   // Pin the scene graph to OpenGL rather than letting Qt choose.
   //
@@ -152,9 +151,9 @@ int main(int argc, char** argv) {
                use_gl_surface ? "opengl (QQuickFramebufferObject)"
                               : "software (QPainter)");
 
-  avbase::apps::FrameMailbox mailbox;
-  avbase::apps::TimelineModel timeline;
-  avbase::apps::PlayerBridge bridge(&timeline);
+  avbase::qt::FrameMailbox mailbox;
+  avbase::qt::TimelineModel timeline;
+  avbase::qt::PlayerBridge bridge(&timeline);
   // Must precede the first load: the sink factory captures the mailbox at
   // Player construction and cannot be swapped afterwards.
   bridge.setMailbox(&mailbox);
@@ -194,12 +193,12 @@ int main(int argc, char** argv) {
   // observes instead of a fact it assumes.
   QObject* const root = engine.rootObjects().first();
   bool handed_over = false;
-  if (auto* soft = root->findChild<avbase::apps::VideoItem*>(
+  if (auto* soft = root->findChild<avbase::qt::VideoItem*>(
           QStringLiteral("videoSurface"))) {
     soft->setMailbox(&mailbox);
     handed_over = true;
   }
-  if (auto* gpu = root->findChild<avbase::apps::GlVideoItem*>(
+  if (auto* gpu = root->findChild<avbase::qt::GlVideoItem*>(
           QStringLiteral("glVideoSurface"))) {
     gpu->setMailbox(&mailbox);
     handed_over = true;

@@ -29,8 +29,8 @@
 // thread; the only thing crossing between them is the FrameMailbox, which is
 // already a mutex-guarded one-slot hand-off.
 
-#ifndef AVBASE_APPS_PLAYER_QT_GL_VIDEO_ITEM_H_
-#define AVBASE_APPS_PLAYER_QT_GL_VIDEO_ITEM_H_
+#ifndef AVBASE_PLAYER_QT_GL_VIDEO_ITEM_H_
+#define AVBASE_PLAYER_QT_GL_VIDEO_ITEM_H_
 
 #include <stdint.h>
 
@@ -39,7 +39,7 @@
 #include <QQuickFramebufferObject>
 #include <QString>
 
-#include "apps/player_qt/frame_mailbox.h"
+#include "player/qt/frame_mailbox.h"
 
 class QTimer;
 
@@ -54,7 +54,7 @@ class GlVideoLayer;
 class QtGLContext;
 }  // namespace avbase::media
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 class GlVideoItem : public QQuickFramebufferObject {
   Q_OBJECT
@@ -106,6 +106,6 @@ class GlVideoItem : public QQuickFramebufferObject {
   QString renderer_info_{QStringLiteral("pending")};
 };
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt
 
-#endif  // AVBASE_APPS_PLAYER_QT_GL_VIDEO_ITEM_H_
+#endif  // AVBASE_PLAYER_QT_GL_VIDEO_ITEM_H_

@@ -20,8 +20,8 @@
 //   3. The poll timer runs on the GUI thread and only calls the Player's
 //      lock-free query methods (GetMediaTime, GetBufferedTime, ...).
 
-#ifndef AVBASE_APPS_PLAYER_QT_PLAYER_BRIDGE_H_
-#define AVBASE_APPS_PLAYER_QT_PLAYER_BRIDGE_H_
+#ifndef AVBASE_PLAYER_QT_PLAYER_BRIDGE_H_
+#define AVBASE_PLAYER_QT_PLAYER_BRIDGE_H_
 
 #include <QObject>
 #include <QSize>
@@ -36,7 +36,7 @@
 
 class QTimer;
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 class FrameMailbox;
 class TimelineModel;
@@ -167,6 +167,6 @@ class PlayerBridge : public QObject {
   QString error_string_;
 };
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt
 
-#endif  // AVBASE_APPS_PLAYER_QT_PLAYER_BRIDGE_H_
+#endif  // AVBASE_PLAYER_QT_PLAYER_BRIDGE_H_

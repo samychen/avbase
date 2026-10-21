@@ -36,7 +36,7 @@ namespace avbase::media {
 // ends in "blit the canvas to the default framebuffer and swap", which is one
 // step past what an item renderer is allowed to do. What a Qt host wants from
 // this module is everything before that -- entry points, programs, the YUV
-// layer, the quad -- and it drives those itself. See apps/player_qt/
+// layer, the quad -- and it drives those itself. See player/qt/
 // gl_video_item.cc.
 //
 // BORROWED semantics, like the other three: the destructor does not touch the

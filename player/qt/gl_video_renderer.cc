@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/player_qt/gl_video_renderer.h"
+#include "player/qt/gl_video_renderer.h"
 
 #include <utility>
 
@@ -17,7 +17,7 @@
 
 class QOpenGLContext;
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 namespace {
 
@@ -196,4 +196,4 @@ gl::GlProgram* GlVideoRenderer::RectProgram() {
   return rect_program_.get();
 }
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt

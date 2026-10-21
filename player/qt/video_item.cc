@@ -2,7 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/player_qt/video_item.h"
+#include "player/qt/video_item.h"
+
+#include <QColor>
+#include <QPainter>
+#include <QRectF>
+#include <QTimer>
+#include <QTransform>
 
 #include <algorithm>
 #include <chrono>
@@ -11,17 +17,11 @@
 #include <cstring>
 #include <utility>
 
-#include <QColor>
-#include <QPainter>
-#include <QRectF>
-#include <QTimer>
-#include <QTransform>
-
 #include "base/logging.h"
 #include "media/base/video_color_space.h"
 #include "media/base/video_frame.h"
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 namespace {
 
@@ -267,4 +267,4 @@ void VideoItem::paint(QPainter* painter) {
   painter->drawImage(FitRect(QSizeF(image_.size()), boundingRect()), image_);
 }
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt

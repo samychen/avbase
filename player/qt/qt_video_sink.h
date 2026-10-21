@@ -20,22 +20,22 @@
 // (5 methods -- see render/gl/native_gl_context.h) and let avbase draw straight
 // into Qt's FBO. The public shape of this file would not change.
 
-#ifndef AVBASE_APPS_PLAYER_QT_QT_VIDEO_SINK_H_
-#define AVBASE_APPS_PLAYER_QT_QT_VIDEO_SINK_H_
+#ifndef AVBASE_PLAYER_QT_QT_VIDEO_SINK_H_
+#define AVBASE_PLAYER_QT_QT_VIDEO_SINK_H_
 
 #include <atomic>
 #include <memory>
 #include <mutex>
 
-#include "apps/player_qt/frame_mailbox.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "media/base/native_display.h"
 #include "media/base/video_renderer_sink.h"
+#include "player/qt/frame_mailbox.h"
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 // A sink that renders nowhere and keeps the newest frame in |mailbox|.
 //
@@ -94,6 +94,6 @@ class QtVideoSinkFactory final : public media::VideoRendererSinkFactory {
   FrameMailbox* mailbox_;
 };
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt
 
-#endif  // AVBASE_APPS_PLAYER_QT_QT_VIDEO_SINK_H_
+#endif  // AVBASE_PLAYER_QT_QT_VIDEO_SINK_H_

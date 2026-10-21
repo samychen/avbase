@@ -2,29 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/player_qt/player_bridge.h"
-
-#include <algorithm>
-#include <cmath>
-#include <optional>
-#include <utility>
+#include "player/qt/player_bridge.h"
 
 #include <QDir>
 #include <QTimer>
 #include <QUrl>
 #include <QVariantMap>
 
-#include "apps/player_qt/frame_mailbox.h"
-#include "apps/player_qt/qt_video_sink.h"
-#include "apps/player_qt/timeline_model.h"
+#include <algorithm>
+#include <cmath>
+#include <optional>
+#include <utility>
+
 #include "base/functional/bind.h"
 #include "media/base/media_info.h"
+#include "player/qt/frame_mailbox.h"
+#include "player/qt/qt_video_sink.h"
+#include "player/qt/timeline_model.h"
 
 #if defined(AVBASE_QT_HAVE_SDL2_AUDIO)
 #include "platform/sdl2/sdl2_audio_sink.h"
 #endif
 
-namespace avbase::apps {
+namespace avbase::qt {
 
 namespace {
 
@@ -396,4 +396,4 @@ void PlayerBridge::RebuildTracks() {
   emit tracksChanged();
 }
 
-}  // namespace avbase::apps
+}  // namespace avbase::qt
