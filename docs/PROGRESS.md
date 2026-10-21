@@ -15,7 +15,7 @@
 
 ## 当前状态
 
-**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧 GPU 上屏 ✅（非零拷贝）、真零拷贝 ⬜ · Phase 5 转码代码全落地 + 编码链路实测（硬件加速本体待其他机器）· macOS 窗口播放器 ✅ · Qt 播放器骨架 ✅（时间线改为真实 `MediaInfo`）· Qt 门面已库化 ✅ · Qt 目标已进 CI ✅ · CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅ · M13 SDK 文档七份 + apidocs 门禁 ✅**
+**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧 GPU 上屏 ✅（非零拷贝）、真零拷贝 ⬜ · Phase 5 转码代码全落地 + 编码链路实测（硬件加速本体待其他机器）+ `avbase-inspect transcode` 生产入口 ✅ · macOS 窗口播放器 ✅ · Qt 播放器骨架 ✅（时间线改为真实 `MediaInfo`）· Qt 门面已库化 ✅ · Qt 目标已进 CI ✅ · CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅ · M13 SDK 文档七份 + apidocs 门禁 ✅**
 
 最后更新：**2026-10-21**
 
@@ -43,7 +43,7 @@
 |---|---|---|
 | Phase 3 显示侧 GPU 上屏 | ✅ | `apps/player_qt` 把 YUV→RGB 交给着色器并画进 Qt 的 FBO（`QQuickFramebufferObject` + `platform/qt/`）|
 | Phase 3 真零拷贝 | ⬜ | 上一条只搬走了算术，1080p 每帧 3.1 MB 仍从 CPU 内存进显存（实测 854×480 下 GPU 4.2 ms vs 软件 2.9 ms）；要 Linux(VAAPI-EGL)/Windows(D3D11-GL) 进 sink + `examples/pull_frames` 在对应硬件跑通 |
-| Phase 5 E5 硬件编码器实测 | 🔶 | 编码链路已实测（VideoToolbox：30 帧 → 30 包 → 解回 30 帧，`hardware_encoder_unittest.cc`，突变验过）；**硬件会话本体未实测**——本机 Intel Mac 建不起来（-12903，仅 `allow_sw=1` 的软件实现可用），需 Apple Silicon / Linux VAAPI 机器。为让硬件编码器可用，`FFmpegVideoEncoder::Params` 与 `VideoEncoderFactory::CreateEncoder` 新增私有选项通道（VT 的 `allow_sw`、VAAPI 的 device 都靠它） |
+| Phase 5 E5 硬件编码器实测 | 🔶 | 编码链路已实测（VideoToolbox：30 帧 → 30 包 → 解回 30 帧，`hardware_encoder_unittest.cc`，突变验过）；**硬件会话本体未实测**——本机 Intel Mac 建不起来（-12903，仅 `allow_sw=1` 的软件实现可用），需 Apple Silicon / Linux VAAPI 机器。为让硬件编码器可用，`FFmpegVideoEncoder::Params` 与 `VideoEncoderFactory::CreateEncoder` 新增私有选项通道（VT 的 `allow_sw`、VAAPI 的 device 都靠它），并经 `TranscodeParams::VideoCodecSpec::options` 贯通到转码路径——CLI 侧是 `avbase-inspect transcode --encopt allow_sw=1 --vcodec h264_videotoolbox`（实测产出真 H.264） |
 | Qt 门面 | ✅ | 可复用库 `player/qt/`（`avbase::qtfacade`）已抽出，`apps/player_qt/` 只剩 `main.cc` + `qml/` 并链接它；时间线为真实 `MediaInfo`，`qt_unittests`（`tests/unit/qt/` 8 条）改为链接库、突变验过；M15 C ABI 已作 UE/跨语言挂点 |
 | Qt 目标进 CI | ✅ | 新增 `qt` preset + CI job（Ubuntu 24.04 的 Qt 6.4.2）+ `gate_local --jobs qt`：建 `avbase_player_qt` 与 `qt_unittests` 并跑 ctest（本机 625/625，含 8 条 `TimelineModelTest`）。判据经突变验证：摘掉 `gtest_discover_tests` 后门禁变红（不是静默绿）|
 | soak 48h 长稳 | ⬜ | 脚本 `tools/run_soak.py` 已就绪，48h 未跑（沙箱禁读他进程 RSS） |

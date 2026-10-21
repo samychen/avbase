@@ -320,6 +320,72 @@ job_e2e() {
   else
     echo "ok   corrupt_header.mp4 -> actionable failure"
   fi
+
+  # The transcode subcommand: media/transcode's first production consumer
+  # (docs/TODO §1). Exit codes alone would miss the interesting failure -- a
+  # run that "succeeds" while writing nothing, or a codec request that
+  # silently falls back to something else -- so the happy cases grep for the
+  # verification line the CLI prints after re-opening its own output, and the
+  # negative case requires BOTH a non-zero exit and the list of encoders this
+  # build actually has.
+  local inspect=build/ffmpeg/bin/avbase-inspect
+  "$CMAKE" --build build/ffmpeg --target avbase-inspect >/dev/null 2>&1 \
+    || { echo "FAIL avbase-inspect build failed"; fail=1; }
+  if [ -x "$inspect" ]; then
+    local tc; tc="$(mktemp -d)"
+    if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+        -o "$tc/default.mp4" >"$log" 2>&1 &&
+        grep -q "verified:.*2 stream" "$log" &&
+        grep -q "video mjpeg" "$log"; then
+      echo "ok   transcode default -> verified mjpeg+aac"
+    else
+      echo "FAIL transcode default"; fail=1
+    fi
+    if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+        -o "$tc/copy.mp4" --vcodec copy --acodec copy >"$log" 2>&1 &&
+        grep -q "video h264" "$log"; then
+      echo "ok   transcode --vcodec copy -> verified h264+aac passthrough"
+    else
+      echo "FAIL transcode --vcodec copy"; fail=1
+    fi
+    if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+        -o "$tc/audio.mp4" --no-video >"$log" 2>&1 &&
+        grep -q "verified:.*1 stream" "$log"; then
+      echo "ok   transcode --no-video -> verified audio only"
+    else
+      echo "FAIL transcode --no-video"; fail=1
+    fi
+    # A trimmed output must be shorter than the 3.029 s input. Parsed rather
+    # than grepped for a literal: the exact figure depends on where the
+    # keyframes fall, and a gate that fails on a legitimate 1.045 gets ignored.
+    if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+        -o "$tc/trim.mp4" --start 1 --duration 1 >"$log" 2>&1 &&
+        [ "$(sed -n 's/.*duration=\([0-9.]*\)s.*/\1/p' "$log" |
+              awk '$1 > 0 && $1 < 2 {found=1} END {print found+0}')" = "1" ]; then
+      echo "ok   transcode --start 1 --duration 1 -> under 2 s"
+    else
+      echo "FAIL transcode trim"; fail=1
+    fi
+    # The negative case: a codec this build does not have must FAIL and say
+    # what it does have. Exit 0 here would mean the request was silently
+    # answered with a different encoder, which is the failure mode the whole
+    # subcommand exists to make visible.
+    if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+        -o "$tc/none.mp4" --vcodec not-a-real-codec >"$log" 2>&1; then
+      echo "FAIL transcode unknown codec unexpectedly succeeded"; fail=1
+    elif ! grep -q "video encoders in this FFmpeg build" "$log"; then
+      echo "FAIL transcode unknown codec failed without the encoder list"
+      fail=1
+    else
+      echo "ok   transcode unknown codec -> refused with encoder list"
+    fi
+    if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+        >"$log" 2>&1; then
+      echo "FAIL transcode without -o unexpectedly succeeded"; fail=1
+    else
+      echo "ok   transcode without -o -> refused"
+    fi
+  fi
   return $fail
 }
 

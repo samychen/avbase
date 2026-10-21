@@ -78,6 +78,15 @@ struct AVBASE_MEDIA_EXPORT TranscodeParams {
     int fps_num = 0;
     int fps_den = 0;
 
+    // Private encoder options (AVDictionary entries handed to
+    // avcodec_open2). Hardware encoders are usually unreachable without them:
+    // h264_videotoolbox refuses to open at all unless allow_sw=1 on machines
+    // with no VT session, and VAAPI needs a device. The same options are
+    // offered to every candidate in turn; avcodec_open2 leaves entries it
+    // does not recognise in the dictionary, so a VideoToolbox-only option is
+    // simply ignored by the software fallback.
+    std::vector<std::pair<std::string, std::string>> options;
+
     // --- E5 encoder selection -------------------------------------------
     // When true (the default), the concrete FFmpeg encoder name is resolved
     // through VideoEncoderFactory instead of handing |codec| to FFmpeg

@@ -21,6 +21,14 @@
 #include "tools/inspect/inspect_common.h"
 
 int main(int argc, char** argv) {
+  // transcode parses its own options: the shared parser rejects unknown flags
+  // by design (a silently dropped --limit would make a run look finished when
+  // it was not), and transcode's set is a different one (-o, --vcodec, ...).
+  // Routing here keeps that refusal intact for the other three subcommands.
+  if (argc > 1 && std::string(argv[1]) == "transcode") {
+    avbase::media::ffmpeg::InstallLogBridge();
+    return avbase::RunTranscode(argc - 1, argv + 1);
+  }
   avbase::Options opts;
   if (!avbase::ParseArgs(argc, argv, &opts)) {
     return 1;

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -344,6 +345,8 @@ Status PrepareVideoStream(AVFormatContext* in_ctx, int video_stream_idx,
   enc_params.preset = params.video_codec.preset;
   enc_params.fps_num = out->out_fps_num;
   enc_params.fps_den = out->out_fps_den;
+  enc_params.options = std::map<std::string, std::string>(
+      params.video_codec.options.begin(), params.video_codec.options.end());
   bool encoder_ready = false;
   for (const auto& name : candidates) {
     enc_params.codec_name = name;

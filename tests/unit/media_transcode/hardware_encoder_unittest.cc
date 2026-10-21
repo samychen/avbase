@@ -52,8 +52,7 @@ constexpr int kFrameCount = 30;
 base::scoped_refptr<VideoFrame> MakeFrame(int index) {
   return VideoFrame::CreateBlackFrame(
       VideoFormat::kI420, Size{kWidth, kHeight}, Size{kWidth, kHeight},
-      Rational{30, 1},
-      base::Microseconds(static_cast<int64_t>(index) * 33333),
+      Rational{30, 1}, base::Microseconds(static_cast<int64_t>(index) * 33333),
       base::Microseconds(33333), 0);
 }
 
@@ -91,8 +90,7 @@ int DecodeBack(const std::vector<EncodedPacket>& packets,
   // the parameter sets in-band, and deleting this call (a mutation probe) still
   // decodes all 30 frames. Worth knowing before anyone "fixes" a decode
   // failure by blaming extradata.
-  if (par != nullptr &&
-      avcodec_parameters_to_context(ctx.get(), par) < 0) {
+  if (par != nullptr && avcodec_parameters_to_context(ctx.get(), par) < 0) {
     return -1;
   }
   if (avcodec_open2(ctx.get(), decoder, nullptr) < 0) {

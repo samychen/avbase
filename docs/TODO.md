@@ -16,12 +16,17 @@
 
 ## 1. 产品化能力（全部未做）
 
-> **转码层（E1–E5）已落地但没有入口**：`media/transcode/` 的
-> `FFmpegVideoEncoder` / `TranscodeJob` / `Remuxer` / `ConcatJob` / `EncodeMuxer`
-> 全树只有 `tests/unit/media_transcode/` 在用——`CreateEncoder` 与
-> `SelectVideoEncoder` 除工厂自身外**零调用者**，没有 CLI、没有 `Player` 上的入口、
-> 没有示例。所以「离线转码代码全部落地」指的是库，不是能力：宿主今天拿它转码得
-> 自己拼装。接一个入口（例如 `tools/inspect transcode`）是把它变成能力的最小一步。
+> **转码层（E1–E5）已接上第一个生产入口**：`avbase-inspect transcode <input>
+> -o <output>`（`tools/inspect/inspect_transcode.cc`）跑完整条
+> `media/transcode/` 链——工厂选择 → 解码 → 编码 → 混流，然后**重新打开产出
+> 文件**证明它是可读媒体（「muxer 返回 OK」与「文件能放」是两件事）。私有编码
+> 器选项经 `--encopt KEY=VALUE` 透传（`TranscodeParams::VideoCodecSpec::
+> options` → `FFmpegVideoEncoder::Params::options`），硬件编码器几乎没这个就
+> 开不起来。入口判据在 `gate_local --jobs e2e` 与 CI 的 `e2e-headless`：默认
+> 转码要 verified、`--vcodec copy` 要 verified、`--no-video` 要 verified、
+> trim 后时长 < 2 s、**不存在的编码器必须失败并列出本构建真有的编码器**
+> （静默回退会让它 exit 0——突变已验证这条会红）。仍未做：`Player` 上的入口、
+> 录制（播放侧落盘）、推流。
 
 | 能力 | 现状 |
 |---|---|

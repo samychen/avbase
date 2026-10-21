@@ -12,8 +12,11 @@
 file(GLOB AVBASE_INSPECT_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cc")
 add_executable(avbase-inspect ${AVBASE_INSPECT_SOURCES})
+# avbase::ffmpeg is NOT listed here: avbase::transcode links it PUBLIC, so it
+# arrives through that. Listing both made the linker complain about a
+# duplicate library on every link.
 target_link_libraries(avbase-inspect PRIVATE
-    avbase::ffmpeg
+    avbase::transcode
     avbase::base_test_support)
 # The CLI includes platform/ffmpeg headers (av_includes.h), and
 # avbase_ffmpeg links FFmpeg PRIVATE on purpose (it is the only

@@ -93,6 +93,85 @@ jobs:
           else
             echo "ok   corrupt_header.mp4 -> actionable failure"
           fi
+          # The transcode subcommand: media/transcode's first production
+          # consumer (docs/TODO §1). Exit codes alone would miss the
+          # interesting failure -- a run that "succeeds" while writing
+          # nothing, or a codec request that silently falls back to a
+          # different encoder -- so the happy cases grep for the verification
+          # line the CLI prints after re-opening its own output, and the
+          # negative case requires BOTH a non-zero exit and the list of
+          # encoders this FFmpeg actually has.
+          inspect=build/ffmpeg/bin/avbase-inspect
+          tc="$RUNNER_TEMP/transcode"
+          mkdir -p "$tc"
+          if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+              -o "$tc/default.mp4" > "$RUNNER_TEMP/tc.log" 2>&1 &&
+              grep -q "verified:.*2 stream" "$RUNNER_TEMP/tc.log" &&
+              grep -q "video mjpeg" "$RUNNER_TEMP/tc.log"; then
+            echo "ok   transcode default -> verified mjpeg+aac"
+          else
+            echo "::error::transcode default failed or produced unverified output"
+            sed -n '1,40p' "$RUNNER_TEMP/tc.log"
+            fail=1
+          fi
+          if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+              -o "$tc/copy.mp4" --vcodec copy --acodec copy \
+              > "$RUNNER_TEMP/tc.log" 2>&1 &&
+              grep -q "video h264" "$RUNNER_TEMP/tc.log"; then
+            echo "ok   transcode --vcodec copy -> verified passthrough"
+          else
+            echo "::error::transcode --vcodec copy failed"
+            sed -n '1,40p' "$RUNNER_TEMP/tc.log"
+            fail=1
+          fi
+          if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+              -o "$tc/audio.mp4" --no-video > "$RUNNER_TEMP/tc.log" 2>&1 &&
+              grep -q "verified:.*1 stream" "$RUNNER_TEMP/tc.log"; then
+            echo "ok   transcode --no-video -> verified audio only"
+          else
+            echo "::error::transcode --no-video failed"
+            sed -n '1,40p' "$RUNNER_TEMP/tc.log"
+            fail=1
+          fi
+          # A trimmed output must be shorter than the 3.029 s input. Parsed
+          # rather than grepped for a literal: the exact figure depends on
+          # where the keyframes fall, and a gate that fails on a legitimate
+          # 1.045 gets ignored.
+          if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+              -o "$tc/trim.mp4" --start 1 --duration 1 \
+              > "$RUNNER_TEMP/tc.log" 2>&1 &&
+              [ "$(sed -n 's/.*duration=\([0-9.]*\)s.*/\1/p' \
+                     "$RUNNER_TEMP/tc.log" |
+                  awk '$1 > 0 && $1 < 2 {found=1} END {print found+0}')" = "1" ]; then
+            echo "ok   transcode --start 1 --duration 1 -> under 2 s"
+          else
+            echo "::error::transcode trim produced an unexpected duration"
+            sed -n '1,40p' "$RUNNER_TEMP/tc.log"
+            fail=1
+          fi
+          # The negative case: a codec this FFmpeg does not have must FAIL and
+          # say what it does have. Exit 0 here would mean the request was
+          # silently answered with a different encoder.
+          if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+              -o "$tc/none.mp4" --vcodec not-a-real-codec \
+              > "$RUNNER_TEMP/tc.log" 2>&1; then
+            echo "::error::transcode unknown codec unexpectedly succeeded"
+            fail=1
+          elif ! grep -q "video encoders in this FFmpeg build" \
+              "$RUNNER_TEMP/tc.log"; then
+            echo "::error::transcode unknown codec failed without the encoder list"
+            sed -n '1,40p' "$RUNNER_TEMP/tc.log"
+            fail=1
+          else
+            echo "ok   transcode unknown codec -> refused with encoder list"
+          fi
+          if "$inspect" transcode tests/testdata/small_h264_aac_3s.mp4 \
+              > "$RUNNER_TEMP/tc.log" 2>&1; then
+            echo "::error::transcode without -o unexpectedly succeeded"
+            fail=1
+          else
+            echo "ok   transcode without -o -> refused"
+          fi
           exit $fail
       # End-to-end CPU (docs/04 §8, docs/07 §10). Recorded, never failed:
       # the committed baseline was measured on macOS with VideoToolbox, and
