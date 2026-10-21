@@ -10,7 +10,7 @@
 
 1. **先证明被测二进制是新的**：
    `python3 tools/check_binary_freshness.py --root build/<preset>`（exit 0/1/2）。
-   第八十五轮拿 10/15 的旧二进制诊断出过「VideoToolbox 硬解卡死」——重链后
+   拿 10/15 的旧二进制诊断出过「VideoToolbox 硬解卡死」——重链后
    3/3 正常，**那个 bug 不存在**。ninja 不跟踪静态库内容，`cmake --build`
    对部分目标会报成功却留旧可执行文件；判新鲜度读 `.ninja_log`，不是 `stat`。
 2. **同一素材、同一机器、同一负载**。`tools/bench_render.sh` 的注释记着三条
@@ -82,7 +82,7 @@ if (per_stream.max_bytes > 0 && stream_count > 1) {
 }
 ```
 
-所以 A+V 文件默认每队列 7.5 MiB。**不要**按「每流 15 MiB」心算——第九十四轮
+所以 A+V 文件默认每队列 7.5 MiB。**不要**按「每流 15 MiB」心算——
 修过这个口径：此前按每流全额传递，A/V 文件默认内存包络从 15 MiB 静默翻倍到
 30 MiB，而且没有测试读回上限。改这块之前先看
 `ByteBudgetIsSplitAcrossStreams` 测试。

@@ -23,7 +23,7 @@
 > | `check_invariants.py` | ✅ 全规则通过（**364 文件**；C23 列宽棘轮 **35**） |
 > | `extract_constants.py --selftest` | ✅ 24 个移植常量与 docs/05 表 7 一致 |
 >
-> ⚠️ **用例数以 [docs/PROGRESS.md](docs/PROGRESS.md) 为准**（活文档，第四十六轮实测值见上表）。
+> ⚠️ **用例数以 [docs/PROGRESS.md](docs/PROGRESS.md) 为准**（活文档，实测值见上表）。
 > **能播放了**：`examples/headless <url>` 完整播到 kCompleted，`examples/play_sdl2
 > --url <url>` 真窗口带音频出画（SDL2 后端）。
 > 覆盖率当前为**棘轮基线**（core line 75.5% / branch 58.8%，见 `coverage_baseline.json`），
@@ -64,7 +64,7 @@
 | 06 | [CMake 工程与构建体系](docs/06-CMake工程与构建体系.md) | `.cc` + Google flags + `-fno-exceptions`、`FindFFmpeg`（三级查找）、FFmpeg 4.4~7.x 兼容层、**Linux 依赖探测**（SDL2/OpenGL/EGL/X11/Wayland/ALSA/Pulse）、install/export、CI 矩阵、符号隐藏 |
 | 07 | [测试策略与可观测性](docs/07-测试策略与可观测性.md) | **`base::test::TaskEnvironment`** 单测模型、Chromium 式 Mock（`MockVideoDecoder`/`MockDemuxerStream`）、合成数据源、Golden Test、Fuzz、Sanitizer、覆盖率门禁 |
 | 08 | [实施路线图与风险](docs/08-实施路线图与风险.md) | M0–M12 里程碑与 DoD、双人并行方案、工作量估算、砍掉/后置清单、**16 条风险登记册**、"平替"验收标准 A1–A16 |
-| ~~09~~ | [Linux 平台实现方案](docs/archive/09-Linux平台实现方案.md) | **已归档**（第四十六轮）：M12 原生 OpenGL 后端顺延为可选，`platform/linux/` 从未落地，Linux 出画由 SDL2 交付。原文为双后端（SDL2 + 原生 OpenGL）的详细设计，保留为决策记录 |
+| ~~09~~ | [Linux 平台实现方案](docs/archive/09-Linux平台实现方案.md) | **已归档**：M12 原生 OpenGL 后端顺延为可选，`platform/linux/` 从未落地，Linux 出画由 SDL2 交付。原文为双后端（SDL2 + 原生 OpenGL）的详细设计，保留为决策记录 |
 | 10 | [SDK 易用性设计](docs/10-SDK易用性设计.md) | **面向二次开发者**：10 行 quick-start、可操作错误信息规范、API 人体工学清单、文档体系、示例矩阵、打包与集成方式、常见任务 cookbook |
 | 11 | [行为规范卷](docs/11-行为规范卷.md) | **验收依据**（自 avbase_design.md §5/§7/§8 并入）：线程与任务模型、背压级联与 seek 序列、三级水位表。Phase 1–2 的验收标准引用本章 |
 | 12 | [剩余工作清单](docs/12-剩余工作清单.md) | **执行快照**：Phase 0–4 逐阶段完成度、剩余项（零拷贝显示 / Qt 门面 / soak / Windows CI）、环境事项与开放决策点 |
@@ -89,7 +89,7 @@
 │             demuxer · demuxer_stream · renderer · renderer_client          │
 │             pipeline · pipeline_controller · time_source                   │
 │             audio_renderer_sink · video_renderer_sink · media_log          │
-│   ffmpeg/   ★全项目唯一 include libav*.h 的层（第三十八轮自 platform 迁入）  │
+│   ffmpeg/   ★全项目唯一 include libav*.h 的层（自 platform 迁入）  │
 │             ffmpeg_demuxer · ffmpeg_video_decoder · ffmpeg_audio_decoder    │
 │             ffmpeg_glue · ffmpeg_hw_video_decoder · hw_frame_readback      │
 │             av_packet_storage · ffmpeg_{video,audio}_filter                │
@@ -259,7 +259,7 @@ int main() {
 
 ## 8. 仓库布局
 
-### 8.1 实际状态（第九轮实测，行数与文件数为脚本统计）
+### 8.1 实际状态（实测，行数与文件数为脚本统计）
 
 此前这一节只有一张"规划"树，把 `examples/`、`tools/gen_options.py`、`media/renderers/`
 这些**还不存在**的东西画得像已经存在，读者无法判断真实进度。现改为实测树 +
@@ -267,8 +267,8 @@ int main() {
 
 ```
 avbase/
-├── LICENSE                  ✅ BSD-3-Clause + 4 节第三方/衍生说明（第九轮补）
-├── .clang-format            ✅   .gitignore ✅（第九轮补 __pycache__/ *.pyc）
+├── LICENSE                  ✅ BSD-3-Clause + 4 节第三方/衍生说明
+├── .clang-format            ✅   .gitignore ✅（补 __pycache__/ *.pyc）
 ├── .clang-tidy              ⬜ STYLE.md §8 有完整配置内容，文件本身不存在
 ├── .editorconfig            ⬜
 ├── STYLE.md · VERSION.txt(0.1.0) · CMakeLists.txt · CMakePresets.json ✅
@@ -284,19 +284,19 @@ avbase/
 ├── media/
 │   ├── base/                ✅ 64 文件 / 6,882 行（值类型 + 接口头）
 │   ├── ffmpeg/              ✅ 44 文件 / 6,559 行 —— **全项目唯一链接 libav\* 的层**
-│   │                            （第三十八轮由 `platform/ffmpeg` 整体迁入）
+│   │                            （由 `platform/ffmpeg` 整体迁入）
 │   ├── filters/             ✅ 44 文件 / 10,064 行（decoder_stream · pipeline_impl
 │   │                            + pipeline_impl_host · null 双 sink ·
 │   │                            renderer_impl + renderer_impl_controls ·
 │   │                            audio_renderer_algorithm 等）
-│   │   └── legacy/          ✅ 6 文件 —— LGPL-2.1 隔离区（第九轮建）：
+│   │   └── legacy/          ✅ 6 文件 —— LGPL-2.1 隔离区：
 │   │                            video_frame_compositor · av_sync_controller · clock
 │   │                            + LICENSE.LGPL-2.1 + README.md（准入规则）
 │   ├── transcode/           ✅ 18 文件 / 3,484 行（转码 E1–E5：编解码器层 · 滤镜 ·
 │   │                            拼接 · remux · 异步任务）
 │   └── renderers/           ✅ DefaultRendererFactory
 ├── player/
-│   ├── public/              ✅ 11 个 SDK 头（`version.h` 第四十六轮删：只有声明无定义）
+│   ├── public/              ✅ 11 个 SDK 头（`version.h` 删：只有声明无定义）
 │   └── *.cc                 ✅ 17 文件 —— player_impl 拆 events/stop 等 TU 承载
 │                               状态机、事件枢纽与 S1/S3/S4 三线程
 ├── platform/
@@ -329,16 +329,16 @@ avbase/
 合计：**364 个 `.h`/`.cc`** —— C++ **39,488 行实现 + 19,842 行测试**，
 `tools/*.py` **5,721 行**。逐项进度以 [docs/PROGRESS.md](docs/PROGRESS.md) 为准。
 
-> **路径变更通知（第九轮 / 第三十八轮）**：① 第九轮 `video_frame_compositor.{h,cc}`、
+> **路径变更通知（ /）**：①  `video_frame_compositor.{h,cc}`、
 > `av_sync_controller.{h,cc}`、`clock.{h,cc}` 移入 `media/filters/legacy/`（LGPL-2.1 隔离），
 > docs/01–08 中的**旧路径刻意保留不改**——事后改路径会让"当时决定了什么"失真。
-> ② 第三十八轮 `platform/ffmpeg/*` + `media/filters/ffmpeg_*` 整体迁入 **`media/ffmpeg/`**
+> ②  `platform/ffmpeg/*` + `media/filters/ffmpeg_*` 整体迁入 **`media/ffmpeg/`**
 > （目录边界应等于 target 边界）；这一批是**目录本身已不存在**，故全套文档已回填，
 > 不回填会让读者按图索骥到空目录。
 
 ---
 
-*文档版本 v2.1 · 2026-10-10（第四十六轮）*
-*v2.1 变更：状态、用例数与目录树按第四十六轮实测重写；`platform/ffmpeg/` 路径回填为
+*文档版本 v2.1 · 2026-10-10*
+*v2.1 变更：状态、用例数与目录树按实测重写；`platform/ffmpeg/` 路径回填为
 `media/ffmpeg/`；删除与实测树冲突的 §8.2 规划树；09 Linux 方案因 M12 顺延移入 archive；
 删除自声明冻结的「项目架构与能力分析」快照。*

@@ -36,14 +36,14 @@
 
 ---
 
-> **修复状态（2026-10-10，第四十二轮）**：C1–C4 已全部修复——C1 换绑 weak 句柄；C2
+> **修复状态（2026-10-10）**：C1–C4 已全部修复——C1 换绑 weak 句柄；C2
 > `~Subscription()` 调 `Reset()`；C3 观察者表改 `shared_ptr` + `alive` + `RemoveObserver`
 > 等待在途 Dispatch 排空（新增 `event_hub_unittest.cc` 4 用例，均经负向测试证明承重）；
 > C4 `pipeline_`/`renderer_factory_` 改 `shared_ptr` + 快照访问器（~25 处使用点）。修复
 > 过程中被新测试逼出一个**既有潜伏链接缺陷**（no-ffmpeg 下 `WriteJpegSnapshot` 未定义），
-> 一并以 `AVBASE_ENABLE_FFMPEG` 条件编译修复。High 各项待后续轮次消化。
+> 一并以 `AVBASE_ENABLE_FFMPEG` 条件编译修复。High 各项待后续消化。
 
-> **修复状态（2026-10-10，第四十三轮）**：H1–H7 已全部修复，每条均配承重测试并经
+> **修复状态（2026-10-10）**：H1–H7 已全部修复，每条均配承重测试并经
 > 负向测试（回滚修复必红）验证——H1 `Clock` 暂停冻结 + `SetSpeed` 按旧速率外推重锚
 > （新增 `clock_unittest.cc` 6 用例，旧代码下 4 个必红）；H2 音频致命解码错误经新增
 > `set_error_cb` 上报 `RendererImpl::ReportError`（初始与轨切换两处接线，+1 用例）；
@@ -74,7 +74,7 @@
 
 ## Medium（建议修）
 
-> **修复状态（2026-10-10，第四十四轮）**：M1–M15 全部修复（M2 已随第四十二轮 C3 的
+> **修复状态（2026-10-10）**：M1–M15 全部修复（M2 已随 C3 的
 > 单调 `next_observer_id_` 顺带解决）。要点：M1 用除法预检消除溢出 UB 并新增
 > `SaturatingSub`；M3 状态机补 `kIdle/kInitialized→kStopping` 边、事件用真实前态；
 > M4 `Reset()` 以 `kAborted` 回调在途 seek 并清表；M7/M11 补错误分支释放；M8 EAGAIN

@@ -37,7 +37,7 @@ cmake --build build && ./build/consumer
    `$<LINK_ONLY:...>` 带进导出接口，这是静态分发的固有形态（动态库没有
    这个问题）。两个 Find 模块随包分发，`CMAKE_PREFIX_PATH` 指到就行。
 3. 版本头是 **`avbase/Version.h`**（generated），不是
-   `player/public/version.h`——后者在第四十六轮被删（README 结构树记着）。
+   `player/public/version.h`——后者在被删（README 结构树记着）。
 
 ## 未验证路径的验证计划（到点即做）
 

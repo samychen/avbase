@@ -8,7 +8,7 @@
 
 ## 0. 现状
 
-渲染 / 管线 / SDK 门面三层均已闭合（第六十六～七十九轮，渲染侧收口延续到第一百零一轮）。`AddVideoStream(int)` 等
+渲染 / 管线 / SDK 门面三层均已闭合（第六十六～七十九轮，渲染侧收口延续到）。`AddVideoStream(int)` 等
 6 个「第 id 路」接口经证实是死接口——多源轴是 `GetStream(source_id, type)`，不是
 「同一资源多同类型流」——已点名拒绝，不再占用篇幅。
 
@@ -35,11 +35,11 @@
 54 个 spec key 从未进过构建，属「未接线」而非「构建内死选项」。
 
 **2026-10-17 现状：9 个 key 全部接通，构建内死选项为 0**（3 个原生效 + 4 个 buffer key
-第九十一轮接回 + 2 个渲染/seek key 第九十二轮接回）。
+接回 + 2 个渲染/seek key 接回）。
 
 | key | 写入字段 | 读取者 |
 |---|---|---|
-| `max-fps` | `video.max_fps` | renderer deps（**默认 31**，ijk 原值；第七十一轮接线后才生效。判据问的是两帧的**时间戳**间隔，不是墙钟——第一百零二轮把「画面 1 fps」的 bug 修在这里） |
+| `max-fps` | `video.max_fps` | renderer deps（**默认 31**，ijk 原值；接线后才生效。判据问的是两帧的**时间戳**间隔，不是墙钟——把「画面 1 fps」的 bug 修在这里） |
 | `framedrop` | `video.max_frame_drop` | renderer deps |
 | `start-on-prepared` | `start_on_prepared` | `player_impl_prepare.cc` 自动起播 |
 | `packet-buffering` | `buffer.enabled` | `BufferController`（时间域三级门控的开关） |
@@ -50,19 +50,19 @@
 | `enable-accurate-seek` | `seek.accurate` | `PlayerImpl::SeekTo` 对 `SeekMode::kAccurate` 的否决位 |
 
 后 4 个 buffer key 早前因「`BufferController` 从不读 `config.buffer.*`」被判为静默 no-op 并
-移除；第九十一轮把 `BufferConfig` 真正接进三条下游后重新注册，语义对齐 ijkplayer：
+移除；把 `BufferConfig` 真正接进三条下游后重新注册，语义对齐 ijkplayer：
 - 时间域：`BufferController(config.buffer)` 由 `first/next/last_high_water_mark` 推导三级
   mark，`enabled` 来自 `packet-buffering`，对外供出 `current_mark()` 与 `progress_percent()`。
   **门控本身在 `PipelineImpl`**；`BufferController::Evaluate` 是同一策略的纯函数模型，
-  生产路径上无人调用（只有单测），别把它当成门控——第九十四轮核对时把这句话改准了。
+  生产路径上无人调用（只有单测），别把它当成门控——核对时把这句话改准了。
 - 字节域：`DecoderBufferQueue` 走 `BufferQueueLimits`（`max_buffers` 包数上限 / `max_bytes`
   字节上限，0 = **字节**不设上限而包数仍封顶 256）。`max-buffer-size` 是**全播放器**预算，
   由 `SplitQueueBudget()` 按流数拆分——直接传给每条队列会让 A/V 文件的默认内存翻倍
-  （第九十一轮留下的口径，第九十四轮修正并有单测钉住）。
+  （留下的口径，修正并有单测钉住）。
 - 门控：`PipelineImpl` 在 `OnBufferingStateChange(kHaveEnough)` 处按「已缓冲时长 ≥ mark
   且 包数 ≥ min-frames」推迟上报；`min-frames` 报 0（未跟踪的源）时以时长 mark 为准，避免卡死。
 
-最后 2 个（第九十二轮）的接法，以及它们为什么不是另一个已有开关的别名：
+最后 2 个的接法，以及它们为什么不是另一个已有开关的别名：
 
 | key | 接在哪 | 与近邻的区别 |
 |---|---|---|
@@ -97,13 +97,13 @@ FORMAT/CODEC 透传项。它们的 `PlayerConfig` 字段同样多数无人读；
 | 硬解性能对照（4K CPU < 15%） | 需 4K 样本入库 |
 | soak 48h | Phase 4 剩余（见 12 §2）；脚本就绪，缺 CI 长跑机 |
 
-> **已从本节移出**：RTMP / RTSP / SRT 播放验收（第八十二轮实测全绿，MediaMTX v1.21.2
+> **已从本节移出**：RTMP / RTSP / SRT 播放验收（实测全绿，MediaMTX v1.21.2
 > loopback、exit 0，RTMP L≈3.97s / RTSP L≈2.99s / SRT L≈3.54s；数字由
 > `tools/check_live_protocols.py` 当场报出，原 docs/12 §2.4 那行已随 Phase 2 整表收口
 > 移出）。它搬走前指向的 `operations.md` 从未记过这件事，是行文里的假指针。
 >
 > **Qt 门面**也从本节移出了：它不属环境阻塞。骨架已在 `apps/player_qt` 跑通
-> （QObject 桥 + 两条上屏路径；第一百零四轮起时间线显示真实 `MediaInfo`，判据是
+> （QObject 桥 + 两条上屏路径；起时间线显示真实 `MediaInfo`，判据是
 > `tests/unit/qt/` 的 8 条），剩余的是把 `player/qt/` 抽成可复用库，见
 > [12 §2](12-剩余工作清单.md) 的 4.2 行。**这些测试一个都不在 CI 里**（CI 没装
 > Qt），见同表 4.10 行。
@@ -119,7 +119,7 @@ FORMAT/CODEC 透传项。它们的 `PlayerConfig` 字段同样多数无人读；
   静默丢弃。数字必须当场跑出来。
 - **测试写了 ≠ 性质被钉住**：反证必须真跑一遍看有没有红的。
 - **「两个线程都空闲」不是死锁，是没有人做这件事**：挂起时先 `sample <pid> 1` 抓栈，比读
-  锁代码便宜一个数量级。第九十二轮拿「队列满、Flush 排在背压等待后面」解释了一个 seek 挂起，
+  锁代码便宜一个数量级。一度拿「队列满、Flush 排在背压等待后面」解释了一个 seek 挂起，
   采样一秒钟就把它推翻了 —— 两个线程都在 `TaskQueue::Run()` 的 `wait()` 上。修完的现场记录
   在 [04](04-线程模型与数据流.md) §2.1「EOF 与 seek 的握手」。
 - **日志含 NUL 字节时 `grep -n` 会静默无输出**（不等于「无匹配」）：用 `grep -a` 或 `sed -n`。

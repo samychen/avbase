@@ -16,10 +16,10 @@
 | 真实媒体测试 | 系统 FFmpeg 开发包（4.4 ~ 7.x 均可，**不需要打 patch**） | `pkg-config --modversion libavformat` |
 | FFmpeg 版本锁定 | `tools/setup_ffmpeg.sh`（从源码编一个固定版本到 prefix） | — |
 | SDL2 后端 | ✅ 已实现（M11 的代码提前落地）：`-DAVBASE_ENABLE_SDL2=ON`，另需 SDL2 开发包 | 见 §4 |
-| GLFW 后端 | ✅ 已实现（第五十一轮）：`-DAVBASE_ENABLE_GLFW=ON`，另需 GLFW 3.x；默认 OFF | 见 §3.7 |
-| EGL 后端 | ✅ 已实现（第五十一轮）：`-DAVBASE_ENABLE_EGL=ON`，**仅 Linux**（macOS 无 EGL 开发库） | 见 §3.7 |
+| GLFW 后端 | ✅ 已实现：`-DAVBASE_ENABLE_GLFW=ON`，另需 GLFW 3.x；默认 OFF | 见 §3.7 |
+| EGL 后端 | ✅ 已实现：`-DAVBASE_ENABLE_EGL=ON`，**仅 Linux**（macOS 无 EGL 开发库） | 见 §3.7 |
 | 原生 Linux 后端（X11/Wayland） | ❌ **尚未实现**（M12）。打开 `AVBASE_ENABLE_LINUX_NATIVE` 会直接 `FATAL_ERROR` | 见 §4 |
-| macOS 构建 | ✅ **已落地（第二十五轮）**：`cmake --preset macos-sdl2`，需 Homebrew 的 SDL2 + FFmpeg | 见 §3.6 |
+| macOS 构建 | ✅ **已落地**：`cmake --preset macos-sdl2`，需 Homebrew 的 SDL2 + FFmpeg | 见 §3.6 |
 
 Debian/Ubuntu 一次装齐（不含 FFmpeg）：
 
@@ -37,7 +37,7 @@ sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev \
 ```bash
 git clone https://github.com/samychen/avbase.git && cd avbase
 # 就在 main 上，没有别的长期分支。
-# （第三十八~五十三轮曾工作于 `fill-gaps` 分支，已于 2026-10-11 合入 main 后删除。）
+# （早期曾工作于 `fill-gaps` 分支，已于 2026-10-11 合入 main 后删除。）
 ```
 
 ---
@@ -55,7 +55,7 @@ ctest --preset no-ffmpeg --output-on-failure
 ```
 
 这条验证设计目标 **G2**：核心只用一个 C++20 编译器就能构建并通过测试。
-预期 **468 个用例全绿**（不含需要 FFmpeg 的那部分）。用例数随轮次增长，
+预期 **468 个用例全绿**（不含需要 FFmpeg 的那部分）。用例数会随改动增长，
 最新值以 [PROGRESS.md](PROGRESS.md) 为准。
 
 ### 3.2 带真实媒体的完整测试
@@ -166,7 +166,7 @@ cmake --build --preset linux-ffmpeg711          # 或任何 AVBASE_ENABLE_FFMPEG
 **`sync` 是历史上抓到 bug #32（主时钟被 uptime 偏移）的那个命令**——它比单测更能发现
 时钟类问题，因为单测用的 `SimpleTestTickClock` 起点是 0，会掩盖一整类偏移错误。
 
-### 3.6 macOS（第二十五轮起）
+### 3.6 macOS
 
 macOS 上的 SDL2 真窗口后端与完整测试套件已验证通过（`macos-sdl2` 预设 + `macos-player`
 CI job 守护）。需要 Homebrew 安装依赖：
@@ -221,7 +221,7 @@ cue。注意：pinned FFmpeg 组件清单已包含 srt/ass/webvtt/mov_text 解�
 如果你有旧的 `tools/deps` 构建树，重跑一次 `tools/setup_ffmpeg.sh`（configure
 指纹变了会自动重配）。
 
-### 3.7 可选后端：GLFW 与 EGL（第五十一轮起）
+### 3.7 可选后端：GLFW 与 EGL
 
 GL 渲染层（`render/gl/`）是窗口系统中立的，`platform/{sdl2,glfw,egl}` 才是各个后端；
 三者以同一个 `NativeGLContext` 契约接入，YUV→RGB 的着色器路径在上面跑的是同一份代码。
@@ -243,7 +243,7 @@ sudo apt-get install -y libegl-dev
 cmake --preset linux-ffmpeg711 -DAVBASE_ENABLE_EGL=ON
 ```
 
-> ⚠️ **GLFW 的 target 名坑（第五十四轮实测）**：GLFW 官方 CMake 包导出的 imported
+> ⚠️ **GLFW 的 target 名坑（实测）**：GLFW 官方 CMake 包导出的 imported
 > target 叫 **`glfw`**，而它产出的文件叫 `libglfw3.a`。写成 `glfw3` 时 CMake 会降级
 > 成裸 `-lglfw3`，include 目录不传递，症状是 `'GLFW/glfw3.h' file not found`。
 >
@@ -276,14 +276,14 @@ target_link_libraries(my_app PRIVATE avbase::gl)   # 注意不是 avbase::avbase
 `render/gl/third_party/glad/` 的 glad 生成物，随源码走。消费者不用装 glad、不用联网、
 不用跑生成步骤，也不继承任何额外链接项——生成物编进 `avbase_gl` 自己。
 
-> 第五十七轮起，原先那张手写的常量表（`gl_constants.h`）和对它的机核脚本
+> 起，原先那张手写的常量表（`gl_constants.h`）和对它的机核脚本
 > （`tools/check_gl_constants.py`）都退役了：常量值本来就躺在 Khronos 的 XML 里，
 > 手抄一遍等于给自己造了一个**写错也不报错**的失败模式。那个失败模式现在是被删掉，
 > 不是被守住。这段历史与理由见 `docs/13` §4.2。
 
 ---
 
-## 4. 播放：现在能跑了（第十轮起）
+## 4. 播放：现在能跑了
 
 ```bash
 # headless：不需要窗口系统，整个 decode→sync→render 链路对 null sink 播完
@@ -308,8 +308,8 @@ Stop / SeekTo（按 request_id 回调）/ SelectTrack / TakeSnapshot / 音量 / 
 `StepOnce`、`UpdateConfig`（两个都在注释里自陈，是刻意保留的公共 API 占位）。
 
 > 本节曾把 `SelectTrack` 与 `TakeSnapshot` 也列为 `kNotImplemented`，与同文件 §3.6
-> （"TakeSnapshot：真实现"）自相矛盾。两者早已闭合：精确 seek 第十二轮、音轨切换
-> 第十六轮、视频轨切换第二十四轮。第四十六轮更正。
+> （"TakeSnapshot：真实现"）自相矛盾。两者早已闭合：精确 seek 、音轨切换
+> 、视频轨切换。更正。
 
 ## 4.1 还跑不起来的东西
 
@@ -367,7 +367,7 @@ python3 tools/gen_options.py --root . --emit     # 生成 player/option_registry
 > ⚠️ **改完 `tools/option_map.py` 或 `tools/ported_constants.py` 后先
 > `rm -rf tools/__pycache__` 再跑。** 这两个是数据模块；`cp` 还原时若文件大小相同
 > 且 mtime 落在同一秒，Python 的 pyc 校验（mtime + size，秒级精度）会判定源码未变而
-> 继续用旧字节码，于是测试结果与实际源码不符。这个坑在第九轮真实发生过一次。
+> 继续用旧字节码，于是测试结果与实际源码不符。这个坑在真实发生过一次。
 
 CI（`.github/workflows/ci.yml`）跑五组：`quick`（no-ffmpeg + `check_invariants`）、
 `ffmpeg`（发行版 FFmpeg，359 个用例，验证 A14）、`e2e-headless`（`examples/headless`
@@ -377,14 +377,14 @@ CI（`.github/workflows/ci.yml`）跑五组：`quick`（no-ffmpeg + `check_invar
 
 **仍未开的是 `e2e-linux`（`if: false`）**：它要的是 xvfb + llvmpipe 把两个 Linux 后端
 真跑起来（G12/A16，M11/M12），还需要尚未存在的 `verify_e2e.py`。风格门禁
-`check-format`（第二十三轮）、`check-clang-tidy`（第二十六轮）、`check-cpplint`（第三十三轮）
+`check-format`、`check-clang-tidy`、`check-cpplint`
 现已全部以阻塞模式接入——见 §7 的说明。
 
 ---
 
 ## 6. [历史] 19 个 DRAFT 文件是怎么转正的
 
-> **状态：第十轮已完成。** 现在仓库里**没有任何 DRAFT 文件**——下文那 19 个文件全部
+> **状态：已完成。** 现在仓库里**没有任何 DRAFT 文件**——下文那 19 个文件全部
 > 进了构建，`STATUS: DRAFT` 的横幅按项目决定留在文件头作为历史。本节保留，因为它是
 > 下一次"从 DRAFT 到构建"的现成流程，下面所有数字与命令都是当时的实测记录。
 
@@ -414,7 +414,7 @@ done
 | `renderer_factory.h` 的前置声明够不够 | 我为了缩小传递闭包把 5 个类型改成了前置声明（33 → 27 个头）。只以指针出现的类型够用，但任何 include 它的 TU 若要**调用** `Create*()` 就必须自己 include 完整类型 |
 | `base::BindOnce` 能不能搬 `unique_ptr` | `renderer_impl.cc` 的 `Initialize()` 把 `unique_ptr<VideoRendererSink>` 绑进了 `BindOnce`。`bind.h` 自称是 R2 降级的 **L1 层**，明确列出不支持 `Passed()`/`Owned()`/变参包，**但没说 move-only 绑定参数支不支持**。若不支持，改成"任务体内读成员字段" |
 | `pipeline_controller.h` 的抽象声明 | 我把它声明为抽象类，而 docs/03 §6 与 Chromium 都是持有 `unique_ptr<Pipeline>` 的具体类。这是刻意偏离，编译期不会有意见，但 M8 接线时要认账 |
-| 80 列 / 命名 / `-Wshadow` | 列宽已由 C23 棘轮守着（**基线 37 行**，第二十三轮由 286 降下来），`-Wshadow` 与其余编译告警由 `debug` preset 的 `-Werror` 全量守（该预设现已含 FFmpeg 层，见 §3.3）。> 原文此处写"基线 310 行、`.clang-tidy` 未接线、format/cpplint 两 job 刻意没开"——**三项均已过期**：`check-format` / `check-clang-tidy` / `check-cpplint` 现在**全部以阻塞模式接入 CI**（见 §7）。此处保留原文，因为本节是第十轮的历史记录 |
+| 80 列 / 命名 / `-Wshadow` | 列宽已由 C23 棘轮守着（**基线 37 行**，由 286 降下来），`-Wshadow` 与其余编译告警由 `debug` preset 的 `-Werror` 全量守（该预设现已含 FFmpeg 层，见 §3.3）。> 原文此处写"基线 310 行、`.clang-tidy` 未接线、format/cpplint 两 job 刻意没开"——**三项均已过期**：`check-format` / `check-clang-tidy` / `check-cpplint` 现在**全部以阻塞模式接入 CI**（见 §7）。此处保留原文，因为本节是的历史记录 |
 
 ```bash
 # 第 2 步：语法过了再进构建。media/base 的 7 个头加入 avbase_media
@@ -456,7 +456,7 @@ grep -rln "STATUS: DRAFT" --include='*.h' --include='*.cc' .
 | 症状 | 原因与处置 |
 |---|---|
 | `AVBASE_ENABLE_LINUX_NATIVE is scheduled for milestone M12` | 不是 bug，是有意的 `FATAL_ERROR`：原生 GL 后端还没写。SDL2 后端已经可用，见 §4 |
-| `FindFFmpeg` 报版本为空 / 门禁形同虚设 | 第四轮修过一个：版本正则用小写组件名而实际宏是 `LIBAVCODEC_VERSION_MAJOR`。若再现，检查 `cmake/FindFFmpeg.cmake` 的 `string(TOUPPER)` |
+| `FindFFmpeg` 报版本为空 / 门禁形同虚设 | 修过一个：版本正则用小写组件名而实际宏是 `LIBAVCODEC_VERSION_MAJOR`。若再现，检查 `cmake/FindFFmpeg.cmake` 的 `string(TOUPPER)` |
 | `header/library consistency probe FAILED TO RUN` / `VERSION MISMATCH` | 头文件与实际链接的 libav\* 不是同一次构建——编译期无提示、运行期 SIGBUS 的那类问题，现在是配置期报错。把 `AVBASE_FFMPEG_ROOT` 指向 `tools/setup_ffmpeg.sh` 的产物，或清理 pkg-config 路径里的混装。确认要强行绕过才用 `-DAVBASE_SKIP_FFMPEG_PROBE=ON` |
 | `av_dict_iterate` 未声明 | 那是 FFmpeg 6.0 才有的；5.x 走 `AVBASE_FFMPEG_HAS_DICT_ITERATE` 分支。兼容层已在 7.1.1 与 5.1.9 双版本验证过 |
 | 工具跑出来的结果与源码不符 | `__pycache__` 陈旧字节码，见 §5 的警告 |

@@ -1,7 +1,7 @@
 # CHANGELOG
 
 > 格式沿用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
-> 语义化版本。**每条变更关联代表性 commit**；完整过程记录（第九十五轮前为
+> 语义化版本。**每条变更关联代表性 commit**；完整过程记录（前为
 > 英文、之后统一中文）见 `git log` 与 docs/archive/PROGRESS-rounds-1-9.md。
 >
 > 2026-10-18 起提交信息统一中文（`656dbac` 之前的英文历史未改写——历史
@@ -37,7 +37,7 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
 - **测试与门禁**：unit / corpus（315 样本，`5f3eff0`，CI 跑 full，
   `4b2d2c8` 起阻塞）/ fuzz（libFuzzer + standalone 双驱动）/
   `tools/gate_local.sh` 本地复刻 CI 序列（`aee6c2f`）/
-  二进制新鲜度门禁（旧二进制曾造成误诊，第八十五轮起）/
+  二进制新鲜度门禁（旧二进制曾造成误诊，起）/
   apidocs 门禁（doxygen 零 warning + filter 生效断言 + API.md 新鲜度，
   CI 与 gate_local 同构，`bde3e8c`）。
 - V9 注释覆盖率门禁（`e77c476`）：tools/check_comment_coverage.py 行状态机解析
@@ -124,7 +124,7 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
 
 ### Fixed
 
-- **EOF 之后到达的 seek 永不回调**（`0cb2aaf`，第九十三轮）：demux 循环在
+- **EOF 之后到达的 seek 永不回调**（`0cb2aaf`，）：demux 循环在
   `AVERROR_EOF` 处结束后无人消费已发布的 seek 请求，调用方等到自身超时。
   症状易误判为死锁（实测两线程都空闲在 `TaskQueue::Run()`——不是互等，
   是没人做这件事）。修法：循环仍在 EOF 结束（驻留会饿死排队的 Flush），
@@ -135,10 +135,10 @@ Golden 对拍与微基准未落成，如实登记在文末 Known limitations（d
   新增 `always_discard` 构造位，配置层决定压得住晚到目标。
 - **关闭竞态**（第二十三/二十四轮）：`~PipelineImpl` CHECK 崩溃 14/29 →
   0/35，改等 `!IsRunning()`。
-- **VOD 完成链死锁**（第八十轮）：fps-cap 丢帧时解码泵饿死；re-arm 条件
+- **VOD 完成链死锁**：fps-cap 丢帧时解码泵饿死；re-arm 条件
   改为 present 或 drop 都触发。
-- **`buildPresets.targets` 截断陷阱**（第九十轮，`2f027b8`）：见 Changed。
-- **审查发现的三处假门禁**（第八十四轮）：check-clang-tidy 三处失效
+- **`buildPresets.targets` 截断陷阱**（`2f027b8`）：见 Changed。
+- **审查发现的三处假门禁**：check-clang-tidy 三处失效
   （header-filter 负向前瞻不支持 / 可选后端不在编译库 / HeaderFilterRegex
   未锚定 vendored glad），exit=127 让门禁看起来绿。
 - **倍速（rate>1）播放卡在结尾、CPU 飙 18×**（`34403de`）：音频流以「kOk 空

@@ -5,13 +5,13 @@
 > 工具：`.clang-format`（唯一格式真相源）、`.clang-tidy`、`cpplint`、`tools/check_invariants.py`
 > 违反任一"强制"项 → CI fail，不允许豁免。
 >
-> ⚠️ **工具落地状态（第四十六轮核对 `.github/workflows/ci.yml`）**：`.clang-format` ✅ ·
-> `tools/check_invariants.py` ✅ · **`check-format` ✅ 阻塞**（第二十三轮）·
-> **`check-clang-tidy` ✅ 阻塞** · **`check-cpplint` ✅ 阻塞**（第三十三轮，
+> ⚠️ **工具落地状态（核对 `.github/workflows/ci.yml`）**：`.clang-format` ✅ ·
+> `tools/check_invariants.py` ✅ · **`check-format` ✅ 阻塞**·
+> **`check-clang-tidy` ✅ 阻塞** · **`check-cpplint` ✅ 阻塞**（
 > 非测试非 legacy 源 0 违规；`build/c++11` 因项目是 C++20 整类关闭并写进 `CPPLINT.cfg`）。
 > 三个 job 均已接入，下文标注 clang-tidy / cpplint 的规则**由 CI 强制执行**。
 >
-> **一次性全量重排（第二十三轮）**：此前不做全量重排的理由是"那 323 行里有一部分
+> **一次性全量重排**：此前不做全量重排的理由是"那 323 行里有一部分
 > 是模板声明，手工重排有可能改变含义，而收益只有行更短"。这个权衡已经被
 > **机器重排**推翻——`clang-format -i` 不改语义，只按 `.clang-format` 重新折行，
 > 于是"手工重排可能改变含义"从来不是真实风险，而"收益只有行更短"低估了收益：
@@ -51,7 +51,7 @@
 | 裸 `T*` 表示所有权 | 禁止 | 所有权只用 `unique_ptr` / `scoped_refptr`；非拥有用 `raw_ptr<T>` 或 `T&` |
 | `using namespace` 在头文件 | 禁止 | check_invariants C14 |
 | `std::shared_ptr` | **不推荐**，用 `scoped_refptr` + `base::RefCountedThreadSafe` | 与 Chromium 一致；`scoped_refptr` 无 `weak_ptr` 开销，控制块更小 |
-| 共享所有权的三个动词 | `base::MakeRefCounted<T>(...)` **创造** · `base::WrapRefCounted(p)` **共享** · `base::AdoptRef(p)` **接管** | 三者都在 `base/memory/scoped_refptr.h` 底部（不在 `ptr_util.h`：adopt 需要 `scoped_refptr` 的 tag ctor）。选错一个是生命周期 bug 而不是风格问题——`AdoptRef` 曾长期被写成 AddRef，第九轮修掉 |
+| 共享所有权的三个动词 | `base::MakeRefCounted<T>(...)` **创造** · `base::WrapRefCounted(p)` **共享** · `base::AdoptRef(p)` **接管** | 三者都在 `base/memory/scoped_refptr.h` 底部（不在 `ptr_util.h`：adopt 需要 `scoped_refptr` 的 tag ctor）。选错一个是生命周期 bug 而不是风格问题——`AdoptRef` 曾长期被写成 AddRef，修掉 |
 | 全局可变状态 | 禁止（`base::FeatureList` 与单例 logger 除外，且只读初始化） | ijkplayer 的 `g_ijkmp_*` 教训 |
 | `std::function` | 公开 API 可用；内部一律用 `base::OnceCallback` / `RepeatingCallback` | 后者 move-only、零分配路径可测 |
 

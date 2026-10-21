@@ -80,7 +80,7 @@ st.av_diff;   // 相对基准的差
 
 **现象**：`SeekTo` 三参版迟迟不回调，`StopSync` 超时。
 **历史事实**：EOF 之后到达的 seek 曾经永久挂起——demux 循环在
-`AVERROR_EOF` 处结束，而 seek 请求只被发布无人消费（第九十三轮已修：
+`AVERROR_EOF` 处结束，而 seek 请求只被发布无人消费（已修：
 `StartPlayingFrom` 现在负责重挂循环，`AVERROR_EXIT` 不再当致命错）。
 **现在的排查**：若仍复现，`sample <pid> 1`（macOS）抓栈——**两个线程都
 空闲在 `TaskQueue::Run()` 是「没有人做这件事」，不是死锁**；这个判断法

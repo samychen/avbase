@@ -4,10 +4,10 @@
 > 剩余工作权威清单：[12-剩余工作清单](12-剩余工作清单.md) ｜ 产品化能力 / 死选项 / 环境项：[TODO](TODO.md)
 > CI 不可见时的等价门禁信号：[tools/gate_local.sh](tools/gate_local.sh)
 
-> ⚠️ 本文档只保留**当前状态**与**已完成/未做速览**。轮次级过程记录（第四十八轮起）已移除——
+> ⚠️ 本文档只保留**当前状态**与**已完成/未做速览**。过程性记录已移除——
 > 属历史审计轨，不进活文档；如需追溯见 `git log` 与旧版 `PROGRESS.md` 的 git 历史。
 >
-> 第一至四十七轮的记录在 [archive/PROGRESS-rounds-1-9](archive/PROGRESS-rounds-1-9.md)。
+> 早期的记录在 [archive/PROGRESS-rounds-1-9](archive/PROGRESS-rounds-1-9.md)。
 > 代码注释里写的 `PROGRESS.md §3l`、`§(5)` 等旧章节号指向的是**那里**——本文档精简后
 > 已没有这些小节（约 40 处注释仍用旧写法，按此转发阅读即可）。
 
@@ -15,7 +15,7 @@
 
 ## 当前状态
 
-**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧 GPU 上屏 ✅（非零拷贝）、真零拷贝 ⬜ · Phase 5 转码代码全落地（E5 硬编未实测）· macOS 窗口播放器 ✅ · Qt 播放器骨架 ✅（第一百零四轮：时间线改为真实 `MediaInfo`）· CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅ · M13 SDK 文档七份 + apidocs 门禁 ✅**
+**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧 GPU 上屏 ✅（非零拷贝）、真零拷贝 ⬜ · Phase 5 转码代码全落地（E5 硬编未实测）· macOS 窗口播放器 ✅ · Qt 播放器骨架 ✅（时间线改为真实 `MediaInfo`）· CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅ · M13 SDK 文档七份 + apidocs 门禁 ✅**
 
 最后更新：**2026-10-21**
 
@@ -33,7 +33,7 @@
 - **M15 C ABI**：`player/public/c/avbase_c.h` 真通用门面（60 导出函数 + 门禁）—— ✅
 - **管线原生多源（docs/14）**：`CompositeDemuxer` 聚合 N 源 / 每源一对渲染腿 / 时钟多轴 —— ✅
 - **CI 风格门禁**：`check_invariants` / `clang-format` / `cpplint` / `check_binary_freshness` 全绿；`macos-player` 已修 `buildPresets.targets` 截断陷阱（只编 `play_sdl2` 漏掉 `player_unittests`，CI 长期隐形红）。
-- **选项面**：构建注册表内 **9 个 key 全部有下游读取者（死选项 0）**——4 个 buffer key（第九十一轮）与 `nodisp`/`enable-accurate-seek`（第九十二轮）都是先写读取者再注册回来的；仍未接线的只是 DRAFT `.inc` 里的 spec key，见 [TODO](TODO.md) §2。
+- **选项面**：构建注册表内 **9 个 key 全部有下游读取者（死选项 0）**——4 个 buffer key与 `nodisp`/`enable-accurate-seek`都是先写读取者再注册回来的；仍未接线的只是 DRAFT `.inc` 里的 spec key，见 [TODO](TODO.md) §2。
 
 ---
 
@@ -44,7 +44,7 @@
 | Phase 3 显示侧 GPU 上屏 | ✅ | `apps/player_qt` 把 YUV→RGB 交给着色器并画进 Qt 的 FBO（`QQuickFramebufferObject` + `platform/qt/`），第八十七～九十七轮 |
 | Phase 3 真零拷贝 | ⬜ | 上一条只搬走了算术，1080p 每帧 3.1 MB 仍从 CPU 内存进显存（实测 854×480 下 GPU 4.2 ms vs 软件 2.9 ms）；要 Linux(VAAPI-EGL)/Windows(D3D11-GL) 进 sink + `examples/pull_frames` 在对应硬件跑通 |
 | Phase 5 E5 硬件编码器实测 | ⬜ | 代码全落地（E1–E5 + E3b 异步 + E5b 平台表外置），仅 `VideoToolbox`/`VAAPI`/`NVENC` 硬编本体未实测 |
-| Qt 门面 | 🔶 | 骨架已跑通（`apps/player_qt`：`PlayerBridge`(QObject) + `VideoItem`(QQuickPaintedItem) + `GlVideoItem`(QQuickFramebufferObject)）；第一百零四轮时间线改为真实 `MediaInfo` 并新增 `qt_unittests`（`tests/unit/qt/` 8 条，Qt Core 即可，无需屏幕）；可复用库 `player/qt/` 未抽出；M15 C ABI 已作 UE/跨语言挂点 |
+| Qt 门面 | 🔶 | 骨架已跑通（`apps/player_qt`：`PlayerBridge`(QObject) + `VideoItem`(QQuickPaintedItem) + `GlVideoItem`(QQuickFramebufferObject)）；时间线改为真实 `MediaInfo` 并新增 `qt_unittests`（`tests/unit/qt/` 8 条，Qt Core 即可，无需屏幕）；可复用库 `player/qt/` 未抽出；M15 C ABI 已作 UE/跨语言挂点 |
 | Qt 目标进 CI | ⬜ | 两个 workflow 都没装 Qt → `apps/player_qt` 与 `qt_unittests` **从未在 CI 构建过**。宿主目标特有的错误（ABI 宏/RTTI 那一类）因此抓不到，见 [12](12-剩余工作清单.md) 的 4.10 行 |
 | soak 48h 长稳 | ⬜ | 脚本 `tools/run_soak.py` 已就绪，48h 未跑（沙箱禁读他进程 RSS） |
 | Windows CI 验证 | ⬜ | job 已加（no-ffmpeg，不开 `/WX`），首跑待回答 |

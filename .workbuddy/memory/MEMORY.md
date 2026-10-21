@@ -1,7 +1,7 @@
 # avbase 长期约定
 
-Chromium 风格分层 C++ 媒体播放器。目录即 target（`docs/06 §7.6`）。轮次史见
-`.workbuddy/memory/<日期>.md` 与 `git log`（第 1–47 轮在 `docs/archive/`）；门禁命令
+Chromium 风格分层 C++ 媒体播放器。目录即 target（`docs/06 §7.6`）。沿革见
+`.workbuddy/memory/<日期>.md` 与 `git log`（早期在 `docs/archive/`）；门禁命令
 与长尾教训在 `operations.md`；剩余工作权威清单 `docs/12`，状态速览 `docs/PROGRESS.md`，
 产品化缺口 `docs/TODO.md`。本文件只留跨轮仍有效的硬规则。
 
@@ -11,6 +11,12 @@ Chromium 风格分层 C++ 媒体播放器。目录即 target（`docs/06 §7.6`�
 
 ## 硬规矩
 - **提交信息一律中文**（含正文；英文历史已整体改写）。
+- **不写「第 N 轮」**（用户 2026-10-21 要求）：记录、文档、代码注释、提交信息一律
+  不用轮次计数当时间坐标——对别人无意义，且会随整理过期。定位用日期、提交哈希或事件
+  本身（「修 fps-cap 时」「起播定格那次」）。已全树清理过一次（`docs/`、各 README、
+  记忆文件）；`docs/archive/` 的历史档案保留，它本身就是按轮组织的旧物。
+  **机械删「第 N 轮」会留下没主语的句子**（「把时间线换成…」「拿 10/15 旧二进制」），
+  删完要通读改到的行补主语。
 - **改 `docs/` 章节号前先全树 grep 旧号**：精简后 `docs/12 §2.x`、`PROGRESS §3l` 这类
   引用仍留在 40+ 处注释里指向不存在的小节。要么连引用一起改，要么加「旧号 → 现在
   在哪」的转发（docs/12 §0 与 PROGRESS 开头的做法）。
@@ -36,11 +42,11 @@ Chromium 风格分层 C++ 媒体播放器。目录即 target（`docs/06 §7.6`�
   `SplitQueueBudget()`；`max_buffers=256` 不参与拆分。详见 `docs/TODO.md §2`。
 - **GPU 上屏 ≠ 零拷贝**：着色器只搬走算术没搬走字节（1080p 每帧 3.1 MB 仍从 CPU 进
   显存；854×480 下 GPU 4.2ms vs 软件 2.9ms）。别按「GPU 快 N 倍」估工期。
-- **子代理/工具的审查报告要逐条复核**（第九十五轮 11 条里 3 条误报），误报也要记下来，
+- **子代理/工具的审查报告要逐条复核**（ 11 条里 3 条误报），误报也要记下来，
   否则会被反复重查。
 
 ## 音视频同步与配速
-- **音频设备必须在准备阶段打开**（第一百零三轮，实测）：音频时钟只在设备第一次回调
+- **音频设备必须在准备阶段打开**（实测）：音频时钟只在设备第一次回调
   送出样本时起锚；若在 `StartPlayingFrom()` 才开设备，那段耗时（SDL 子系统 129ms +
   `SDL_OpenAudioDevice` 275ms）整段变成「视频领先主时钟」→ `ComputeTargetDelay()`
   一次性吸收 → 画面冻结等量时间（设备慢的机器就是几秒）。ffplay 不出现只因它的
@@ -50,7 +56,7 @@ Chromium 风格分层 C++ 媒体播放器。目录即 target（`docs/06 §7.6`�
 - **配速的 forward 方向没有上限**：`PresentLocked` 的 snap 只在 frame_timer 落后时生效，
   任何大的负 av_diff 都会变成一次冻结。定位先分清「队列空」还是「在等」：给 `Render()`
   的 hold/empty 两出口打探针看 `pending_frames_.size()` 与 `wait_ms`，一步排除解码链。
-- **fps-cap 问时间戳间隔，不问墙钟**（第一百零二轮）：sink 按自己节奏轮询，一批帧共享
+- **fps-cap 问时间戳间隔，不问墙钟**：sink 按自己节奏轮询，一批帧共享
   同一 `now`，墙钟答不出帧间隔——30fps 源实测读到 18ms，151/162 帧被判「太早」丢掉、
   画面 1fps 而 `frames_dropped_late` 全程为 0。`max_fps` 默认 **31**（ijk 原值），第七
   十一轮接线后才生效。判据只对配速判定 due 的帧调用。
@@ -63,7 +69,7 @@ Chromium 风格分层 C++ 媒体播放器。目录即 target（`docs/06 §7.6`�
 ## 统计（只有一条路：push）
 media 层用 `RendererClient::OnStatisticsUpdate` 推 `PipelineStatistics`，`PlayerImpl` 存
 快照供 `PlaybackStats` 读。**别在 media 层加第二个统计形状**——不会编译失败、不会测试
-红，只会悄悄少字段（第一百轮删掉的 `Pipeline::Statistics` 就是这个下场）。新统计走
+红，只会悄悄少字段（此前删掉的 `Pipeline::Statistics` 就是这个下场）。新统计走
 `PipelineStatistics` + `ToJson` + `renderer_sink_stats_unittest`。
 - **两个 `frames_dropped` 不同义，别相加**：compositor 的（选帧被拒：late / fps /
   stale-serial / accurate-seek，四者相加 = `frames_dropped`）vs sink 的（到手但无可绘制
@@ -88,7 +94,7 @@ media 层用 `RendererClient::OnStatisticsUpdate` 推 `PipelineStatistics`，`Pl
   用状态机而不是两个布尔（会产生两个循环任务 → 假 EOS）。见 `docs/04 §2.1`。
 
 ## 诊断门禁（先跑这个，再怀疑产品 bug）
-`python3 tools/check_binary_freshness.py --root build/<preset>`。第八十五轮拿 10/15 旧
+`python3 tools/check_binary_freshness.py --root build/<preset>`。曾拿 10/15 旧
 二进制诊断出「VideoToolbox 硬解卡死」，重链后 3/3 正常——**那个 bug 不存在**。测量前先
 确认被测物 mtime 晚于输入。
 `AVBASE_QT_TRACE=<ms>`（`apps/player_qt/main.cc`）逐拍打印「GUI 正在显示那一帧自己的
@@ -97,7 +103,7 @@ pts」+ stats JSON。只看 `frames_presented` 分不出「画面在动」和「
 ## 写单测前
 测试绝不依赖工作目录（用 `AVBASE_TESTDATA_DIR`）；`PrepareSync` 无默认参数，显式传
 `base::Seconds(30)`；`Signal()` 持锁（等待者必在 signal 后的动作之后才醒，别当竞态）；
-**注释声称「这个测试能抓住 X」之前，先改回去跑一次**（第八十八轮有注释这么写，改回去
+**注释声称「这个测试能抓住 X」之前，先改回去跑一次**（有注释这么写，改回去
 全绿——注释里的鉴别力声明也会假绿）。
 
 ## 性能门禁（别按设计门槛直接判）

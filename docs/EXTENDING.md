@@ -280,10 +280,10 @@ Java/OC 侧迁移见 MIGRATION §7（0.1.0 只有 C ABI 这条跨语言路）。
   （tests/CMakeLists.txt 逐 target 定义）。同二进制直接跑绿、ctest 红 =
   先查 cwd。
 - **鉴别力声明要先证明**：注释写「这个测试能抓住 X」之前，把 X 改回去跑一次
-  确认它红（第八十八轮的教训：注释里的鉴别力声明也会假绿）。
+  确认它红（的教训：注释里的鉴别力声明也会假绿）。
 - 门禁本地一套：`tools/gate_local.sh`（inv/fmt/lint/三预设 ctest + 可选
   sanitizer）；测二进制前先跑 `tools/check_binary_freshness.py --root build/<preset>`
-  （第八十五轮：拿旧二进制诊断出过不存在的 bug）。
+  （拿旧二进制诊断出过不存在的 bug）。
 - 音频 sink 的线程契约（<100µs、不阻塞、不分配、不取媒体序列的锁）目前**没有
   专属契约测试**——头注释里曾写「Enforced by tests/contract/…」，那个文件从未
   存在，2026-10-18 已把注释改成实况（渲染路径由

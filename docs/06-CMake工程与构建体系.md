@@ -804,7 +804,7 @@ set(AVBASE_MEDIA_SOURCES
     media/base/pipeline_status.cc
     media/base/wall_clock_time.cc
     media/base/seekable_buffer.cc
-    media/filters/legacy/video_frame_compositor.cc   # ★ LGPL 隔离区（第九轮移入）
+    media/filters/legacy/video_frame_compositor.cc   # ★ LGPL 隔离区
     media/base/video_frame_queue.cc
     media/filters/legacy/av_sync_controller.cc
     media/filters/legacy/clock.cc
@@ -829,15 +829,15 @@ target_compile_definitions(avbase_media PRIVATE AVBASE_IMPLEMENTING_MEDIA=1)
 avbase_configure_target(avbase_media)
 # ★不链接 FFmpeg
 
-# ---------- media/ffmpeg（唯一链接 FFmpeg 的 target，第三十八轮改名 avbase_ffmpeg） ----------
-# 目录现由 file(GLOB) 收录，下列是第三十八轮搬家后的真实成员（节选）：
+# ---------- media/ffmpeg（唯一链接 FFmpeg 的 target，改名 avbase_ffmpeg） ----------
+# 目录现由 file(GLOB) 收录，下列是搬家后的真实成员（节选）：
 #   compat · av_packet_storage · log_bridge · data_source_io · url_data_source
 #   ffmpeg_glue · ffmpeg_demuxer(+_configs/_track_select/_seek) · ffmpeg_{video,audio}_decoder
 #   ffmpeg_hw_video_decoder · ffmpeg_hw_decoder_factory · ffmpeg_decoder_factories
 #   ffmpeg_{video,audio}_filter · video_convert · color_space_bridge · hw_frame_readback
 #   ffmpeg_text_decoder · ffmpeg_image_snapshot · sei_timecode
 # （av_frame_storage / dict_converter / interrupt_callback 三个从未落地；
-#   interrupt_callback.{h,cc} 已于第四十六轮作为死代码删除）
+#   interrupt_callback.{h,cc} 已作为死代码删除）
 if(AVBASE_ENABLE_FFMPEG)
   add_library(avbase_ffmpeg ${AVBASE_FFMPEG_SOURCES})
   add_library(avbase::ffmpeg ALIAS avbase_ffmpeg)
@@ -1206,13 +1206,13 @@ endif()
 | `e2e-headless` | 端到端：5 个样本真实播到 kCompleted；`--seek` 走通；损坏文件**以可操作错误失败**且退出码正确 |
 | `sdl2-build` | SDL2 后端在 Linux（发行版 SDL2 + 音频栈）上可编译可链接 |
 | `strict` | Debug + DCHECK + 严格告警 + `-Werror` 覆盖含 FFmpeg 的整棵树（clang；GCC 半边等 `-Wuseless-cast` 实测，理由见 job 注释） |
-| `full` | 矩阵：ubuntu 22.04/24.04 双 GCC（G2 跨编译器）、asan / tsan / ubsan / coverage、macOS（no-ffmpeg + Homebrew FFmpeg——第十轮两处平台坑的回归位） |
+| `full` | 矩阵：ubuntu 22.04/24.04 双 GCC（G2 跨编译器）、asan / tsan / ubsan / coverage、macOS（no-ffmpeg + Homebrew FFmpeg——两处平台坑的回归位） |
 | `e2e-linux` | `if: false` 骨架：xvfb + llvmpipe 双后端真窗口出画，M11/M12 落地 |
 
 > **原文此处写"`check-format` / cpplint / clang-tidy 有意缺席：C23 棘轮就是因为今天还有
 > 310 行超 80 列"——已过期。** 三条此后各自做了修树轮并**全部以阻塞模式接入**：
-> `check-format`（第二十三轮，C23 基线由 286 降到 **37 行**）· `check-clang-tidy`
-> （第二十六轮）· `check-cpplint`（第三十三轮）。"先修树再开门、不造红板"的策略本身
+> `check-format`（C23 基线由 286 降到 **37 行**）· `check-clang-tidy`
+>· `check-cpplint`。"先修树再开门、不造红板"的策略本身
 > 是对的，且已经走完：现在 CI 共 **16 个 job**（另含 corpus / soak / fuzz-smoke /
 > protocols / weaknet / macos-player / windows-msvc 等）。
 
