@@ -82,11 +82,10 @@ scoped_refptr<AudioBuffer> MakeSineBuffer(int frames, int64_t start_sample) {
                             static_cast<size_t>(kChannels) * sizeof(float));
   auto* planar = reinterpret_cast<float*>(data.data());
   for (int n = 0; n < frames; ++n) {
-    const double phase =
-        2.0 * kPi * kSineHz * static_cast<double>(start_sample + n) /
-        static_cast<double>(kSampleRate);
-    const float sample =
-        kSineAmplitude * static_cast<float>(std::sin(phase));
+    const double phase = 2.0 * kPi * kSineHz *
+                         static_cast<double>(start_sample + n) /
+                         static_cast<double>(kSampleRate);
+    const float sample = kSineAmplitude * static_cast<float>(std::sin(phase));
     for (int c = 0; c < kChannels; ++c) {
       planar[static_cast<size_t>(c) * static_cast<size_t>(frames) +
              static_cast<size_t>(n)] = sample;
@@ -94,8 +93,9 @@ scoped_refptr<AudioBuffer> MakeSineBuffer(int frames, int64_t start_sample) {
   }
   return AudioBuffer::Create(
       SampleFormat::kF32P, ChannelLayout::kStereo, kChannels, kSampleRate,
-      frames, TimeDelta::FromSecondsD(static_cast<double>(start_sample) /
-                                      static_cast<double>(kSampleRate)),
+      frames,
+      TimeDelta::FromSecondsD(static_cast<double>(start_sample) /
+                              static_cast<double>(kSampleRate)),
       TimeDelta::FromSecondsD(static_cast<double>(frames) /
                               static_cast<double>(kSampleRate)),
       /*serial=*/0, std::move(data));

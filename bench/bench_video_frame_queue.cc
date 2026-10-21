@@ -42,9 +42,9 @@ using avbase::media::VideoFrameQueue;
 // refptrs and never touches pixels, so frame content is irrelevant to what is
 // being measured; what matters is that the frame is alive for the whole run.
 scoped_refptr<VideoFrame> MakeFrame() {
-  return VideoFrame::CreateBlackFrame(
-      VideoFormat::kI420, Size{1920, 1080}, Size{1920, 1080}, Rational{30, 1},
-      Microseconds(0), Microseconds(33333), 0);
+  return VideoFrame::CreateBlackFrame(VideoFormat::kI420, Size{1920, 1080},
+                                      Size{1920, 1080}, Rational{30, 1},
+                                      Microseconds(0), Microseconds(33333), 0);
 }
 
 AVBASE_BENCH(BM_VideoFrameQueue_ReserveCommit) {
