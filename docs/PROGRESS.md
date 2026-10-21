@@ -15,9 +15,9 @@
 
 ## 当前状态
 
-**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧 GPU 上屏 ✅（非零拷贝）、真零拷贝 ⬜ · Phase 5 转码代码全落地 + 编码链路实测（硬件加速本体待其他机器）+ `avbase-inspect transcode` 生产入口 ✅ · macOS 窗口播放器 ✅ · Qt 播放器骨架 ✅（时间线改为真实 `MediaInfo`）· Qt 门面已库化 ✅ · Qt 目标已进 CI ✅ · CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅ · M13 SDK 文档七份 + apidocs 门禁 ✅**
+**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧 GPU 上屏 ✅（非零拷贝）、真零拷贝 ⬜ · Phase 5 转码代码全落地 + 编码链路实测（硬件加速本体待其他机器）+ `avbase-inspect transcode` 生产入口 ✅ · macOS 窗口播放器 ✅ · Qt 播放器骨架 ✅（时间线改为真实 `MediaInfo`）· Qt 门面已库化 ✅ · Qt 目标已进 CI ✅ · CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅ · M13 SDK 文档七份 + apidocs 门禁 + 微基准 10 项 + e2e/渲染 CPU 机器判据 + 新鲜度门禁（比库也比源码）✅（剩 golden 基线录制、conan/vcpkg 实跑、soak 48h，均环境阻塞）**
 
-最后更新：**2026-10-21**
+最后更新：**2026-10-22**
 
 ---
 
