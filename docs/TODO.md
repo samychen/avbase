@@ -39,7 +39,7 @@
 
 | key | 写入字段 | 读取者 |
 |---|---|---|
-| `max-fps` | `video.max_fps` | renderer deps |
+| `max-fps` | `video.max_fps` | renderer deps（**默认 31**，ijk 原值；第七十一轮接线后才生效。判据问的是两帧的**时间戳**间隔，不是墙钟——第一百零二轮把「画面 1 fps」的 bug 修在这里） |
 | `framedrop` | `video.max_frame_drop` | renderer deps |
 | `start-on-prepared` | `start_on_prepared` | `player_impl_prepare.cc` 自动起播 |
 | `packet-buffering` | `buffer.enabled` | `BufferController`（时间域三级门控的开关） |
@@ -103,8 +103,10 @@ FORMAT/CODEC 透传项。它们的 `PlayerConfig` 字段同样多数无人读；
 > 移出）。它搬走前指向的 `operations.md` 从未记过这件事，是行文里的假指针。
 >
 > **Qt 门面**也从本节移出了：它不属环境阻塞。骨架已在 `apps/player_qt` 跑通
-> （QObject 桥 + 两条上屏路径），剩余的是把 `player/qt/` 抽成可复用库，见
-> [12 §2](12-剩余工作清单.md) 的 4.2 行。
+> （QObject 桥 + 两条上屏路径；第一百零四轮起时间线显示真实 `MediaInfo`，判据是
+> `tests/unit/qt/` 的 8 条），剩余的是把 `player/qt/` 抽成可复用库，见
+> [12 §2](12-剩余工作清单.md) 的 4.2 行。**这些测试一个都不在 CI 里**（CI 没装
+> Qt），见同表 4.10 行。
 
 ---
 

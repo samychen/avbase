@@ -15,9 +15,9 @@
 
 ## 当前状态
 
-**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧 GPU 上屏 ✅（非零拷贝）、真零拷贝 ⬜ · Phase 5 转码代码全落地（E5 硬编未实测）· macOS 窗口播放器 ✅ · Qt 播放器骨架 ✅ · CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅ · M13 SDK 文档七份 + apidocs 门禁 ✅**
+**M0–M11 ✅ · Phase 0/1/2/4 ✅（多数）· Phase 3 解码侧 ✅、显示侧 GPU 上屏 ✅（非零拷贝）、真零拷贝 ⬜ · Phase 5 转码代码全落地（E5 硬编未实测）· macOS 窗口播放器 ✅ · Qt 播放器骨架 ✅（第一百零四轮：时间线改为真实 `MediaInfo`）· CI 风格门禁全绿 · 管线原生多源 ✅ · M15 C ABI ✅ · M13 SDK 文档七份 + apidocs 门禁 ✅**
 
-最后更新：**2026-10-19**
+最后更新：**2026-10-21**
 
 ---
 
@@ -44,7 +44,8 @@
 | Phase 3 显示侧 GPU 上屏 | ✅ | `apps/player_qt` 把 YUV→RGB 交给着色器并画进 Qt 的 FBO（`QQuickFramebufferObject` + `platform/qt/`），第八十七～九十七轮 |
 | Phase 3 真零拷贝 | ⬜ | 上一条只搬走了算术，1080p 每帧 3.1 MB 仍从 CPU 内存进显存（实测 854×480 下 GPU 4.2 ms vs 软件 2.9 ms）；要 Linux(VAAPI-EGL)/Windows(D3D11-GL) 进 sink + `examples/pull_frames` 在对应硬件跑通 |
 | Phase 5 E5 硬件编码器实测 | ⬜ | 代码全落地（E1–E5 + E3b 异步 + E5b 平台表外置），仅 `VideoToolbox`/`VAAPI`/`NVENC` 硬编本体未实测 |
-| Qt 门面 | 🔶 | 骨架已跑通（`apps/player_qt`：`PlayerBridge`(QObject) + `VideoItem`(QQuickPaintedItem) + `GlVideoItem`(QQuickFramebufferObject)）；可复用库 `player/qt/` 未抽出；M15 C ABI 已作 UE/跨语言挂点 |
+| Qt 门面 | 🔶 | 骨架已跑通（`apps/player_qt`：`PlayerBridge`(QObject) + `VideoItem`(QQuickPaintedItem) + `GlVideoItem`(QQuickFramebufferObject)）；第一百零四轮时间线改为真实 `MediaInfo` 并新增 `qt_unittests`（`tests/unit/qt/` 8 条，Qt Core 即可，无需屏幕）；可复用库 `player/qt/` 未抽出；M15 C ABI 已作 UE/跨语言挂点 |
+| Qt 目标进 CI | ⬜ | 两个 workflow 都没装 Qt → `apps/player_qt` 与 `qt_unittests` **从未在 CI 构建过**。宿主目标特有的错误（ABI 宏/RTTI 那一类）因此抓不到，见 [12](12-剩余工作清单.md) 的 4.10 行 |
 | soak 48h 长稳 | ⬜ | 脚本 `tools/run_soak.py` 已就绪，48h 未跑（沙箱禁读他进程 RSS） |
 | Windows CI 验证 | ⬜ | job 已加（no-ffmpeg，不开 `/WX`），首跑待回答 |
 | M13 发布 0.1.0 | 🔵 | 文档七份 + apidocs 门禁 ✅；V9 注释覆盖率 / V10 API 兼容 / 微基准 5 项 / 端到端 CPU 判据 / golden diff 件 / cpack TGZ / vcpkg port 均已完成并入门禁。剩：golden **录制**基线（需 ijkplayer 原版）、依赖解码器的 `BM_*`、`conan` 实跑、渲染 CPU 的机器判据、`cpack -G DEB` 待 Linux 机、vcpkg 未提交 registry |
@@ -54,4 +55,5 @@
 
 > 完整开放项、降级项、死选项、环境项见 [12-剩余工作清单](12-剩余工作清单.md) 与 [TODO](TODO.md)；
 > 已修关键缺陷（关闭竞态 / VOD 死锁 / 解码器丢包 / corpus 三崩溃 / EOF 后 seek 永不回调 /
-> 暂停中 seek 画面跑飞 / 丢帧计数变成刷新率函数）记录在 [12-剩余工作清单](12-剩余工作清单.md) §3。
+> 暂停中 seek 画面跑飞 / 丢帧计数变成刷新率函数 / fps-cap 判错对象 · 丢帧原因说不出来 /
+> 起播后画面定格 / 时间线面板假数据）记录在 [12-剩余工作清单](12-剩余工作清单.md) §3。

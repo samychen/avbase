@@ -27,6 +27,18 @@ cmake --build build/qt-player --target avbase_player_qt
 AVBASE_QT_GL=1 ./build/qt-player/bin/avbase_player_qt /path/to/video.mp4
 ```
 
+测试（`tests/unit/qt/`，只链 Qt Core，不需要屏幕）：
+
+```bash
+cmake -S . -B build/qt-player -DAVBASE_BUILD_TESTS=ON    # 在原有配置上加这一项
+cmake --build build/qt-player --target qt_unittests
+./build/qt-player/bin/qt_unittests
+```
+
+**`qt_unittests` 与 `avbase_player_qt` 都不在 CI 里**——两个 workflow 都没装 Qt，
+整个 `apps/player_qt` 从未在 CI 构建过。本地绿不等于 CI 绿，见
+[docs/12 §2](../../docs/12-剩余工作清单.md) 的 4.10 行。
+
 `AVBASE_BUILD_QT_PLAYER` 默认 **OFF**，所以不带 Qt 的机器照常构建整个树。
 `AVBASE_ENABLE_QT=ON` 建 `platform/qt/`（第四个窗口系统适配器），应用**硬依赖**它：
 没有 GPU 路径的播放器骨架会误导人，所以缺这个开关时 CMake 直接报错并点名。
@@ -38,7 +50,8 @@ AVBASE_QT_GL=1 ./build/qt-player/bin/avbase_player_qt /path/to/video.mp4
 | 文件 | 职责 | 行数量级 |
 |---|---|---|
 | `main.cc` | 组装根：QML 引擎 → bridge → mailbox 的销毁顺序 | ~290 |
-| `player_bridge.{h,cc}` | **唯一**让 avbase 与 Qt 相遇的地方：事件跨线程投递 + Q_PROPERTY | ~450 |
+| `player_bridge.{h,cc}` | **唯一**让 avbase 与 Qt 相遇的地方：Q_PROPERTY + 状态/统计查询 | ~400 |
+| `player_bridge_events.cc` | 事件那一半：`ApplyEvent` / `StateName`，从 bridge 拆出（C1 限 500 行） | ~140 |
 | `qt_video_sink.{h,cc}` | 自定义 `VideoRendererSink`，拉帧丢进 mailbox | ~150 |
 | `frame_mailbox.h` | 渲染线程 → GUI 线程的单槽帧交换 | ~80 |
 | `video_item.{h,cc}` | **软件路径**：`QQuickPaintedItem`，I420 → RGB → QPainter | ~270 |
@@ -294,7 +307,10 @@ moc 生成的代码里，而不是你写的任何一行。
   `frame.rotation()` 传进去这一段）；音频是否真的出声（沙箱无听感手段）；多显示器 /
   全屏；Windows/Linux；`QQuickRhiItem`（Qt 6.7+ 的现代写法，它走 RHI 管线，
   等于放弃 `render/gl`，与本项目的目的相反）。
-- 一个与本轮改动无关但值得记的观察：这台沙箱机上播放速率只有 ~2 fps
-  （10 秒里只产生 18~21 帧，日志里队列反复 `DRY`），两条路径一样。上面的每帧成本
-  不受影响，但"能不能跑满 30 fps"本轮没有答案。
+- ~~这台机器上播放速率只有 ~2 fps（10 秒里只产生 18~21 帧，日志里队列反复 `DRY`）~~
+  **这条已于第一百零二轮推翻**：它不是这台机器的性能上限，是 `max-fps`（默认 31，
+  ijk 原值）的判据问错了对象——拿"距上次呈现的墙钟时间"当帧间隔，sink 每 16 ms 轮询
+  一次，30 fps 源的一批帧于是读到 18 ms，被判成"来得太早"，162 帧里丢了 151 帧。
+  修完 320×180 软件路径实测 ~30 fps、0 丢帧，1080p 与 GPU 路径同样。上面的每帧成本
+  数字不受影响——它们测的是单帧耗时，不是吞吐。
 
