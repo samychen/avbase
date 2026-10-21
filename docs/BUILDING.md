@@ -281,6 +281,28 @@ target_link_libraries(my_app PRIVATE avbase::gl)   # 注意不是 avbase::avbase
 > 手抄一遍等于给自己造了一个**写错也不报错**的失败模式。那个失败模式现在是被删掉，
 > 不是被守住。这段历史与理由见 `docs/13` §4.2。
 
+### 3.9 Qt 宿主（preset `qt`）
+
+```bash
+cmake --preset qt                             # Linux：发行版 Qt6 就在默认搜索路径上
+cmake --preset qt -DCMAKE_PREFIX_PATH=$(brew --prefix qt)   # macOS：Homebrew 需要这一句
+cmake --build build/qt
+ctest --preset qt
+```
+
+建出的两个产物是 `bin/avbase_player_qt`（应用）与 `bin/qt_unittests`（时间线模型，
+只链 Qt Core，**不需要屏幕**）。这个 preset 刻意**不开 FFmpeg**：它要证明的是「Qt
+宿主目标能编译、Qt 测试能过」，与解复用/解码那半棵树正交，而后者已经被 `ffmpeg` /
+`e2e-headless` / `corpus` 三个 job 覆盖。
+
+CI 里对应的是 `qt` job（Ubuntu 24.04 的 `qt6-base-dev` + `qt6-declarative-dev`，
+即 Qt 6.4.2；`apps/player_qt` 的 `find_package` 底限就是 6.4）。本地复刻：
+`AVBASE_QT_PREFIX=/usr/local/opt/qt tools/gate_local.sh --jobs qt`。
+
+**Qt 目标只调 `avbase_configure_abi_definitions()`，不套 `avbase_configure_target()`**
+（后者带 `-fno-rtti`，moc 生成的 cast 需要 RTTI），详见
+[`apps/player_qt/README.md`](../apps/player_qt/README.md)。
+
 ---
 
 ## 4. 播放：现在能跑了

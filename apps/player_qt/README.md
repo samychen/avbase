@@ -35,9 +35,15 @@ cmake --build build/qt-player --target qt_unittests
 ./build/qt-player/bin/qt_unittests
 ```
 
-**`qt_unittests` 与 `avbase_player_qt` 都不在 CI 里**——两个 workflow 都没装 Qt，
-整个 `apps/player_qt` 从未在 CI 构建过。本地绿不等于 CI 绿，见
-[docs/12 §2](../../docs/12-剩余工作清单.md) 的 4.10 行。
+两个产物都已在 CI 里（`qt` job：Ubuntu 24.04 装 Qt 6.4.2，无需硬件、无需屏幕）：
+
+```bash
+cmake --preset qt && cmake --build build/qt && ctest --preset qt   # Linux
+AVBASE_QT_PREFIX=/usr/local/opt/qt tools/gate_local.sh --jobs qt   # 本地复刻门禁
+```
+
+`qt` preset 刻意**不开 FFmpeg**——要证明的是「Qt 宿主目标能编译」，与解码层正交。
+详见 [docs/BUILDING.md §3.9](../../docs/BUILDING.md)。
 
 `AVBASE_BUILD_QT_PLAYER` 默认 **OFF**，所以不带 Qt 的机器照常构建整个树。
 `AVBASE_ENABLE_QT=ON` 建 `platform/qt/`（第四个窗口系统适配器），应用**硬依赖**它：

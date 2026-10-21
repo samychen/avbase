@@ -457,6 +457,76 @@ jobs:
           cc -std=c99 -Wall -Wextra -Werror -pedantic \
             -I. -fsyntax-only player/public/c/capi_smoke_test.c
 
+  # The Qt host targets (docs/12 4.10). No runner used to install Qt, so
+  # apps/player_qt and qt_unittests -- the app, the GL video item, the timeline
+  # model, and the 8 tests that pin that model to real MediaInfo -- had never
+  # been compiled by CI. They were green only on one developer's machine.
+  #
+  # That gap is more expensive here than for an ordinary app target, because the
+  # mistakes a Qt HOST can make are invisible to every other job in this file:
+  #   * the ABI layout macros -- SEQUENCE_CHECKER is a member or nothing
+  #     depending on AVBASE_ENABLE_DCHECK, so a host that does not call
+  #     avbase_configure_abi_definitions() frees frames out from under the
+  #     compositor;
+  #   * -fno-rtti against moc-generated casts, which is why Qt targets must NOT
+  #     go through avbase_configure_target();
+  #   * AUTOMOC only finding headers beside each source, so a test in
+  #     tests/unit/qt/ that uses apps/player_qt/timeline_model.h has to list
+  #     that header as a source or the link fails with "missing vtable".
+  # All three were real bugs on this target. None can be provoked by a preset
+  # that does not link Qt.
+  #
+  # No display is needed: this builds and runs tests, and qt_unittests links Qt
+  # Core only. FFmpeg is deliberately OFF -- the claim is "the Qt host targets
+  # compile", which is orthogonal to the demuxer/decoder layer that the ffmpeg,
+  # e2e-headless and corpus jobs already cover.
+  #
+  # Honest scope: this is also the first time either target is compiled on
+  # Linux -- on macOS both build against Homebrew Qt 6.9.3. Neither source uses
+  # a platform ifdef, so there is no known blocker, but "no known blocker" is a
+  # claim about what we looked at, not a green run. If this job arrives red that
+  # is a cross-platform finding about the Qt host: fix it, do not disable the
+  # job (R12 goes both ways -- a gate that arrives red teaches people to ignore
+  # gates, and a gate disabled on its first red run teaches nothing at all).
+  qt:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain and Qt 6
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 pkg-config \
+            qt6-base-dev qt6-declarative-dev
+          # Ubuntu 24.04 ships Qt 6.4.2 and find_package asks for 6.4, so a
+          # version drift here surfaces as "could not find a configuration file
+          # for Qt6" -- which reads like a missing package rather than an old
+          # one. Print what is actually on disk.
+          dpkg-query -W -f='${Package} ${Version}\n' \
+            qt6-base-dev qt6-declarative-dev
+      - run: cmake --preset qt
+      - run: python3 tools/check_invariants.py --root .
+      - run: cmake --build --preset qt
+      # find_package(Qt6 ...) is REQUIRED in apps/player_qt, and that directory
+      # FATAL_ERRORs when avbase::platform_qt is missing, so a Qt that is absent
+      # or too old already fails at configure instead of silently dropping the
+      # target. Asserting both artifacts anyway is cheap insurance against the
+      # day somebody makes one of those gates optional -- the failure mode this
+      # whole file keeps defending against is a gate that is green because it
+      # did not run.
+      - name: Both Qt artifacts were built
+        run: |
+          test -x build/qt/bin/avbase_player_qt
+          test -x build/qt/bin/qt_unittests
+      - run: python3 tools/check_binary_freshness.py --root build/qt
+      - name: The timeline model tests are in the ctest set
+        run: |
+          # gtest_discover_tests registers them; a target that stopped being
+          # built would leave ctest green at the old, smaller count.
+          n=$(ctest --preset qt -N | grep -c 'TimelineModel' || true)
+          echo "TimelineModel cases discovered: $n"
+          test "$n" -ge 8
+      - run: ctest --preset qt
+
   # Soak. minutes: 48 is the deliverable; the CI job runs 10 because a GitHub
   # job cannot be trusted to still be alive in 48 hours, and a gate that times
   # out teaches nothing. The 48-hour run is a local or self-hosted invocation

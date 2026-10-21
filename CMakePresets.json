@@ -89,6 +89,16 @@
       }
     },
     {
+      "name": "qt",
+      "inherits": "default",
+      "displayName": "Qt Quick host app + qt_unittests (Qt 6.4+; no FFmpeg, no display)",
+      "cacheVariables": {
+        "AVBASE_ENABLE_FFMPEG": "OFF",
+        "AVBASE_ENABLE_QT": "ON",
+        "AVBASE_BUILD_QT_PLAYER": "ON"
+      }
+    },
+    {
       "name": "linux-native",
       "inherits": "default",
       "cacheVariables": {
@@ -199,6 +209,10 @@
       "configurePreset": "capi"
     },
     {
+      "name": "qt",
+      "configurePreset": "qt"
+    },
+    {
       "name": "linux-native",
       "configurePreset": "linux-native"
     },
@@ -254,6 +268,18 @@
       "configurePreset": "ffmpeg",
       "output": {
         "outputOnFailure": true
+      }
+    },
+    {
+      "name": "qt",
+      "configurePreset": "qt",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "needs-ffmpeg"
+        }
       }
     },
     {

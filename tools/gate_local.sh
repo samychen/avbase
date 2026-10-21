@@ -25,6 +25,7 @@
 #   bench   -> bench                          (M13: self-contained micro-benchmarks + trend guard; no Google Benchmark)
 #   macos   -> macos-player                   (macos-sdl2: build + freshness + ctest)
 #   capi    -> capi                           (build + freshness + ctest + C99 syntax)
+#   qt      -> qt                             (build + freshness + ctest; Qt 6.4+ host targets)
 #   core    -> full[core]                     (no-ffmpeg: build + freshness + ctest)
 #   ffmpeg  -> ffmpeg + e2e-headless          (ffmpeg: build + freshness + ctest)
 #   e2e     -> e2e-headless                   (headless plays test media to kCompleted)
@@ -244,6 +245,46 @@ job_capi() {
     player/public/c/capi_smoke_test.c
 }
 
+job_qt() {
+  # The Qt host targets (docs/12 4.10): apps/player_qt and qt_unittests. Until
+  # the `qt` CI job existed, no runner installed Qt, so neither had ever been
+  # compiled by CI -- the app, the GL video item, the timeline model and the 8
+  # tests that pin that model to real MediaInfo were green only on one
+  # developer's machine. Host-only mistakes are exactly what this catches: the
+  # ABI macro layout, -fno-rtti against moc output, and AUTOMOC's cross-directory
+  # header rule are all invisible to every other preset.
+  #
+  # CMake finds Qt with no hint where the distro owns it (Ubuntu's qt6-base-dev
+  # puts Qt6Config.cmake in /usr/lib/<arch>/cmake/Qt6). Homebrew's Qt is NOT on
+  # the default search path, so set AVBASE_QT_PREFIX to its prefix on macOS.
+  # With Qt absent entirely this fails at find_package rather than skipping --
+  # loudly, which is the point: a gate that goes green because it did not run is
+  # the failure mode this whole script exists to avoid.
+  if [ -z "$CMAKE" ]; then echo "cmake not found"; return 2; fi
+  # Not an array: bash 3.2 (macOS) treats "${arr[@]}" on an empty array as an
+  # unbound variable under `set -u`, and the branch below is exactly the case
+  # where the array would be empty.
+  if [ -n "${AVBASE_QT_PREFIX:-}" ]; then
+    "$CMAKE" --preset qt -DCMAKE_PREFIX_PATH="$AVBASE_QT_PREFIX" || return 1
+  else
+    "$CMAKE" --preset qt || return 1
+  fi
+  "$CMAKE" --build build/qt || return 1
+  python3 tools/check_binary_freshness.py --root build/qt || return 1
+  python3 tools/check_invariants.py --root . || return 1
+  # Both artifacts, not just "the build succeeded": avbase_player_qt is the app,
+  # qt_unittests is the only executable check on the timeline model.
+  test -x build/qt/bin/avbase_player_qt || { echo "avbase_player_qt not built"; return 1; }
+  test -x build/qt/bin/qt_unittests || { echo "qt_unittests not built"; return 1; }
+  # A target that stopped being registered would leave ctest green at the old,
+  # smaller count, so assert the cases are actually in the set.
+  local n
+  n="$(ctest --preset qt -N | grep -c 'TimelineModel' || true)"
+  echo "qt_unittests cases discovered: $n"
+  [ "$n" -ge 8 ] || { echo "expected the 8 TimelineModel cases, found $n"; return 1; }
+  ctest --preset qt
+}
+
 job_core() {
   gate_preset no-ffmpeg "--test-dir build/no-ffmpeg --output-on-failure"
 }
@@ -288,7 +329,7 @@ job_ubsan()   { gate_preset ubsan   "--test-dir build/ubsan --output-on-failure"
 job_coverage(){ gate_preset coverage "--test-dir build/coverage --output-on-failure"; }
 
 # --- Dispatch ----------------------------------------------------------------
-ALL_JOBS="inv fmt lint tidy apidocs commentcov apicompat bench e2ecpu macos capi core ffmpeg e2e asan tsan ubsan coverage"
+ALL_JOBS="inv fmt lint tidy apidocs commentcov apicompat bench e2ecpu macos capi qt core ffmpeg e2e asan tsan ubsan coverage"
 DEFAULT_JOBS="inv fmt commentcov apicompat macos capi"
 
 if [ "${1:-}" = "--list" ]; then
@@ -304,6 +345,7 @@ if [ "${1:-}" = "--list" ]; then
   echo "  e2ecpu   e2e-cpu (M13 end-to-end CPU per media second; needs headless + ffmpeg CLI, ~1 min)"
   echo "  macos   macos-player (macos-sdl2)"
   echo "  capi    capi + C99 syntax check"
+  echo "  qt      qt (Qt host: avbase_player_qt + qt_unittests; needs Qt 6.4+, AVBASE_QT_PREFIX on Homebrew)"
   echo "  core    full[core no-ffmpeg]"
   echo "  ffmpeg  ffmpeg"
   echo "  e2e     e2e-headless"

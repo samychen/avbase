@@ -105,8 +105,9 @@ FORMAT/CODEC 透传项。它们的 `PlayerConfig` 字段同样多数无人读；
 > **Qt 门面**也从本节移出了：它不属环境阻塞。骨架已在 `apps/player_qt` 跑通
 > （QObject 桥 + 两条上屏路径；起时间线显示真实 `MediaInfo`，判据是
 > `tests/unit/qt/` 的 8 条），剩余的是把 `player/qt/` 抽成可复用库，见
-> [12 §2](12-剩余工作清单.md) 的 4.2 行。**这些测试一个都不在 CI 里**（CI 没装
-> Qt），见同表 4.10 行。
+> [12 §2](12-剩余工作清单.md) 的 4.2 行。CI 一侧已补上：新增 `qt` preset 与 `qt`
+> job（Ubuntu 24.04 装 Qt 6.4.2），本地 `AVBASE_QT_PREFIX=... tools/gate_local.sh
+> --jobs qt` 可复刻，见同表 4.10 行与 [BUILDING §3.9](BUILDING.md)。
 
 ---
 
