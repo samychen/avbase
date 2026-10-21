@@ -13,6 +13,9 @@
    拿 10/15 的旧二进制诊断出过「VideoToolbox 硬解卡死」——重链后
    3/3 正常，**那个 bug 不存在**。ninja 不跟踪静态库内容，`cmake --build`
    对部分目标会报成功却留旧可执行文件；判新鲜度读 `.ninja_log`，不是 `stat`。
+   门禁还比**源码**：改完没构建的树整树一致地旧，「二进制 vs 库」全绿——
+   一个早于修复三天的树曾让 `play_glfw` 饿死得像渲染回归。`--binary NAME`
+   把范围收窄到单个可执行文件（只跑一个二进制的测量工具用）。
 2. **同一素材、同一机器、同一负载**。`tools/bench_render.sh` 的注释记着三条
    踩过的坑：短片段会把启动窗口平均进结果（60fps 被测成 53）——所以每段
    12s、只取**稳态尾部的中位数**；负载下的机器移动同样的数字——回退怀疑先
@@ -30,7 +33,7 @@
 | `SCENE=pip\|fade SECOND=<url> tools/bench_render.sh` | 多源/多图层路径（第二层可喂**真第二解码器**，多一次解码不止多一次上传） | 同上 |
 | `tools/check_weaknet.py` / `.sh` | 弱网/限速/断网下的缓冲与恢复行为 | 本地回放 |
 | `tools/run_soak.py` | 长稳：内存曲线斜率门禁 | **48h 未跑**（沙箱禁读他进程 RSS，需无沙箱/CI 长跑机） |
-| `tools/check_binary_freshness.py` | 被测物是否比输入新（测量前置门禁） | — |
+| `tools/check_binary_freshness.py` | 被测物是否比它链接的库与喂它的源码新（测量前置门禁；`--binary` 收窄到单个可执行文件） | — |
 
 `bench_render.sh` 的输出读法（脚本注释即文档）：`present` 贴近刷新周期是
 正常的（它在等 vsync），不是问题；四段里 `upload` 在 4K 开始不免费；
@@ -64,8 +67,9 @@ CI 门槛（docs/08 R3）：**微基准回退 > 10% 或端到端 CPU 回退 > 5%
 对比，`gate_local --jobs bench` 本地硬 fail（开发机安静，结果可行动）。
 CI 的 `bench` job **不硬 fail**，只记录并上传 artifact：共享 runner 噪声大，
 10% 门槛会假红；而且入库基线测于 mac、CI 跑在 linux，跨平台绝对值本就不可
-比（见 §6「跨机器数字不可比」）。端到端 CPU 回退那 5% 仍无机器判据，仍靠
-`bench_render.sh` 人工。
+比（见 §6「跨机器数字不可比」）。端到端 CPU 回退那 5% **也已有机器判据**：
+`tools/measure_e2e_cpu.py` + `gate_local --jobs e2ecpu`（本机实测通过，判据
+用 15% 而非 5%——理由见 §6 第二条）；**渲染** CPU 仍靠 `bench_render.sh` 人工。
 
 ## 4. 调优旋钮（按代价从高到低）
 
@@ -157,7 +161,7 @@ demuxer + 第二对渲染腿**，共用一个时钟——多一次完整解码�
 
 ## 6. 已知边界（0.1.0 性能面的未项）
 
-- **微基准已落地（base + media + player 层 5 项）**：`bench/` 是自包含
+- **微基准已落地（base + media + player 层 10 项）**：`bench/` 是自包含
   harness——无 Google Benchmark（沙箱取不到，CI 也不该装），接
   `AVBASE_BUILD_BENCH`，链 `avbase::base` + `avbase::player`（后者传递 media；
   `media/ffmpeg` 是独立 target，故 `AVBASE_ENABLE_FFMPEG=OFF` 照样能编能跑）。
@@ -166,6 +170,16 @@ demuxer + 第二对渲染腿**，共用一个时钟——多一次完整解码�
   ≈ 138 ns、`BM_DecideNextFrame` ≈ 15.5 ns、`BM_GetMasterClock` ≈ 6.3 ns。
   后三项即 §3 预算表里卡得最死的三条（< 3 µs / < 1 µs / < 200 ns），实测都
   在预算内。
+  其余五项同族：`BM_DecoderBufferQueue_PushPop` ≈ 445 ns（预算 < 5 µs）、
+  `BM_DecoderBuffer_MoveConstruct` ≈ 48 ns、`BM_VideoFrame_RefCountChurn`
+  ≈ 98 ns（后两项预算「0 分配」）、`BM_VideoFrameQueue_ReserveCommit`
+  ≈ 489 ns（预算 < 5 µs，测的是 reserve→commit→pop 整轮——只测写半边会把
+  队列填满后改去测等待）、`BM_AudioRendererAlgorithm_FillBuffer` ≈ 6.1 µs
+  （预算 < 60 µs / 1024 帧，rate 1.0 纯拷贝路径）。最后两项是本次补的：前者
+  的「树里没有同名类型」注记已过期——两段式队列就是
+  `media/base/video_frame_queue.h`；后者的夹具只是三个构造函数加一个正弦，
+  不需要解码器、设备或线程。五项波动都在 ±3% 内
+  （三次 p75），走默认 25% 容差，无需单独噪声地板。
   **`BM_EventHub_PostVisit` 测的不是 `Post()` 本身**：事件枢纽按设计是异步的
   （docs/04 §1 的 S8 就是为了让管线不等用户代码），所以「发一个、等一个」测的
   是两次线程唤醒（≈10 µs 量级，见 `BM_PostTask_RoundTrip`），而不是预算写
@@ -174,8 +188,11 @@ demuxer + 第二对渲染腿**，共用一个时钟——多一次完整解码�
   也远小于 PostTask（三次 p75 落在 1892–1947 ns，±2%）：噪声源是「每事件一次
   唤醒」，不是「跨线程」本身，所以它没有像 PostTask 那样拿到 40% 的单独容差。
   鉴别力实测：每次迭代发两个事件 → +100.3% → 判 REGRESSION（其余 4 项无误伤）。
-  **仍缺**：`BM_DecoderBufferQueue_PushPop` / `BM_VideoFrameQueue_ReserveCommit`
-  等依赖解码器或真实帧队列的项。
+  **仍缺**：`BM_AudioRenderCallback`（★ < 100 µs 的设备线程回调，要假解码器
+  + 假 sink 填 ring，而 bench 被两边配成 `AVBASE_BUILD_TESTS=OFF`，
+  tests/support 的 target 不存在于那个配置）与四个依赖真解码器的端到端项
+  （`BM_EndToEnd_1080p_NullSink` / `BM_FirstFrameLatency` / `BM_SeekLatency` /
+  `BM_MemoryPerInstance`）——理由与出路见 docs/04 §8 底部。
 - **端到端 CPU 门槛已有机器判据**：`tools/measure_e2e_cpu.py` 用 `headless`
   完整播一遍 1080p30 H.264（片源由 ffmpeg 生成并缓存），取子进程 CPU 时间
   ÷ 媒体时长 = `cpu_ms_per_media_s`，5 次取中位数，与入库基线

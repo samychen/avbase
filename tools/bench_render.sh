@@ -33,6 +33,17 @@
 # display to present to -- this measures the real swap path, so a headless run
 # would report compose cost and no present cost.
 #
+# Before measuring anything this script runs tools/check_binary_freshness.py
+# against the build dir and refuses to continue when the tree is stale. The
+# failure it prevents is silent: a binary linked before a fix reports the old
+# numbers with full confidence, and this script's medians over a steady tail
+# make them read like a clean measurement rather than a stale one -- which is
+# exactly how a six-day-old tree once produced a "render path starves after 40
+# frames" report for a bug that had been fixed three days earlier. A Ninja
+# tree that cannot be judged at all is refused too, with the checker's own
+# reason; a non-Ninja tree cannot be checked, so that case warns and proceeds,
+# because the script accepts an arbitrary build dir.
+#
 # HOW TO READ THE NUMBERS (learned the hard way):
 #
 #   * The clip must outlast the start-up. A window takes roughly a second to
@@ -78,6 +89,25 @@ if [ ! -x "$PLAYER" ]; then
   echo "build it first: cmake --build $BUILD_DIR --target play_glfw" >&2
   exit 1
 fi
+# Staleness gate. Checked before a single clip is generated: the numbers this
+# script prints are only about the code that is in the binary, and a stale
+# binary answers about code that no longer exists. The scope is play_glfw
+# specifically (--binary) because that is the only binary this script runs; a
+# stale unittest in the same tree is none of this measurement's business.
+# `if !` rather than a bare call because `set -e` would otherwise abort
+# without the explanation below.
+if [ -f "$BUILD_DIR/build.ninja" ]; then
+  if ! freshness="$(python3 "$ROOT/tools/check_binary_freshness.py" \
+      --root "$BUILD_DIR" --binary play_glfw 2>&1)"; then
+    echo "refusing to measure: play_glfw in $BUILD_DIR does not describe" \
+      "the current sources" >&2
+    echo "$freshness" >&2
+    echo "rebuild first: cmake --build $BUILD_DIR --target play_glfw" >&2
+    exit 1
+  fi
+else
+  echo "note: $BUILD_DIR is not a Ninja tree; freshness not checked" >&2
+fi
 if ! command -v ffmpeg >/dev/null 2>&1; then
   echo "ffmpeg is not on PATH; it is what builds the clips" >&2
   exit 1
@@ -117,7 +147,7 @@ CLIPS=(
   "2160p30:3840x2160:30:20M"
 )
 
-echo "build:   $BUILD_DIR"
+echo "build:   $BUILD_DIR (freshness checked)"
 echo "clips:   $CLIP_DIR (${SECONDS_PER_CLIP}s each)"
 echo "canvas:  ${CANVAS:-(follows the window)}"
 echo "scene:   ${SCENE:-(single source)}"

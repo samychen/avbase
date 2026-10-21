@@ -16,3 +16,9 @@
 {"bench": "BM_DecoderBufferQueue_PushPop", "iterations": 47322, "rounds": 11, "mean_ns_per_op": 436.755, "p75_ns_per_op": 445.062}
 {"bench": "BM_DecoderBuffer_MoveConstruct", "iterations": 466260, "rounds": 11, "mean_ns_per_op": 46.802, "p75_ns_per_op": 47.715}
 {"bench": "BM_VideoFrame_RefCountChurn", "iterations": 114735, "rounds": 11, "mean_ns_per_op": 96.369, "p75_ns_per_op": 98.035}
+{"bench":"BM_AudioRendererAlgorithm_FillBuffer","iterations":20000,"rounds":11,"mean_ns_per_op":6221.821,"p75_ns_per_op":6146.495}
+{"bench":"BM_VideoFrameQueue_ReserveCommit","iterations":41079,"rounds":11,"mean_ns_per_op":491.493,"p75_ns_per_op":493.366}
+{"bench":"BM_AudioRendererAlgorithm_FillBuffer","iterations":20000,"rounds":11,"mean_ns_per_op":6212.795,"p75_ns_per_op":6294.059}
+{"bench":"BM_VideoFrameQueue_ReserveCommit","iterations":41901,"rounds":11,"mean_ns_per_op":477.199,"p75_ns_per_op":480.292}
+{"bench":"BM_AudioRendererAlgorithm_FillBuffer","iterations":20000,"rounds":11,"mean_ns_per_op":6468.100,"p75_ns_per_op":6133.929}
+{"bench":"BM_VideoFrameQueue_ReserveCommit","iterations":40278,"rounds":11,"mean_ns_per_op":486.937,"p75_ns_per_op":489.338}

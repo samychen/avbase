@@ -361,7 +361,7 @@ cpplint / corpus / soak / fuzz 等共 17 个 job，见 §7）：
 # 架构与风格不变量（C1–C27，395 个文件）
 python3 tools/check_invariants.py --root .
 
-# 构建树新鲜度：可执行文件是否早于它链接的库
+# 构建树新鲜度：可执行文件是否早于它链接的库与喂给它的源码
 python3 tools/check_binary_freshness.py --root build/ffmpeg
 
 # 移植常量三方交叉校验：ffplay #define ⟷ avbase 代码 ⟷ docs/05 表 7
@@ -384,6 +384,15 @@ python3 tools/gen_options.py --root . --emit     # 生成 player/option_registry
 > **测试条数就是破绽** —— 一个这两天新增了用例的树，却报出旧的、更小的 N，
 > 说明跑的是旧二进制。修法是构建完整树：去掉 preset 的 `targets:` 收窄，
 > 或 `cmake --build build/<preset>`。
+>
+> 第二种形态更隐蔽：**改完源码后根本没构建**。整棵树是同一天构建的，
+> 「二进制 vs 库」全绿，而修复比树晚三天 —— `play_glfw` 播到约 40 帧就饿死，
+> 读起来正是一次渲染回归，实际与渲染无关。门禁因此也比**源码 vs 二进制**：
+> 沿 build.ninja 的文本边「库 → 对象 → 源码」走一遍，任何比可执行文件新的
+> 源码都算陈旧。已知局限：**只改头文件看不见**（头依赖在二进制的
+> `.ninja_deps` 里，本工具刻意不解析二进制格式），同一次编辑里的 `.cc`
+> 会被抓到。`--binary NAME` 把范围收窄到单个可执行文件，给只跑一个二进制的
+> 测量工具用（`tools/bench_render.sh` 就只问 `play_glfw`）。
 >
 > 同一门禁也管住第二个坑：**诊断任何"产品有 bug"之前，先确认二进制是当前的。**
 > 本项目真踩过：拿一个 10 天前的 `headless` 二进制诊断出「VideoToolbox 硬解播不完」，

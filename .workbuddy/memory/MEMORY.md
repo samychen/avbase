@@ -1,95 +1,71 @@
 # avbase 长期约定
 
-Chromium 风格分层 C++ 媒体播放器，目录即 target（`docs/06 §7.6`）。剩余工作权威清单
-`docs/12`，状态速览 `docs/PROGRESS.md`，产品化缺口 `docs/TODO.md`。本文件只留最硬的规则
-（有大小上限）；门禁命令、工具路径、写单测与性能阈值等长尾见 `operations.md`，逐日沿革
-见 `<日期>.md` 与 `git log`。
+Chromium 风格分层 C++ 媒体播放器，目录即 target（`docs/06 §7.6`）。剩余工作看 `docs/12`，
+状态速览 `docs/PROGRESS.md`。本文件只留最硬的规则；门禁命令与工具路径等长尾见
+`operations.md`，逐日沿革见 `<日期>.md`。
 
 ## 分层
-`platform/` 只装「被宿主选中」的代码。**C28：`render/` 不得 include
+`platform/` 只装「被宿主选中」的代码，可移植代码不进。**C28：`render/` 不得 include
 `media`/`platform`/`base`/`player/`。**
 
 ## 硬规矩
-- **提交信息一律中文**（含正文）。
-- **不写「第 N 轮」**：记录/文档/注释/提交信息不用轮次计数，定位用日期、哈希或事件。
-  `docs/archive/` 例外。**机械删会留下没主语的句子**，删完要通读补主语；批量脚本只做
-  目标替换、不碰格式（顺手规整空格曾把 API.md 压平 368 行，整份回滚）。
-- **改 `docs/` 章节号前先全树 grep 旧号**（精简后旧引用仍散在 40+ 处注释）：要么连引用
-  改，要么加「旧号 → 现在在哪」转发。
+- **提交信息一律中文**（含正文）；**不写「第 N 轮」**（`docs/archive/` 例外）；机械删会
+  留下没主语的句子，删完通读补主语。
+- **改 `docs/` 章节号前先全树 grep 旧号**：要么连引用一起改，要么加「旧号 → 现在在哪」转发。
 - **C1 单文件 500 行（连注释），顶到就拆文件**，不压注释凑数。
 - **UI 数据必须来自真实现场**；兑现不了的编辑入口要删（占位数据比空面板坏）。
-- **文档里带数字的旧观察要与修复同步更正**（Qt README 曾留「本机 ~2fps」，那是 fps-cap
-  bug 的症状，比没写更危险）。
-- **子代理审查报告逐条复核**（11 条里 3 条误报），误报也要记下来。
-- **怀疑产品 bug 前先跑 `tools/check_binary_freshness.py`**（曾拿旧二进制诊断出「硬解
-  卡死」，重链后 3/3 正常——那个 bug 不存在）。
+- **文档里带数字的旧观察与修复同步更正**（旧「~2fps」是 bug 症状，比没写更危险）。
+- **子代理/工具的审查报告逐条复核**（曾 11 条里 3 条误报）；误报也要记。
+- **怀疑产品 bug 前先跑 `tools/check_binary_freshness.py`**：两次「bug 不存在」都是旧二进制
+  诊断出来的（硬解卡死、ctest 736 vs 784）。它除「二进制 vs 链接的库」外还比「源码 vs
+  二进制」，`--binary` 可收窄到单个可执行文件（`bench_render.sh` 只问 play_glfw）。
 
 ## 宿主 / Qt 目标
-- 宿主目标必须调 `avbase_configure_abi_definitions()`：`SEQUENCE_CHECKER` 在 DCHECK 有/无
-  下展开不同 → 库与宿主两套 `VideoFrame` 布局 → 帧被用着就释放（无 ASan 时伪装成
-  `malloc_zone_error`）。
-- **Qt 目标绝不能套 `avbase_configure_target`**（`-fno-rtti`，moc/QML 要 RTTI）→ ABI 宏
-  全一样、RTTI 不同。Qt 单测同此，手写 `add_executable`；AUTOMOC 跨目录须把 `.h` 显式
-  列进目标源（否则只报 missing vtable）。CI 的 `qt` job 与 `gate_local --jobs qt`
-  建这两个目标（preset `qt`，不开 FFmpeg；Homebrew Qt 需 `AVBASE_QT_PREFIX`）。
-- Qt 接 `avbase_gl` 三条（实测）：① 3.3 core 且在建**任何**窗口前 `setDefaultFormat`；
-  ② `QQuickFramebufferObject` 要 `setMirrorVertically(true)`（否则倒像、零错误）；③ glad
-  与 Qt GL 头不能同 TU。Qt 里用不了 `GlPresenter`。
-- 门面库 `player/qt/`（`avbase::qtfacade`）已抽出，应用只剩 `main.cc`+`qml/`。
-  **链接一个库 = 求值它的 INTERFACE**：qt_unittests 只 `find_package(Qt6 Core)` 会在
-  generate 阶段红（Qt6::Quick 的 INTERFACE 提到 `Qt6::QmlIntegration`），要找齐库所用的
-  模块。另：`player/` 在 `platform/` 之前 add_subdirectory，故
-  `if(NOT TARGET avbase::platform_qt)` 在正确配置下恒假 → 查 option、链接期兜底。
-- **cpplint 把 `<QFoo>` 当 C 系统头**（无 `.h` 且不在 C++ 头白名单）→ 必须排在 C++ 标准库
-  之前，否则 `build/include_order`。`<SDL.h>` 有 `.h`，照常在前，两者不冲突。STYLE.md
-  已记，别为「看着该在后面」挪回去。`git ls-files 'player/*.cc'` 是递归的，这是代码从
-  `apps/` 搬进 `player/qt/` 后才第一次被 lint 扫到的原因。
-
-## 编码器（media/transcode）
-- **`avcodec_open2(ctx, codec, &dict)` 会 free 你传进去的字典，并把 `*dict` 换成另一个
-  对象**（装着它没认得的选项），**成功与失败两条路径都这样**。用 `DictPtr` 持有再析构 =
-  双重释放 → SIGABRT，而且测试自己那几行输出全正常、只在 ctest 里表现为 ILLEGAL。
-  正解：`auto d = ToAvDict(...); AVDictionary* raw = d.release(); rc = avcodec_open2(...);
-  av_dict_free(&raw);` —— free 的是它留下的那个，不是你建的那个。
-- **「工厂说出编码器名字」≠「这个构建真有这个编码器」**：`tools/setup_ffmpeg.sh` 是
-  `--disable-everything` + 白名单，`h264_videotoolbox` 曾不在里面，于是 E5 的测试全绿而
-  `Initialize()` 必失败。硬件编码器名字加在 `host_encoder_flags()`（仅 Darwin）。
-- 硬件编码器**几乎都需要私有选项**才能开（VT 的 `allow_sw`、VAAPI 的 device）→
-  `Params::options` / `CreateEncoder(..., options)`。没这条通道时「用硬件编码器」在恰好
-  值得提的机器上必然失败。
-- **Intel Mac 上没有可用的 VT 硬件 H.264 会话**：`cannot create compression session:
-  -12903`，`allow_sw=1` 才开（软件实现），沙箱不是原因（escalated 同样失败）。硬件加速
-  本体需 Apple Silicon / Linux VAAPI。VT 输出 annexb（参数集带内），**不传 extradata 也能
-  解出来**——别按「VT 输出 AVCC」的假设去修解码失败。
-- `media/transcode/` 全树**只有单测在消费**（`CreateEncoder`/`SelectVideoEncoder` 零生产
-  调用者）：「离线转码已落地」指的是库，不是能力。
+- 宿主目标必须调 `avbase_configure_abi_definitions()`：DCHECK 开关改变 `VideoFrame` 布局
+  → 帧被用着就释放（无 ASan 时伪装成 `malloc_zone_error`）。
+- **Qt 目标绝不能套 `avbase_configure_target`**（带 `-fno-rtti`，moc/QML 要 RTTI）→「ABI
+  宏全一样、RTTI 不同」。Qt 单测同此：手写 `add_executable`，AUTOMOC 跨目录要把 `.h`
+  显式列进目标源（否则只报 missing vtable）。
+- Qt 接 `avbase_gl` 三条（实测）：① 请求 3.3 core 且在建**任何**窗口前
+  `setDefaultFormat`；② `QQuickFramebufferObject` 要 `setMirrorVertically(true)`；
+  ③ glad 与 Qt GL 头不能同 TU。Qt 里用不了 `GlPresenter`。
+- 门面库 `player/qt/` 已抽出。**链接一个库 = 求值它的 INTERFACE**：`find_package(Qt6 Core)`
+  找不齐会在 generate 阶段红。
+- **cpplint 把 `<QFoo>` 当 C 系统头**（无 `.h`）→ 必须排在 C++ 标准库之前；`<SDL.h>` 有
+  `.h` 照常在前。别为「看着该在后面」挪回去。
 
 ## 音视频同步与配速
-- **音频设备必须在准备阶段打开**：时钟只在设备首次回调送出样本时起锚；若
-  `StartPlayingFrom()` 才开（SDL 129+275ms），那段整段变成「视频领先」→ 被
-  `ComputeTargetDelay()` 吸收成冻结。修法：`Initialize()` 开设备（paused），由
-  `OnDecoderInitialized()` **成功后**调。
-- **配速 forward 没有上限**：大的负 av_diff 会变成一次冻结。先分清「队列空」还是
-  「在等」——给 `Render()` 的 hold/empty 出口打探针看 `pending_frames_.size()`/`wait_ms`；
-  `AVBASE_QT_TRACE=<ms>` 打印屏上那一帧自己的 pts。
-- **fps-cap 问时间戳间隔，不问墙钟**（sink 轮询使一批帧共享 `now`，墙钟答不出帧间隔 →
-  30fps 源实测 1fps）。`max_fps` 默认 31。
-- sink 播放状态只有 `VideoRendererImpl::SetPaused` 一个派发点；新 sink 用
-  `media/base/video_sink_gate.h`。**暂停只停时钟不停代际**：`StartPlayingFrom` 不许清
-  `paused_`。
+- **音频设备必须在准备阶段打开**：时钟只在设备首次回调送出样本时起锚；`StartPlayingFrom()`
+  才开（SDL 129+275ms）会让那段整段变成「视频领先」→ 被吸收成冻结。修法：`Initialize()`
+  开设备（paused），由 `OnDecoderInitialized()` **成功后**调。
+- **配速 forward 没有上限**：大负 av_diff = 一次冻结。定位先分清「队列空」还是「在等」。
+- **fps-cap 问时间戳间隔，不问墙钟**（sink 轮询使一批帧共享 `now`）。`max_fps` 默认 31。
+- sink 播放状态只有 `VideoRendererImpl::SetPaused` 一个派发点，新 sink 用
+  `video_sink_gate.h`；**暂停只停时钟不停代际**（`StartPlayingFrom` 不许清 `paused_`）。
 
-## 统计（只有 push 一条路）
-media 层用 `RendererClient::OnStatisticsUpdate` 推 `PipelineStatistics`；**别加第二个统计
-形状**（不编译失败、不测试红，只会少字段）。两个 `frames_dropped` 不同义、别相加
-（compositor 选帧被拒 vs sink 无可绘制目标）。「这一拍没有帧」不是丢帧（`kNone`）。
-`docs/API.md` 是生成物，禁止手改。
+## 统计与文档生成物
+- 统计只有 push 一条路（`OnStatisticsUpdate` 推 `PipelineStatistics`），**别加第二个统计
+  形状**（不编译失败、不测试红，只会少字段）。两个 `frames_dropped` 不同义、别相加
+  （选帧被拒 vs 无可绘制目标）；「这一拍没有帧」不是丢帧。
+- **`docs/API.md` 是生成物，禁止手改**：改头注释后跑 `tools/gen_api_docs.sh`，门禁判据是
+  重生成零 diff。
 
 ## 五条「写下来会静默失效」的约定
-朝向（采样回来的 pass 要 `flip_vertical=true`，配像素断言）· stride（`GL_UNPACK_ROW_LENGTH`
-单位是 texel）· GL 常量（后端用 `target()` 说）· 变换顺序（screen→source 反向映射，CROP
-写在 ROTATE 之后）· demux 在 EOF 结束并由 `StartPlayingFrom` 重挂（两个布尔 → 假 EOS）。
+朝向（采样回来的 pass 要 `flip_vertical=true`，配像素断言）· stride
+（`GL_UNPACK_ROW_LENGTH` 单位是 texel）· GL 常量（后端用 `target()` 说）· 变换顺序
+（screen→source 反向映射，CROP 写在 ROTATE 之后）· demux 在 EOF 结束并由
+`StartPlayingFrom` 重挂（两个布尔 → 假 EOS）。
+
+## 编码器与转码（media/transcode）
+- **`avcodec_open2` 会 free 你传进去的字典**（成功/失败都这样），`*dict` 被换成装着未认
+  选项的新对象 → `DictPtr` 持有再析构 = 双重释放（SIGABRT）。正解：`release()` 出去，
+  `av_dict_free(&raw)` 收尾。
+- **「工厂说出编码器名字」≠「这个构建真有」**：`setup_ffmpeg.sh` 是白名单构建，
+  `h264_videotoolbox` 曾不在里面 → 测试全绿而 `Initialize()` 必失败。硬件编码器几乎都
+  需要私有选项才开（VT `allow_sw`、VAAPI device）；Intel Mac 无可用的 VT H.264 会话。
+- `media/transcode/` 已有生产入口 `avbase-inspect transcode`（默认 mjpeg+aac）。
 
 ## 路线图
-L1–L5、docs/14 阶段 0–4、Phase 2 协议验收、M15 C ABI 均完成。Phase 3 只差真零拷贝（需
-硬件）；Phase 4 剩 Qt 门面库化 / Qt 进 CI / soak 48h / Windows CI 首跑；Phase 5 仅 E5 硬编
-未实测；M13 剩 golden 基线 / `BM_*` / conan / 渲染 CPU 判据。以 `docs/12` 为准。
+L1–L5、docs/14 阶段 0–4、Phase 2 协议验收、M15 C ABI 均完成。剩：golden 基线录制、
+soak 48h、Windows CI 首跑、真零拷贝（VAAPI/D3D11）、E5 硬编本体、conan 实跑。
+**以 `docs/12` 为准。**
