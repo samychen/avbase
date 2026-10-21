@@ -41,7 +41,7 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| Phase 3 显示侧 GPU 上屏 | ✅ | `apps/player_qt` 把 YUV→RGB 交给着色器并画进 Qt 的 FBO（`QQuickFramebufferObject` + `platform/qt/`），第八十七～九十七轮 |
+| Phase 3 显示侧 GPU 上屏 | ✅ | `apps/player_qt` 把 YUV→RGB 交给着色器并画进 Qt 的 FBO（`QQuickFramebufferObject` + `platform/qt/`）|
 | Phase 3 真零拷贝 | ⬜ | 上一条只搬走了算术，1080p 每帧 3.1 MB 仍从 CPU 内存进显存（实测 854×480 下 GPU 4.2 ms vs 软件 2.9 ms）；要 Linux(VAAPI-EGL)/Windows(D3D11-GL) 进 sink + `examples/pull_frames` 在对应硬件跑通 |
 | Phase 5 E5 硬件编码器实测 | ⬜ | 代码全落地（E1–E5 + E3b 异步 + E5b 平台表外置），仅 `VideoToolbox`/`VAAPI`/`NVENC` 硬编本体未实测 |
 | Qt 门面 | 🔶 | 骨架已跑通（`apps/player_qt`：`PlayerBridge`(QObject) + `VideoItem`(QQuickPaintedItem) + `GlVideoItem`(QQuickFramebufferObject)）；时间线改为真实 `MediaInfo` 并新增 `qt_unittests`（`tests/unit/qt/` 8 条，Qt Core 即可，无需屏幕）；可复用库 `player/qt/` 未抽出；M15 C ABI 已作 UE/跨语言挂点 |

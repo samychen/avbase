@@ -7,7 +7,7 @@ python3 tools/check_binary_freshness.py --root .  # 构建树新鲜度，跑 cte
 tools/gate_local.sh            # 本地复刻 CI 门禁序列（sandbox 看不到 GitHub，用它替代）
 tools/gate_local.sh --list     # 看 job -> CI job 映射
 tools/gate_local.sh --jobs e2e,core   # 只跑指定 job；--all 跑全部（慢）
-# 八十八轮后把它接进门禁：CI 在 GitHub Actions（sandbox 代理拦 api.github.com/
+# 后来把它接进门禁：CI 在 GitHub Actions（sandbox 代理拦 api.github.com/
 # HTTPS git，看不到结果）。gate_local.sh 用同一套命令在本地出相同信号：
 # inv(check_invariants) fmt(check-format) lint(check-cpplint) macos(macos-sdl2)
 # capi(e2e C ABI) core(no-ffmpeg) ffmpeg e2e(headless 播到 kCompleted) + 沙箱
@@ -24,43 +24,40 @@ git ls-files 'base/*.cc' 'media/*.cc' 'player/*.cc' 'platform/*.cc' 'tools/*.cc'
   | grep -v 'legacy/'          # 与 CI check-clang-tidy 同口径（git 的 * 匹配斜线）
 ```
 - **clang-tidy 必须用 18**：本机 20.1.7 的 check 集合与 CI 的 llvm-18 不同，用它
-  判断「CI 会不会报」会错（第七十轮就据此误判过 `modernize-use-nodiscard` 是
+  判断「CI 会不会报」会错（据此误判过 `modernize-use-nodiscard` 是
   19/20 新增）。brew 的 llvm 装不上（沙箱 TLS）→ 用 PyPI `clang-tidy==18.1.8`。
 - **文件数一直在变，别记死数字**（曾把不变量的 425 套到 format 上）。看 exit code 与行数。
 - **C28：`render/` 不得 include `media`/`platform`/`base`/`player/`。**
 - `avbase` 是 INTERFACE 库，ninja 不能 `--target avbase`。
 - **每个 build 子目录的生成器不同，跑构建前先看目录里是 `Makefile` 还是
   `build.ninja`**：`build/` 是 Unix Makefiles，`build/ffmpeg`（及其余 preset
-  子目录）是 Ninja。第七十五轮在 ffmpeg 目录跑 `make`，"No rule to make target"
+  子目录）是 Ninja。曾在 ffmpeg 目录跑 `make`，"No rule to make target"
   被 `| tail` 管道吞掉退出码 → 对着**上一个二进制**跑出 87/87 假绿；ninja 重建后
-  实跑 90/90。「构建失败那一轮，基准跑的是上一个二进制」的同形复现。
+  实跑 90/90。「构建失败时，基准跑的是上一个二进制」的同形复现。
 - 默认 `macos-sdl2` 预设**不开** `-Werror` → 两套预设都要跑。
 - **`clang-format` 不在 PATH**（裸调 exit=127），必须给全路径。
 - **`clang-format` 不要对 `.md` 跑**：`Pipeline Multi-Source` 被重排成
   `Multi - Source`，设计书的代码块与英文散文一并被重排（一次 178 增/75 删的纯噪声
-  diff）。发现后 `cp` 备份 → `git checkout --` 还原 → 手工重贴新增段落。第七章第
-  七十七轮栽的。
+  diff）。发现后 `cp` 备份 → `git checkout --` 还原 → 手工重贴新增段落。第七章那次就是这么栽的。
 - **删掉一个 API 之后，全仓 grep 它的名字，包括 docs。** 退役
   `SceneSource::MakePublisherFactory()` 那次，第二天的文档新鲜度复查仍找出 6 处
   「当前状态描述」把它当成正解：TODO.md §0/§2/§7、docs/03、docs/05、docs/12 §4.9、
-  docs/13 §6.2、docs/14 开头。**PROGRESS.md 是轮次史，别改**（它记载第六十九轮就是
-  那么做的）；要改的是「现在怎么做」的那几句。判据很简单：句子里有没有轮次编号 ——
-  有编号的是历史，没有的是现状。
+  docs/13 §6.2、docs/14 开头。**PROGRESS.md 只记状态速览**（早期按轮组织的记录已归档到 `docs/archive/`，别去改）；要改的是「现在怎么做」的那几句。判据：句子讲的是当时经过（历史）还是现在的做法（现状）。
 - 两套清单数不同别套用。拼清单连未跟踪新文件：
   `git ls-files --cached --others --exclude-standard`。
 - `tools/deps`/`tools/build` 已 gitignore；`tools/inspect` 是自有代码（7 个文件）。
 - 新 `.cc` 是 GLOB 收的（CONFIGURE_DEPENDS），新增源文件不用改 CMakeLists。
 
 ## 提交切片
-**按依赖层次切**（不按「轮」/功能主题）：同一批文件内部交织，「每片独立编译」做不到；
+**按依赖层次切**（不按时间批次 / 功能主题）：同一批文件内部交织，「每片独立编译」做不到；
 能让每片不自相矛盾的是**先提交被引用的、后提交引用者**。顺序：tools → 数据面 →
 render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 → 测试 → 文档。
 **接口扩展必须和它的全部实现者一起，或放到最后**（只加数据字段的可单独成片）。
 每片提交后跑 check_invariants（几秒）；**完整构建只在最后跑一次**。
 
-## CI 风格门禁 —— 第七十轮已闭合（不再是存量红灯）
+## CI 风格门禁 —— 已闭合（不再是存量红灯）
 别信「门禁通过」；「15 个代表性文件零发现」是**抽样**不是跑 job 清单。这一节的
-存量红灯已在第七十轮清零，留下的是**它当时为什么是绿的**：
+存量红灯已清零，留下的是**它当时为什么是绿的**：
 
 - `-header-filter` 的 Regex 是 **POSIX ERE，没有负向前瞻** → CI 原来写的
   `^((?!third_party|legacy|/tests/).)*$` 匹配不到任何头，**头文件从未被检查**
@@ -96,29 +93,29 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
 
 - **声称「全树通过」前必须真扫全树。** 门禁的「绿」常常是「没跑」；2 秒跑完的「全树格式
   检查」一定没跑；**exit=127（command not found）会让门禁看起来绿**。
-- **「版本不对的工具」是另一种假门禁**（第七十四轮）：PATH 里没有 clang-format 时
+- **「版本不对的工具」是另一种假门禁**（实测）：PATH 里没有 clang-format 时
   第一反应是 `xcrun -f clang-format`，拿到的是 **Xcode 17.0.0**，而门禁版本是 venv 里的
   **18.1.3**（上面命令段就有）。17 与 18 折行策略不同，用 17 「复检 0 偏离」不等于 CI 会绿。
-  先查本文件命令段，再动手。同轮还差点重复「本机没装 tidy」的旧结论——`envs/tidy18` 一直在。
-- **构建失败那一轮，基准跑的是上一个二进制** → 把 build 与测量串起来前先确认 exit code。
+  先查本文件命令段，再动手。同时还差点重复「本机没装 tidy」的旧结论——`envs/tidy18` 一直在。
+- **构建失败时，基准跑的是上一个二进制** → 把 build 与测量串起来前先确认 exit code。
 - **PATH 上的 `grep` 是 toybox shim**：不支持 `\b`，且**静默返回 0**。用 `/usr/bin/grep`
   或 Grep 工具。**凡「用 grep 查证某符号不存在」的结论都要换工具复核。**
 - **macOS bash 3.2 没有 `mapfile`**：拼数组静默得空数组，对着 0 个文件 **exit=0**（又一次
   「绿是因为没跑」）。改用 `xargs` + 故意畸形的探针文件做**阳性对照**。`set -u` 下空数组
   写 `"${arr[@]+"${arr[@]}"}"`。
 - 后台命令末尾别用 `grep -c` 收尾（计数 0 → exit 1 → 整条任务被误报 failed）。
-- **clang-format 只跑源文件，绝不对 `.md` 跑**（第七十七轮）：对设计书跑会把标题
+- **clang-format 只跑源文件，绝不对 `.md` 跑**：对设计书跑会把标题
   `Pipeline Multi-Source` 重排成 `Pipeline Multi - Source`，并把代码块注释对齐与
   英文散文一并重排，产出 178 增/75 删的纯噪声 diff。发现后：`cp` 备份 →
   `git checkout --` 还原 → 手工重贴新增段落。
-- **中间提交的「编译面」可能比默认预设宽**（第七十七轮）：删掉某个 API（本轮是
+- **中间提交的「编译面」可能比默认预设宽**：删掉某个 API（当时是
   `SceneSource::MakePublisherFactory()`）会立刻断掉 `examples/`，而示例只在开
   SDL2/GLFW 的预设里编译 —— 默认 `build/`（无 SDL2）**全绿会让人以为树是好的**。
   一个系列改完之后必跑一次 `-DAVBASE_WERROR=ON` 的含示例预设，否则要等 CI 才发现。
-- **zsh 不像 bash 那样对未加引号的变量做分词**（第七十七轮）：
+- **zsh 不像 bash 那样对未加引号的变量做分词**：
   `FILES=$(git ls-files …); "$CP" $FILES` 会把整个清单当成**一个**文件名（症状是
   `Can't open for reading` 后面跟着所有文件名）。统一用 `| xargs`。
-- **测试 fixture 的成员声明顺序 = 析构倒序**（第七十七轮，同类第二次）：一个对象
+- **测试 fixture 的成员声明顺序 = 析构倒序**（同类第二次）：一个对象
   向另一个注册了 `base::Unretained` 回调时（如 `GlSceneEngine::
   SetTeardownCallback`），被注册方必须先死。顺序错了的表现是**毫不相关**的
   `mutex lock failed: Invalid argument` 抛在 fixture 析构里，而不是任何有用的信息。
@@ -134,24 +131,24 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
   只有一个变才是代码。
 - **恢复被突变的文件后必须 `touch`。** `cp` 备份 + `cp` 恢复（`cp -p`/`copy2`）会连
   mtime 一起还原，比刚从突变源码编出来的 `.o` **还旧** → ninja 判定目标已是最新 →
-  下一个探针跑的是**上一个突变的二进制**，全表结果都是假的。第六十七轮前两轮数据
+  下一个探针跑的是**上一个突变的二进制**，全表结果都是假的。最初两次数据
   就是这样错出来的（表现为「突变 P4 红了跟它无关的测试」）。
-- **反证必须真跑一遍看有没有红的。** 「测试写了」≠「性质被钉住」。第六十七轮两条
+- **反证必须真跑一遍看有没有红的。** 「测试写了」≠「性质被钉住」。有两条
   测试加强前都是空转：一条在断言构造函数（新对象本来就没理由），一条的性质从
-  公开 API 根本观测不到。这是第六十五轮「引擎早退没有反证」的同类。
-- **门禁表里的数字必须当场跑出来，不能沿用上一轮。** 第六十六轮的 504/625 是从
-  第六十五轮抄的，第六十七轮实测是 511/688 —— 差了 60 多条。
-- **格式化/检查的排除清单必须照抄 CI 口径，一个锚定符都不能差。** 第六十八轮用了
+  公开 API 根本观测不到。这是「引擎早退没有反证」的同类。
+- **门禁表里的数字必须当场跑出来，不能沿用上一次。** 记过的 504/625 是从
+  更早一次抄的，实测是 511/688 —— 差了 60 多条。
+- **格式化/检查的排除清单必须照抄 CI 口径，一个锚定符都不能差。** 曾经用了
   `grep -v '^third_party/'`（行首锚定），CI 是非锚定的 `grep -v 'third_party/'`
   → `render/gl/third_party/glad/` 两个 vendored 头文件被就地重写 **1413 行**。
   发现后 `git checkout --` 还原（先核对 `git status`，确认没夹带别的未提交内容）。
   **格式化前先确认 `git status` 干净**，这样误改才分得清是谁的。
 - **突变探针的「绿」可能是编译失败。** 突变触发 `-Werror`（unused parameter /
   unused variable）时构建失败、测试根本没跑，探针脚本若只看 gtest 退出码会把它
-  记成红，但**方向相反的误读同样会发生**。第六十八轮第一批 5/8，查下来三条「没
+  记成红，但**方向相反的误读同样会发生**。第一批 5/8，查下来三条「没
   钉住」全是探针自己的问题。**探针必须区分「构建失败」与「测试红/绿」两种结果。**
 - **撤临时探针时不要 `git checkout -- <file>`**：它会把该文件**尚未提交的改动一起回退**。
-  第六十五轮手滑用了一次，把 `examples/scene_demo.h` 的整轮 L5 改动清掉了（靠 `/tmp`
+  曾手滑用了一次，把 `examples/scene_demo.h` 的整批 L5 改动清掉了（靠 `/tmp`
   备份恢复）。正确做法：`cp` 备份 → 用编辑工具删掉探针代码块 → 复核 diff。
 - **macOS 的 `/usr/bin/grep` 是 BSD grep：BRE 里 `\|` 不是「或」**（那是 GNU 扩展），
   会静默给出错误结论。用 `-E` + `|`，或用 Grep 工具。是「PATH 上的 toybox grep shim」
@@ -162,39 +159,39 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
   从隐藏基类派生导出类触发 `-Wvisibility` → 共享基类也要导出。
 - 文档：`docs/09-*` 已归档到 `docs/archive/`，注释用短形式 `docs/archive/09 §N`，
   **不要写完整中文文件名**（撑破 80 列）。`docs/13` = avbase_gl 契约。
-- **切片提交：不带路径的 `git commit` 会连索引里别的东西一起提交。** 第六十九轮用
+- **切片提交：不带路径的 `git commit` 会连索引里别的东西一起提交。** 曾用
   `git add <paths>` + `git commit`（无 pathspec），而 `examples/publisher_sink.h`
   的删除早在 `git rm` 时就进了索引 → 被卷进**第一条**提交，而那时 `scene_demo.h`
   还在 include 它，中间提交编译不过。正确做法：`git commit -- <paths>`，或提交前
   `git diff --cached --name-only` 逐一核对。出错后 `git reset --mixed <base>` 重切
   （工作区不受影响）。
 - **突变探针用正则，不要字面量，并校验命中次数恰好为 1。** 字面量会因为
-  clang-format 的折行方式不同而 PATTERN-MISS 静默失效（第六十九轮 8 条里 2 条）。
+  clang-format 的折行方式不同而 PATTERN-MISS 静默失效（8 条里 2 条）。
   正则 + `len(findall) == 1` 才能把「没匹配上」变成显式失败。
 - **突变要避开 `-Werror`：优先掏空辅助函数，而不是改调用点。** 改调用点常让某个
   变量从未被赋值（`-Werror=uninitialized`）或参数不再被使用（`-Wextra` 的
-  `-Wunused-parameter`）；加 `(void)x;` 可以压掉后一类。第六十九轮 P3/P7 都是这么
+  `-Wunused-parameter`）；加 `(void)x;` 可以压掉后一类。P3/P7 都是这么
   从 BUILD-FAIL 救回来的。
-- **抑制会静默失效，且比不写更危险**（读起来像处理过了）。第七十轮两种：
+- **抑制会静默失效，且比不写更危险**（读起来像处理过了）。两种：
   ① **差一行**——`NOLINTNEXTLINE` 放在 `template <typename T>` 之上只压住模板头，
   而诊断报在**下一行**的类名上；宏定义的诊断报在**反斜杠续行的最后一行**。
   改**行尾** `// NOLINT`（不怕上面插入行）或块抑制（覆盖整个宏）。
   ② **散文注释里出现 NOLINT 这个词会被当成真指令**（写「不是 NOLINTNEXTLINE
   形式」→ 报 `unmatched 'NOLINTBEGIN' comment`）。**注释里不要写 NOLINT。**
-- **别急着把红归因给「负载/flaky」，先探针。** 第七十轮全量 ctest 在并发构建下
-  红了一条断言样本数的用例，而本轮恰好改了同一函数的取整方式。在
+- **别急着把红归因给「负载/flaky」，先探针。** 全量 ctest 在并发构建下
+  红了一条断言样本数的用例，而当时恰好改了同一函数的取整方式。在
   `UpdateOutputTime` 里插临时探针统计「两种取整会分歧的区间（负数）是否出现」→
   从未出现 → 才敢说是 flaky。**改动与红的那条若有任何语义重叠，就必须测。**
   并且：不要为了消掉 flaky 去放宽容差（那正是 R12 反对的换绿方式）。
-- **先问「这个性质单线程能观测到吗」再写探针。** 第六十九轮有一条探针要钉
+- **先问「这个性质单线程能观测到吗」再写探针。** 有一条探针要钉
   「跑的是快照而不是实时成员」，但它唯一的观测手段是单线程测试 —— 两条代码路径
   逐像素输出相同。换成同一处代码**可观测**的那一半（清掉 hook 后场景必须还在）。
-  这是第六十五轮「引擎早退没有反证」的同形。
-- **clang-tidy 的 PCH 陷阱：对 `media/ffmpeg` 全层静默零发现（第七十二轮）。**
+  这是「引擎早退没有反证」的同形。
+- **clang-tidy 的 PCH 陷阱：对 `media/ffmpeg` 全层静默零发现。**
   `avbase_ffmpeg` 是全仓**唯一**开 `target_precompile_headers` 的 target；Xcode 的
   新 PCH 格式 PyPI clang-tidy 18.1.8 **读不了**，每个 TU 只报一句
   `PCH file uses a newer PCH format`，然后 **exit 0、零 finding** —— 比报错更坏，
-  因为它看起来就是干净。第七十轮「142 TU 剩 1 条」因此漏掉全部 **21 个
+  因为它看起来就是干净。「142 TU 剩 1 条」因此漏掉全部 **21 个
   media/ffmpeg TU**（唯一那条 EGL 噪声来自**没有 PCH** 的 `platform/egl`，所以
   才看得见 ——「哪个 target 有 PCH」决定了哪层会被静默跳过）。**本机跑 tidy 必须
   用 `-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON` 的 scratch 数据库**；CI 在 Ubuntu 上
@@ -207,7 +204,7 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
   容易放过，但 `bugprone-multi-level-implicit-pointer-conversion` 认它 —— 且
   **`static_cast` 不消这个 check**，它要最强的承认（`reinterpret_cast`）。
 
-- **回退链的「非我」信号必须在 open 之前发**（第九十五轮 VideoToolbox 修复）：
+- **回退链的「非我」信号必须在 open 之前发**（VideoToolbox 修复）：
   `FFmpegHwDecoderSpec::config_supported` 这种「这个流我不接」的否决，要在
   `avcodec_open2()` **之前**判定并返回 `nullptr`（DecoderStream 既定的「非我」回退
   信号），而不是等首个 packet 解码失败再放弃。后者会连错
@@ -234,15 +231,15 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
 
 ## 「可执行文件比库旧」——诊断前必查，否则整个诊断都是假的
 
-**实测(第八十五轮，两次翻车)**：
+**实测（两次翻车）**：
 - `build/macos-sdl2/bin/*` 停在 10/15，库是 10/17 14:32。
 - 我拿那个 `headless` 诊断出「**VideoToolbox 硬解播不完**」，
   逐层排查(Deps/SDL2/sink/EOS)、写了临时探针程序、对比日志 —— **全部基于旧代码**。
-- 重链后同一命令 **3/3 正常**。**那个bug 从来不存在。** 为它花掉一整轮。
-- 更早一轮我报的 `ctest --test-dir build/macos-sdl2` **736/736 全绿** 也是旧二进制
+- 重链后同一命令 **3/3 正常**。**那个 bug 从来不存在。** 为它白花了一整天。
+- 更早一次我报的 `ctest --test-dir build/macos-sdl2` **736/736 全绿** 也是旧二进制
   的数据。真数据是**784/784** —— **差的 48 个用例就是铁证**。
 
-**门禁(第八十五轮新增)**：`python3 tools/check_binary_freshness.py --root build/<preset>`
+**门禁**：`python3 tools/check_binary_freshness.py --root build/<preset>`
 退出码 0/1/2 与 `check_protocols.py` 对齐。已接进 CI 的 `full` 与 `macos-player`
 两个 job，**位置在 ctest 之前**；但**它真正防的是本地**——CI 每个 job 都从
 `actions/checkout` 全新构建、无缓存，从头构建不可能留下陈旧可执行文件。
@@ -259,7 +256,7 @@ render/gl 原语 → media/gl 场景层 → platform 后端 → 宿主+示例 �
 记录的 mtime，从 `build.ninja` 取每条边的隐式链接输入（**不含 `||` 后的
 order-only 段**，那一段只是构建顺序，混进去会让每个消费者看起来依赖所有库）。
 
-**解析 `build.ninja` 必须处理多输出边**（第八十五轮 review 查出的真 bug）：
+**解析 `build.ninja` 必须处理多输出边**（review 查出的真 bug）：
 `build bin/base_unittests tests/base_unittests[1]_tests.cmake | ...` 一行有两个
 输出——CMake 用同一条边既链接测试程序又生成 ctest 的注册文件。**只取第一个
 输出的解析器会把全部 5 个 unittest 二进制静默丢掉**，`no-ffmpeg` 树更是 0 个都
@@ -270,10 +267,10 @@ order-only 段**，那一段只是构建顺序，混进去会让每个消费者�
 
 **触发条件比想象的窄**：`touch player/player_impl.cc && ninja -C build/macos-sdl2`
 会**正确重链**全部下游（headless/pull_frames/play_*/player_unittests 全部更新）。
-落进 stale 状态的是「库重建了但当轮没走链接边」——典型是只跑了
+落进 stale 状态的是「库重建了但那次没走链接边」——典型是只跑了
 `ninja -C <dir> lib/xxx.a` 或者中途改 preset 配置后只重建了库。
 **所以它不是每次都会咬人，但它咬人时不报错，这是它危险的地方。**
 
-**教训(与「构建失败那轮跑的是上一个二进制」「恢复突变后必须 touch」同族)**：
+**教训(与「构建失败时跑的是上一个二进制」「恢复突变后必须 touch」同族)**：
 这三条都是**构建系统报了成功、你测的东西却不是最新的**。
 共用一条防御：**任何测量开始前，先确认被测物的 mtime 晚于它的输入。**

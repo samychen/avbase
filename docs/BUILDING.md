@@ -360,8 +360,8 @@ python3 tools/gen_options.py --root . --emit     # 生成 player/option_registry
 > 或 `cmake --build build/<preset>`。
 >
 > 同一门禁也管住第二个坑：**诊断任何"产品有 bug"之前，先确认二进制是当前的。**
-> 本项目真踩过：拿一个早两轮的 `headless` 诊断出「VideoToolbox 硬解播不完」，
-> 重链后同一命令 3/3 正常 —— 那个 bug 从来不存在，而为它花掉了一整轮。
+> 本项目真踩过：拿一个 10 天前的 `headless` 二进制诊断出「VideoToolbox 硬解播不完」，
+> 重链后同一命令 3/3 正常 —— 那个 bug 从来不存在，而为它白花了一整天。
 > 见 `tools/check_binary_freshness.py` 与 `.workbuddy/memory/operations.md`。
 
 > ⚠️ **改完 `tools/option_map.py` 或 `tools/ported_constants.py` 后先
