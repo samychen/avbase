@@ -13,3 +13,6 @@
 {"bench": "BM_EventHub_PostVisit", "iterations": 20000, "mean_ns_per_op": 1925.253, "p75_ns_per_op": 1937.371, "rounds": 11}
 {"bench": "BM_EventHub_PostVisit", "iterations": 20000, "mean_ns_per_op": 2056.124, "p75_ns_per_op": 1947.235, "rounds": 11}
 {"bench": "BM_EventHub_PostVisit", "iterations": 20000, "mean_ns_per_op": 1866.413, "p75_ns_per_op": 1892.026, "rounds": 11}
+{"bench": "BM_DecoderBufferQueue_PushPop", "iterations": 47322, "rounds": 11, "mean_ns_per_op": 436.755, "p75_ns_per_op": 445.062}
+{"bench": "BM_DecoderBuffer_MoveConstruct", "iterations": 466260, "rounds": 11, "mean_ns_per_op": 46.802, "p75_ns_per_op": 47.715}
+{"bench": "BM_VideoFrame_RefCountChurn", "iterations": 114735, "rounds": 11, "mean_ns_per_op": 96.369, "p75_ns_per_op": 98.035}

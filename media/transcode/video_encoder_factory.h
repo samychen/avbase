@@ -5,6 +5,7 @@
 #ifndef AVBASE_MEDIA_TRANSCODE_VIDEO_ENCODER_FACTORY_H_
 #define AVBASE_MEDIA_TRANSCODE_VIDEO_ENCODER_FACTORY_H_
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -57,10 +58,16 @@ class AVBASE_MEDIA_EXPORT VideoEncoderFactory
   // the same shape as the decoder defect logged in round 23 — an API with no
   // production caller that could actually reach it.
   virtual std::string EncoderNameFor(media::VideoCodec codec) const = 0;
+  // |options| are codec-private (allow_sw for VideoToolbox, a device for
+  // VAAPI, ...) and are passed straight to avcodec_open2. Defaulted rather
+  // than required because the software path needs none, but a hardware
+  // caller that cannot set them is a caller whose encoder will not open --
+  // see FFmpegVideoEncoder::Params::options for why that matters.
   virtual std::unique_ptr<media::FFmpegVideoEncoder>
   CreateEncoder(const std::string& codec_name, int width, int height,
                 int bit_rate, int crf, int gop, const std::string& preset,
-                int fps_num, int fps_den) = 0;
+                int fps_num, int fps_den,
+                const std::map<std::string, std::string>& options = {}) = 0;
   virtual const char* name() const = 0;
 
  protected:

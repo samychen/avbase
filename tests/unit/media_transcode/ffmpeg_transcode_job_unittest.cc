@@ -381,7 +381,8 @@ class RenamingEncoderFactory final : public media::ffmpeg::VideoEncoderFactory {
   }
   std::unique_ptr<media::FFmpegVideoEncoder>
   CreateEncoder(const std::string&, int, int, int, int, int, const std::string&,
-                int, int) override {
+                int, int,
+                const std::map<std::string, std::string>& = {}) override {
     return nullptr;  // Transcode builds its own encoder from the name.
   }
   const char* name() const override { return "test-renaming"; }

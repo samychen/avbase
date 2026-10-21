@@ -6,6 +6,7 @@
 #define AVBASE_MEDIA_TRANSCODE_VIDEO_ENCODER_H_
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -38,6 +39,16 @@ class AVBASE_MEDIA_EXPORT FFmpegVideoEncoder {
     // derived as 1/denominator so packet pts land in 1/fps units.
     int fps_num = 30;
     int fps_den = 1;
+    // Codec-private options, handed to avcodec_open2 as an AVDictionary.
+    //
+    // Hardware encoders are the reason this exists rather than another named
+    // field: every one of them has a switch without which "use the hardware
+    // encoder" fails on precisely the machines where asking was worth it --
+    // VideoToolbox needs allow_sw on hosts whose compression session cannot
+    // be created (Intel Macs), VAAPI needs a device, NVENC needs a preset.
+    // A caller that can only set width/height/bitrate cannot use any of
+    // them, and an encoder that cannot be opened is not an encoder.
+    std::map<std::string, std::string> options;
   };
 
   FFmpegVideoEncoder();

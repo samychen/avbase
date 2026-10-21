@@ -487,6 +487,33 @@ hwaccel_flags() {
   esac
 }
 
+# The hardware ENCODERS are the same shape as the hwaccels: no third-party
+# source, only the Apple SDK already on the Mac. They are what makes E5
+# (hardware transcode) reachable on a developer machine at all -- without
+# them `h264_videotoolbox` is not in this build, so the encoder factory
+# picks VideoToolbox, FFmpeg answers "encoder not found", and the only
+# honest thing a test can assert is the name of an encoder that does not
+# exist. Kept in its own function rather than folded into hwaccel_flags()
+# because the two answer different questions: one is "what can decode",
+# the other "what can encode", and they are enabled by separate configure
+# switches that fail differently (an unknown --enable-hwaccel name is a
+# warning; an unknown --enable-encoder name is a hard configure error).
+host_encoder_flags() {
+  case "$(uname -s)" in
+    Darwin)
+      echo "--enable-encoder=h264_videotoolbox,hevc_videotoolbox"
+      ;;
+    *)
+      # Linux/Windows: VAAPI and NVENC encoders need either a GPU and a
+      # driver stack (VAAPI) or a proprietary SDK (NVENC), neither of which
+      # CI has. Naming them here would make configure fail on those hosts,
+      # and enabling them without the hardware would only produce frames
+      # this build cannot mux back.
+      echo ""
+      ;;
+  esac
+}
+
 # Live-streaming protocols (docs/12 2.4) are native and need no third-party
 # library: rtmpproto.c and rtsp.c (+ rtpdec -> rtp/udp/srtp). Note rtmp
 # conflicts with librtmp (rtmp_protocol_conflict in configure), so the librtmp
@@ -521,6 +548,7 @@ configure_flags() {
 --enable-swresample
 --enable-swscale
 $(hwaccel_flags)
+$(host_encoder_flags)
 FLAGS
 }
 

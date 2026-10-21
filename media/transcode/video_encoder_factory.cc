@@ -36,10 +36,10 @@ class SoftwareVideoEncoderFactory final : public VideoEncoderFactory {
            codec == media::VideoCodec::kVp8 || codec == media::VideoCodec::kVp9;
   }
 
-  std::unique_ptr<media::FFmpegVideoEncoder>
-  CreateEncoder(const std::string& codec_name, int width, int height,
-                int bit_rate, int crf, int gop, const std::string& preset,
-                int fps_num, int fps_den) override {
+  std::unique_ptr<media::FFmpegVideoEncoder> CreateEncoder(
+      const std::string& codec_name, int width, int height, int bit_rate,
+      int crf, int gop, const std::string& preset, int fps_num, int fps_den,
+      const std::map<std::string, std::string>& options = {}) override {
     auto enc = std::make_unique<media::FFmpegVideoEncoder>();
     media::FFmpegVideoEncoder::Params params;
     params.codec_name = codec_name;
@@ -51,6 +51,7 @@ class SoftwareVideoEncoderFactory final : public VideoEncoderFactory {
     params.preset = preset;
     params.fps_num = fps_num;
     params.fps_den = fps_den;
+    params.options = options;
     if (!enc->Initialize(params)) {
       LOG(ERROR) << "software encoder factory: init failed for " << codec_name;
       return nullptr;
@@ -128,10 +129,10 @@ class HardwareVideoEncoderFactory final : public VideoEncoderFactory {
     }
   }
 
-  std::unique_ptr<media::FFmpegVideoEncoder>
-  CreateEncoder(const std::string& codec_name, int width, int height,
-                int bit_rate, int crf, int gop, const std::string& preset,
-                int fps_num, int fps_den) override {
+  std::unique_ptr<media::FFmpegVideoEncoder> CreateEncoder(
+      const std::string& codec_name, int width, int height, int bit_rate,
+      int crf, int gop, const std::string& preset, int fps_num, int fps_den,
+      const std::map<std::string, std::string>& options = {}) override {
     auto enc = std::make_unique<media::FFmpegVideoEncoder>();
     media::FFmpegVideoEncoder::Params params;
     params.codec_name = codec_name;
@@ -143,6 +144,7 @@ class HardwareVideoEncoderFactory final : public VideoEncoderFactory {
     params.preset = preset;
     params.fps_num = fps_num;
     params.fps_den = fps_den;
+    params.options = options;
     if (!enc->Initialize(params)) {
       LOG(ERROR) << "hardware encoder factory: init failed for " << codec_name
                  << " (" << spec_.display_name << ")";

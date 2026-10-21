@@ -16,6 +16,13 @@
 
 ## 1. 产品化能力（全部未做）
 
+> **转码层（E1–E5）已落地但没有入口**：`media/transcode/` 的
+> `FFmpegVideoEncoder` / `TranscodeJob` / `Remuxer` / `ConcatJob` / `EncodeMuxer`
+> 全树只有 `tests/unit/media_transcode/` 在用——`CreateEncoder` 与
+> `SelectVideoEncoder` 除工厂自身外**零调用者**，没有 CLI、没有 `Player` 上的入口、
+> 没有示例。所以「离线转码代码全部落地」指的是库，不是能力：宿主今天拿它转码得
+> 自己拼装。接一个入口（例如 `tools/inspect transcode`）是把它变成能力的最小一步。
+
 | 能力 | 现状 |
 |---|---|
 | 录制（播放侧落盘） | ❌ 无。仅 `media/transcode/` 离线转码（输入是文件） |
@@ -95,6 +102,7 @@ FORMAT/CODEC 透传项。它们的 `PlayerConfig` 字段同样多数无人读；
 | Linux 显示侧零拷贝（VAAPI→EGL） | 需 Linux + VAAPI 设备 |
 | Windows 显示侧零拷贝（D3D11-GL） | 需 Windows + D3D11 环境 |
 | 硬解性能对照（4K CPU < 15%） | 需 4K 样本入库 |
+| **E5 硬件编码本体** | 需 Apple Silicon 或 Linux VAAPI 机器。本机 Intel i5-8279U 上 `h264_videotoolbox` 建不了压缩会话（`-12903`，`allow_sw=1` 才行＝软件实现）；编码链路本身已实测通，见 [12 §1](12-剩余工作清单.md) |
 | soak 48h | Phase 4 剩余（见 12 §2）；脚本就绪，缺 CI 长跑机 |
 
 > **已从本节移出**：RTMP / RTSP / SRT 播放验收（实测全绿，MediaMTX v1.21.2

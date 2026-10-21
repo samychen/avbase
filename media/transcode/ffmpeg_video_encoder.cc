@@ -127,7 +127,20 @@ bool FFmpegVideoEncoder::Initialize(const Params& params) {
   c->codec->pix_fmt = c->dst_fmt;
   c->codec->color_range = full_range ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
 
-  if (avcodec_open2(c->codec, codec, nullptr) < 0) {
+  // OWNERSHIP: avcodec_open2 takes AVDictionary** and, on BOTH the success
+  // and the failure path, frees the dictionary it was handed and writes back
+  // a different one holding the options it did not recognise. So the pointer
+  // must be released to it -- keeping it in a DictPtr and freeing it again
+  // afterwards is a double free (measured: SIGABRT in the encoder unit test,
+  // with the test's own output looking fine up to that point), and freeing
+  // nothing at all leaks the unrecognised-options dictionary it allocates.
+  // What is freed below is the object avcodec_open2 left in |options_raw|,
+  // which is not the one allocated above.
+  ff::DictPtr options = ff::ToAvDict(params.options);
+  AVDictionary* options_raw = options.release();
+  const int open_result = avcodec_open2(c->codec, codec, &options_raw);
+  av_dict_free(&options_raw);
+  if (open_result < 0) {
     LOG(ERROR) << "video encoder: avcodec_open2 failed for \""
                << params.codec_name << "\"";
     avcodec_free_context(&c->codec);

@@ -290,13 +290,17 @@ cmake --build build/qt
 ctest --preset qt
 ```
 
-建出的两个产物是 `bin/avbase_player_qt`（应用）与 `bin/qt_unittests`（时间线模型，
-只链 Qt Core，**不需要屏幕**）。这个 preset 刻意**不开 FFmpeg**：它要证明的是「Qt
-宿主目标能编译、Qt 测试能过」，与解复用/解码那半棵树正交，而后者已经被 `ffmpeg` /
-`e2e-headless` / `corpus` 三个 job 覆盖。
+建出的产物是 `bin/avbase_player_qt`（应用）、`lib/libavbase_qtfacade.a`（门面库）与
+`bin/qt_unittests`（时间线模型，**不需要屏幕**）。这个 preset 刻意**不开 FFmpeg**：
+它要证明的是「Qt 宿主目标能编译、Qt 测试能过」，与解复用/解码那半棵树正交，而后者
+已经被 `ffmpeg` / `e2e-headless` / `corpus` 三个 job 覆盖。
+
+只要门面库、不要示例应用：`-DAVBASE_BUILD_QT_FACADE=ON`（单独开，不加
+`AVBASE_BUILD_QT_PLAYER`）。反过来 `AVBASE_BUILD_QT_PLAYER=ON` 隐含把库也打开——
+应用现在是库的消费者，不再自带那些源文件。
 
 CI 里对应的是 `qt` job（Ubuntu 24.04 的 `qt6-base-dev` + `qt6-declarative-dev`，
-即 Qt 6.4.2；`apps/player_qt` 的 `find_package` 底限就是 6.4）。本地复刻：
+即 Qt 6.4.2；`player/qt/` 的 `find_package` 底限就是 6.4）。本地复刻：
 `AVBASE_QT_PREFIX=/usr/local/opt/qt tools/gate_local.sh --jobs qt`。
 
 **Qt 目标只调 `avbase_configure_abi_definitions()`，不套 `avbase_configure_target()`**
