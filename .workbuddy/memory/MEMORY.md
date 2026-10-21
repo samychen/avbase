@@ -30,7 +30,8 @@ Chromium 风格分层 C++ 媒体播放器，目录即 target（`docs/06 §7.6`�
   `malloc_zone_error`）。
 - **Qt 目标绝不能套 `avbase_configure_target`**（`-fno-rtti`，moc/QML 要 RTTI）→ ABI 宏
   全一样、RTTI 不同。Qt 单测同此，手写 `add_executable`；AUTOMOC 跨目录须把 `.h` 显式
-  列进目标源（否则只报 missing vtable）。
+  列进目标源（否则只报 missing vtable）。CI 的 `qt` job 与 `gate_local --jobs qt`
+  建这两个目标（preset `qt`，不开 FFmpeg；Homebrew Qt 需 `AVBASE_QT_PREFIX`）。
 - Qt 接 `avbase_gl` 三条（实测）：① 3.3 core 且在建**任何**窗口前 `setDefaultFormat`；
   ② `QQuickFramebufferObject` 要 `setMirrorVertically(true)`（否则倒像、零错误）；③ glad
   与 Qt GL 头不能同 TU。Qt 里用不了 `GlPresenter`。
