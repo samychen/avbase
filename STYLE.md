@@ -207,9 +207,17 @@ ASSIGN_OR_RETURN(auto info, demuxer->GetMediaInfo());
 ```
 
 - **不使用异常**。任何第三方库抛出的异常必须在边界处 `try/catch` 转换为 `MediaError`（仅在 `platform/` 与 `media/filters/ffmpeg/` 允许出现 `try`，且需注释说明）。
-- `CHECK()` = 不可恢复的编程错误，立即崩溃并打印栈（release 也生效）。
-- `DCHECK()` = 可恢复的编程错误，debug 生效。
+- 断言只用来抓「程序员写错了」，**不用来校验数据**。三选一，按顺序判：
+
+  | 判据 | 用什么 |
+  |---|---|
+  | 条件的真假由不可信输入决定（码流 / 容器头 / 网络响应 / 调用方传参） | `base::expected<T, MediaError>` 返回错误，**不用断言** |
+  | 违反后继续跑 = UB / 内存破坏 / 安全边界失守 / 静默数据损坏，或崩点离病因很远（延迟爆雷） | `CHECK()`，release 也生效 |
+  | 其余内部契约与对账（状态机顺序、计数器账目），尤其热路径 | `DCHECK()`，仅 debug 生效 |
+
+- 两者失败后**都是 `abort()`** —— `DCHECK` 在 debug 下就是 `CHECK`（`base/check.h:35`）。说 `DCHECK`「可恢复」指的是 release 里整行被编译掉、不为它付代价，**不是**失败后程序还能继续跑。
 - **不允许用 `DCHECK` 代替对不可信输入（媒体数据）的校验** —— 媒体数据一律走 `base::expected` 返回错误。
+- release 下断言的操作数可能不求值：`DCHECK_EQ(a, b)` 的 `a`、`b` 完全不求值（`base/check.h:44-49`），**禁止**在里面放有副作用的调用；而 `DCHECK(c) << f()` 的 `f()` 仍会求值。
 - 错误消息必须包含：出错的上下文、期望值 vs 实际值、以及**建议的修复动作**（见 [docs/10](docs/10-SDK易用性设计.md) §3）。
 
 ## 7. 并发（强制）
