@@ -69,6 +69,9 @@
 | 11 | [行为规范卷](docs/11-行为规范卷.md) | **验收依据**（自 avbase_design.md §5/§7/§8 并入）：线程与任务模型、背压级联与 seek 序列、三级水位表。Phase 1–2 的验收标准引用本章 |
 | 12 | [剩余工作清单](docs/12-剩余工作清单.md) | **执行快照**：Phase 0–4 逐阶段完成度、剩余项（零拷贝显示 / Qt 门面 / soak / Windows CI）、环境事项与开放决策点 |
 | 13 | [GL 模块独立使用指南](docs/13-GL模块独立使用指南.md) | **`avbase_gl` 对外手册**：`find_package(avbase_gl)` 用法、context 契约、入口点表的来源与重新生成命令（内嵌 glad 2.0.8 生成物，含每个选项的理由）、glad 覆盖不到的那一例、GLSL 桌面/ES 方言、零依赖边界与换装载器的接缝 |
+| 14 | [管线多源改造设计](docs/14-管线多源改造设计.md) | **多源轴的设计与沿革**：`GetStream(source_id, type)` 取代"第 N 路"接口、每源 A/V 偏移、次源 sink 与文本腿、docs/14 阶段 0–4 的接线顺序 |
+| — | [TOOLS.md](docs/TOOLS.md) | **`tools/` 逐文件说明**（44 个受版本控制的文件）：门禁、行为验收、度量、生成器各自管什么，什么时候该跑哪个，以及全目录通用的退出码约定（0 通过 / 1 被测物有问题 / 2 无从判断） |
+| — | [EXAMPLES.md](docs/EXAMPLES.md) | **`examples/` 逐文件说明**：6 个可执行目标各自的构建开关与行数、为什么两个头文件留在 `examples/` 而不是库里、压在这个目录上的 C30 与 300 行度量 |
 
 ---
 
@@ -312,18 +315,21 @@ avbase/
 │                               extract_constants.py · gen_options.py · sim_wsola.py
 │                               inspect/ → avbase-inspect（probe · decode · sync）
 │                            ⬜ golden_record.py · golden_diff.py · verify_e2e.py
-├── examples/                ✅ 5 个可执行 / ~1,300 行 + 2 个宿主样板头
+├── examples/                ✅ 6 个可执行目标 / 1,444 行 .cc + 2 个宿主样板头
 │                               （headless 156 · play_sdl2 161 · pull_frames 246 ·
-│                                play_glfw 352 · play_egl 288；scene_demo.h ·
-│                                sdl2_demo.h 是主机策略，按 docs/10 §12 从
-│                                play_sdl2.cc 拆出，main 文件 ≤300 行的度量）
+│                                play_glfw 352 · play_egl 288 · doc_snippets 241
+│                                —— 最后一个是 COOKBOOK 代码块的编译烟测，不是
+│                                demo；scene_demo.h 237 · sdl2_demo.h 390 是
+│                                主机策略，按 docs/10 §12 从 play_sdl2.cc
+│                                拆出，main 文件 ≤300 行的度量）
 ├── third_party/             ⬜ 按设计保持为空（不 vendor）
-└── docs/                    ✅ 13 篇（01–08 + 10–12 + PROGRESS + BUILDING）
+└── docs/                    ✅ 13 篇编号卷（01–08 + 10–14）+ PROGRESS ·
+                             BUILDING · TODO · API（Doxygen 生成，apidocs
+                             门禁零 warning）· COOKBOOK · MIGRATION ·
+                             TROUBLESHOOTING · EXTENDING · PERFORMANCE ·
+                             CHANGELOG · TOOLS（tools/ 逐文件）· EXAMPLES
+                             （examples/ 逐文件）
                              + archive/（1–9 轮进度 · 09 Linux 方案）+ reviews/
-                             ✅ M13 发版文档已齐：API（Doxygen 生成，apidocs
-                                门禁零 warning）· COOKBOOK · MIGRATION ·
-                                TROUBLESHOOTING · EXTENDING · PERFORMANCE ·
-                                CHANGELOG
 ```
 
 合计：**364 个 `.h`/`.cc`** —— C++ **39,488 行实现 + 19,842 行测试**，
