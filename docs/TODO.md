@@ -34,7 +34,7 @@
 | 推流 / RTMP publish | ❌ 无。`rtmp` 仅作**输入**协议 |
 | 缩略图 / seek preview | ❌ 无。`get_frame_mode` 未接线（config 与 DRAFT `.inc` 有，构建注册表无，media 零命中——见 §2） |
 | HDR / tone mapping | ❌ 无。`hdr_tone_mapping` 在 media/render 零命中；`kHdrUnsupported` 从未 emit |
-| PBO 上传 | ❌ 未实现（`render_perf_stats.h:28` 标 "not built"） |
+| PBO 上传 | ❌ 未实现。`render_perf_stats.h` 的 `kPbo` 是**预留枚举**——抄 MediaComponent 的 `UploadPath` 词汇表时一并搬过来的，本树从未有生产者（名字/JSON/单测都齐，唯独没有赋值点）。它是软解时代的中间态：只把 1080p 那 8.2 ms 的同步拷贝**搬出渲染线程**，字节数一点没少（每帧 3.1 MB 照样过总线）；能零拷贝的平台上多余，没零拷贝的平台上应直接做 [12 §1](12-剩余工作清单.md) 的 3.1/3.2。见 [07 §11.3](07-测试策略与可观测性.md) |
 | 真色彩管理 | ❌ 无。仅 YUV→RGB 矩阵，无 gamut/EOTF/ICC/HDR→SDR |
 
 ---
