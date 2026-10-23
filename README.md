@@ -72,7 +72,7 @@
 | 14 | [管线多源改造设计](docs/14-管线多源改造设计.md) | **多源轴的设计与沿革**：`GetStream(source_id, type)` 取代"第 N 路"接口、每源 A/V 偏移、次源 sink 与文本腿、docs/14 阶段 0–4 的接线顺序 |
 | — | [TOOLS.md](docs/TOOLS.md) | **`tools/` 逐文件说明**（44 个受版本控制的文件）：门禁、行为验收、度量、生成器各自管什么，什么时候该跑哪个，以及全目录通用的退出码约定（0 通过 / 1 被测物有问题 / 2 无从判断） |
 | — | [EXAMPLES.md](docs/EXAMPLES.md) | **`examples/` 逐文件说明**：6 个可执行目标各自的构建开关与行数、为什么两个头文件留在 `examples/` 而不是库里、压在这个目录上的 C30 与 300 行度量 |
-| — | [LEARNING-base.md](docs/LEARNING-base.md) | **`base/` 入门学习指南**：按依赖顺序的 8 站阅读路线、8 段值得模仿的写法、6 处陷阱（含原 `is_infinte` 拼写错误[已于 2026-10-24 修正]与两处裸 `new`/`delete`），附双轴审查报告与复核记录 |
+| — | [LEARNING-base.md](docs/LEARNING-base.md) | **`base/` 入门学习指南**：按依赖顺序的 8 站阅读路线、8 段值得模仿的写法、5 处陷阱（含两处裸 `new`/`delete`），附双轴审查报告与复核记录 |
 | — | [LEARNING-media.md](docs/LEARNING-media.md) | **`media/` 入门学习指南**：按一帧数据生命周期的 9 站阅读路线、10 段值得模仿的写法、8 处陷阱（含绕过 FFmpeg 隔离区入口），附双轴审查报告、复核记录与「刻意保留 vs 静默漂移」的判别方法 |
 
 ---

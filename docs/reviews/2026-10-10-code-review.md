@@ -111,7 +111,7 @@
 | # | file:line | 问题 | 建议 |
 |---|---|---|---|
 | L1 | `base/types/expected.h:114,166` | 用 placement new 却不自包含 `#include <new>`（实例化时报 `no matching operator new`） | 头部补 include |
-| L2 | `base/time/time.h:80-83` | `Zero() * INT64_MAX` 走 `is_infinte()/a==MAX` 分支返回 `Max()`（应为 0） | 该分支先特判 `micros_==0` |
+| L2 | `base/time/time.h:80-83` | `Zero() * INT64_MAX` 走 `is_infinite()/a==MAX` 分支返回 `Max()`（应为 0） | 该分支先特判 `micros_==0` |
 | L3 | `base/observer_list.h:59-62` | `HasObserver` 不看 `alive`，与 `size()/empty()` 语义不一致；迭代期延迟移除后 `AddObserver` 的 `CHECK(!HasObserver())` 会误报 | 谓词加 `e.alive &&` |
 | L4 | `base/memory/weak_ptr.h:151-158` | `InvalidateWeakPtrs()` 后 `GetWeakPtr()` 返回永久失效（Chromium 会重建新 flag） | 若业务要调用需对齐语义 |
 | L5 | `base/synchronization/waitable_event.h:26` | 默认 `kManualReset`（Chromium 是 `kAutoReset`），现有调用方恰好正确，属易踩陷阱 | 文档化或改默认 |
