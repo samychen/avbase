@@ -48,11 +48,11 @@ TEST(TimeDeltaTest, Comparisons) {
 }
 
 TEST(TimeDeltaTest, InfinitySentinels) {
-  EXPECT_TRUE(TimeDelta::Max().is_infinte());
-  EXPECT_TRUE(TimeDelta::Min().is_infinte());
+  EXPECT_TRUE(TimeDelta::Max().is_infinite());
+  EXPECT_TRUE(TimeDelta::Min().is_infinite());
   EXPECT_TRUE(TimeDelta::Max().is_max());
   EXPECT_TRUE(TimeDelta::Min().is_min());
-  EXPECT_FALSE(Seconds(1).is_infinte());
+  EXPECT_FALSE(Seconds(1).is_infinite());
 }
 
 // Saturating arithmetic matters here: media timestamps are int64 microseconds

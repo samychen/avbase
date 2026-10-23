@@ -216,7 +216,7 @@ TEST_F(FFmpegVideoDecoderTest, TimestampsAdvanceAcrossDecodedFrames) {
   bool previous_valid = false;
   int regressions = 0;
   for (const auto& frame : frames) {
-    if (frame->timestamp().is_infinte()) {
+    if (frame->timestamp().is_infinite()) {
       continue;
     }
     if (previous_valid && frame->timestamp() < previous) {

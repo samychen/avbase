@@ -201,7 +201,7 @@ VideoFrameCompositor::ComputeTargetDelay(base::TimeDelta last_duration,
   }
 
   const base::TimeDelta av_diff = in.master_clock - in.next_timestamp;
-  if (av_diff.is_infinte()) {
+  if (av_diff.is_infinite()) {
     return delay;
   }
 

@@ -32,7 +32,7 @@ Time Time::Now() {
 }
 
 std::string TimeDelta::ToString() const {
-  if (is_infinte()) {
+  if (is_infinite()) {
     return micros_ > 0 ? "inf" : "-inf";
   }
   const double ms = InMillisecondsF();

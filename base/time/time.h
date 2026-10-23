@@ -39,7 +39,7 @@ class AVBASE_BASE_EXPORT TimeDelta {
   constexpr TimeDelta& operator=(const TimeDelta&) noexcept = default;
 
   constexpr bool is_zero() const noexcept { return micros_ == 0; }
-  constexpr bool is_infinte() const noexcept {
+  constexpr bool is_infinite() const noexcept {
     return micros_ == std::numeric_limits<int64_t>::max() ||
            micros_ == std::numeric_limits<int64_t>::min();
   }
@@ -85,7 +85,7 @@ class AVBASE_BASE_EXPORT TimeDelta {
     }
     // Infinite operands keep their own sign rule (SaturatingMul would return
     // -kMax for Max() * -1; the published convention here is Min()).
-    if (is_infinte()) {
+    if (is_infinite()) {
       return (micros_ < 0) == (a < 0) ? Max() : Min();
     }
     // M1: the overflow proof lives in exactly one place -- SaturatingMul's
@@ -98,7 +98,7 @@ class AVBASE_BASE_EXPORT TimeDelta {
     if (a == 0) {
       return (micros_ < 0) ? Min() : Max();
     }
-    return is_infinte() ? *this : FromMicroseconds(micros_ / a);
+    return is_infinite() ? *this : FromMicroseconds(micros_ / a);
   }
   constexpr double operator/(TimeDelta a) const noexcept {
     return a.is_zero()

@@ -300,7 +300,7 @@ TEST_F(FFmpegDemuxerTest, ReadsWholeFileWithMonotonicTimestamps) {
                            EXPECT_EQ(buf->stream_type(),
                                      DemuxerStreamType::kVideo);
                            EXPECT_GT(buf->data_size(), 0u);
-                           if (buf->timestamp().is_infinte())
+                           if (buf->timestamp().is_infinite())
                              continue;  // kNoTimestamp
                            if (*prev_valid && buf->timestamp() < *prev)
                              *mono = false;
