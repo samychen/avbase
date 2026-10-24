@@ -52,3 +52,9 @@ if(AVBASE_ENABLE_EGL AND TARGET avbase::platform_egl)
   target_link_libraries(play_egl PRIVATE avbase::avbase avbase::platform_egl)
   avbase_configure_target(play_egl)
 endif()
+
+# base/memory 所有权与生命周期演示：纯 base，不依赖 FFmpeg/SDL/GL，常驻。
+# 作为 SDK 易用性的对照样例（docs/10 §6），也用于教学。
+add_executable(memory_demo memory_demo.cc)
+target_link_libraries(memory_demo PRIVATE avbase::base)
+avbase_configure_target(memory_demo)
